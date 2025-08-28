@@ -1,0 +1,2 @@
+// Options: live, paper, backtest
+// DEBUG, INFO, WARNING, ERROR, CRITICAL

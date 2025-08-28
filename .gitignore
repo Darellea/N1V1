@@ -1,0 +1,80 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*$py.class
+
+# --- Virtual envs ---
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# --- Jupyter / IPython ---
+.ipynb_checkpoints
+*.ipynb
+
+# --- Logs & debug ---
+*.log
+*.out
+*.err
+
+# --- OS / Editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# --- Git ---
+*.orig
+*.lock
+
+# --- Build / Dist ---
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- Data / Cache ---
+data/
+cache/
+tmp/
+*.csv
+*.tsv
+*.jsonl
+*.db
+*.sqlite
+
+# --- Trading Bot specific ---
+output/
+backtest_results/
+equity_curves/
+trades.csv
+equity.csv
+signals.csv
+checkpoints/
+
+# --- Machine Learning models ---
+*.h5
+*.pkl
+*.joblib
+*.onnx
+*.pt
+*.pth
+
+# --- Secrets ---
+config.json
+secrets.json
+*.key
+*.pem
+*.crt
+
+# --- Misc ---
+*.zip
+*.rar
+*.tar
+*.gz
