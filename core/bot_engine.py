@@ -77,6 +77,9 @@ class BotEngine:
             'total_pnl': 0.0,
             'equity_history': [],
             'returns_history': [],
+            # equity_progression stores dicts with schema:
+            # {'trade_id', 'timestamp', 'equity', 'pnl', 'cumulative_return'}
+            'equity_progression': [],
         }
         
         # UI components
@@ -97,6 +100,11 @@ class BotEngine:
         
         self.risk_manager = RiskManager(self.config['risk_management'])
         self.order_manager = OrderManager(trading_config, self.mode)
+        # Record starting balance from config for cumulative return calculations
+        try:
+            self.starting_balance = float(self.config.get('trading', {}).get('initial_balance', 1000.0))
+        except Exception:
+            self.starting_balance = 1000.0
         self.signal_router = SignalRouter()
         
         # Initialize strategies
@@ -199,6 +207,11 @@ class BotEngine:
             # Update performance metrics
             if order_result and 'pnl' in order_result:
                 self._update_performance_metrics(order_result['pnl'])
+                # Record equity progression after each trade execution
+                try:
+                    await self.record_trade_equity(order_result)
+                except Exception:
+                    logger.exception("Failed to record trade equity in trading cycle")
             
             # Send notifications
             if self.notifier:
@@ -228,6 +241,8 @@ class BotEngine:
                 self.performance_stats.setdefault('wins', 0)
             if 'losses' not in self.performance_stats:
                 self.performance_stats.setdefault('losses', 0)
+            if 'equity_progression' not in self.performance_stats:
+                self.performance_stats.setdefault('equity_progression', [])
     
             # Update totals
             self.performance_stats['total_pnl'] += float(pnl)
@@ -272,6 +287,73 @@ class BotEngine:
                 self.performance_stats['sharpe_ratio'] = sharpe * np.sqrt(252)  # Annualize
         except Exception:
             logger.exception("Failed to update performance metrics")
+
+    async def record_trade_equity(self, order_result: Dict) -> None:
+        """
+        Record equity progression after a trade execution.
+
+        Adds a dict to performance_stats['equity_progression'] with:
+          - trade_id
+          - timestamp
+          - equity
+          - pnl
+          - cumulative_return (relative to starting balance)
+        """
+        try:
+            if not order_result:
+                return
+
+            # Ensure equity_progression exists
+            equity_prog = self.performance_stats.setdefault('equity_progression', [])
+
+            # Get current equity from order manager (async)
+            try:
+                current_equity = await self.order_manager.get_equity()
+            except Exception:
+                # Fallback to state.equity if order_manager can't provide it
+                current_equity = self.state.equity or 0.0
+
+            # Normalize values
+            trade_id = order_result.get('id', f"trade_{int(time.time()*1000)}")
+            timestamp = order_result.get('timestamp', int(time.time()*1000))
+            pnl = order_result.get('pnl', None)
+            # coerce current_equity safely
+            try:
+                equity_val = float(current_equity) if current_equity is not None else 0.0
+            except Exception:
+                equity_val = 0.0
+
+            # For backtest/paper modes the OrderManager may not track balance.
+            # In that case derive equity from starting_balance + total_pnl so progression is meaningful.
+            try:
+                if getattr(self, "mode", None) in (TradingMode.BACKTEST, TradingMode.PAPER):
+                    # If order_manager returned 0 or not tracking, compute from starting balance + total_pnl
+                    if equity_val == 0.0:
+                        equity_val = float(getattr(self, "starting_balance", 0.0)) + float(self.performance_stats.get('total_pnl', 0.0))
+            except Exception:
+                # Ignore and proceed with current equity_val
+                pass
+
+            # Calculate cumulative return relative to starting balance
+            try:
+                cumulative_return = 0.0
+                if getattr(self, "starting_balance", None) and float(self.starting_balance) > 0:
+                    cumulative_return = (equity_val - float(self.starting_balance)) / float(self.starting_balance)
+            except Exception:
+                cumulative_return = 0.0
+
+            record = {
+                'trade_id': trade_id,
+                'timestamp': timestamp,
+                'equity': equity_val,
+                'pnl': pnl,
+                'cumulative_return': cumulative_return
+            }
+
+            equity_prog.append(record)
+
+        except Exception:
+            logger.exception("Failed to record trade equity")
 
     def _update_display(self) -> None:
         """Update the Rich terminal display."""

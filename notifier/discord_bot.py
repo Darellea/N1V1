@@ -11,13 +11,24 @@ from typing import Dict, Optional, List
 from datetime import datetime
 import json
 
-import discord
-from discord import Webhook, AsyncWebhookAdapter
-from discord.ext import commands
+try:
+    import discord
+    from discord import Webhook
+    try:
+        from discord import AsyncWebhookAdapter
+    except Exception:
+        AsyncWebhookAdapter = None
+    from discord.ext import commands
+except Exception:
+    # Fallback when discord package is not available or different version is installed.
+    discord = None
+    Webhook = None
+    AsyncWebhookAdapter = None
+    commands = None
 import aiohttp
 
 from utils.logger import TradeLogger
-from utils.config_loader import config
+from utils.config_loader import get_config
 
 logger = logging.getLogger(__name__)
 trade_logger = TradeLogger()
@@ -157,7 +168,10 @@ class DiscordNotifier:
         """Generate a status message with current bot metrics."""
         # In a real implementation, this would fetch live data
         stats = trade_logger.get_performance_stats()
-        mode = config.get('environment.mode', 'unknown').upper()
+        mode = get_config('environment.mode', 'unknown')
+        if mode is None:
+            mode = 'unknown'
+        mode = str(mode).upper()
 
         return (
             f"**Mode:** {mode}\n"
