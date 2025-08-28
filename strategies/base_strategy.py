@@ -6,7 +6,7 @@ Defines the required interface and common functionality.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -18,7 +18,7 @@ from decimal import Decimal
 from typing import Any
 
 from core.signal_router import TradingSignal, SignalType, SignalStrength
-from core.order_manager import OrderType
+from core.types import OrderType
 from data.data_fetcher import DataFetcher
 
 logger = logging.getLogger(__name__)
@@ -27,16 +27,22 @@ logger = logging.getLogger(__name__)
 @dataclass
 class StrategyConfig:
     """Configuration parameters for a trading strategy."""
+
     name: str
     symbols: List[str]
     timeframe: str
     required_history: int  # Number of candles needed for calculation
     enabled: bool = True
-    params: Dict = None
+    params: Optional[Dict[str, Any]] = None
 
     def __post_init__(self):
         """Validate essential config fields after initialization."""
-        if not self.name or not self.symbols or not self.timeframe or not self.required_history:
+        if (
+            not self.name
+            or not self.symbols
+            or not self.timeframe
+            or not self.required_history
+        ):
             raise ValueError("Invalid StrategyConfig: missing required fields")
 
 
@@ -49,7 +55,7 @@ class BaseStrategy(ABC):
     def __init__(self, config: StrategyConfig):
         """
         Initialize the strategy with its configuration.
-        
+
         Args:
             config: Strategy configuration parameters
         """
@@ -78,18 +84,26 @@ class BaseStrategy(ABC):
             return
 
         import inspect
+
         # Only wrap once
         if getattr(cls, "_calculate_wrapped", False):
             return
 
         if inspect.iscoroutinefunction(orig):
+
             async def wrapped(self, data, *args, **kw):
-                if data is None or len(data) < getattr(self.config, "required_history", 0):
+                if data is None or len(data) < getattr(
+                    self.config, "required_history", 0
+                ):
                     raise ValueError("Insufficient data for indicator calculation")
                 return await orig(self, data, *args, **kw)
+
         else:
+
             def wrapped(self, data, *args, **kw):
-                if data is None or len(data) < getattr(self.config, "required_history", 0):
+                if data is None or len(data) < getattr(
+                    self.config, "required_history", 0
+                ):
                     raise ValueError("Insufficient data for indicator calculation")
                 return orig(self, data, *args, **kw)
 
@@ -99,7 +113,7 @@ class BaseStrategy(ABC):
     async def initialize(self, data_fetcher: DataFetcher) -> None:
         """
         Initialize the strategy with required resources.
-        
+
         Args:
             data_fetcher: DataFetcher instance for market data access
         """
@@ -111,10 +125,10 @@ class BaseStrategy(ABC):
     async def calculate_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Calculate technical indicators for the given market data.
-        
+
         Args:
             data: DataFrame containing OHLCV market data
-            
+
         Returns:
             DataFrame with additional indicator columns
         """
@@ -124,10 +138,10 @@ class BaseStrategy(ABC):
     async def generate_signals(self, data: pd.DataFrame) -> List[TradingSignal]:
         """
         Generate trading signals based on calculated indicators.
-        
+
         Args:
             data: DataFrame containing OHLCV and indicator data
-            
+
         Returns:
             List of TradingSignal objects
         """
@@ -136,7 +150,7 @@ class BaseStrategy(ABC):
     async def run(self) -> List[TradingSignal]:
         """
         Execute the strategy's main logic and return signals.
-        
+
         Returns:
             List of generated TradingSignal objects
         """
@@ -152,11 +166,11 @@ class BaseStrategy(ABC):
 
             # Calculate indicators
             data_with_indicators = await self.calculate_indicators(data)
-            
+
             # Generate signals
             signals = await self.generate_signals(data_with_indicators)
             self._log_signals(signals)
-            
+
             return signals
 
         except Exception as e:
@@ -166,7 +180,7 @@ class BaseStrategy(ABC):
     async def _get_market_data(self) -> pd.DataFrame:
         """
         Fetch the required market data for the strategy.
-        
+
         Returns:
             DataFrame with OHLCV data for configured symbols and timeframe
         """
@@ -180,10 +194,10 @@ class BaseStrategy(ABC):
                 data = await self.data_fetcher.get_historical_data(
                     symbol=symbol,
                     timeframe=self.config.timeframe,
-                    limit=self.config.required_history
+                    limit=self.config.required_history,
                 )
                 if data is not None:
-                    data['symbol'] = symbol  # Add symbol column
+                    data["symbol"] = symbol  # Add symbol column
                     all_data.append(data)
             except Exception as e:
                 self.logger.error(f"Failed to get data for {symbol}: {str(e)}")
@@ -193,11 +207,11 @@ class BaseStrategy(ABC):
 
         # Combine data for all symbols
         combined = pd.concat(all_data)
-        
+
         # Convert index to datetime if needed
         if not isinstance(combined.index, pd.DatetimeIndex):
-            combined.index = pd.to_datetime(combined.index, unit='ms')
-            
+            combined.index = pd.to_datetime(combined.index, unit="ms")
+
         return combined.sort_index()
 
     def _log_signals(self, signals: List[TradingSignal]) -> None:
@@ -218,8 +232,8 @@ class BaseStrategy(ABC):
         current_price: Optional[float] = None,
         stop_loss: Optional[float] = None,
         take_profit: Optional[float] = None,
-        trailing_stop: Optional[Dict] = None,
-        metadata: Optional[Dict] = None
+        trailing_stop: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> TradingSignal:
         """
         Helper to create a TradingSignal with normalized types.
@@ -244,7 +258,7 @@ class BaseStrategy(ABC):
             TradingSignal instance with Decimal-typed numeric fields.
         """
         # Normalize numeric fields to Decimal where provided
-        amt_dec = Decimal(str(amount)) if amount is not None else Decimal('0')
+        amt_dec = Decimal(str(amount)) if amount is not None else Decimal("0")
         price_dec = Decimal(str(price)) if price is not None else None
         current_dec = Decimal(str(current_price)) if current_price is not None else None
         stop_dec = Decimal(str(stop_loss)) if stop_loss is not None else None
@@ -262,7 +276,7 @@ class BaseStrategy(ABC):
             stop_loss=stop_dec,
             take_profit=tp_dec,
             trailing_stop=trailing_stop,
-            metadata=metadata or {}
+            metadata=metadata or {},
         )
 
     async def shutdown(self) -> None:
@@ -273,32 +287,34 @@ class BaseStrategy(ABC):
     def get_performance_metrics(self) -> Dict:
         """Get strategy performance metrics."""
         return {
-            'strategy_id': self.id,
-            'name': self.config.name,
-            'signals_generated': self.signals_generated,
-            'last_signal_time': self.last_signal_time,
-            'symbols': self.config.symbols,
-            'timeframe': self.config.timeframe
+            "strategy_id": self.id,
+            "name": self.config.name,
+            "signals_generated": self.signals_generated,
+            "last_signal_time": self.last_signal_time,
+            "symbols": self.config.symbols,
+            "timeframe": self.config.timeframe,
         }
 
 
 class TrendAnalysisMixin:
     """Mixin class providing common trend analysis methods."""
-    
-    async def calculate_trend_strength(self, prices: pd.Series, period: int = 14) -> float:
+
+    async def calculate_trend_strength(
+        self, prices: pd.Series, period: int = 14
+    ) -> float:
         """
         Calculate trend strength using ADX methodology.
-        
+
         Args:
             prices: Series of closing prices
             period: Lookback period
-            
+
         Returns:
             Trend strength score (0-1)
         """
         if len(prices) < period * 2:
             return 0.0
-            
+
         try:
             # Calculate directional movements
             delta = prices.diff()
@@ -307,29 +323,30 @@ class TrendAnalysisMixin:
             down = delta.copy()
             down[down > 0] = 0
             down = down.abs()
-            
+
             # Calculate smoothed averages
             roll_up = up.rolling(period).mean()
             roll_down = down.rolling(period).mean()
-            
+
             # Calculate DX
             dx = (roll_up - roll_down).abs() / (roll_up + roll_down)
             adx = dx.rolling(period).mean()
-            
+
             # Normalize to 0-1 range
             return float(adx.iloc[-1] / 100)
         except Exception:
             return 0.0
 
-    async def identify_support_resistance(self, prices: pd.DataFrame, 
-                                       lookback: int = 20) -> Dict:
+    async def identify_support_resistance(
+        self, prices: pd.DataFrame, lookback: int = 20
+    ) -> Dict:
         """
         Identify key support and resistance levels.
-        
+
         Args:
             prices: DataFrame with OHLC data
             lookback: Number of periods to analyze
-            
+
         Returns:
             Dict with support/resistance levels
         """
@@ -338,68 +355,69 @@ class TrendAnalysisMixin:
             recent = prices
         else:
             recent = prices.iloc[-lookback:]
-        support = recent['low'].min()
-        resistance = recent['high'].max()
-        
+        support = recent["low"].min()
+        resistance = recent["high"].max()
+
         # Compute current position within the range safely (avoid div-by-zero).
         try:
             range_span = float(resistance) - float(support)
             if range_span == 0:
                 current_pos = 0.0
             else:
-                current_pos = float((recent['close'].iloc[-1] - support) / range_span)
+                current_pos = float((recent["close"].iloc[-1] - support) / range_span)
         except Exception:
             current_pos = 0.0
-        
+
         return {
-            'support': float(support) if support is not None else None,
-            'resistance': float(resistance) if resistance is not None else None,
-            'current_position': current_pos
+            "support": float(support) if support is not None else None,
+            "resistance": float(resistance) if resistance is not None else None,
+            "current_position": current_pos,
         }
 
 
 class VolatilityAnalysisMixin:
     """Mixin class providing common volatility analysis methods."""
-    
+
     async def calculate_atr(self, prices: pd.DataFrame, period: int = 14) -> float:
         """
         Calculate Average True Range (ATR).
-        
+
         Args:
             prices: DataFrame with OHLC data
             period: Lookback period
-            
+
         Returns:
             ATR value
         """
         if len(prices) < period:
             return 0.0
-            
+
         try:
-            high_low = prices['high'] - prices['low']
-            high_close = (prices['high'] - prices['close'].shift()).abs()
-            low_close = (prices['low'] - prices['close'].shift()).abs()
-            
-            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            high_low = prices["high"] - prices["low"]
+            high_close = (prices["high"] - prices["close"].shift()).abs()
+            low_close = (prices["low"] - prices["close"].shift()).abs()
+
+            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(
+                axis=1
+            )
             atr = true_range.rolling(period).mean()
             return float(atr.iloc[-1])
         except Exception:
             return 0.0
 
-    async def calculate_volatility(self, prices: pd.Series, 
-                                 period: int = 20) -> float:
+    async def calculate_volatility(self, prices: pd.Series, period: int = 20) -> float:
         """
         Calculate volatility as standard deviation of returns.
-        
+
         Args:
             prices: Series of closing prices
             period: Lookback period
-            
+
         Returns:
             Volatility measure
         """
         if len(prices) < period:
             return 0.0
-            
+
         returns = np.log(prices / prices.shift(1))
         return float(returns.std() * np.sqrt(period))

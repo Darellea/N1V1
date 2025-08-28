@@ -1,0 +1,23 @@
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+skip-string-normalization = false
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+line_length = 88
+known_first_party = ["core", "strategies", "backtest", "risk", "utils", "notifier"]
+multi_line_output = 3
+include_trailing_comma = true
+
+[tool.ruff]
+line-length = 88
+select = ["E", "F", "W", "C", "B", "TIDY", "I"]
+ignore = ["E203", "W503"]
+extend-ignore = []
+exclude = ["build", "dist", ".venv", "venv", "__pycache__", "data", "output"]
+
+[tool.mypy]
+python_version = 3.10
+ignore_missing_imports = true

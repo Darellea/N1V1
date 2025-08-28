@@ -15,13 +15,17 @@ import sys
 ROOT = os.path.abspath(os.path.dirname(__file__) + os.sep + "..")
 ROOT = os.path.normpath(ROOT)
 
+
 def find_py_files(root):
     for dirpath, dirnames, filenames in os.walk(root):
         # skip hidden dirs like .git, __pycache__
-        dirnames[:] = [d for d in dirnames if not d.startswith('.') and d != '__pycache__']
+        dirnames[:] = [
+            d for d in dirnames if not d.startswith(".") and d != "__pycache__"
+        ]
         for f in filenames:
-            if f.endswith('.py'):
+            if f.endswith(".py"):
                 yield os.path.join(dirpath, f)
+
 
 def module_candidates(module):
     """
@@ -29,14 +33,16 @@ def module_candidates(module):
     paths to check (relative to ROOT), e.g. "utils/config_loader.py" and
     "utils/config_loader/__init__.py".
     """
-    parts = module.split('.')
-    file_path = os.path.join(*parts) + '.py'
-    pkg_init = os.path.join(*parts, '__init__.py')
+    parts = module.split(".")
+    file_path = os.path.join(*parts) + ".py"
+    pkg_init = os.path.join(*parts, "__init__.py")
     return [file_path, pkg_init]
+
 
 def exists_in_project(relpath):
     path = os.path.normpath(os.path.join(ROOT, relpath))
     return os.path.exists(path)
+
 
 def resolve_relative(from_file, level, module):
     """
@@ -52,20 +58,21 @@ def resolve_relative(from_file, level, module):
         cur_dir = os.path.dirname(cur_dir)
     base_rel = os.path.relpath(cur_dir, ROOT)
     if module:
-        full = os.path.join(base_rel, *module.split('.'))
+        full = os.path.join(base_rel, *module.split("."))
     else:
         full = base_rel
     # normalize and produce candidates
-    parts = os.path.normpath(full).split(os.sep) if full != '.' else []
-    if parts == ['.']:
+    parts = os.path.normpath(full).split(os.sep) if full != "." else []
+    if parts == ["."]:
         parts = []
     if parts:
-        file_path = os.path.join(*parts) + '.py'
-        pkg_init = os.path.join(*parts, '__init__.py')
+        file_path = os.path.join(*parts) + ".py"
+        pkg_init = os.path.join(*parts, "__init__.py")
     else:
-        file_path = '__init__.py'
-        pkg_init = '__init__.py'
+        file_path = "__init__.py"
+        pkg_init = "__init__.py"
     return [file_path, pkg_init]
+
 
 def is_local_module(module_name, project_top_level_dirs):
     """
@@ -74,23 +81,26 @@ def is_local_module(module_name, project_top_level_dirs):
     """
     if not module_name:
         return False
-    top = module_name.split('.')[0]
+    top = module_name.split(".")[0]
     return top in project_top_level_dirs
+
 
 def main():
     # identify top-level project package names (directories with Python files)
     project_dirs = []
     for name in os.listdir(ROOT):
         p = os.path.join(ROOT, name)
-        if os.path.isdir(p) and not name.startswith('.') and name != '__pycache__':
+        if os.path.isdir(p) and not name.startswith(".") and name != "__pycache__":
             # consider it a project package if it contains any .py files
             for f in os.listdir(p):
-                if f.endswith('.py'):
+                if f.endswith(".py"):
                     project_dirs.append(name)
                     break
 
     # also include top-level .py filenames (modules) as possible locals
-    top_level_modules = [os.path.splitext(f)[0] for f in os.listdir(ROOT) if f.endswith('.py')]
+    top_level_modules = [
+        os.path.splitext(f)[0] for f in os.listdir(ROOT) if f.endswith(".py")
+    ]
 
     project_top_level = set(project_dirs + top_level_modules)
 
@@ -100,7 +110,7 @@ def main():
         scanned += 1
         rel_py = os.path.relpath(py, ROOT)
         try:
-            with open(py, 'r', encoding='utf-8') as fh:
+            with open(py, "r", encoding="utf-8") as fh:
                 src = fh.read()
             tree = ast.parse(src, filename=py)
         except Exception as e:
@@ -115,7 +125,7 @@ def main():
                         candidates = module_candidates(name)
                         found = any(exists_in_project(c) for c in candidates)
                         if not found:
-                            missing.append((rel_py, 'import', name, candidates))
+                            missing.append((rel_py, "import", name, candidates))
             elif isinstance(node, ast.ImportFrom):
                 module = node.module  # can be None for "from . import x"
                 level = node.level  # 0 for absolute imports
@@ -125,21 +135,23 @@ def main():
                     found = any(exists_in_project(c) for c in candidates)
                     if not found:
                         # represent module as relative (e.g., .types or ..sub.pkg)
-                        mod_repr = ('.' * level) + (module or '')
-                        missing.append((rel_py, 'from', mod_repr, candidates))
+                        mod_repr = ("." * level) + (module or "")
+                        missing.append((rel_py, "from", mod_repr, candidates))
                 else:
                     # absolute import
                     if module and is_local_module(module, project_top_level):
                         candidates = module_candidates(module)
                         found = any(exists_in_project(c) for c in candidates)
                         if not found:
-                            missing.append((rel_py, 'from', module, candidates))
+                            missing.append((rel_py, "from", module, candidates))
 
     # Print results
     print("Checked repository at:", ROOT)
     print("Python files scanned:", scanned)
     if not missing:
-        print("\nNo missing local imports detected. (No obvious deletions of files that are imported.)")
+        print(
+            "\nNo missing local imports detected. (No obvious deletions of files that are imported.)"
+        )
         sys.exit(0)
     else:
         print("\nMissing local import targets detected:")
@@ -154,5 +166,6 @@ def main():
         print(f"Total missing import targets: {len(missing)}")
         sys.exit(2)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

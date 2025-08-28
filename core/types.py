@@ -9,6 +9,7 @@ from enum import Enum
 
 class OrderType(Enum):
     """Supported order types."""
+
     MARKET = "market"
     LIMIT = "limit"
     STOP_LOSS = "stop_loss"
@@ -18,6 +19,7 @@ class OrderType(Enum):
 
 class OrderStatus(Enum):
     """Order status states."""
+
     OPEN = "open"
     FILLED = "filled"
     PARTIALLY_FILLED = "partially_filled"

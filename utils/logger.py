@@ -19,6 +19,7 @@ from typing import Dict, Optional, Any
 from datetime import datetime
 from pathlib import Path
 import json
+import csv
 
 from colorama import Fore, Back, Style, init as colorama_init
 
@@ -59,7 +60,7 @@ class TradeLogger(logging.Logger):
 
     def __init__(self, name: str = "crypto_bot"):
         super().__init__(name)
-        self.trades = []
+        self.trades: list[Dict[str, Any]] = []
         self.performance_stats = {
             "total_trades": 0,
             "wins": 0,
@@ -69,11 +70,38 @@ class TradeLogger(logging.Logger):
             "max_win": 0.0,
             "max_loss": 0.0,
         }
+
+        # CSV file for persisting trades (timestamp, pair, action, size, entry_price, exit_price, pnl)
+        self.trade_csv: Path = LOGS_DIR / "trades.csv"
+        try:
+            if not self.trade_csv.exists():
+                # Create parent dir (LOGS_DIR already created at module import) and write header
+                with open(self.trade_csv, "w", newline="", encoding="utf-8") as csvfile:
+                    writer = csv.writer(csvfile)
+                    writer.writerow(
+                        [
+                            "timestamp",
+                            "pair",
+                            "action",
+                            "size",
+                            "entry_price",
+                            "exit_price",
+                            "pnl",
+                        ]
+                    )
+        except Exception:
+            # If CSV creation fails, continue but log error via standard error to avoid blocking
+            print(
+                f"Failed to initialize trade CSV at {self.trade_csv}", file=sys.stderr
+            )
+
         # Ensure handlers are only added once if logger already configured
         if not self.handlers:
             # Default console handler; real setup likely done in setup_logging
             console_handler = logging.StreamHandler(sys.stdout)
-            console_handler.setFormatter(ColorFormatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+            console_handler.setFormatter(
+                ColorFormatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+            )
             self.addHandler(console_handler)
 
     def trade(self, msg: str, trade_data: Dict[str, Any], *args, **kwargs) -> None:
@@ -107,7 +135,9 @@ class TradeLogger(logging.Logger):
     def log_rejected_signal(self, signal: Dict[str, Any], reason: str) -> None:
         """Convenience for rejected signal logging."""
         try:
-            self.trade(f"Signal rejected: {reason}", {"signal": signal, "reason": reason})
+            self.trade(
+                f"Signal rejected: {reason}", {"signal": signal, "reason": reason}
+            )
         except Exception:
             self.exception("Failed to log rejected signal")
 
@@ -119,22 +149,65 @@ class TradeLogger(logging.Logger):
             self.exception("Failed to log failed order")
 
     def _record_trade(self, trade_data: Dict[str, Any]) -> None:
-        """Append trade to history and update lightweight stats."""
+        """Append trade to history, update lightweight stats, and persist trade to CSV.
+
+        Expected trade_data keys (recommended):
+            - timestamp: ISO string or datetime
+            - pair: trading pair (e.g., 'BTC/USDT')
+            - action: 'BUY' or 'SELL'
+            - size: position size
+            - entry_price: entry price
+            - exit_price: exit price
+            - pnl: profit or loss (float)
+        """
         try:
+            # In-memory record
             self.trades.append(trade_data)
+
+            # Numeric PnL for stats and CSV
             pnl = float(trade_data.get("pnl", 0.0) or 0.0)
+
+            # Update performance statistics
             self.performance_stats["total_trades"] += 1
             self.performance_stats["total_pnl"] += pnl
             if pnl >= 0:
                 self.performance_stats["wins"] += 1
-                self.performance_stats["max_win"] = max(self.performance_stats["max_win"], pnl)
+                self.performance_stats["max_win"] = max(
+                    self.performance_stats["max_win"], pnl
+                )
             else:
                 self.performance_stats["losses"] += 1
-                self.performance_stats["max_loss"] = min(self.performance_stats["max_loss"], pnl)
+                self.performance_stats["max_loss"] = min(
+                    self.performance_stats["max_loss"], pnl
+                )
 
             total = self.performance_stats["wins"] + self.performance_stats["losses"]
             if total > 0:
-                self.performance_stats["win_rate"] = self.performance_stats["wins"] / total
+                self.performance_stats["win_rate"] = (
+                    self.performance_stats["wins"] / total
+                )
+
+            # Persist to CSV for external analysis (non-blocking best-effort)
+            try:
+                timestamp = trade_data.get(
+                    "timestamp",
+                    datetime.utcnow().isoformat(),
+                )
+                row = [
+                    timestamp,
+                    trade_data.get("pair", ""),
+                    trade_data.get("action", trade_data.get("side", "")),
+                    trade_data.get("size", ""),
+                    trade_data.get("entry_price", ""),
+                    trade_data.get("exit_price", ""),
+                    pnl,
+                ]
+                with open(self.trade_csv, "a", newline="", encoding="utf-8") as csvfile:
+                    writer = csv.writer(csvfile)
+                    writer.writerow(row)
+            except Exception:
+                self.exception("Failed to write trade to CSV")
+
         except Exception:
             self.exception("Failed to record trade")
 
@@ -143,7 +216,9 @@ class TradeLogger(logging.Logger):
         try:
             for k, v in metrics.items():
                 if isinstance(v, (int, float)):
-                    self.performance_stats[k] = float(self.performance_stats.get(k, 0.0)) + float(v)
+                    self.performance_stats[k] = float(
+                        self.performance_stats.get(k, 0.0)
+                    ) + float(v)
         except Exception:
             self.exception("Failed to update performance stats")
 
@@ -228,7 +303,12 @@ def setup_logging(config: Optional[Dict[str, Any]] = None) -> TradeLogger:
         max_bytes = int(cfg.get("max_size", 10 * 1024 * 1024))
         backup_count = int(cfg.get("backup_count", 5))
 
-        file_handler = RotatingFileHandler(str(log_file), maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8")
+        file_handler = RotatingFileHandler(
+            str(log_file),
+            maxBytes=max_bytes,
+            backupCount=backup_count,
+            encoding="utf-8",
+        )
         file_fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         file_handler.setFormatter(logging.Formatter(file_fmt))
         file_handler.setLevel(level)

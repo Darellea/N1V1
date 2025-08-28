@@ -14,6 +14,7 @@ import json
 try:
     import discord
     from discord import Webhook
+
     try:
         from discord import AsyncWebhookAdapter
     except Exception:
@@ -33,6 +34,7 @@ from utils.config_loader import get_config
 logger = logging.getLogger(__name__)
 trade_logger = TradeLogger()
 
+
 class DiscordNotifier:
     """
     Handles Discord notifications via webhooks and interactive bot commands.
@@ -42,16 +44,16 @@ class DiscordNotifier:
     def __init__(self, discord_config: Dict):
         """
         Initialize the Discord notifier.
-        
+
         Args:
             discord_config: Discord configuration from main config
         """
         self.config = discord_config
-        self.webhook_url = discord_config.get('webhook_url')
-        self.bot_token = discord_config.get('bot_token')
-        self.channel_id = discord_config.get('channel_id')
-        self.alerts_enabled = discord_config.get('alerts', {}).get('enabled', False)
-        self.commands_enabled = discord_config.get('commands', {}).get('enabled', False)
+        self.webhook_url = discord_config.get("webhook_url")
+        self.bot_token = discord_config.get("bot_token")
+        self.channel_id = discord_config.get("channel_id")
+        self.alerts_enabled = discord_config.get("alerts", {}).get("enabled", False)
+        self.commands_enabled = discord_config.get("commands", {}).get("enabled", False)
         self.bot = None
         self.session = None
 
@@ -67,11 +69,7 @@ class DiscordNotifier:
         intents.messages = True
         intents.message_content = True
 
-        self.bot = commands.Bot(
-            command_prefix='!',
-            intents=intents,
-            help_command=None
-        )
+        self.bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
         # Register commands
         self._register_commands()
@@ -83,7 +81,7 @@ class DiscordNotifier:
     def _register_commands(self) -> None:
         """Register Discord bot commands."""
 
-        @self.bot.command(name='status')
+        @self.bot.command(name="status")
         async def status(ctx):
             """Get bot status."""
             if not await self._verify_channel(ctx):
@@ -93,11 +91,11 @@ class DiscordNotifier:
             embed = discord.Embed(
                 title="🤖 Trading Bot Status",
                 description=status_msg,
-                color=discord.Color.blue()
+                color=discord.Color.blue(),
             )
             await ctx.send(embed=embed)
 
-        @self.bot.command(name='pause')
+        @self.bot.command(name="pause")
         async def pause(ctx):
             """Pause trading."""
             if not await self._verify_channel(ctx):
@@ -107,11 +105,11 @@ class DiscordNotifier:
             embed = discord.Embed(
                 title="⏸ Trading Paused",
                 description="All trading activity has been paused.",
-                color=discord.Color.orange()
+                color=discord.Color.orange(),
             )
             await ctx.send(embed=embed)
 
-        @self.bot.command(name='resume')
+        @self.bot.command(name="resume")
         async def resume(ctx):
             """Resume trading."""
             if not await self._verify_channel(ctx):
@@ -121,11 +119,11 @@ class DiscordNotifier:
             embed = discord.Embed(
                 title="▶ Trading Resumed",
                 description="Trading activity has been resumed.",
-                color=discord.Color.green()
+                color=discord.Color.green(),
             )
             await ctx.send(embed=embed)
 
-        @self.bot.command(name='trades')
+        @self.bot.command(name="trades")
         async def trades(ctx, limit: int = 5):
             """Get recent trades."""
             if not await self._verify_channel(ctx):
@@ -137,12 +135,11 @@ class DiscordNotifier:
                 return
 
             embed = discord.Embed(
-                title=f"📊 Last {len(recent_trades)} Trades",
-                color=discord.Color.gold()
+                title=f"📊 Last {len(recent_trades)} Trades", color=discord.Color.gold()
             )
 
             for trade in recent_trades:
-                pnl = trade.get('pnl', 0)
+                pnl = trade.get("pnl", 0)
                 color = discord.Color.green() if pnl >= 0 else discord.Color.red()
                 embed.add_field(
                     name=f"{trade['symbol']} {trade['type'].upper()}",
@@ -152,7 +149,7 @@ class DiscordNotifier:
                         f"PNL: {pnl:.4f} ({'✅' if pnl >= 0 else '❌'})\n"
                         f"Time: {trade.get('timestamp', 'N/A')}"
                     ),
-                    inline=True
+                    inline=True,
                 )
 
             await ctx.send(embed=embed)
@@ -168,9 +165,9 @@ class DiscordNotifier:
         """Generate a status message with current bot metrics."""
         # In a real implementation, this would fetch live data
         stats = trade_logger.get_performance_stats()
-        mode = get_config('environment.mode', 'unknown')
+        mode = get_config("environment.mode", "unknown")
         if mode is None:
-            mode = 'unknown'
+            mode = "unknown"
         mode = str(mode).upper()
 
         return (
@@ -200,11 +197,11 @@ class DiscordNotifier:
     async def send_notification(self, message: str, embed_data: Dict = None) -> bool:
         """
         Send a notification via Discord webhook.
-        
+
         Args:
             message: Text message to send
             embed_data: Dictionary of embed data
-            
+
         Returns:
             True if notification was sent successfully
         """
@@ -214,10 +211,7 @@ class DiscordNotifier:
         try:
             async with self.session.post(
                 self.webhook_url,
-                json={
-                    "content": message,
-                    "embeds": [embed_data] if embed_data else []
-                }
+                json={"content": message, "embeds": [embed_data] if embed_data else []},
             ) as response:
                 if response.status != 204:
                     logger.error(f"Discord webhook error: {response.status}")
@@ -230,48 +224,63 @@ class DiscordNotifier:
     async def send_trade_alert(self, trade_data: Dict) -> bool:
         """
         Send a trade alert notification.
-        
+
         Args:
             trade_data: Dictionary of trade data
-            
+
         Returns:
             True if notification was sent successfully
         """
         if not self.alerts_enabled:
             return False
 
-        pnl = trade_data.get('pnl', 0)
+        pnl = trade_data.get("pnl", 0)
         is_win = pnl >= 0
 
         embed = {
             "title": "💰 New Trade Execution",
-            "color": 0x00ff00 if is_win else 0xff0000,
+            "color": 0x00FF00 if is_win else 0xFF0000,
             "fields": [
-                {"name": "Symbol", "value": trade_data['symbol'], "inline": True},
-                {"name": "Type", "value": trade_data['type'].upper(), "inline": True},
-                {"name": "Side", "value": trade_data['side'].upper(), "inline": True},
-                {"name": "Amount", "value": f"{trade_data['amount']:.4f}", "inline": True},
-                {"name": "Price", "value": f"{trade_data['price']:.4f}", "inline": True},
+                {"name": "Symbol", "value": trade_data["symbol"], "inline": True},
+                {"name": "Type", "value": trade_data["type"].upper(), "inline": True},
+                {"name": "Side", "value": trade_data["side"].upper(), "inline": True},
+                {
+                    "name": "Amount",
+                    "value": f"{trade_data['amount']:.4f}",
+                    "inline": True,
+                },
+                {
+                    "name": "Price",
+                    "value": f"{trade_data['price']:.4f}",
+                    "inline": True,
+                },
                 {"name": "PNL", "value": f"{pnl:.4f}", "inline": True},
-                {"name": "Status", "value": trade_data['status'].upper(), "inline": True},
-                {"name": "Mode", "value": trade_data.get('mode', 'N/A').upper(), "inline": True}
+                {
+                    "name": "Status",
+                    "value": trade_data["status"].upper(),
+                    "inline": True,
+                },
+                {
+                    "name": "Mode",
+                    "value": trade_data.get("mode", "N/A").upper(),
+                    "inline": True,
+                },
             ],
             "timestamp": datetime.now().isoformat(),
-            "footer": {"text": "Crypto Trading Bot"}
+            "footer": {"text": "Crypto Trading Bot"},
         }
 
         return await self.send_notification(
-            message=f"New trade executed: {trade_data['symbol']}",
-            embed_data=embed
+            message=f"New trade executed: {trade_data['symbol']}", embed_data=embed
         )
 
     async def send_signal_alert(self, signal_data: Dict) -> bool:
         """
         Send a trading signal alert.
-        
+
         Args:
             signal_data: Dictionary of signal data
-            
+
         Returns:
             True if notification was sent successfully
         """
@@ -280,32 +289,51 @@ class DiscordNotifier:
 
         embed = {
             "title": "📡 New Trading Signal",
-            "color": 0x0000ff,
+            "color": 0x0000FF,
             "fields": [
-                {"name": "Symbol", "value": signal_data['symbol'], "inline": True},
-                {"name": "Type", "value": signal_data['signal_type'], "inline": True},
-                {"name": "Strength", "value": signal_data.get('strength', 'N/A'), "inline": True},
-                {"name": "Price", "value": f"{signal_data.get('price', 'N/A')}", "inline": True},
-                {"name": "Amount", "value": f"{signal_data.get('amount', 'N/A')}", "inline": True},
-                {"name": "Stop Loss", "value": f"{signal_data.get('stop_loss', 'N/A')}", "inline": True},
-                {"name": "Take Profit", "value": f"{signal_data.get('take_profit', 'N/A')}", "inline": True}
+                {"name": "Symbol", "value": signal_data["symbol"], "inline": True},
+                {"name": "Type", "value": signal_data["signal_type"], "inline": True},
+                {
+                    "name": "Strength",
+                    "value": signal_data.get("strength", "N/A"),
+                    "inline": True,
+                },
+                {
+                    "name": "Price",
+                    "value": f"{signal_data.get('price', 'N/A')}",
+                    "inline": True,
+                },
+                {
+                    "name": "Amount",
+                    "value": f"{signal_data.get('amount', 'N/A')}",
+                    "inline": True,
+                },
+                {
+                    "name": "Stop Loss",
+                    "value": f"{signal_data.get('stop_loss', 'N/A')}",
+                    "inline": True,
+                },
+                {
+                    "name": "Take Profit",
+                    "value": f"{signal_data.get('take_profit', 'N/A')}",
+                    "inline": True,
+                },
             ],
             "timestamp": datetime.now().isoformat(),
-            "footer": {"text": "Crypto Trading Bot"}
+            "footer": {"text": "Crypto Trading Bot"},
         }
 
         return await self.send_notification(
-            message=f"New signal generated: {signal_data['symbol']}",
-            embed_data=embed
+            message=f"New signal generated: {signal_data['symbol']}", embed_data=embed
         )
 
     async def send_error_alert(self, error_data: Dict) -> bool:
         """
         Send an error alert notification.
-        
+
         Args:
             error_data: Dictionary containing error information
-            
+
         Returns:
             True if notification was sent successfully
         """
@@ -314,28 +342,39 @@ class DiscordNotifier:
 
         embed = {
             "title": "🚨 System Error",
-            "color": 0xff0000,
+            "color": 0xFF0000,
             "fields": [
-                {"name": "Error", "value": error_data.get('error', 'Unknown error'), "inline": False},
-                {"name": "Component", "value": error_data.get('component', 'Unknown'), "inline": True},
-                {"name": "Timestamp", "value": error_data.get('timestamp', 'N/A'), "inline": True}
+                {
+                    "name": "Error",
+                    "value": error_data.get("error", "Unknown error"),
+                    "inline": False,
+                },
+                {
+                    "name": "Component",
+                    "value": error_data.get("component", "Unknown"),
+                    "inline": True,
+                },
+                {
+                    "name": "Timestamp",
+                    "value": error_data.get("timestamp", "N/A"),
+                    "inline": True,
+                },
             ],
             "timestamp": datetime.now().isoformat(),
-            "footer": {"text": "Crypto Trading Bot"}
+            "footer": {"text": "Crypto Trading Bot"},
         }
 
         return await self.send_notification(
-            message="An error occurred in the trading system!",
-            embed_data=embed
+            message="An error occurred in the trading system!", embed_data=embed
         )
 
     async def send_performance_report(self, performance_data: Dict) -> bool:
         """
         Send a performance report notification.
-        
+
         Args:
             performance_data: Dictionary of performance metrics
-            
+
         Returns:
             True if notification was sent successfully
         """
@@ -344,20 +383,43 @@ class DiscordNotifier:
 
         embed = {
             "title": "📈 Performance Report",
-            "color": 0x00ff00,
+            "color": 0x00FF00,
             "fields": [
-                {"name": "Total Trades", "value": performance_data.get('total_trades', 0), "inline": True},
-                {"name": "Win Rate", "value": f"{performance_data.get('win_rate', 0):.1%}", "inline": True},
-                {"name": "Total PNL", "value": f"{performance_data.get('total_pnl', 0):.4f}", "inline": True},
-                {"name": "Max Win", "value": f"{performance_data.get('max_win', 0):.4f}", "inline": True},
-                {"name": "Max Loss", "value": f"{performance_data.get('max_loss', 0):.4f}", "inline": True},
-                {"name": "Sharpe Ratio", "value": f"{performance_data.get('sharpe_ratio', 0):.2f}", "inline": True}
+                {
+                    "name": "Total Trades",
+                    "value": performance_data.get("total_trades", 0),
+                    "inline": True,
+                },
+                {
+                    "name": "Win Rate",
+                    "value": f"{performance_data.get('win_rate', 0):.1%}",
+                    "inline": True,
+                },
+                {
+                    "name": "Total PNL",
+                    "value": f"{performance_data.get('total_pnl', 0):.4f}",
+                    "inline": True,
+                },
+                {
+                    "name": "Max Win",
+                    "value": f"{performance_data.get('max_win', 0):.4f}",
+                    "inline": True,
+                },
+                {
+                    "name": "Max Loss",
+                    "value": f"{performance_data.get('max_loss', 0):.4f}",
+                    "inline": True,
+                },
+                {
+                    "name": "Sharpe Ratio",
+                    "value": f"{performance_data.get('sharpe_ratio', 0):.2f}",
+                    "inline": True,
+                },
             ],
             "timestamp": datetime.now().isoformat(),
-            "footer": {"text": "Crypto Trading Bot"}
+            "footer": {"text": "Crypto Trading Bot"},
         }
 
         return await self.send_notification(
-            message="Daily performance report generated",
-            embed_data=embed
+            message="Daily performance report generated", embed_data=embed
         )

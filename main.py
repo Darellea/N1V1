@@ -43,16 +43,20 @@ class CryptoTradingBot:
 
             # Load configuration
             self.config = load_config()
-            setup_logging(self.config.get('logging', {}))
-            
+            setup_logging(self.config.get("logging", {}))
+
             self.logger.info("Initializing CryptoTradingBot")
-            console.print("[bold green]✓ Configuration loaded successfully[/bold green]")
+            console.print(
+                "[bold green]✓ Configuration loaded successfully[/bold green]"
+            )
 
             # Initialize core engine
             self.bot_engine = BotEngine(self.config)
             await self.bot_engine.initialize()
 
-            console.print("[bold green]✓ Bot engine initialized successfully[/bold green]")
+            console.print(
+                "[bold green]✓ Bot engine initialized successfully[/bold green]"
+            )
 
         except Exception as e:
             self.logger.error(f"Failed to initialize bot: {str(e)}", exc_info=True)
@@ -102,8 +106,10 @@ class CryptoTradingBot:
         banner_text = Text.assemble(
             ("CryptoTradingBot\n", "bold blue"),
             ("Version: 1.0.0\n", "bold green"),
-            ("Mode: ", "bold"), (f"{self._get_mode()}\n", "bold cyan"),
-            ("Status: ", "bold"), ("INITIALIZING", "bold yellow")
+            ("Mode: ", "bold"),
+            (f"{self._get_mode()}\n", "bold cyan"),
+            ("Status: ", "bold"),
+            ("INITIALIZING", "bold yellow"),
         )
 
         panel = Panel(
@@ -111,7 +117,7 @@ class CryptoTradingBot:
             title="[bold]Crypto Trading System[/bold]",
             subtitle="[italic]Secure • Reliable • Profitable[/italic]",
             border_style="blue",
-            padding=(1, 2)
+            padding=(1, 2),
         )
         console.print(panel)
 
