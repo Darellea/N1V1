@@ -15,21 +15,23 @@ from enum import Enum
 from decimal import Decimal
 import random
 import time
+from utils.time import now_ms, to_ms
 from typing import Callable
 
 import ccxt.async_support as ccxt
 from ccxt.base.errors import NetworkError, ExchangeError
 
-from utils.logger import TradeLogger
+from utils.logger import get_trade_logger
 from utils.config_loader import ConfigLoader
-from core.types import OrderType, OrderStatus
+from core.types import OrderType, OrderStatus, TradingMode
 # Utility imported from risk manager for safe quantization when allocating per-pair balances
 from risk.risk_manager import _safe_quantize
+from utils.adapter import signal_to_dict
 
 # TradingSignal is imported lazily in methods to avoid circular imports at module import time
 
 logger = logging.getLogger(__name__)
-trade_logger = TradeLogger()
+trade_logger = get_trade_logger()
 
 
 @dataclass
@@ -65,7 +67,27 @@ class OrderManager:
         # Accept either a nested config (with 'order','risk','paper') or a flat one to remain backward compatible
         self.config: Dict[str, Any] = config.get("order", config)
         self.risk_config: Dict[str, Any] = config.get("risk", self.config.get("risk", {}))
-        self.mode: Union[str, "TradingMode"] = mode
+        self.mode_original = mode
+        # Normalize incoming mode to the canonical TradingMode enum
+        try:
+            if isinstance(mode, str):
+                try:
+                    # Prefer enum name lookup (e.g., "LIVE", "PAPER", "BACKTEST")
+                    self.mode = TradingMode[mode.upper()]
+                except Exception:
+                    # Fallback: match by enum value ("live","paper","backtest")
+                    self.mode = next(m for m in TradingMode if m.value == str(mode).lower())
+            elif isinstance(mode, TradingMode):
+                self.mode = mode
+            else:
+                # Default to PAPER for safety if unknown
+                self.mode = TradingMode.PAPER
+        except Exception:
+            # Defensive fallback
+            self.mode = TradingMode.PAPER
+
+        # normalized mode name (lowercase string) for consistent checks across module
+        self.mode_name: str = getattr(self.mode, "value", str(self.mode)).lower()
         self.exchange: Optional[ccxt.Exchange] = None
 
         # Portfolio-mode support: per-symbol paper balances and overall paper_balance fallback
@@ -101,12 +123,7 @@ class OrderManager:
         self.pair_allocation: Optional[Dict[str, float]] = None
 
         # Initialize exchange for live trading (handle enum/string)
-        is_live = False
-        try:
-            # Avoid importing TradingMode at runtime; accept either enum or string
-            is_live = getattr(self.mode, "name", str(self.mode)).lower() == "live"
-        except Exception:
-            is_live = str(self.mode).lower() == "live"
+        is_live = self.mode == TradingMode.LIVE
 
         if is_live:
             self._initialize_exchange()
@@ -145,6 +162,36 @@ class OrderManager:
         exchange_class = getattr(ccxt, self.config["exchange"]["name"])
         self.exchange = exchange_class(exchange_config)
 
+    async def _create_order_on_exchange(self, order_params: Dict[str, Any]) -> Dict:
+        """
+        Adapter that calls ccxt.create_order using a safe positional-args first strategy
+        and falling back to keyword-args. This helps support exchanges with different
+        create_order signatures and provides a single place to adapt our internal
+        order dict to ccxt.
+        """
+        symbol = order_params.get("symbol")
+        otype = order_params.get("type") or order_params.get("order_type") or "market"
+        side = order_params.get("side")
+        amount = order_params.get("amount") or order_params.get("size") or 0
+        price = order_params.get("price", None)
+        params = order_params.get("params", {}) or {}
+
+        # Try positional API first (common ccxt signature)
+        try:
+            return await self.exchange.create_order(symbol, otype, side, amount, price, params)
+        except TypeError:
+            # Some adapters accept kwargs - try a kwargs call as a fallback
+            try:
+                return await self.exchange.create_order(
+                    symbol=symbol, type=otype, side=side, amount=amount, price=price, params=params
+                )
+            except Exception:
+                # Re-raise original exception for upstream handling
+                raise
+        except Exception:
+            # Propagate other exceptions (network/exchange errors) to caller
+            raise
+
     async def execute_order(self, signal: Any) -> Optional[Dict[str, Any]]:
         """
         Execute an order based on the trading signal.
@@ -156,17 +203,16 @@ class OrderManager:
         # Safe mode: if activated, do not open new positions
         if getattr(self, "safe_mode_active", False):
             logger.warning("Safe mode active: skipping new order execution", exc_info=False)
-            trade_logger.log_failed_order(signal, "safe_mode_active")
+            trade_logger.log_failed_order(signal_to_dict(signal), "safe_mode_active")
             return {"id": None, "symbol": getattr(signal, "symbol", None), "status": "skipped", "reason": "safe_mode_active"}
 
         # Determine execution path
         try:
-            mode_name = getattr(self.mode, "name", str(self.mode)).lower()
-            if mode_name == "backtest":
+            if self.mode == TradingMode.BACKTEST:
                 return await self._execute_backtest_order(signal)
-            elif mode_name == "paper":
+            elif self.mode == TradingMode.PAPER:
                 return await self._execute_paper_order(signal)
-            else:  # live
+            elif self.mode == TradingMode.LIVE:
                 # For live mode, execute with retry/backoff for network-related errors.
                 try:
                     return await self._retry_async(
@@ -178,13 +224,16 @@ class OrderManager:
                     )
                 except Exception as e:
                     # Increment critical error counter and potentially activate safe mode
-                    self._record_critical_error(e, context={"symbol": getattr(signal, "symbol", None)})
-                    logger.exception("Live order failed after retries")
-                    trade_logger.log_failed_order(signal, str(e))
-                    return None
+                        self._record_critical_error(e, context={"symbol": getattr(signal, "symbol", None)})
+                        logger.exception("Live order failed after retries")
+                        trade_logger.log_failed_order(signal_to_dict(signal), str(e))
+                        return None
+            else:
+                # Unknown mode: treat as paper for safety
+                return await self._execute_paper_order(signal)
         except Exception as e:
             logger.error(f"Order execution failed: {str(e)}", exc_info=True)
-            trade_logger.log_failed_order(signal, str(e))
+            trade_logger.log_failed_order(signal_to_dict(signal), str(e))
             return None
 
     async def _retry_async(
@@ -342,12 +391,13 @@ class OrderManager:
 
         try:
             # Execute the order
-            response = await self.exchange.create_order(**order_params)
+            # Use adapter to call exchange.create_order (positional-first, kwargs fallback)
+            response = await self._create_order_on_exchange(order_params)
             order = self._parse_order_response(response)
 
             # Process the order
             processed_order = await self._process_order(order)
-            trade_logger.log_order(processed_order, self.mode)
+            trade_logger.log_order(processed_order, self.mode_name)
             return processed_order
 
         except (NetworkError, ExchangeError) as e:
@@ -400,7 +450,7 @@ class OrderManager:
                 and signal.trailing_stop.get("price")
                 else None
             ),
-            timestamp=int(time.time() * 1000),
+            timestamp=now_ms(),
         )
 
         # Update paper balance (support per-pair balances when portfolio_mode enabled)
@@ -421,7 +471,10 @@ class OrderManager:
 
         # Process the order
         processed_order = await self._process_order(order)
-        trade_logger.log_order(processed_order, self.mode)
+        trade_logger.log_order(processed_order, self.mode_name)
+        return processed_order
+        processed_order = await self._process_order(order)
+        trade_logger.log_order(processed_order, self.mode_name)
         return processed_order
 
     async def _execute_backtest_order(self, signal: Any) -> Dict[str, Any]:
@@ -463,33 +516,100 @@ class OrderManager:
 
         # Process the order (no balance tracking in backtest). Still record per-pair pnl if portfolio_mode.
         processed_order = await self._process_order(order)
-        trade_logger.log_order(processed_order, self.mode)
+        trade_logger.log_order(processed_order, self.mode_name)
         return processed_order
 
     def _parse_order_response(self, response: Dict) -> Order:
         """
         Parse exchange order response into our Order dataclass.
 
-        Args:
-            response: Raw exchange order response
-
-        Returns:
-            Parsed Order object
+        This parser is tolerant to varying exchange response shapes. It attempts
+        to extract common keys with sensible defaults so downstream code doesn't
+        crash when fields are missing or named differently.
         """
+        # Helper to safely fetch nested/alias keys
+        def _first(*keys, default=None):
+            for k in keys:
+                v = response.get(k)
+                if v is not None:
+                    return v
+            return default
+
+        id_val = _first("id", "orderId", "clientOrderId", default="")
+        symbol = _first("symbol", "market", "market_id", default="")
+        type_raw = _first("type", "order_type", default="market")
+        status_raw = _first("status", "state", "status_code", default="open")
+        amount_raw = _first("amount", "size", "filled", default=0)
+        filled_raw = _first("filled", "filled", "executed", default=0)
+        remaining_raw = _first("remaining", "remaining_amount", default=0)
+        price_raw = _first("price", "cost", default=None)
+        cost_raw = _first("cost", "executed_value", default=0)
+        fee_raw = _first("fee", "fees", default=None)
+        timestamp_raw = _first("timestamp", "datetime", default=now_ms())
+        params = response.get("params") or response.get("info") or {}
+
+        # Normalize enums with safe fallbacks
+        try:
+            otype = OrderType(type_raw) if type_raw is not None else OrderType.MARKET
+        except Exception:
+            # Try to coerce strings like "limit" / "market"
+            try:
+                otype = OrderType(str(type_raw).lower())
+            except Exception:
+                otype = OrderType.MARKET
+
+        try:
+            status = OrderStatus(status_raw) if status_raw is not None else OrderStatus.OPEN
+        except Exception:
+            try:
+                status = OrderStatus(str(status_raw).lower())
+            except Exception:
+                status = OrderStatus.OPEN
+
+        # Parse numeric fields defensively
+        try:
+            amount = Decimal(str(amount_raw))
+        except Exception:
+            try:
+                amount = Decimal(str(filled_raw))
+            except Exception:
+                amount = Decimal(0)
+
+        try:
+            filled = Decimal(str(filled_raw))
+        except Exception:
+            filled = Decimal(0)
+
+        try:
+            remaining = Decimal(str(remaining_raw))
+        except Exception:
+            remaining = Decimal(0)
+
+        try:
+            price = Decimal(str(price_raw)) if price_raw is not None else None
+        except Exception:
+            price = None
+
+        try:
+            cost = Decimal(str(cost_raw)) if cost_raw is not None else Decimal(0)
+        except Exception:
+            cost = Decimal(0)
+
+        # Build Order dataclass safely
         return Order(
-            id=str(response["id"]),
-            symbol=response["symbol"],
-            type=OrderType(response["type"]),
-            side=response["side"],
-            amount=Decimal(str(response["amount"])),
-            price=Decimal(str(response["price"])) if response["price"] else None,
-            status=OrderStatus(response["status"]),
-            filled=Decimal(str(response["filled"])),
-            remaining=Decimal(str(response["remaining"])),
-            cost=Decimal(str(response["cost"])) if response["cost"] else Decimal(0),
-            fee=response.get("fee"),
-            timestamp=response["timestamp"],
-            params=response.get("params"),
+            id=str(id_val),
+            symbol=symbol,
+            type=otype,
+            side=response.get("side") or response.get("direction") or "",
+            amount=amount,
+            price=price,
+            status=status,
+            filled=filled,
+            remaining=remaining,
+            cost=cost,
+            fee=fee_raw,
+            timestamp=to_ms(timestamp_raw) if to_ms(timestamp_raw) is not None else now_ms(),
+            params=params,
         )
 
     async def _process_order(self, order: Order) -> Dict[str, Any]:
@@ -584,7 +704,7 @@ class OrderManager:
             "fee": order.fee,
             "timestamp": order.timestamp,
             "pnl": pnl,
-            "mode": self.mode,
+            "mode": self.mode_name,
         }
         if take_profit_val is not None:
             result["take_profit"] = take_profit_val
@@ -688,7 +808,7 @@ class OrderManager:
 
     async def cancel_order(self, order_id: str) -> bool:
         """Cancel an open order."""
-        if self.mode != "live":
+        if self.mode != TradingMode.LIVE:
             return False
 
         try:
@@ -704,7 +824,7 @@ class OrderManager:
 
     async def cancel_all_orders(self) -> None:
         """Cancel all open orders."""
-        if self.mode != "live":
+        if self.mode != TradingMode.LIVE:
             return
 
         try:
@@ -716,10 +836,10 @@ class OrderManager:
 
     async def get_balance(self) -> Decimal:
         """Get current account balance."""
-        if self.mode == "live":
+        if self.mode == TradingMode.LIVE:
             balance = await self.exchange.fetch_balance()
-            return Decimal(str(balance["total"][self.config["base_currency"]]))
-        elif self.mode == "paper":
+            return Decimal(str(balance["total"].get(self.config.get("base_currency"), 0)))
+        elif self.mode == TradingMode.PAPER:
             if self.portfolio_mode and self.paper_balances:
                 # Aggregate per-pair paper balances
                 total = sum([float(v) for v in self.paper_balances.values()])
@@ -736,13 +856,13 @@ class OrderManager:
         """Get current account equity (balance + unrealized PnL)."""
         balance = await self.get_balance()
 
-        if self.mode == "live":
+        if self.mode == TradingMode.LIVE:
             # For live trading, we'd calculate unrealized PnL from open positions
             # This is a simplified version - real implementation would fetch current prices
             unrealized = Decimal(0)
             for symbol, position in self.positions.items():
                 ticker = await self.exchange.fetch_ticker(symbol)
-                current_price = Decimal(str(ticker["last"]))
+                current_price = Decimal(str(ticker.get("last") or ticker.get("close") or 0))
                 unrealized += (current_price - position["entry_price"]) * position[
                     "amount"
                 ]
@@ -808,7 +928,7 @@ class OrderManager:
         path by constructing a minimal signal dict.
         """
         # Only meaningful in live mode with an initialized exchange
-        if not self.exchange or self.mode != "live":
+        if not self.exchange or self.mode != TradingMode.LIVE:
             return
 
         try:

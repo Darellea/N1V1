@@ -13,7 +13,8 @@ import numpy as np
 import pandas as pd
 
 from risk.risk_manager import RiskManager
-from core.signal_router import TradingSignal, SignalType, SignalStrength, OrderType
+from core.contracts import TradingSignal, SignalType, SignalStrength
+from core.types import OrderType
 
 
 @pytest.fixture

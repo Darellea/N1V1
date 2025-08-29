@@ -4,7 +4,7 @@ import pandas as pd
 from typing import List, Dict
 
 from strategies.base_strategy import BaseStrategy, StrategyConfig
-from core.signal_router import TradingSignal, SignalType, SignalStrength
+from core.contracts import TradingSignal, SignalType, SignalStrength
 
 
 class RSIStrategy(BaseStrategy):

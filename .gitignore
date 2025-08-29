@@ -43,6 +43,7 @@ dist/
 data/
 cache/
 tmp/
+.test_cache/
 *.csv
 *.tsv
 *.jsonl
@@ -78,3 +79,4 @@ secrets.json
 *.rar
 *.tar
 *.gz
+*.md

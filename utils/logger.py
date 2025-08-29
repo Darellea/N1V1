@@ -21,7 +21,11 @@ from pathlib import Path
 import json
 import csv
 
+from utils.time import now_ms, to_ms, to_iso
+
 from colorama import Fore, Back, Style, init as colorama_init
+
+from utils.adapter import signal_to_dict
 
 # Initialize colorama (for Windows support)
 colorama_init(autoreset=True)
@@ -116,10 +120,11 @@ class TradeLogger(logging.Logger):
             self.log(22, msg, *args, **kwargs)
             self._update_performance(metrics)
 
-    def log_signal(self, signal: Dict[str, Any]) -> None:
-        """Log a trading signal (structured)."""
+    def log_signal(self, signal: Any) -> None:
+        """Log a trading signal (structured). Accepts dataclass/objects and dicts."""
         try:
-            self.trade("New trading signal", {"signal": signal})
+            sig = signal if isinstance(signal, dict) else signal_to_dict(signal)
+            self.trade("New trading signal", {"signal": sig})
         except Exception:
             self.exception("Failed to log signal")
 
@@ -132,19 +137,19 @@ class TradeLogger(logging.Logger):
         except Exception:
             self.exception("Failed to log order")
 
-    def log_rejected_signal(self, signal: Dict[str, Any], reason: str) -> None:
-        """Convenience for rejected signal logging."""
+    def log_rejected_signal(self, signal: Any, reason: str) -> None:
+        """Convenience for rejected signal logging. Accepts objects and dicts."""
         try:
-            self.trade(
-                f"Signal rejected: {reason}", {"signal": signal, "reason": reason}
-            )
+            sig = signal if isinstance(signal, dict) else signal_to_dict(signal)
+            self.trade(f"Signal rejected: {reason}", {"signal": sig, "reason": reason})
         except Exception:
             self.exception("Failed to log rejected signal")
 
-    def log_failed_order(self, signal: Dict[str, Any], error: str) -> None:
-        """Convenience for failed order logging."""
+    def log_failed_order(self, signal: Any, error: str) -> None:
+        """Convenience for failed order logging. Accepts objects and dicts."""
         try:
-            self.trade(f"Order failed: {error}", {"signal": signal, "error": error})
+            sig = signal if isinstance(signal, dict) else signal_to_dict(signal)
+            self.trade(f"Order failed: {error}", {"signal": sig, "error": error})
         except Exception:
             self.exception("Failed to log failed order")
 
@@ -188,25 +193,28 @@ class TradeLogger(logging.Logger):
                 )
 
             # Persist to CSV for external analysis (non-blocking best-effort)
-            try:
-                timestamp = trade_data.get(
-                    "timestamp",
-                    datetime.utcnow().isoformat(),
-                )
-                row = [
-                    timestamp,
-                    trade_data.get("pair", ""),
-                    trade_data.get("action", trade_data.get("side", "")),
-                    trade_data.get("size", ""),
-                    trade_data.get("entry_price", ""),
-                    trade_data.get("exit_price", ""),
-                    pnl,
-                ]
-                with open(self.trade_csv, "a", newline="", encoding="utf-8") as csvfile:
-                    writer = csv.writer(csvfile)
-                    writer.writerow(row)
-            except Exception:
-                self.exception("Failed to write trade to CSV")
+                try:
+                    # Prefer provided timestamp; default to now (ms)
+                    timestamp = trade_data.get("timestamp", now_ms())
+
+                    # Normalize for CSV output: convert to ISO string using ms normalization
+                    ts_ms = to_ms(timestamp)
+                    csv_ts = to_iso(ts_ms if ts_ms is not None else now_ms())
+
+                    row = [
+                        csv_ts,
+                        trade_data.get("pair", ""),
+                        trade_data.get("action", trade_data.get("side", "")),
+                        trade_data.get("size", ""),
+                        trade_data.get("entry_price", ""),
+                        trade_data.get("exit_price", ""),
+                        pnl,
+                    ]
+                    with open(self.trade_csv, "a", newline="", encoding="utf-8") as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow(row)
+                except Exception:
+                    self.exception("Failed to write trade to CSV")
 
         except Exception:
             self.exception("Failed to record trade")
@@ -225,6 +233,28 @@ class TradeLogger(logging.Logger):
     def display_performance(self) -> Dict[str, Any]:
         """Return a snapshot of performance statistics."""
         return self.performance_stats.copy()
+
+    def get_trade_history(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Return the most recent trades, up to `limit`.
+        Newer trades are returned first.
+        """
+        try:
+            if limit is None or limit <= 0:
+                return list(self.trades[:])
+            # return most recent trades first
+            return list(reversed(self.trades))[:limit]
+        except Exception:
+            self.exception("Failed to get trade history")
+            return []
+
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Compatibility wrapper expected by notifier and other modules."""
+        try:
+            return self.display_performance()
+        except Exception:
+            self.exception("Failed to get performance stats")
+            return {}
 
 
 # Register custom log levels for TRADE and PERF

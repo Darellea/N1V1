@@ -13,7 +13,8 @@ import numpy as np
 from datetime import datetime
 
 from strategies.base_strategy import BaseStrategy, StrategyConfig
-from core.signal_router import TradingSignal, SignalType, SignalStrength, OrderType
+from core.contracts import TradingSignal, SignalType, SignalStrength
+from core.types import OrderType
 from data.data_fetcher import DataFetcher
 from decimal import Decimal
 from strategies.mixins import TrendAnalysisMixin, VolatilityAnalysisMixin

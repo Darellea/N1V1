@@ -7,7 +7,7 @@ Supports both webhook-based notifications and interactive bot functionality.
 
 import logging
 import asyncio
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 from datetime import datetime
 import json
 
@@ -28,11 +28,12 @@ except Exception:
     commands = None
 import aiohttp
 
-from utils.logger import TradeLogger
+from utils.logger import get_trade_logger
 from utils.config_loader import get_config
+from utils.adapter import signal_to_dict
 
 logger = logging.getLogger(__name__)
-trade_logger = TradeLogger()
+trade_logger = get_trade_logger()
 
 
 class DiscordNotifier:
@@ -274,12 +275,12 @@ class DiscordNotifier:
             message=f"New trade executed: {trade_data['symbol']}", embed_data=embed
         )
 
-    async def send_signal_alert(self, signal_data: Dict) -> bool:
+    async def send_signal_alert(self, signal_data: Any) -> bool:
         """
         Send a trading signal alert.
 
         Args:
-            signal_data: Dictionary of signal data
+            signal_data: Signal object or dictionary
 
         Returns:
             True if notification was sent successfully
@@ -287,35 +288,38 @@ class DiscordNotifier:
         if not self.alerts_enabled:
             return False
 
+        # Normalize incoming signal objects (dataclass/objects) into plain dicts
+        sig = signal_data if isinstance(signal_data, dict) else signal_to_dict(signal_data)
+
         embed = {
             "title": "📡 New Trading Signal",
             "color": 0x0000FF,
             "fields": [
-                {"name": "Symbol", "value": signal_data["symbol"], "inline": True},
-                {"name": "Type", "value": signal_data["signal_type"], "inline": True},
+                {"name": "Symbol", "value": sig.get("symbol", "N/A"), "inline": True},
+                {"name": "Type", "value": sig.get("signal_type", "N/A"), "inline": True},
                 {
                     "name": "Strength",
-                    "value": signal_data.get("strength", "N/A"),
+                    "value": sig.get("strength", "N/A"),
                     "inline": True,
                 },
                 {
                     "name": "Price",
-                    "value": f"{signal_data.get('price', 'N/A')}",
+                    "value": f"{sig.get('price', 'N/A')}",
                     "inline": True,
                 },
                 {
                     "name": "Amount",
-                    "value": f"{signal_data.get('amount', 'N/A')}",
+                    "value": f"{sig.get('amount', 'N/A')}",
                     "inline": True,
                 },
                 {
                     "name": "Stop Loss",
-                    "value": f"{signal_data.get('stop_loss', 'N/A')}",
+                    "value": f"{sig.get('stop_loss', 'N/A')}",
                     "inline": True,
                 },
                 {
                     "name": "Take Profit",
-                    "value": f"{signal_data.get('take_profit', 'N/A')}",
+                    "value": f"{sig.get('take_profit', 'N/A')}",
                     "inline": True,
                 },
             ],
@@ -324,7 +328,7 @@ class DiscordNotifier:
         }
 
         return await self.send_notification(
-            message=f"New signal generated: {signal_data['symbol']}", embed_data=embed
+            message=f"New signal generated: {sig.get('symbol', 'N/A')}", embed_data=embed
         )
 
     async def send_error_alert(self, error_data: Dict) -> bool:

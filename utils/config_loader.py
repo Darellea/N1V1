@@ -13,6 +13,7 @@ import json
 import logging
 from typing import Dict, Any, Optional
 from pathlib import Path
+import copy
 from dotenv import load_dotenv
 import jsonschema
 from pydantic import BaseModel, ValidationError
@@ -133,6 +134,11 @@ class ConfigLoader:
             "max_size": 10485760,
             "backup_count": 5,
         },
+        "ml": {
+            "enabled": False,
+            "model_path": "models/lightgbm_model.pkl",
+            "confidence_threshold": 0.6
+        },
     }
 
     CONFIG_SCHEMA = {
@@ -180,13 +186,22 @@ class ConfigLoader:
                     },
                 },
             },
+            "ml": {
+                "type": "object",
+                "properties": {
+                    "enabled": {"type": "boolean"},
+                    "model_path": {"type": "string"},
+                    "confidence_threshold": {"type": "number", "minimum": 0.0, "maximum": 1.0}
+                }
+            },
         },
         "required": ["environment", "exchange"],
     }
 
     def __init__(self):
         """Initialize the config loader."""
-        self._config = self.DEFAULT_CONFIG.copy()
+        # Use a deep copy to avoid accidental shared references between DEFAULT_CONFIG and runtime config
+        self._config = copy.deepcopy(self.DEFAULT_CONFIG)
         self._original_config = None
         self._env_prefix = "CRYPTOBOT_"
 
@@ -214,8 +229,8 @@ class ConfigLoader:
             # Validate the final config
             self._validate_config()
 
-            # Keep original for reference
-            self._original_config = self._config.copy()
+            # Keep original for reference (deep copy to preserve full structure)
+            self._original_config = copy.deepcopy(self._config)
 
             logger.info("Configuration loaded successfully")
             return self._config
@@ -249,6 +264,10 @@ class ConfigLoader:
     ) -> Dict[str, Any]:
         """Flatten nested configuration dictionary.
 
+        Enhancements:
+        - Preserves whole-list entries at their parent key (so env overrides can target entire lists)
+        - Also exposes indexed list elements (key.0, key.1, ...) for fine-grained overrides when useful
+
         Args:
             config: Nested configuration dictionary.
             parent_key: Internal use for recursion to build dot-separated keys.
@@ -261,21 +280,63 @@ class ConfigLoader:
             new_key = f"{parent_key}.{key}" if parent_key else key
             if isinstance(value, dict):
                 items.update(self._flatten_config(value, new_key))
+            elif isinstance(value, list):
+                # Expose the whole list under the parent key (useful for JSON env overrides)
+                items[new_key] = value
+                # Also expose indexed entries for convenience
+                for i, v in enumerate(value):
+                    idx_key = f"{new_key}.{i}"
+                    if isinstance(v, dict):
+                        items.update(self._flatten_config(v, idx_key))
+                    else:
+                        items[idx_key] = v
             else:
                 items[new_key] = value
         return items
 
     def _set_config_value(self, key_path: str, value: Any) -> None:
-        """Set a value in the nested config using dot notation."""
+        """Set a value in the nested config using dot notation.
+
+        This implementation supports:
+        - dict traversal/creation for missing keys
+        - setting entire lists (when env value is JSON array)
+        - indexed list assignment when key path contains numeric segments (e.g., 'pairs.0.symbol')
+        """
         keys = key_path.split(".")
         current = self._config
 
         for key in keys[:-1]:
-            if key not in current:
-                current[key] = {}
-            current = current[key]
+            # Handle numeric index into a list
+            if key.isdigit():
+                idx = int(key)
+                if isinstance(current, list):
+                    # Ensure list is large enough
+                    while len(current) <= idx:
+                        current.append({})
+                    current = current[idx]
+                else:
+                    # If current is a dict and the digit key is unexpected, create a list placeholder
+                    # under this key so later assignment can proceed. This is a pragmatic fallback.
+                    if key not in current or not isinstance(current.get(key), list):
+                        current[key] = []
+                    current = current[key]
+            else:
+                if key not in current or not isinstance(current[key], (dict, list)):
+                    current[key] = {}
+                current = current[key]
 
-        current[keys[-1]] = value
+        last = keys[-1]
+        if last.isdigit():
+            idx = int(last)
+            if isinstance(current, list):
+                while len(current) <= idx:
+                    current.append(None)
+                current[idx] = value
+            else:
+                # If current is a dict, fallback to using the string key
+                current[last] = value
+        else:
+            current[last] = value
 
     def _validate_config(self) -> None:
         """Validate configuration against schema and models."""
@@ -326,7 +387,8 @@ class ConfigLoader:
     def reset(self) -> None:
         """Reset configuration to originally loaded values."""
         if self._original_config:
-            self._config = self._original_config.copy()
+            # Use deep copy to avoid sharing mutable references with the stored original
+            self._config = copy.deepcopy(self._original_config)
             logger.info("Configuration reset to original values")
 
     def mask_sensitive(self, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -339,7 +401,8 @@ class ConfigLoader:
         Returns:
             Masked configuration dictionary
         """
-        cfg: Dict[str, Any] = (config or self._config).copy()
+        # Use deepcopy to avoid mutating original structures
+        cfg: Dict[str, Any] = copy.deepcopy(config or self._config)
         sensitive_keys = ["api_key", "api_secret", "api_passphrase", "password"]
 
         def mask_dict(d: Dict[str, Any]) -> Dict[str, Any]:

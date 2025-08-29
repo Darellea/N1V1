@@ -14,13 +14,15 @@ import math
 import numpy as np
 import pandas as pd
 import time
+from utils.time import now_ms, to_ms
 
-from core.signal_router import TradingSignal
+from core.contracts import TradingSignal
 from utils.config_loader import ConfigLoader
-from utils.logger import TradeLogger
+from utils.logger import get_trade_logger
+from utils.adapter import signal_to_dict
 
 logger = logging.getLogger(__name__)
-trade_logger = TradeLogger()
+trade_logger = get_trade_logger()
 
 # Set decimal precision
 getcontext().prec = 28  # keep high precision to avoid quantize errors
@@ -130,14 +132,14 @@ class RiskManager:
 
             # Validate stop loss if required
             if self.require_stop_loss and not signal.stop_loss:
-                trade_logger.log_rejected_signal(signal, "missing_stop_loss")
+                trade_logger.log_rejected_signal(signal_to_dict(signal), "missing_stop_loss")
                 return False
 
             # Calculate position size if not provided
             if not hasattr(signal, "amount") or signal.amount <= 0:
                 signal.amount = await self.calculate_position_size(signal, market_data)
                 if signal.amount <= 0:
-                    trade_logger.log_rejected_signal(signal, "zero_position_size")
+                    trade_logger.log_rejected_signal(signal_to_dict(signal), "zero_position_size")
                     return False
 
                 # Enforce a cap based on max_position_size (as a fraction of account balance).
@@ -170,7 +172,7 @@ class RiskManager:
 
         except Exception as e:
             logger.error(f"Error evaluating signal: {str(e)}", exc_info=True)
-            trade_logger.log_rejected_signal(signal, f"error: {str(e)}")
+            trade_logger.log_rejected_signal(signal_to_dict(signal), f"error: {str(e)}")
             return False
 
     async def calculate_position_size(
@@ -355,11 +357,11 @@ class RiskManager:
     async def _validate_signal_basics(self, signal: TradingSignal) -> bool:
         """Validate basic signal properties."""
         if not signal or not signal.symbol:
-            trade_logger.log_rejected_signal(signal, "invalid_signal")
+            trade_logger.log_rejected_signal(signal_to_dict(signal), "invalid_signal")
             return False
 
         if not signal.signal_type or not signal.order_type:
-            trade_logger.log_rejected_signal(signal, "missing_type")
+            trade_logger.log_rejected_signal(signal_to_dict(signal), "missing_type")
             return False
 
         return True
@@ -370,14 +372,14 @@ class RiskManager:
         if self.today_start_balance and self.today_pnl < 0:
             drawdown_pct = abs(self.today_pnl) / self.today_start_balance
             if drawdown_pct >= self.max_daily_loss:
-                trade_logger.log_rejected_signal(signal, "daily_loss_limit")
+                trade_logger.log_rejected_signal(signal_to_dict(signal), "daily_loss_limit")
                 return False
 
         # Check maximum concurrent positions
         current_positions = await self._get_current_positions()
         max_positions = self.config.get("max_concurrent_trades", 5)
         if len(current_positions) >= max_positions:
-            trade_logger.log_rejected_signal(signal, "max_positions")
+            trade_logger.log_rejected_signal(signal_to_dict(signal), "max_positions")
             return False
 
         return True
@@ -388,7 +390,7 @@ class RiskManager:
         position_size_pct = Decimal(str(signal.amount)) / account_balance
 
         if position_size_pct > self.max_position_size:
-            trade_logger.log_rejected_signal(signal, "position_too_large")
+            trade_logger.log_rejected_signal(signal_to_dict(signal), "position_too_large")
             return False
 
         return True
@@ -407,7 +409,7 @@ class RiskManager:
 
         self.symbol_volatility[symbol] = {
             "volatility": float(volatility),
-            "last_updated": time.time(),
+            "last_updated": now_ms(),
         }
 
     async def _get_current_balance(self) -> Decimal:
@@ -455,9 +457,13 @@ class RiskManager:
                 logger.exception("Invalid pnl value provided to update_trade_outcome")
                 return
 
-        # Normalize timestamp
+        # Normalize timestamp (store as epoch milliseconds)
         if timestamp is None:
-            timestamp = int(time.time())
+            timestamp = now_ms()
+        else:
+            # Normalize any provided timestamp to ms if possible
+            normalized = to_ms(timestamp)
+            timestamp = normalized if normalized is not None else now_ms()
 
         # Update loss/win streak per symbol
         prev_streak = int(self.loss_streaks.get(symbol, 0))

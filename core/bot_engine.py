@@ -7,10 +7,10 @@ Handles the main event loop, mode switching, and module coordination.
 
 import asyncio
 import logging
-import time
+from utils.time import now_ms, to_ms, to_iso
 from typing import Dict, Optional, List, Any
 from dataclasses import dataclass
-from enum import Enum, auto
+from core.types import TradingMode
 
 import numpy as np
 
@@ -32,12 +32,6 @@ console = Console()
 logger = logging.getLogger(__name__)
 
 
-class TradingMode(Enum):
-    """Enum representing different trading modes."""
-
-    LIVE = auto()
-    PAPER = auto()
-    BACKTEST = auto()
 
 
 @dataclass
@@ -168,7 +162,7 @@ class BotEngine:
             )
         except Exception:
             self.starting_balance = 1000.0
-        self.signal_router = SignalRouter()
+        self.signal_router = SignalRouter(self.risk_manager)
 
         # Initialize strategies
         await self._initialize_strategies()
@@ -438,8 +432,8 @@ class BotEngine:
                 current_equity = self.state.equity or 0.0
 
             # Normalize values
-            trade_id = order_result.get("id", f"trade_{int(time.time() * 1000)}")
-            timestamp = order_result.get("timestamp", int(time.time() * 1000))
+            trade_id = order_result.get("id", f"trade_{now_ms()}")
+            timestamp = order_result.get("timestamp", now_ms())
             pnl = order_result.get("pnl", None)
             # coerce current_equity safely
             try:
@@ -478,9 +472,14 @@ class BotEngine:
             except Exception:
                 cumulative_return = 0.0
 
+            # Normalize trade_id and timestamp.
+            # Preserve any explicit timestamp provided by the caller (do not coerce).
+            trade_id = order_result.get("id", f"trade_{now_ms()}")
+            ts_raw = order_result.get("timestamp", now_ms())
+
             record: Dict[str, Any] = {
                 "trade_id": trade_id,
-                "timestamp": timestamp,
+                "timestamp": ts_raw,
                 "symbol": order_result.get("symbol") if isinstance(order_result, dict) else None,
                 "equity": equity_val,
                 "pnl": pnl,

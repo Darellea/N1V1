@@ -17,7 +17,7 @@ import numpy as np
 from decimal import Decimal
 from typing import Any
 
-from core.signal_router import TradingSignal, SignalType, SignalStrength
+from core.contracts import TradingSignal, SignalType, SignalStrength
 from core.types import OrderType
 from data.data_fetcher import DataFetcher
 

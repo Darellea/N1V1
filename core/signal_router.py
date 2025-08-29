@@ -14,19 +14,24 @@ import asyncio
 import random
 import time
 from typing import List, Dict, Optional, Callable, Any
-from dataclasses import dataclass
-from enum import Enum, auto
 from decimal import Decimal
+import pandas as pd
+from core.contracts import TradingSignal, SignalType, SignalStrength
 
-from utils.logger import TradeLogger
+from utils.logger import get_trade_logger
 from core.types import OrderType  # Backward-compatible export: tests expect OrderType here
 from typing import TYPE_CHECKING
+from utils.adapter import signal_to_dict
+
+# ML integration
+from utils.config_loader import get_config
+from ml.model_loader import load_model, predict as ml_predict
 
 if TYPE_CHECKING:
     from risk.risk_manager import RiskManager
 
 logger = logging.getLogger(__name__)
-trade_logger = TradeLogger()
+trade_logger = get_trade_logger()
 
 # Error / category codes for structured logs
 ERROR_NETWORK = "NETWORK_ERROR"
@@ -36,72 +41,10 @@ ERROR_VALIDATION = "VALIDATION_ERROR"
 ERROR_RISK = "RISK_MANAGER_ERROR"
 
 
-class SignalType(Enum):
-    """Types of trading signals."""
-
-    ENTRY_LONG = auto()
-    ENTRY_SHORT = auto()
-    EXIT_LONG = auto()
-    EXIT_SHORT = auto()
-    STOP_LOSS = auto()
-    TAKE_PROFIT = auto()
-    TRAILING_STOP = auto()
 
 
-class SignalStrength(Enum):
-    """Signal strength levels."""
-
-    WEAK = 1
-    MODERATE = 2
-    STRONG = 3
-    EXTREME = 4
 
 
-@dataclass
-class TradingSignal:
-    """
-    Dataclass representing a trading signal.
-
-    Attributes:
-        strategy_id: ID of the strategy that generated the signal
-        symbol: Trading pair symbol (e.g., 'BTC/USDT')
-        signal_type: Type of signal (entry/exit/etc.)
-        signal_strength: Strength of the signal
-        order_type: Type of order to execute
-        amount: Size of the position (in base currency)
-        price: Target price for limit orders
-        current_price: Current market price when signal was generated
-        timestamp: Time when signal was generated (ms)
-        stop_loss: Stop loss price (optional)
-        take_profit: Take profit price (optional)
-        trailing_stop: Trailing stop config (optional)
-        metadata: Additional strategy-specific data
-    """
-
-    strategy_id: str
-    symbol: str
-    signal_type: SignalType
-    signal_strength: SignalStrength
-    order_type: Any
-    amount: Decimal
-    price: Optional[Decimal] = None
-    current_price: Optional[Decimal] = None
-    timestamp: int = 0
-    stop_loss: Optional[Decimal] = None
-    take_profit: Optional[Decimal] = None
-    trailing_stop: Optional[Dict] = None
-    metadata: Optional[Dict] = None
-
-    def __post_init__(self):
-        """Set timestamp if not provided."""
-        if not self.timestamp:
-            self.timestamp = int(time.time() * 1000)
-
-    def copy(self):
-        """Return a shallow copy of this TradingSignal (tests expect .copy())."""
-        from dataclasses import replace
-
-        return replace(self)
 
 
 class SignalRouter:
@@ -147,6 +90,24 @@ class SignalRouter:
         self.safe_mode_threshold = int(safe_mode_threshold)
         self.block_signals = False
 
+        # ML integration: attempt to load ML confirmation model from config (if configured)
+        try:
+            ml_cfg = get_config("ml", {})
+            self.ml_enabled = bool(ml_cfg.get("enabled", False))
+            self.ml_model = None
+            self.ml_confidence_threshold = float(ml_cfg.get("confidence_threshold", 0.6))
+            ml_path = ml_cfg.get("model_path")
+            if self.ml_enabled and ml_path:
+                try:
+                    self.ml_model = load_model(ml_path)
+                    logger.info(f"ML model loaded for signal confirmation: {ml_path}")
+                except Exception as e:
+                    self.ml_enabled = False
+                    logger.warning(f"Failed to load ML model at {ml_path}: {e}")
+        except Exception:
+            # If config not loaded or any error occurs, disable ML integration gracefully
+            self.ml_enabled = False
+
     async def process_signal(self, signal: TradingSignal, market_data: Dict = None) -> Optional[TradingSignal]:
         """
         Process and validate a trading signal.
@@ -161,18 +122,18 @@ class SignalRouter:
         # If router is in blocking state, reject quickly
         if self.block_signals:
             logger.warning("SignalRouter is currently blocking new signals due to repeated errors")
-            trade_logger.log_rejected_signal(signal, "router_blocking")
+            trade_logger.log_rejected_signal(signal_to_dict(signal), "router_blocking")
             return None
 
         # 1. Validate basic signal properties
         try:
             if not self._validate_signal(signal):
                 logger.debug("Signal validation failed", exc_info=False)
-                trade_logger.log_rejected_signal(signal, ERROR_VALIDATION)
+                trade_logger.log_rejected_signal(signal_to_dict(signal), ERROR_VALIDATION)
                 return None
         except Exception as e:
             logger.exception("Unexpected error during signal validation")
-            trade_logger.log_rejected_signal(signal, ERROR_VALIDATION)
+            trade_logger.log_rejected_signal(signal_to_dict(signal), ERROR_VALIDATION)
             # don't escalate further
             return None
 
@@ -186,7 +147,7 @@ class SignalRouter:
         except Exception as e:
             logger.exception("Error while resolving signal conflicts")
             # Log and reject this signal to avoid unexpected behavior
-            trade_logger.log_rejected_signal(signal, "conflict_resolution_error")
+            trade_logger.log_rejected_signal(signal_to_dict(signal), "conflict_resolution_error")
             return None
 
         # 3. Apply risk management checks with retry/backoff
@@ -201,24 +162,119 @@ class SignalRouter:
             )
             if not approved:
                 logger.info("Signal rejected by RiskManager")
-                trade_logger.log_rejected_signal(signal, "risk_check")
+                trade_logger.log_rejected_signal(signal_to_dict(signal), "risk_check")
                 return None
         except Exception as e:
             # Record critical error and possibly block further signals temporarily
             self._record_router_error(e, context={"symbol": getattr(signal, "symbol", None)})
             logger.exception("Risk manager evaluation failed after retries")
-            trade_logger.log_rejected_signal(signal, ERROR_RISK)
+            trade_logger.log_rejected_signal(signal_to_dict(signal), ERROR_RISK)
             return None
 
-        # 4. Finalize and store the signal
+        # 4. ML confirmation layer (optional)
+        try:
+            if self.ml_enabled and self.ml_model and signal.signal_type in {SignalType.ENTRY_LONG, SignalType.ENTRY_SHORT}:
+                features_df = None
+                # Try to extract features from market_data
+                try:
+                    if market_data and isinstance(market_data, dict):
+                        f = market_data.get("features") or market_data.get("feature_row") or market_data.get("features_df")
+                        if f is not None:
+                            if isinstance(f, pd.DataFrame):
+                                features_df = f
+                            elif isinstance(f, dict):
+                                features_df = pd.DataFrame([f])
+                            else:
+                                try:
+                                    features_df = pd.DataFrame([f])
+                                except Exception:
+                                    features_df = None
+                        if features_df is None and "ohlcv" in market_data:
+                            try:
+                                ohlcv = market_data.get("ohlcv")
+                                features_df = pd.DataFrame([ohlcv]) if ohlcv is not None else None
+                            except Exception:
+                                features_df = None
+                    # Fallback to features in signal metadata
+                    if features_df is None and getattr(signal, "metadata", None):
+                        m = signal.metadata.get("features") if isinstance(signal.metadata, dict) else None
+                        if m is not None:
+                            if isinstance(m, pd.DataFrame):
+                                features_df = m
+                            elif isinstance(m, dict):
+                                features_df = pd.DataFrame([m])
+                            else:
+                                try:
+                                    features_df = pd.DataFrame([m])
+                                except Exception:
+                                    features_df = None
+                except Exception:
+                    features_df = None
+
+                if features_df is None or features_df.empty:
+                    logger.info("ML confirmation skipped: no feature row available")
+                else:
+                    # ensure single-row input (use most recent / last row)
+                    if isinstance(features_df, pd.DataFrame) and len(features_df) > 1:
+                        features_df = features_df.iloc[[-1]]
+                    try:
+                        ml_out = ml_predict(self.ml_model, features_df)
+                        ml_pred = ml_out.iloc[0]["prediction"]
+                        ml_conf = float(ml_out.iloc[0].get("confidence", 0.0))
+                    except Exception as e:
+                        logger.warning(f"ML prediction failed: {e}")
+                        ml_pred = None
+                        ml_conf = 0.0
+
+                    # Determine desired direction from signal
+                    desired = 1 if signal.signal_type == SignalType.ENTRY_LONG else -1
+                    sig_text = "BUY" if desired == 1 else "SELL"
+                    ml_text = "UNK"
+                    if ml_pred == 1:
+                        ml_text = "BUY"
+                    elif ml_pred == -1:
+                        ml_text = "SELL"
+                    elif ml_pred == 0:
+                        ml_text = "HOLD"
+
+                    decision = "ACCEPT"
+                    # Apply confirmation rules only when ML returned a prediction
+                    if ml_pred is not None:
+                        if ml_conf >= self.ml_confidence_threshold:
+                            if ml_pred == desired:
+                                decision = "ACCEPT"
+                            else:
+                                # ML disagrees: reduce strength or reject if already weak
+                                if signal.signal_strength == SignalStrength.WEAK:
+                                    decision = "REJECT"
+                                else:
+                                    # degrade strength by one level
+                                    try:
+                                        new_value = max(SignalStrength.WEAK.value, signal.signal_strength.value - 1)
+                                        signal.signal_strength = SignalStrength(new_value)
+                                        decision = "REDUCE"
+                                    except Exception:
+                                        decision = "REDUCE"
+                        else:
+                            decision = "NO_ML"  # low-confidence ML -> ignore ML
+                    # Log combined decision
+                    logger.info(f"Signal: {sig_text} | ML: {ml_text} ({ml_conf:.2f} confidence) → Decision: {decision}")
+                    trade_logger.trade("ML confirmation", {"signal": sig_text, "ml": ml_text, "confidence": ml_conf, "decision": decision})
+                    if decision == "REJECT":
+                        trade_logger.log_rejected_signal(signal_to_dict(signal), "ml_reject")
+                        return None
+        except Exception:
+            logger.exception("ML confirmation step failed; proceeding with indicator-only decision")
+
+        # 5. Finalize and store the signal
         try:
             self._store_signal(signal)
             logger.info(f"Signal approved: {signal}")
-            trade_logger.log_signal(signal.__dict__ if hasattr(signal, "__dict__") else {"signal": str(signal)})
+            trade_logger.log_signal(signal_to_dict(signal))
             return signal
         except Exception as e:
             logger.exception("Failed to store approved signal")
-            trade_logger.log_rejected_signal(signal, "store_failed")
+            trade_logger.log_rejected_signal(signal_to_dict(signal), "store_failed")
             return None
 
     def _validate_signal(self, signal: TradingSignal) -> bool:
