@@ -16,12 +16,132 @@ import time
 from typing import List, Dict, Optional, Callable, Any
 from decimal import Decimal
 import pandas as pd
+import json
+from pathlib import Path
+from utils.time import now_ms
 from core.contracts import TradingSignal, SignalType, SignalStrength
 
 from utils.logger import get_trade_logger
 from core.types import OrderType  # Backward-compatible export: tests expect OrderType here
 from typing import TYPE_CHECKING
 from utils.adapter import signal_to_dict
+
+# Lightweight async journal writer (best-effort, no extra deps)
+class JournalWriter:
+    """
+    Simple append-only JSONL writer that offloads disk I/O to an asyncio
+    background task. Designed to be best-effort: if no running event loop
+    is available it falls back to synchronous writes.
+    """
+
+    def __init__(self, path: Path):
+        self.path: Path = Path(path)
+        self._queue: "asyncio.Queue" = asyncio.Queue()
+        self._task: Optional[asyncio.Task] = None
+
+    def _ensure_task(self) -> None:
+        """
+        Ensure the background worker task is running. If called from a thread
+        without a running loop, this will be deferred until append() sees a
+        running loop and schedules the worker.
+        """
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                if not self._task or self._task.done():
+                    # Create the worker task on the running loop
+                    self._task = loop.create_task(self._worker())
+        except Exception:
+            # No running loop; worker will be lazily started when possible
+            pass
+
+    async def _worker(self) -> None:
+        try:
+            while True:
+                entry = await self._queue.get()
+                if entry is None:
+                    # sentinel to stop
+                    break
+                try:
+                    self.path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(self.path, "a", encoding="utf-8") as f:
+                        f.write(json.dumps(entry, default=str) + "\n")
+                except Exception:
+                    logger.exception("JournalWriter failed to write entry")
+        except asyncio.CancelledError:
+            pass
+
+    def append(self, entry: Dict) -> None:
+        """
+        Enqueue an entry for background writing. This method is synchronous
+        and safe to call from non-async code; it will fall back to a
+        synchronous write if no running loop is available.
+        """
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            # No event loop in this thread: write synchronously as a best-effort fallback
+            try:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                with open(self.path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(entry, default=str) + "\n")
+            except Exception:
+                logger.exception("JournalWriter failed to write entry (sync fallback)")
+            return
+
+        # If loop is running, ensure worker is started and push to queue thread-safely
+        if loop.is_running():
+            # lazily create the worker on the running loop if needed
+            if not self._task or self._task.done():
+                try:
+                    loop.call_soon_threadsafe(lambda: asyncio.create_task(self._worker()))
+                except Exception:
+                    # fallback to synchronous write
+                    try:
+                        self.path.parent.mkdir(parents=True, exist_ok=True)
+                        with open(self.path, "a", encoding="utf-8") as f:
+                            f.write(json.dumps(entry, default=str) + "\n")
+                    except Exception:
+                        logger.exception("JournalWriter failed to write entry (fallback)")
+                    return
+            # enqueue without awaiting
+            try:
+                loop.call_soon_threadsafe(self._queue.put_nowait, entry)
+            except Exception:
+                # final fallback to synchronous write
+                try:
+                    self.path.parent.mkdir(parents=True, exist_ok=True)
+                    with open(self.path, "a", encoding="utf-8") as f:
+                        f.write(json.dumps(entry, default=str) + "\n")
+                except Exception:
+                    logger.exception("JournalWriter failed to write entry (fallback)")
+        else:
+            # No running loop - synchronous write
+            try:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                with open(self.path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(entry, default=str) + "\n")
+            except Exception:
+                logger.exception("JournalWriter failed to write entry (no-loop fallback)")
+
+    async def stop(self) -> None:
+        """
+        Stop the background worker, flush pending entries and wait for the task
+        to finish. Best-effort: will not raise on failure.
+        """
+        try:
+            # Put sentinel and wait for the worker to consume it
+            try:
+                await self._queue.put(None)
+            except Exception:
+                pass
+            if self._task:
+                try:
+                    await self._task
+                except Exception:
+                    pass
+        except Exception:
+            logger.exception("Error while stopping JournalWriter")
 
 # ML integration
 from utils.config_loader import get_config
@@ -89,6 +209,9 @@ class SignalRouter:
         self.critical_errors = 0
         self.safe_mode_threshold = int(safe_mode_threshold)
         self.block_signals = False
+        self._lock = asyncio.Lock()
+        # Per-symbol locks to allow concurrent processing across different symbols
+        self._symbol_locks: Dict[str, asyncio.Lock] = {}
 
         # ML integration: attempt to load ML confirmation model from config (if configured)
         try:
@@ -107,6 +230,26 @@ class SignalRouter:
         except Exception:
             # If config not loaded or any error occurs, disable ML integration gracefully
             self.ml_enabled = False
+
+        # Optional append-only signal journal for recovery (best-effort).
+        try:
+            journal_cfg = get_config("journal", {})
+            self.journal_path = Path(journal_cfg.get("path", "logs/signal_journal.jsonl"))
+            self.journal_path.parent.mkdir(parents=True, exist_ok=True)
+            self._journal_enabled = bool(journal_cfg.get("enabled", False))
+            # Journal writer (async background writer, best-effort). It will lazily
+            # start background worker when the first entry is appended.
+            self._journal_writer = JournalWriter(self.journal_path)
+            # Replay journal only when explicitly enabled.
+            if self._journal_enabled:
+                try:
+                    self.recover_from_journal()
+                except Exception:
+                    # If recover fails, disable journal to avoid further issues
+                    self._journal_enabled = False
+        except Exception:
+            self._journal_enabled = False
+            self._journal_writer = None
 
     async def process_signal(self, signal: TradingSignal, market_data: Dict = None) -> Optional[TradingSignal]:
         """
@@ -137,144 +280,150 @@ class SignalRouter:
             # don't escalate further
             return None
 
-        # 2. Check for signal conflicts
+        # 2-5. Per-symbol serialization: acquire a symbol-specific lock to avoid races
         try:
-            conflicting = self._check_signal_conflicts(signal)
-            if conflicting:
-                signal = self._resolve_conflicts(signal, conflicting)
-                if not signal:
+            symbol = getattr(signal, "symbol", None)
+            symbol_lock = await self._get_symbol_lock(symbol)
+            async with symbol_lock:
+                # Re-check validation in case state changed (defensive)
+                if not self._validate_signal(signal):
+                    trade_logger.log_rejected_signal(signal_to_dict(signal), ERROR_VALIDATION)
+                    return None
+
+                # Check & resolve conflicts while holding the symbol lock to guarantee
+                # at-most-one active signal per symbol during concurrent processing.
+                conflicting = self._check_signal_conflicts(signal)
+                if conflicting:
+                    signal = await self._resolve_conflicts(signal, conflicting)
+                    if not signal:
+                        return None
+
+                # Apply risk manager checks (still under symbol lock to avoid races)
+                try:
+                    approved = await self._retry_async_call(
+                        lambda: self.risk_manager.evaluate_signal(signal, market_data),
+                        retries=self.retry_config["max_retries"],
+                        base_backoff=self.retry_config["backoff_base"],
+                        max_backoff=self.retry_config["max_backoff"],
+                    )
+                    if not approved:
+                        logger.info("Signal rejected by RiskManager")
+                        trade_logger.log_rejected_signal(signal_to_dict(signal), "risk_check")
+                        return None
+                except Exception as e:
+                    await self._record_router_error(e, context={"symbol": getattr(signal, "symbol", None)})
+                    logger.exception("Risk manager evaluation failed after retries")
+                    trade_logger.log_rejected_signal(signal_to_dict(signal), ERROR_RISK)
+                    return None
+
+                # ML confirmation (optional)
+                try:
+                    if self.ml_enabled and self.ml_model and signal.signal_type in {SignalType.ENTRY_LONG, SignalType.ENTRY_SHORT}:
+                        features_df = None
+                        # Try to extract features from market_data
+                        try:
+                            if market_data and isinstance(market_data, dict):
+                                f = market_data.get("features") or market_data.get("feature_row") or market_data.get("features_df")
+                                if f is not None:
+                                    if isinstance(f, pd.DataFrame):
+                                        features_df = f
+                                    elif isinstance(f, dict):
+                                        features_df = pd.DataFrame([f])
+                                    else:
+                                        try:
+                                            features_df = pd.DataFrame([f])
+                                        except Exception:
+                                            features_df = None
+                                if features_df is None and "ohlcv" in market_data:
+                                    try:
+                                        ohlcv = market_data.get("ohlcv")
+                                        features_df = pd.DataFrame([ohlcv]) if ohlcv is not None else None
+                                    except Exception:
+                                        features_df = None
+                            # Fallback to features in signal metadata
+                            if features_df is None and getattr(signal, "metadata", None):
+                                m = signal.metadata.get("features") if isinstance(signal.metadata, dict) else None
+                                if m is not None:
+                                    if isinstance(m, pd.DataFrame):
+                                        features_df = m
+                                    elif isinstance(m, dict):
+                                        features_df = pd.DataFrame([m])
+                                    else:
+                                        try:
+                                            features_df = pd.DataFrame([m])
+                                        except Exception:
+                                            features_df = None
+                        except Exception:
+                            features_df = None
+
+                        if features_df is None or features_df.empty:
+                            logger.info("ML confirmation skipped: no feature row available")
+                        else:
+                            # ensure single-row input (use most recent / last row)
+                            if isinstance(features_df, pd.DataFrame) and len(features_df) > 1:
+                                features_df = features_df.iloc[[-1]]
+                            try:
+                                ml_out = ml_predict(self.ml_model, features_df)
+                                ml_pred = ml_out.iloc[0]["prediction"]
+                                ml_conf = float(ml_out.iloc[0].get("confidence", 0.0))
+                            except Exception as e:
+                                logger.warning(f"ML prediction failed: {e}")
+                                ml_pred = None
+                                ml_conf = 0.0
+
+                            # Determine desired direction from signal
+                            desired = 1 if signal.signal_type == SignalType.ENTRY_LONG else -1
+                            sig_text = "BUY" if desired == 1 else "SELL"
+                            ml_text = "UNK"
+                            if ml_pred == 1:
+                                ml_text = "BUY"
+                            elif ml_pred == -1:
+                                ml_text = "SELL"
+                            elif ml_pred == 0:
+                                ml_text = "HOLD"
+
+                            decision = "ACCEPT"
+                            # Apply confirmation rules only when ML returned a prediction
+                            if ml_pred is not None:
+                                if ml_conf >= self.ml_confidence_threshold:
+                                    if ml_pred == desired:
+                                        decision = "ACCEPT"
+                                    else:
+                                        # ML disagrees: reduce strength or reject if already weak
+                                        if signal.signal_strength == SignalStrength.WEAK:
+                                            decision = "REJECT"
+                                        else:
+                                            # degrade strength by one level
+                                            try:
+                                                new_value = max(SignalStrength.WEAK.value, signal.signal_strength.value - 1)
+                                                signal.signal_strength = SignalStrength(new_value)
+                                                decision = "REDUCE"
+                                            except Exception:
+                                                decision = "REDUCE"
+                                else:
+                                    decision = "NO_ML"  # low-confidence ML -> ignore ML
+                            # Log combined decision
+                            logger.info(f"Signal: {sig_text} | ML: {ml_text} ({ml_conf:.2f} confidence) → Decision: {decision}")
+                            trade_logger.trade("ML confirmation", {"signal": sig_text, "ml": ml_text, "confidence": ml_conf, "decision": decision})
+                            if decision == "REJECT":
+                                trade_logger.log_rejected_signal(signal_to_dict(signal), "ml_reject")
+                                return None
+                except Exception:
+                    logger.exception("ML confirmation step failed; proceeding with indicator-only decision")
+
+                # Finalize and store the signal while still holding the symbol lock.
+                try:
+                    self._store_signal(signal)
+                    logger.info(f"Signal approved: {signal}")
+                    trade_logger.log_signal(signal_to_dict(signal))
+                    return signal
+                except Exception as e:
+                    logger.exception("Failed to store approved signal")
+                    trade_logger.log_rejected_signal(signal_to_dict(signal), "store_failed")
                     return None
         except Exception as e:
-            logger.exception("Error while resolving signal conflicts")
-            # Log and reject this signal to avoid unexpected behavior
-            trade_logger.log_rejected_signal(signal_to_dict(signal), "conflict_resolution_error")
-            return None
-
-        # 3. Apply risk management checks with retry/backoff
-        try:
-            # risk_manager.evaluate_signal may be an async call that occasionally fails (network/external),
-            # so use a retry loop with exponential backoff and jitter.
-            approved = await self._retry_async_call(
-                lambda: self.risk_manager.evaluate_signal(signal, market_data),
-                retries=self.retry_config["max_retries"],
-                base_backoff=self.retry_config["backoff_base"],
-                max_backoff=self.retry_config["max_backoff"],
-            )
-            if not approved:
-                logger.info("Signal rejected by RiskManager")
-                trade_logger.log_rejected_signal(signal_to_dict(signal), "risk_check")
-                return None
-        except Exception as e:
-            # Record critical error and possibly block further signals temporarily
-            self._record_router_error(e, context={"symbol": getattr(signal, "symbol", None)})
-            logger.exception("Risk manager evaluation failed after retries")
-            trade_logger.log_rejected_signal(signal_to_dict(signal), ERROR_RISK)
-            return None
-
-        # 4. ML confirmation layer (optional)
-        try:
-            if self.ml_enabled and self.ml_model and signal.signal_type in {SignalType.ENTRY_LONG, SignalType.ENTRY_SHORT}:
-                features_df = None
-                # Try to extract features from market_data
-                try:
-                    if market_data and isinstance(market_data, dict):
-                        f = market_data.get("features") or market_data.get("feature_row") or market_data.get("features_df")
-                        if f is not None:
-                            if isinstance(f, pd.DataFrame):
-                                features_df = f
-                            elif isinstance(f, dict):
-                                features_df = pd.DataFrame([f])
-                            else:
-                                try:
-                                    features_df = pd.DataFrame([f])
-                                except Exception:
-                                    features_df = None
-                        if features_df is None and "ohlcv" in market_data:
-                            try:
-                                ohlcv = market_data.get("ohlcv")
-                                features_df = pd.DataFrame([ohlcv]) if ohlcv is not None else None
-                            except Exception:
-                                features_df = None
-                    # Fallback to features in signal metadata
-                    if features_df is None and getattr(signal, "metadata", None):
-                        m = signal.metadata.get("features") if isinstance(signal.metadata, dict) else None
-                        if m is not None:
-                            if isinstance(m, pd.DataFrame):
-                                features_df = m
-                            elif isinstance(m, dict):
-                                features_df = pd.DataFrame([m])
-                            else:
-                                try:
-                                    features_df = pd.DataFrame([m])
-                                except Exception:
-                                    features_df = None
-                except Exception:
-                    features_df = None
-
-                if features_df is None or features_df.empty:
-                    logger.info("ML confirmation skipped: no feature row available")
-                else:
-                    # ensure single-row input (use most recent / last row)
-                    if isinstance(features_df, pd.DataFrame) and len(features_df) > 1:
-                        features_df = features_df.iloc[[-1]]
-                    try:
-                        ml_out = ml_predict(self.ml_model, features_df)
-                        ml_pred = ml_out.iloc[0]["prediction"]
-                        ml_conf = float(ml_out.iloc[0].get("confidence", 0.0))
-                    except Exception as e:
-                        logger.warning(f"ML prediction failed: {e}")
-                        ml_pred = None
-                        ml_conf = 0.0
-
-                    # Determine desired direction from signal
-                    desired = 1 if signal.signal_type == SignalType.ENTRY_LONG else -1
-                    sig_text = "BUY" if desired == 1 else "SELL"
-                    ml_text = "UNK"
-                    if ml_pred == 1:
-                        ml_text = "BUY"
-                    elif ml_pred == -1:
-                        ml_text = "SELL"
-                    elif ml_pred == 0:
-                        ml_text = "HOLD"
-
-                    decision = "ACCEPT"
-                    # Apply confirmation rules only when ML returned a prediction
-                    if ml_pred is not None:
-                        if ml_conf >= self.ml_confidence_threshold:
-                            if ml_pred == desired:
-                                decision = "ACCEPT"
-                            else:
-                                # ML disagrees: reduce strength or reject if already weak
-                                if signal.signal_strength == SignalStrength.WEAK:
-                                    decision = "REJECT"
-                                else:
-                                    # degrade strength by one level
-                                    try:
-                                        new_value = max(SignalStrength.WEAK.value, signal.signal_strength.value - 1)
-                                        signal.signal_strength = SignalStrength(new_value)
-                                        decision = "REDUCE"
-                                    except Exception:
-                                        decision = "REDUCE"
-                        else:
-                            decision = "NO_ML"  # low-confidence ML -> ignore ML
-                    # Log combined decision
-                    logger.info(f"Signal: {sig_text} | ML: {ml_text} ({ml_conf:.2f} confidence) → Decision: {decision}")
-                    trade_logger.trade("ML confirmation", {"signal": sig_text, "ml": ml_text, "confidence": ml_conf, "decision": decision})
-                    if decision == "REJECT":
-                        trade_logger.log_rejected_signal(signal_to_dict(signal), "ml_reject")
-                        return None
-        except Exception:
-            logger.exception("ML confirmation step failed; proceeding with indicator-only decision")
-
-        # 5. Finalize and store the signal
-        try:
-            self._store_signal(signal)
-            logger.info(f"Signal approved: {signal}")
-            trade_logger.log_signal(signal_to_dict(signal))
-            return signal
-        except Exception as e:
-            logger.exception("Failed to store approved signal")
-            trade_logger.log_rejected_signal(signal_to_dict(signal), "store_failed")
+            logger.exception("Error processing signal under symbol lock")
+            trade_logger.log_rejected_signal(signal_to_dict(signal), "processing_error")
             return None
 
     def _validate_signal(self, signal: TradingSignal) -> bool:
@@ -344,7 +493,7 @@ class SignalRouter:
 
         return False
 
-    def _resolve_conflicts(self, new_signal: TradingSignal, conflicting_signals: List[TradingSignal]) -> Optional[TradingSignal]:
+    async def _resolve_conflicts(self, new_signal: TradingSignal, conflicting_signals: List[TradingSignal]) -> Optional[TradingSignal]:
         """
         Resolve conflicting signals based on configured rules.
 
@@ -386,7 +535,7 @@ class SignalRouter:
                 else:
                     # New signal is stronger - cancel conflicting signals
                     for signal in conflicting_signals:
-                        self._cancel_signal(signal)
+                        await self._cancel_signal(signal)
                     return new_signal
 
             if self.conflict_resolution_rules["newer_first"]:
@@ -396,7 +545,7 @@ class SignalRouter:
                     return None
                 else:
                     for signal in conflicting_signals:
-                        self._cancel_signal(signal)
+                        await self._cancel_signal(signal)
                     return new_signal
         except Exception:
             logger.exception("Error during conflict resolution")
@@ -410,17 +559,157 @@ class SignalRouter:
         signal_id = self._generate_signal_id(signal)
         self.active_signals[signal_id] = signal
         self.signal_history.append(signal)
+        # Append to journal (JSONL) for recovery (best-effort)
+        try:
+            if getattr(self, "_journal_enabled", False) and getattr(self, "_journal_writer", None):
+                entry = {"action": "store", "id": signal_id, "timestamp": now_ms(), "signal": signal_to_dict(signal)}
+                try:
+                    self._journal_writer.append(entry)
+                except Exception:
+                    logger.exception("Failed to enqueue journal entry")
+        except Exception:
+            logger.exception("Failed to append signal to journal")
 
-    def _cancel_signal(self, signal: TradingSignal) -> None:
+    async def _cancel_signal(self, signal: TradingSignal) -> None:
         """Cancel an active signal."""
         signal_id = self._generate_signal_id(signal)
-        if signal_id in self.active_signals:
-            del self.active_signals[signal_id]
-            logger.info(f"Cancelled signal: {signal}")
+        try:
+            async with self._lock:
+                if signal_id in self.active_signals:
+                    del self.active_signals[signal_id]
+                    logger.info(f"Cancelled signal: {signal}")
+                    # Append cancel to journal (best-effort)
+                    try:
+                        if getattr(self, "_journal_enabled", False) and getattr(self, "_journal_writer", None):
+                            entry = {"action": "cancel", "id": signal_id, "timestamp": now_ms()}
+                            try:
+                                self._journal_writer.append(entry)
+                            except Exception:
+                                logger.exception("Failed to enqueue journal cancel")
+                    except Exception:
+                        logger.exception("Failed to append cancel to journal")
+        except Exception:
+            logger.exception("Failed to cancel signal")
 
     def _generate_signal_id(self, signal: TradingSignal) -> str:
         """Generate a unique ID for a signal."""
         return f"{signal.strategy_id}_{signal.symbol}_{signal.timestamp}"
+
+    def recover_from_journal(self) -> None:
+        """Replay the JSONL journal to restore active_signals on startup (best-effort).
+
+        This implementation attempts to reconstruct `TradingSignal` dataclass instances
+        from journaled dicts (best-effort). If reconstruction fails for a line, the
+        original dict is preserved to avoid losing history.
+        """
+        try:
+            if not getattr(self, "_journal_enabled", False):
+                return
+            if not self.journal_path.exists():
+                return
+            with open(self.journal_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+                        action = entry.get("action")
+                        sid = entry.get("id")
+                        sig = entry.get("signal")
+                        if action == "store" and sid and sig:
+                            # Restore only if not already present
+                            if sid not in self.active_signals:
+                                restored = None
+                                try:
+                                    if isinstance(sig, dict):
+                                        # Helper to convert possible enum/string/int to Enum
+                                        def _to_signal_type(val):
+                                            if isinstance(val, SignalType):
+                                                return val
+                                            if isinstance(val, str):
+                                                try:
+                                                    return SignalType[val]
+                                                except Exception:
+                                                    try:
+                                                        return SignalType[int(val)]
+                                                    except Exception:
+                                                        return None
+                                            try:
+                                                return SignalType(int(val))
+                                            except Exception:
+                                                return None
+
+                                        def _to_signal_strength(val):
+                                            if isinstance(val, SignalStrength):
+                                                return val
+                                            if isinstance(val, str):
+                                                try:
+                                                    return SignalStrength[val]
+                                                except Exception:
+                                                    try:
+                                                        return SignalStrength(int(val))
+                                                    except Exception:
+                                                        return None
+                                            try:
+                                                return SignalStrength(int(val))
+                                            except Exception:
+                                                return None
+
+                                        def _to_decimal(v):
+                                            if v is None:
+                                                return None
+                                            try:
+                                                return Decimal(str(v))
+                                            except Exception:
+                                                return None
+
+                                        stype = _to_signal_type(sig.get("signal_type"))
+                                        sstrength = _to_signal_strength(sig.get("signal_strength"))
+                                        amount = _to_decimal(sig.get("amount"))
+                                        price = _to_decimal(sig.get("price"))
+                                        current_price = _to_decimal(sig.get("current_price"))
+                                        stop_loss = _to_decimal(sig.get("stop_loss"))
+                                        take_profit = _to_decimal(sig.get("take_profit"))
+                                        timestamp = sig.get("timestamp") or 0
+                                        metadata = sig.get("metadata")
+                                        strategy_id = sig.get("strategy_id") or sig.get("strategy")
+                                        symbol = sig.get("symbol")
+                                        order_type = sig.get("order_type")
+
+                                        # Ensure required fields exist; fall back to sensible defaults
+                                        if strategy_id is None or symbol is None or amount is None:
+                                            # Not enough info to build TradingSignal; keep raw dict
+                                            restored = sig
+                                        else:
+                                            restored = TradingSignal(
+                                                strategy_id=str(strategy_id),
+                                                symbol=str(symbol),
+                                                signal_type=stype or SignalType.ENTRY_LONG,
+                                                signal_strength=sstrength or SignalStrength.WEAK,
+                                                order_type=order_type,
+                                                amount=amount,
+                                                price=price,
+                                                current_price=current_price,
+                                                timestamp=int(timestamp) if timestamp else 0,
+                                                stop_loss=stop_loss,
+                                                take_profit=take_profit,
+                                                trailing_stop=sig.get("trailing_stop"),
+                                                metadata=metadata,
+                                            )
+                                    else:
+                                        restored = sig
+                                except Exception:
+                                    # On any reconstruction error, preserve the original dict
+                                    restored = sig
+
+                                self.active_signals[sid] = restored
+                                self.signal_history.append(restored)
+                        elif action == "cancel" and sid:
+                            if sid in self.active_signals:
+                                del self.active_signals[sid]
+                    except Exception:
+                        # ignore malformed lines
+                        continue
+        except Exception:
+            logger.exception("Failed to recover signals from journal")
 
     async def _retry_async_call(
         self,
@@ -459,18 +748,19 @@ class SignalRouter:
                 await asyncio.sleep(max(0.0, sleep_for))
                 continue
 
-    def _record_router_error(self, exc: Exception, context: Optional[Dict[str, Any]] = None) -> None:
+    async def _record_router_error(self, exc: Exception, context: Optional[Dict[str, Any]] = None) -> None:
         """
         Record a router-level critical error and enter blocking state if threshold exceeded.
         """
         try:
-            self.critical_errors += 1
-            trade_logger.trade("Router critical error", {"count": self.critical_errors, "error": str(exc), "context": context})
-            logger.error(f"Router critical error #{self.critical_errors}: {str(exc)}")
-            if self.critical_errors >= self.safe_mode_threshold:
-                self.block_signals = True
-                trade_logger.trade("SignalRouter entering blocking state", {"reason": "threshold_exceeded", "count": self.critical_errors})
-                logger.critical("SignalRouter blocking new signals due to repeated errors")
+            async with self._lock:
+                self.critical_errors += 1
+                trade_logger.trade("Router critical error", {"count": self.critical_errors, "error": str(exc), "context": context})
+                logger.error(f"Router critical error #{self.critical_errors}: {str(exc)}")
+                if self.critical_errors >= self.safe_mode_threshold:
+                    self.block_signals = True
+                    trade_logger.trade("SignalRouter entering blocking state", {"reason": "threshold_exceeded", "count": self.critical_errors})
+                    logger.critical("SignalRouter blocking new signals due to repeated errors")
         except Exception:
             logger.exception("Failed to record router error")
 
@@ -484,9 +774,10 @@ class SignalRouter:
             reason: Reason for status change
         """
         signal_id = self._generate_signal_id(signal)
-        if signal_id in self.active_signals:
-            del self.active_signals[signal_id]
-            logger.info(f"Signal {status}: {signal} ({reason})")
+        async with self._lock:
+            if signal_id in self.active_signals:
+                del self.active_signals[signal_id]
+        logger.info(f"Signal {status}: {signal} ({reason})")
 
     def get_active_signals(self, symbol: str = None) -> List[TradingSignal]:
         """
@@ -518,3 +809,29 @@ class SignalRouter:
         """Clear all active signals (e.g., on bot shutdown)."""
         self.active_signals.clear()
         logger.info("Cleared all active signals")
+
+    async def close_journal(self) -> None:
+        """Gracefully stop the journal writer and flush pending entries."""
+        if getattr(self, "_journal_writer", None):
+            try:
+                await self._journal_writer.stop()
+            except Exception:
+                logger.exception("Failed to close journal writer")
+        return
+
+    async def _get_symbol_lock(self, symbol: Optional[str]) -> asyncio.Lock:
+        """
+        Return an asyncio.Lock for the given symbol, creating it if necessary.
+
+        This helper serializes lock creation using the router-wide self._lock to
+        avoid races when multiple coroutines attempt to create a per-symbol lock.
+        If symbol is None, return the global router lock.
+        """
+        if not symbol:
+            return self._lock
+        async with self._lock:
+            lock = self._symbol_locks.get(symbol)
+            if not lock:
+                lock = asyncio.Lock()
+                self._symbol_locks[symbol] = lock
+            return lock

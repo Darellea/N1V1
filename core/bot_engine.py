@@ -102,6 +102,9 @@ class BotEngine:
             "equity_progression": [],
         }
 
+        # Shutdown hooks registered during initialize() for orderly teardown
+        self._shutdown_hooks: List = []
+
         # UI components
         self.live_display: Optional[Live] = None
         self.display_table: Optional[Table] = None
@@ -138,10 +141,16 @@ class BotEngine:
         # Initialize modules
         self.data_fetcher = DataFetcher(exchange_config)
         await self.data_fetcher.initialize()
+        # register shutdown hook for data_fetcher
+        if hasattr(self.data_fetcher, "shutdown"):
+            self._shutdown_hooks.append(self.data_fetcher.shutdown)
 
         self.risk_manager = RiskManager(self.config["risk_management"])
         # Pass full config to OrderManager to ensure it can access paper/backtest settings
         self.order_manager = OrderManager(self.config, self.mode)
+        # register shutdown hook for order_manager
+        if hasattr(self.order_manager, "shutdown"):
+            self._shutdown_hooks.append(self.order_manager.shutdown)
         # Configure OrderManager with portfolio/pairs info when available (backwards-compatible)
         try:
             # attach pairs and portfolio flag for per-symbol tracking
@@ -171,6 +180,9 @@ class BotEngine:
         if self.config["notifications"]["discord"]["enabled"]:
             self.notifier = DiscordNotifier(self.config["notifications"]["discord"])
             await self.notifier.initialize()
+            # register notifier shutdown hook
+            if hasattr(self.notifier, "shutdown"):
+                self._shutdown_hooks.append(self.notifier.shutdown)
 
         # Initialize UI if enabled
         if self.config["monitoring"]["terminal_display"]:
@@ -193,6 +205,9 @@ class BotEngine:
                 strategy = strategy_class(config)
                 await strategy.initialize(self.data_fetcher)
                 self.strategies.append(strategy)
+                # register shutdown hook for strategy if provided
+                if hasattr(strategy, "shutdown"):
+                    self._shutdown_hooks.append(strategy.shutdown)
 
                 logger.info(f"Initialized strategy: {strategy_name}")
             else:
@@ -561,12 +576,18 @@ class BotEngine:
             table.add_row("Total PnL", f"{self.performance_stats.get('total_pnl', 0.0):.2f}")
             table.add_row("Win Rate", f"{self.performance_stats.get('win_rate', 0.0):.2%}")
 
-            # Use Live.update to replace the shown table atomically.
+            # Use Live.update to replace the shown table atomically. Force refresh to ensure display updates in non-tty environments.
             try:
-                self.live_display.update(table)
+                # Wrap in a Panel for consistent rendering and force an immediate refresh.
+                self.live_display.update(Panel(table), refresh=True)
                 self.display_table = table
             except Exception:
                 # Fallback: assign table so future updates will use the latest structure.
+                # Attempt a non-refresh update as a last resort.
+                try:
+                    self.live_display.update(table)
+                except Exception:
+                    pass
                 self.display_table = table
         except Exception:
             logger.exception("Failed to update live display")
@@ -576,16 +597,15 @@ class BotEngine:
         logger.info("Shutting down BotEngine")
         self.state.running = False
 
-        # Shutdown modules in reverse order
-        if self.notifier:
-            await self.notifier.shutdown()
+        # Execute registered shutdown hooks in reverse order to mirror initialization order.
+        # Hooks are expected to be zero-arg callables returning an awaitable (coroutine).
+        for hook in reversed(self._shutdown_hooks):
+            try:
+                await hook()
+            except Exception:
+                logger.exception(f"Shutdown hook failed: {hook}")
 
-        if self.order_manager:
-            await self.order_manager.shutdown()
-
-        if self.data_fetcher:
-            await self.data_fetcher.shutdown()
-
+        # Ensure live display is stopped
         if self.live_display:
             try:
                 self.live_display.stop()

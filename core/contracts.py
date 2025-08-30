@@ -73,17 +73,77 @@ class TradingSignal:
     metadata: Optional[Dict] = None
 
     def __post_init__(self):
-        """Set timestamp if not provided and normalize provided values to ms."""
+        """Set timestamp if not provided and normalize provided values to ms.
+
+        Also normalize numeric fields to Decimal for internal consistency.
+        """
+        # Normalize timestamp
         if not self.timestamp:
             self.timestamp = now_ms()
         else:
-            # Normalize any provided timestamp (seconds, ms, ISO string, datetime) to ms
             normalized = to_ms(self.timestamp)
-            if normalized is not None:
-                self.timestamp = normalized
-            else:
-                # Fallback to now in case normalization fails
-                self.timestamp = now_ms()
+            self.timestamp = normalized if normalized is not None else now_ms()
+
+        # Normalize numeric fields to Decimal where appropriate so the rest of the
+        # codebase can rely on Decimal-typed numeric members.
+        try:
+            if self.amount is not None and not isinstance(self.amount, Decimal):
+                self.amount = Decimal(str(self.amount))
+        except Exception:
+            # If conversion fails, set a safe default (zero) to avoid crashes
+            self.amount = Decimal(0)
+
+        for field_name in ("price", "current_price", "stop_loss", "take_profit"):
+            try:
+                val = getattr(self, field_name)
+                if val is not None and not isinstance(val, Decimal):
+                    setattr(self, field_name, Decimal(str(val)))
+            except Exception:
+                setattr(self, field_name, None)
+
+    def normalize_amount(self, total_balance: Optional[Decimal] = None) -> None:
+        """
+        Convert 'amount' from fraction -> notional when signaled in metadata.
+
+        Behavior:
+        - If signal.metadata contains {"amount_is_fraction": True} then `amount`
+          is interpreted as a fractional value (0..1) and will be converted to a
+          notional (base currency amount) by multiplying with provided
+          `total_balance`. The method mutates `self.amount` to the computed
+          notional (Decimal) and clears metadata['amount_is_fraction'].
+
+        - If metadata flag is absent or False, this method is a no-op.
+
+        Args:
+            total_balance: Decimal-like total balance used to convert fraction -> notional.
+
+        Raises:
+            ValueError: if fraction conversion is requested but total_balance is not provided.
+        """
+        if not self.metadata or not isinstance(self.metadata, dict):
+            return
+
+        if not self.metadata.get("amount_is_fraction"):
+            return
+
+        if total_balance is None:
+            raise ValueError("total_balance is required to convert fractional amount to notional")
+
+        try:
+            frac = Decimal(str(self.amount))
+            # Clamp fraction to [0,1]
+            if frac < 0:
+                frac = Decimal(0)
+            if frac > 1:
+                frac = Decimal(1)
+            notional = (Decimal(str(total_balance)) * frac)
+            # Quantize to a sensible precision (8 decimal places) but keep Decimal type
+            self.amount = notional.quantize(Decimal("0.00000001"))
+            # Clear the metadata flag to indicate amount is now absolute/notional
+            self.metadata["amount_is_fraction"] = False
+        except Exception as e:
+            # Bubble up a clear error to calling code/tests
+            raise ValueError(f"Failed to normalize amount: {e}")
 
     def copy(self):
         """Return a shallow copy of this TradingSignal (tests expect .copy())."""

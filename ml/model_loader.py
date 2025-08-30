@@ -1,9 +1,10 @@
 import os
 import joblib
 import logging
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional
 import pandas as pd
 import numpy as np
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -11,12 +12,33 @@ logger = logging.getLogger(__name__)
 def load_model(path: str):
     """
     Load a model from disk. Supports joblib/pickle files.
+    Returns the unpickled model instance.
     """
     if not os.path.exists(path):
         raise FileNotFoundError(f"Model file not found: {path}")
     model = joblib.load(path)
     logger.info(f"Loaded model from {path}")
     return model
+
+
+def load_model_with_card(path: str) -> Tuple[Any, Optional[Dict[str, Any]]]:
+    """
+    Load a model and its companion model card (if present).
+
+    The model card is expected at the same path with extension '.model_card.json'.
+    Returns (model, model_card_dict|None)
+    """
+    model = load_model(path)
+    card_path = os.path.splitext(os.path.abspath(path))[0] + ".model_card.json"
+    model_card = None
+    try:
+        if os.path.exists(card_path):
+            with open(card_path, "r", encoding="utf-8") as fh:
+                model_card = json.load(fh)
+            logger.info(f"Loaded model card from {card_path}")
+    except Exception:
+        logger.exception(f"Failed to load model card at {card_path}")
+    return model, model_card
 
 
 def _align_features(model, features: pd.DataFrame) -> pd.DataFrame:

@@ -183,6 +183,17 @@ def compute_backtest_metrics(
         total_trades = wins + losses
         win_rate = (wins / total_trades) if total_trades > 0 else 0.0
 
+        # Expectancy (per-trade): average winning trade * win_prob - average losing trade * loss_prob
+        try:
+            avg_win = (gross_profit / wins) if wins > 0 else 0.0
+        except Exception:
+            avg_win = 0.0
+        try:
+            avg_loss = (gross_loss / losses) if losses > 0 else 0.0
+        except Exception:
+            avg_loss = 0.0
+        expectancy = (avg_win * (wins / total_trades) - avg_loss * (losses / total_trades)) if total_trades > 0 else 0.0
+
         return {
             "equity_curve": equity_vals,
             "max_drawdown": float(max_dd),
@@ -195,6 +206,9 @@ def compute_backtest_metrics(
             "wins": int(wins),
             "losses": int(losses),
             "win_rate": float(win_rate),
+            "avg_win": float(avg_win),
+            "avg_loss": float(avg_loss),
+            "expectancy": float(expectancy),
         }
 
     metrics: Dict[str, Any] = {}

@@ -258,8 +258,10 @@ def train_model(
                 # Use early stopping if provided
                 fit_kwargs = {}
                 if early_stopping_rounds:
+                    # Some LightGBM sklearn wrappers do not accept early_stopping_rounds
+                    # directly in fit() depending on version. Only provide eval_set here;
+                    # early stopping will be best-effort based on the installed lightgbm.
                     fit_kwargs['eval_set'] = [(X_val, y_val)]
-                    fit_kwargs['early_stopping_rounds'] = early_stopping_rounds
                 if eval_profit:
                     fit_kwargs['eval_metric'] = lgb_profit_eval
                 model.fit(X_tr, y_tr, **fit_kwargs)
@@ -304,8 +306,8 @@ def train_model(
         # Prepare fit kwargs for early stopping and custom eval
         fit_kwargs = {}
         if early_stopping_rounds:
+            # Provide eval_set for possible early stopping support in installed lightgbm.
             fit_kwargs['eval_set'] = [(X_test, y_test)]
-            fit_kwargs['early_stopping_rounds'] = early_stopping_rounds
         if eval_profit:
             fit_kwargs['eval_metric'] = lgb_profit_eval
 
@@ -424,14 +426,27 @@ def train_model(
             'num_threads': 1,
         }
 
-    # If we collected best_iterations from folds, use their mean as n_estimators for the final model
+    # If we collected best_iterations from folds, use their mean as n_estimators for the final model.
+    # Guard against invalid or zero values coming from different LightGBM wrappers.
     if best_iterations:
         try:
-            avg_best_it = int(np.mean(best_iterations))
-            final_model_params['n_estimators'] = int(avg_best_it)
-            logging.info(f"Retraining final model with n_estimators={avg_best_it} based on fold best_iteration_")
+            valid_iters = [int(x) for x in best_iterations if isinstance(x, (int, float)) and int(x) > 0]
+            if valid_iters:
+                avg_best_it = int(np.mean(valid_iters))
+                if avg_best_it > 0:
+                    final_model_params['n_estimators'] = int(avg_best_it)
+                    logging.info(f"Retraining final model with n_estimators={avg_best_it} based on fold best_iteration_")
         except Exception:
+            # If anything goes wrong, fall back to default n_estimators already set above.
             pass
+
+    # Guard: ensure n_estimators is a positive integer to avoid LightGBM train errors
+    try:
+        n_est = int(final_model_params.get("n_estimators", 0))
+        if n_est <= 0:
+            final_model_params["n_estimators"] = 100
+    except Exception:
+        final_model_params["n_estimators"] = 100
 
     final_model = lgb.LGBMClassifier(**final_model_params)
     # For final model, no validation set; training on full data. Early stopping can't be used without a validation set.
@@ -483,6 +498,58 @@ def train_model(
     # Save the final model
     joblib.dump(final_model, save_path)
     logging.info(f"Final model trained on full data and saved to {save_path}")
+
+    # Persist a model card (JSON) containing feature schema, training window, scaler params (if any),
+    # CV settings and other metadata useful for inference-time validation and model governance.
+    try:
+        model_card = {
+            "model_file": os.path.abspath(save_path),
+            "feature_list": feature_columns,
+            "selected_features": results.get("metadata", {}).get("selected_features", feature_columns),
+            "training_metadata": results.get("metadata", {}),
+            "cv": {
+                "n_splits": int(n_splits),
+                "best_iterations": best_iterations,
+                "best_params": best_params,
+            },
+            "training_window": None,
+            "scaler": None,
+            "caveats": (
+                "This model was trained on historical OHLCV-based technical features. "
+                "Validate feature schema at inference time. Beware of data drift and "
+                "difference between live and backtest data; re-train and validate periodically."
+            )
+        }
+
+        # Attempt to infer training window from DataFrame index or timestamp-like columns
+        try:
+            # If DataFrame index is DatetimeIndex or convertible, use that
+            if hasattr(df, "index") and len(df.index):
+                try:
+                    mins = df.index.min()
+                    maxs = df.index.max()
+                    model_card["training_window"] = {"start": str(mins), "end": str(maxs)}
+                except Exception:
+                    model_card["training_window"] = None
+            # Fallback: look for common timestamp columns
+            elif "timestamp" in df.columns:
+                try:
+                    model_card["training_window"] = {
+                        "start": str(df["timestamp"].min()),
+                        "end": str(df["timestamp"].max()),
+                    }
+                except Exception:
+                    model_card["training_window"] = None
+        except Exception:
+            model_card["training_window"] = None
+
+        # Save model card as JSON next to the model file
+        card_path = os.path.splitext(os.path.abspath(save_path))[0] + ".model_card.json"
+        with open(card_path, "w", encoding="utf-8") as fh:
+            json.dump(model_card, fh, indent=2, default=str)
+        logging.info(f"Model card saved to {card_path}")
+    except Exception as e:
+        logging.warning(f"Failed to write model card JSON: {e}")
 
     # Update results JSON with final metadata if not yet written
     try:

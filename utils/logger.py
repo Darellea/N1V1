@@ -8,6 +8,11 @@ Improved logging system for the trading bot.
 - Adds colored console output via colorama.
 - Provides TradeLogger (specialized logger) with helper methods for trade/performance logging.
 - setup_logging(config) initializes global logging configuration and returns a configured TradeLogger.
+
+Enhancements added:
+- Support attaching structured context fields (symbol, component, correlation_id) via LoggerAdapter or passing `extra` to TradeLogger methods.
+- Helper `get_logger_with_context()` returns a LoggerAdapter that will propagate structured fields automatically.
+- Helper `generate_correlation_id()` to create a simple trace id for correlation between logs.
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ from datetime import datetime
 from pathlib import Path
 import json
 import csv
+import uuid
 
 from utils.time import now_ms, to_ms, to_iso
 
@@ -60,6 +66,9 @@ class TradeLogger(logging.Logger):
 
     This class extends logging.Logger; instantiate it by name (e.g., TradeLogger('crypto_bot')) or use
     setup_logging(...) which returns a configured TradeLogger instance.
+
+    Methods accept an optional `extra` dict (e.g., {"symbol": "BTC/USDT", "component": "order_manager", "correlation_id": "..."})
+    which will be passed through to the logging call and can be consumed by external systems or handlers.
     """
 
     def __init__(self, name: str = "crypto_bot"):
@@ -94,10 +103,7 @@ class TradeLogger(logging.Logger):
                         ]
                     )
         except Exception:
-            # If CSV creation fails, continue but log error via standard error to avoid blocking
-            print(
-                f"Failed to initialize trade CSV at {self.trade_csv}", file=sys.stderr
-            )
+            logger.exception(f"Failed to initialize trade CSV at {self.trade_csv}")
 
         # Ensure handlers are only added once if logger already configured
         if not self.handlers:
@@ -108,48 +114,57 @@ class TradeLogger(logging.Logger):
             )
             self.addHandler(console_handler)
 
-    def trade(self, msg: str, trade_data: Dict[str, Any], *args, **kwargs) -> None:
-        """Log a trade with structured data."""
+    def trade(self, msg: str, trade_data: Dict[str, Any], extra: Optional[Dict[str, Any]] = None, *args, **kwargs) -> None:
+        """Log a trade with structured data. Accepts optional extra context."""
         if self.isEnabledFor(logging.INFO):
-            self.log(21, msg, *args, **kwargs)  # 21 = TRADE custom level
-            self._record_trade(trade_data)
+            extra = extra or {}
+            try:
+                self.log(21, msg, *args, extra=extra, **kwargs)  # 21 = TRADE custom level
+            except TypeError:
+                # Older Python logging may not accept extra in this position with custom levels; fallback:
+                self.log(21, msg, *args, **kwargs)
+            self._record_trade({**(trade_data or {}), **extra})
 
-    def performance(self, msg: str, metrics: Dict[str, Any], *args, **kwargs) -> None:
-        """Log performance metrics."""
+    def performance(self, msg: str, metrics: Dict[str, Any], extra: Optional[Dict[str, Any]] = None, *args, **kwargs) -> None:
+        """Log performance metrics with optional extra context."""
         if self.isEnabledFor(22):
-            self.log(22, msg, *args, **kwargs)
+            extra = extra or {}
+            try:
+                self.log(22, msg, *args, extra=extra, **kwargs)
+            except TypeError:
+                self.log(22, msg, *args, **kwargs)
             self._update_performance(metrics)
 
-    def log_signal(self, signal: Any) -> None:
+    def log_signal(self, signal: Any, extra: Optional[Dict[str, Any]] = None) -> None:
         """Log a trading signal (structured). Accepts dataclass/objects and dicts."""
         try:
             sig = signal if isinstance(signal, dict) else signal_to_dict(signal)
-            self.trade("New trading signal", {"signal": sig})
+            self.trade("New trading signal", {"signal": sig}, extra=extra)
         except Exception:
             self.exception("Failed to log signal")
 
-    def log_order(self, order: Dict[str, Any], mode: str) -> None:
-        """Log an order execution in structured form."""
+    def log_order(self, order: Dict[str, Any], mode: str, extra: Optional[Dict[str, Any]] = None) -> None:
+        """Log an order execution in structured form with optional context."""
         try:
             od = order.copy() if isinstance(order, dict) else {"order": str(order)}
             od["mode"] = mode
-            self.trade(f"Order executed: {od.get('id', 'n/a')}", od)
+            self.trade(f"Order executed: {od.get('id', 'n/a')}", od, extra=extra)
         except Exception:
             self.exception("Failed to log order")
 
-    def log_rejected_signal(self, signal: Any, reason: str) -> None:
+    def log_rejected_signal(self, signal: Any, reason: str, extra: Optional[Dict[str, Any]] = None) -> None:
         """Convenience for rejected signal logging. Accepts objects and dicts."""
         try:
             sig = signal if isinstance(signal, dict) else signal_to_dict(signal)
-            self.trade(f"Signal rejected: {reason}", {"signal": sig, "reason": reason})
+            self.trade(f"Signal rejected: {reason}", {"signal": sig, "reason": reason}, extra=extra)
         except Exception:
             self.exception("Failed to log rejected signal")
 
-    def log_failed_order(self, signal: Any, error: str) -> None:
+    def log_failed_order(self, signal: Any, error: str, extra: Optional[Dict[str, Any]] = None) -> None:
         """Convenience for failed order logging. Accepts objects and dicts."""
         try:
             sig = signal if isinstance(signal, dict) else signal_to_dict(signal)
-            self.trade(f"Order failed: {error}", {"signal": sig, "error": error})
+            self.trade(f"Order failed: {error}", {"signal": sig, "error": error}, extra=extra)
         except Exception:
             self.exception("Failed to log failed order")
 
@@ -164,6 +179,7 @@ class TradeLogger(logging.Logger):
             - entry_price: entry price
             - exit_price: exit price
             - pnl: profit or loss (float)
+            - symbol/component/correlation_id may also be present in trade_data
         """
         try:
             # In-memory record
@@ -193,28 +209,28 @@ class TradeLogger(logging.Logger):
                 )
 
             # Persist to CSV for external analysis (non-blocking best-effort)
-                try:
-                    # Prefer provided timestamp; default to now (ms)
-                    timestamp = trade_data.get("timestamp", now_ms())
+            try:
+                # Prefer provided timestamp; default to now (ms)
+                timestamp = trade_data.get("timestamp", now_ms())
 
-                    # Normalize for CSV output: convert to ISO string using ms normalization
-                    ts_ms = to_ms(timestamp)
-                    csv_ts = to_iso(ts_ms if ts_ms is not None else now_ms())
+                # Normalize for CSV output: convert to ISO string using ms normalization
+                ts_ms = to_ms(timestamp)
+                csv_ts = to_iso(ts_ms if ts_ms is not None else now_ms())
 
-                    row = [
-                        csv_ts,
-                        trade_data.get("pair", ""),
-                        trade_data.get("action", trade_data.get("side", "")),
-                        trade_data.get("size", ""),
-                        trade_data.get("entry_price", ""),
-                        trade_data.get("exit_price", ""),
-                        pnl,
-                    ]
-                    with open(self.trade_csv, "a", newline="", encoding="utf-8") as csvfile:
-                        writer = csv.writer(csvfile)
-                        writer.writerow(row)
-                except Exception:
-                    self.exception("Failed to write trade to CSV")
+                row = [
+                    csv_ts,
+                    trade_data.get("pair", ""),
+                    trade_data.get("action", trade_data.get("side", "")),
+                    trade_data.get("size", ""),
+                    trade_data.get("entry_price", ""),
+                    trade_data.get("exit_price", ""),
+                    pnl,
+                ]
+                with open(self.trade_csv, "a", newline="", encoding="utf-8") as csvfile:
+                    writer = csv.writer(csvfile)
+                    writer.writerow(row)
+            except Exception:
+                self.exception("Failed to write trade to CSV")
 
         except Exception:
             self.exception("Failed to record trade")
@@ -358,6 +374,32 @@ def get_trade_logger() -> TradeLogger:
     return _GLOBAL_TRADE_LOGGER
 
 
+def generate_correlation_id() -> str:
+    """Return a short correlation id for tracing log messages across components."""
+    return uuid.uuid4().hex
+
+
+def get_logger_with_context(symbol: Optional[str] = None, component: Optional[str] = None, correlation_id: Optional[str] = None) -> logging.LoggerAdapter:
+    """
+    Return a LoggerAdapter that will attach `symbol`, `component`, and `correlation_id` to all log records made via the adapter.
+
+    Usage:
+        adapter = get_logger_with_context(symbol='BTC/USDT', component='order_manager', correlation_id=generate_correlation_id())
+        adapter.info('Starting execution')  # record will have those extra fields
+    """
+    base = get_trade_logger()
+
+    extra = {}
+    if symbol:
+        extra["symbol"] = symbol
+    if component:
+        extra["component"] = component
+    if correlation_id:
+        extra["correlation_id"] = correlation_id
+
+    return logging.LoggerAdapter(base, extra)
+
+
 def log_to_file(data: Dict[str, Any], filename: str) -> None:
     """
     Append structured data to a JSON file inside the logs directory.
@@ -374,4 +416,4 @@ def log_to_file(data: Dict[str, Any], filename: str) -> None:
                 f.write("\n")
             json.dump(data, f, indent=2, default=str)
     except Exception:
-        print(f"Failed to log to file: {filepath}", file=sys.stderr)
+        logger.exception(f"Failed to log to file: {filepath}")

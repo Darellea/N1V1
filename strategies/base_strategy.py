@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Any
 import logging
 from dataclasses import dataclass
 from datetime import datetime
+from utils.time import now_ms, to_iso
 import asyncio
 
 import pandas as pd
@@ -60,7 +61,8 @@ class BaseStrategy(ABC):
             config: Strategy configuration parameters
         """
         self.config = config
-        self.id = f"{config.name}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        # Use ms-based timestamp for deterministic IDs across processes
+        self.id = f"{config.name}_{now_ms()}"
         self.data_fetcher: Optional[DataFetcher] = None
         self.initialized = False
         self.last_signal_time = 0
@@ -218,7 +220,7 @@ class BaseStrategy(ABC):
         """Log generated signals."""
         if signals:
             self.signals_generated += len(signals)
-            self.last_signal_time = int(datetime.now().timestamp() * 1000)
+            self.last_signal_time = now_ms()
             self.logger.info(f"Generated {len(signals)} new signals")
 
     def create_signal(

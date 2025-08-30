@@ -9,6 +9,7 @@ import logging
 import asyncio
 from typing import Dict, Optional, List, Any
 from datetime import datetime
+from utils.time import now_ms, to_iso
 import json
 import os
 
@@ -18,10 +19,10 @@ try:
 
     try:
         from discord import AsyncWebhookAdapter
-    except Exception:
+    except ImportError:
         AsyncWebhookAdapter = None
     from discord.ext import commands
-except Exception:
+except ImportError:
     # Fallback when discord package is not available or different version is installed.
     discord = None
     Webhook = None
@@ -63,6 +64,7 @@ class DiscordNotifier:
         self.commands_enabled = discord_config.get("commands", {}).get("enabled", False)
         self.bot = None
         self.session = None
+        self._bot_task = None
 
         # Initialize based on configuration
         if self.commands_enabled and self.bot_token:
@@ -188,17 +190,44 @@ class DiscordNotifier:
     async def initialize(self) -> None:
         """Initialize the Discord connection."""
         if self.bot and self.commands_enabled:
-            asyncio.create_task(self.bot.start(self.bot_token))
+            # Keep reference to bot task so it can be cancelled/awaited on shutdown
+            self._bot_task = asyncio.create_task(self.bot.start(self.bot_token))
             logger.info("Discord bot started")
         elif self.session and self.alerts_enabled:
             logger.info("Discord webhook notifications enabled")
 
     async def shutdown(self) -> None:
         """Cleanup Discord resources."""
-        if self.bot:
-            await self.bot.close()
-        if self.session:
-            await self.session.close()
+        # Cancel/await background bot task if it was created
+        try:
+            if getattr(self, "_bot_task", None):
+                try:
+                    self._bot_task.cancel()
+                except Exception:
+                    pass
+                try:
+                    await self._bot_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    logger.exception("Error awaiting discord bot task during shutdown")
+        except Exception:
+            logger.exception("Failed to cancel/await bot task")
+
+        # Close bot client (if present)
+        try:
+            if self.bot:
+                await self.bot.close()
+        except Exception:
+            logger.exception("Failed to close discord bot client")
+
+        # Close aiohttp session (if present)
+        try:
+            if self.session:
+                await self.session.close()
+        except Exception:
+            logger.exception("Failed to close aiohttp session for discord notifier")
+
         logger.info("Discord notifier shutdown")
 
     async def send_notification(self, message: str, embed_data: Dict = None) -> bool:
@@ -224,8 +253,11 @@ class DiscordNotifier:
                     logger.error(f"Discord webhook error: {response.status}")
                     return False
                 return True
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            logger.exception("Discord notification failed due to HTTP/client error")
+            return False
         except Exception as e:
-            logger.error(f"Discord notification failed: {str(e)}")
+            logger.exception("Unexpected error sending Discord notification")
             return False
 
     async def send_trade_alert(self, trade_data: Dict) -> bool:
@@ -273,7 +305,9 @@ class DiscordNotifier:
                     "inline": True,
                 },
             ],
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": to_iso(now_ms()),
+            "footer": {"text": "Crypto Trading Bot"},
+            "timestamp": to_iso(now_ms()),
             "footer": {"text": "Crypto Trading Bot"},
         }
 
@@ -329,7 +363,7 @@ class DiscordNotifier:
                     "inline": True,
                 },
             ],
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": to_iso(now_ms()),
             "footer": {"text": "Crypto Trading Bot"},
         }
 
@@ -370,7 +404,7 @@ class DiscordNotifier:
                     "inline": True,
                 },
             ],
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": to_iso(now_ms()),
             "footer": {"text": "Crypto Trading Bot"},
         }
 
@@ -426,7 +460,7 @@ class DiscordNotifier:
                     "inline": True,
                 },
             ],
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": to_iso(now_ms()),
             "footer": {"text": "Crypto Trading Bot"},
         }
 
