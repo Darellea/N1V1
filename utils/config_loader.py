@@ -232,6 +232,9 @@ class ConfigLoader:
             # Validate the final config
             self._validate_config()
 
+            # Enforce live-mode secrets (fail fast if required secrets are missing or partial)
+            self._enforce_live_secrets()
+
             # Keep original for reference (deep copy to preserve full structure)
             self._original_config = copy.deepcopy(self._config)
 
@@ -351,6 +354,49 @@ class ConfigLoader:
             ConfigModel(**self._config)
         except ValidationError as e:
             logger.error(f"Configuration validation failed: {str(e)}")
+            raise
+
+    def _enforce_live_secrets(self) -> None:
+        """
+        Fail fast if running in live mode and required secrets are missing or partial.
+
+        Rules:
+          - When environment.mode == 'live' (case-insensitive):
+            * If exchange.sandbox is False (or not present), require exchange.api_key and exchange.api_secret.
+            * If Discord notifications are enabled, require either webhook_url OR both bot_token and channel_id.
+        This method raises ValueError on missing/partial secrets so callers can fail fast.
+        """
+        try:
+            mode = self._config.get("environment", {}).get("mode", "paper")
+            if isinstance(mode, str) and mode.lower() == "live":
+                # Exchange credentials check (skip enforcement when sandbox == True)
+                exch = self._config.get("exchange", {}) or {}
+                sandbox = bool(exch.get("sandbox", False))
+                api_key = exch.get("api_key") or os.getenv("CRYPTOBOT_EXCHANGE_API_KEY")
+                api_secret = exch.get("api_secret") or os.getenv("CRYPTOBOT_EXCHANGE_API_SECRET")
+
+                if not sandbox and (not api_key or not api_secret):
+                    raise ValueError(
+                        "Live mode requires exchange credentials: provide exchange.api_key and exchange.api_secret "
+                        "(via config file or environment variables CRYPTOBOT_EXCHANGE_API_KEY / CRYPTOBOT_EXCHANGE_API_SECRET)."
+                    )
+
+                # Notifications (Discord) credential check when enabled
+                notifs = self._config.get("notifications", {}) or {}
+                discord_cfg = notifs.get("discord", {}) or {}
+
+                if discord_cfg.get("enabled"):
+                    webhook = discord_cfg.get("webhook_url") or os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL")
+                    bot_token = discord_cfg.get("bot_token") or os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN")
+                    channel_id = discord_cfg.get("channel_id") or os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID")
+
+                    if not webhook and not (bot_token and channel_id):
+                        raise ValueError(
+                            "Discord notifications are enabled in live mode but no valid credentials were found. "
+                            "Provide a webhook_url or both bot_token and channel_id (or corresponding environment variables)."
+                        )
+        except Exception:
+            logger.exception("Live-mode secrets enforcement failed")
             raise
 
     def get(self, key: str, default: Any = None) -> Any:

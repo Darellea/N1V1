@@ -86,9 +86,25 @@ class TradeLogger(logging.Logger):
 
         # CSV file for persisting trades (timestamp, pair, action, size, entry_price, exit_price, pnl)
         self.trade_csv: Path = LOGS_DIR / "trades.csv"
+        # Initialize trade CSV header and file unconditionally (independent of logging handlers).
+        # This ensures CSV persistence is consistent across different logger configurations.
+        self._init_trade_csv()
+
+        # Ensure handlers are only added once if logger already configured
+        if not self.handlers:
+            # Default console handler; real setup likely done in setup_logging
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler.setFormatter(
+                ColorFormatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+            )
+            self.addHandler(console_handler)
+
+    def _init_trade_csv(self) -> None:
+        """Create the trade CSV file with header if it does not exist."""
         try:
+            # Ensure parent dir exists
+            self.trade_csv.parent.mkdir(parents=True, exist_ok=True)
             if not self.trade_csv.exists():
-                # Create parent dir (LOGS_DIR already created at module import) and write header
                 with open(self.trade_csv, "w", newline="", encoding="utf-8") as csvfile:
                     writer = csv.writer(csvfile)
                     writer.writerow(
@@ -103,16 +119,8 @@ class TradeLogger(logging.Logger):
                         ]
                     )
         except Exception:
+            # Use module-level logger to avoid recursion into TradeLogger
             logger.exception(f"Failed to initialize trade CSV at {self.trade_csv}")
-
-        # Ensure handlers are only added once if logger already configured
-        if not self.handlers:
-            # Default console handler; real setup likely done in setup_logging
-            console_handler = logging.StreamHandler(sys.stdout)
-            console_handler.setFormatter(
-                ColorFormatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-            )
-            self.addHandler(console_handler)
 
     def trade(self, msg: str, trade_data: Dict[str, Any], extra: Optional[Dict[str, Any]] = None, *args, **kwargs) -> None:
         """Log a trade with structured data. Accepts optional extra context."""

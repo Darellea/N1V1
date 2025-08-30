@@ -7,6 +7,7 @@ Supports both webhook-based notifications and interactive bot functionality.
 
 import logging
 import asyncio
+import random
 from typing import Dict, Optional, List, Any
 from datetime import datetime
 from utils.time import now_ms, to_iso
@@ -67,8 +68,16 @@ class DiscordNotifier:
         self._bot_task = None
 
         # Initialize based on configuration
+        # Priority:
+        # 1. Interactive bot (commands) when commands are enabled and token present.
+        # 2. REST API using bot token + channel_id when alerts are enabled.
+        # 3. Webhook URL fallback when provided.
         if self.commands_enabled and self.bot_token:
             self._initialize_bot()
+        elif self.alerts_enabled and self.bot_token and self.channel_id:
+            # Use REST API mode with bot token + channel id for sending messages (no interactive commands).
+            # This uses aiohttp to POST to the Discord channel messages endpoint with Bot token auth.
+            self._initialize_webhook()
         elif self.alerts_enabled and self.webhook_url:
             self._initialize_webhook()
 
@@ -84,8 +93,21 @@ class DiscordNotifier:
         self._register_commands()
 
     def _initialize_webhook(self) -> None:
-        """Initialize the webhook session for notifications."""
-        self.session = aiohttp.ClientSession()
+        """Initialize the aiohttp session for notifications.
+
+        This session is used for either webhook-based notifications (webhook_url)
+        or REST API calls using a Bot token + channel_id. We keep the method name
+        for backward compatibility.
+        """
+        if not self.session:
+            self.session = aiohttp.ClientSession()
+        # Informational logging; actual sending path chosen in send_notification based on config.
+        if self.bot_token and self.channel_id and not self.webhook_url:
+            logger.info("Discord notifier configured to use Bot token + channel (REST API) for alerts")
+        elif self.webhook_url:
+            logger.info("Discord webhook notifications enabled")
+        else:
+            logger.debug("Discord notifier initialized without webhook or bot-token+channel; alerts disabled until configured")
 
     def _register_commands(self) -> None:
         """Register Discord bot commands."""
@@ -214,17 +236,36 @@ class DiscordNotifier:
         except Exception:
             logger.exception("Failed to cancel/await bot task")
 
-        # Close bot client (if present)
+        # Attempt to explicitly logout and then close the bot client (if present).
+        # Some discord.py versions expose logout(); calling it first ensures the session/token is terminated
+        # on the Discord side prior to closing the client.
         try:
             if self.bot:
-                await self.bot.close()
+                try:
+                    if hasattr(self.bot, "logout"):
+                        await self.bot.logout()
+                except Exception:
+                    # Not all library versions expose logout or it may fail; continue to close the client anyway.
+                    logger.debug("discord.Bot.logout() not available or failed; continuing to close the bot", exc_info=True)
+                try:
+                    await self.bot.close()
+                except Exception:
+                    logger.exception("Failed to close discord bot client")
         except Exception:
-            logger.exception("Failed to close discord bot client")
+            logger.exception("Failed while shutting down discord bot client")
 
-        # Close aiohttp session (if present)
+        # Close aiohttp session (if present). Use 'closed' attribute when available to avoid double-closing.
         try:
             if self.session:
-                await self.session.close()
+                try:
+                    if not getattr(self.session, "closed", False):
+                        await self.session.close()
+                except Exception:
+                    # Best-effort: attempt a close even if attribute checks fail
+                    try:
+                        await self.session.close()
+                    except Exception:
+                        logger.exception("Failed to close aiohttp session for discord notifier")
         except Exception:
             logger.exception("Failed to close aiohttp session for discord notifier")
 
@@ -232,33 +273,105 @@ class DiscordNotifier:
 
     async def send_notification(self, message: str, embed_data: Dict = None) -> bool:
         """
-        Send a notification via Discord webhook.
+        Send a notification via Discord.
 
-        Args:
-            message: Text message to send
-            embed_data: Dictionary of embed data
+        Supports two modes:
+        - Bot token + channel_id (preferred when configured): uses Discord REST API with Bot auth.
+        - Webhook URL (fallback): posts to the webhook endpoint.
 
-        Returns:
-            True if notification was sent successfully
+        Implements retry/backoff with jitter and respects 429 'retry_after' responses.
         """
-        if not self.alerts_enabled or not self.webhook_url:
+        if not self.alerts_enabled:
             return False
 
-        try:
-            async with self.session.post(
-                self.webhook_url,
-                json={"content": message, "embeds": [embed_data] if embed_data else []},
-            ) as response:
-                if response.status != 204:
-                    logger.error(f"Discord webhook error: {response.status}")
+        # Ensure HTTP session exists
+        if not self.session:
+            self.session = aiohttp.ClientSession()
+
+        # Prepare payload
+        payload = {"content": message}
+        if embed_data:
+            payload["embeds"] = [embed_data]
+
+        # Prefer Bot REST mode when bot_token+channel_id are present (user said they use tokens+channel).
+        # Only fall back to webhook mode when no bot credentials are available.
+        use_bot_rest = bool(self.bot_token and self.channel_id)
+        use_webhook = bool(self.webhook_url) and not use_bot_rest
+
+        if not use_bot_rest and not use_webhook:
+            logger.error("No valid Discord notifier configuration: missing webhook_url or bot_token+channel_id")
+            return False
+
+        # Common retry strategy parameters
+        max_retries = 5
+        base_backoff = 0.5  # seconds
+        attempt = 0
+
+        while attempt < max_retries:
+            try:
+                if use_bot_rest:
+                    url = f"https://discord.com/api/v10/channels/{self.channel_id}/messages"
+                    headers = {
+                        "Authorization": f"Bot {self.bot_token}",
+                        "Content-Type": "application/json",
+                    }
+                else:
+                    url = self.webhook_url
+                    headers = {"Content-Type": "application/json"}
+
+                async with self.session.post(url, json=payload, headers=headers) as resp:
+                    status = resp.status
+                    if status in (200, 201, 204):
+                        return True
+
+                    if status == 429:
+                        # Rate limited. Discord typically returns JSON with 'retry_after' (seconds).
+                        retry_after = None
+                        try:
+                            data = await resp.json()
+                            retry_after = data.get("retry_after", None)
+                        except Exception:
+                            # If body is not JSON or parsing failed, fall back to exponential backoff.
+                            retry_after = None
+
+                        if retry_after is not None:
+                            # retry_after may be in seconds (float)
+                            sleep_for = float(retry_after)
+                        else:
+                            # Exponential backoff with jitter
+                            sleep_for = base_backoff * (2 ** attempt) + random.random() * base_backoff
+
+                        logger.warning(f"Discord rate limited (429). Sleeping for {sleep_for:.2f}s (attempt {attempt+1}/{max_retries})")
+                        await asyncio.sleep(sleep_for)
+                        attempt += 1
+                        continue
+
+                    # For other non-success statuses, log body and give up (no retry) unless it's a 5xx.
+                    body = await resp.text()
+                    if 500 <= status < 600:
+                        # Server error: retry with backoff
+                        sleep_for = base_backoff * (2 ** attempt) + random.random() * base_backoff
+                        logger.warning(f"Discord server error {status}. Retrying after {sleep_for:.2f}s (attempt {attempt+1}/{max_retries}) - body: {body}")
+                        await asyncio.sleep(sleep_for)
+                        attempt += 1
+                        continue
+
+                    logger.error(f"Discord notification failed: status={status} body={body}")
                     return False
-                return True
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            logger.exception("Discord notification failed due to HTTP/client error")
-            return False
-        except Exception as e:
-            logger.exception("Unexpected error sending Discord notification")
-            return False
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                # Network-level errors: retry with backoff
+                sleep_for = base_backoff * (2 ** attempt) + random.random() * base_backoff
+                logger.exception(f"Discord notification HTTP/client error; retrying after {sleep_for:.2f}s (attempt {attempt+1}/{max_retries})")
+                await asyncio.sleep(sleep_for)
+                attempt += 1
+                continue
+            except Exception:
+                logger.exception("Unexpected error sending Discord notification")
+                return False
+
+        logger.error("Discord notification failed after maximum retries")
+        return False
 
     async def send_trade_alert(self, trade_data: Dict) -> bool:
         """
