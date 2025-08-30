@@ -10,6 +10,7 @@ import asyncio
 from typing import Dict, Optional, List, Any
 from datetime import datetime
 import json
+import os
 
 try:
     import discord
@@ -50,9 +51,14 @@ class DiscordNotifier:
             discord_config: Discord configuration from main config
         """
         self.config = discord_config
-        self.webhook_url = discord_config.get("webhook_url")
-        self.bot_token = discord_config.get("bot_token")
-        self.channel_id = discord_config.get("channel_id")
+        # Prefer environment variables for sensitive Discord credentials (backward-compatible)
+        # Supported env vars:
+        #  - CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL
+        #  - CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN
+        #  - CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID
+        self.webhook_url = os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL") or discord_config.get("webhook_url")
+        self.bot_token = os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN") or discord_config.get("bot_token")
+        self.channel_id = os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID") or discord_config.get("channel_id")
         self.alerts_enabled = discord_config.get("alerts", {}).get("enabled", False)
         self.commands_enabled = discord_config.get("commands", {}).get("enabled", False)
         self.bot = None

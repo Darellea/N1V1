@@ -42,11 +42,14 @@ class DatabaseConfig(BaseModel):
 
 
 class ExchangeConfig(BaseModel):
-    """Exchange configuration model."""
+    """Exchange configuration model.
 
+    NOTE: API credentials are now optional in the JSON config and should
+    be provided via environment variables for production use. See .env.example.
+    """
     name: str
-    api_key: str
-    api_secret: str
+    api_key: Optional[str] = None
+    api_secret: Optional[str] = None
     api_passphrase: Optional[str] = None
     sandbox: bool = False
     timeout: int = 30000
@@ -167,7 +170,7 @@ class ConfigLoader:
                     "timeout": {"type": "number", "minimum": 1000},
                     "rate_limit": {"type": "number", "minimum": 1},
                 },
-                "required": ["name", "api_key", "api_secret"],
+                "required": ["name"],
             },
             "risk_management": {
                 "type": "object",

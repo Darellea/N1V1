@@ -58,6 +58,9 @@ trades.csv
 equity.csv
 signals.csv
 checkpoints/
+.test_cache/
+scrips/
+tools/
 
 # --- Machine Learning models ---
 *.h5

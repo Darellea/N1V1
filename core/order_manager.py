@@ -17,6 +17,7 @@ import random
 import time
 from utils.time import now_ms, to_ms
 from typing import Callable
+import os
 
 import ccxt.async_support as ccxt
 from ccxt.base.errors import NetworkError, ExchangeError
@@ -149,17 +150,30 @@ class OrderManager:
         self.critical_error_count = 0
 
     def _initialize_exchange(self) -> None:
-        """Initialize the exchange connection."""
+        """Initialize the exchange connection.
+
+        Prefer environment variables for sensitive credentials (backwards-compatible).
+        Supported env vars (see .env.example):
+          - CRYPTOBOT_EXCHANGE_API_KEY
+          - CRYPTOBOT_EXCHANGE_API_SECRET
+          - CRYPTOBOT_EXCHANGE_API_PASSPHRASE
+        """
+        exch_cfg = self.config.get("exchange", {}) if isinstance(self.config, dict) else {}
+        api_key = os.getenv("CRYPTOBOT_EXCHANGE_API_KEY")
+        api_secret = os.getenv("CRYPTOBOT_EXCHANGE_API_SECRET")
+        api_pass = os.getenv("CRYPTOBOT_EXCHANGE_API_PASSPHRASE")
+
         exchange_config = {
-            "apiKey": self.config["exchange"]["api_key"],
-            "secret": self.config["exchange"]["api_secret"],
-            "password": self.config["exchange"]["api_passphrase"],
+            "apiKey": api_key,
+            "secret": api_secret,
+            "password": api_pass,
             "enableRateLimit": True,
             "options": {
-                "defaultType": "spot",
+                "defaultType": exch_cfg.get("default_type", "spot"),
             },
         }
-        exchange_class = getattr(ccxt, self.config["exchange"]["name"])
+        exchange_name = exch_cfg.get("name")
+        exchange_class = getattr(ccxt, exchange_name) if exchange_name else getattr(ccxt, self.config.get("exchange", {}).get("name"))
         self.exchange = exchange_class(exchange_config)
 
     async def _create_order_on_exchange(self, order_params: Dict[str, Any]) -> Dict:
@@ -224,10 +238,10 @@ class OrderManager:
                     )
                 except Exception as e:
                     # Increment critical error counter and potentially activate safe mode
-                        self._record_critical_error(e, context={"symbol": getattr(signal, "symbol", None)})
-                        logger.exception("Live order failed after retries")
-                        trade_logger.log_failed_order(signal_to_dict(signal), str(e))
-                        return None
+                    self._record_critical_error(e, context={"symbol": getattr(signal, "symbol", None)})
+                    logger.exception("Live order failed after retries")
+                    trade_logger.log_failed_order(signal_to_dict(signal), str(e))
+                    return None
             else:
                 # Unknown mode: treat as paper for safety
                 return await self._execute_paper_order(signal)
@@ -470,9 +484,6 @@ class OrderManager:
                 self.paper_balance += total_cost
 
         # Process the order
-        processed_order = await self._process_order(order)
-        trade_logger.log_order(processed_order, self.mode_name)
-        return processed_order
         processed_order = await self._process_order(order)
         trade_logger.log_order(processed_order, self.mode_name)
         return processed_order

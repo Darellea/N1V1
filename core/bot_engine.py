@@ -534,25 +534,42 @@ class BotEngine:
 
     def _update_display(self) -> None:
         """Update the Rich terminal display."""
-        if not self.display_table:
+        if not self.live_display:
             return
 
-        self.display_table.rows = [
-            ("Mode", self.mode.name),
-            ("Status", "PAUSED" if self.state.paused else "RUNNING"),
-            (
-                "Balance",
-                f"{self.state.balance:.2f} {self.config['exchange']['base_currency']}",
-            ),
-            (
-                "Equity",
-                f"{self.state.equity:.2f} {self.config['exchange']['base_currency']}",
-            ),
-            ("Active Orders", str(self.state.active_orders)),
-            ("Open Positions", str(self.state.open_positions)),
-            ("Total PnL", f"{self.performance_stats['total_pnl']:.2f}"),
-            ("Win Rate", f"{self.performance_stats['win_rate']:.2%}"),
-        ]
+        try:
+            # Build a fresh Table each update to avoid mutating internal Live state.
+            table = Table(title="Trading Bot Status", show_header=True)
+            table.add_column("Metric")
+            table.add_column("Value")
+
+            table.add_row("Mode", self.mode.name)
+            table.add_row("Status", "PAUSED" if self.state.paused else "RUNNING")
+            try:
+                balance_str = f"{float(self.state.balance):.2f} {self.config['exchange']['base_currency']}"
+            except Exception:
+                balance_str = str(self.state.balance)
+            try:
+                equity_str = f"{float(self.state.equity):.2f} {self.config['exchange']['base_currency']}"
+            except Exception:
+                equity_str = str(self.state.equity)
+
+            table.add_row("Balance", balance_str)
+            table.add_row("Equity", equity_str)
+            table.add_row("Active Orders", str(self.state.active_orders))
+            table.add_row("Open Positions", str(self.state.open_positions))
+            table.add_row("Total PnL", f"{self.performance_stats.get('total_pnl', 0.0):.2f}")
+            table.add_row("Win Rate", f"{self.performance_stats.get('win_rate', 0.0):.2%}")
+
+            # Use Live.update to replace the shown table atomically.
+            try:
+                self.live_display.update(table)
+                self.display_table = table
+            except Exception:
+                # Fallback: assign table so future updates will use the latest structure.
+                self.display_table = table
+        except Exception:
+            logger.exception("Failed to update live display")
 
     async def shutdown(self) -> None:
         """Gracefully shutdown the bot engine."""
