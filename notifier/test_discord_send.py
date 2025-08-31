@@ -2,6 +2,7 @@ import os
 import sys
 import asyncio
 import traceback
+import logging
 
 # Ensure repository root is on sys.path so 'notifier' package can be imported when running this script directly.
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -37,18 +38,19 @@ discord_config = {
 }
 
 async def main():
-    print("Using configuration:")
-    print("  webhook_url:", bool(discord_config.get("webhook_url")))
-    print("  bot_token:", bool(discord_config.get("bot_token")))
-    print("  channel_id:", bool(discord_config.get("channel_id")))
+    logger = logging.getLogger(__name__)
+    logger.info("Using configuration:")
+    logger.info("  webhook_url: %s", bool(discord_config.get("webhook_url")))
+    logger.info("  bot_token: %s", bool(discord_config.get("bot_token")))
+    logger.info("  channel_id: %s", bool(discord_config.get("channel_id")))
 
     notifier = DiscordNotifier(discord_config)
 
     try:
         await notifier.initialize()
-        print("Notifier initialized.")
+        logger.info("Notifier initialized.")
     except Exception:
-        print("Failed to initialize notifier:")
+        logger.error("Failed to initialize notifier:")
         traceback.print_exc()
         return
 
@@ -57,16 +59,16 @@ async def main():
             "TESTING FROM THE REPO ⚠️⚠️⚠️",
             embed_data={"title": "Testing from N1V1", "description": "If You Read This. The Module Works!"},
         )
-        print("send_notification returned:", ok)
+        logger.info("send_notification returned: %s", ok)
     except Exception:
-        print("send_notification raised an exception:")
+        logger.error("send_notification raised an exception:")
         traceback.print_exc()
     finally:
         try:
             await notifier.shutdown()
-            print("Notifier shutdown completed.")
+            logger.info("Notifier shutdown completed.")
         except Exception:
-            print("Notifier.shutdown raised an exception:")
+            logger.error("Notifier.shutdown raised an exception:")
             traceback.print_exc()
 
 if __name__ == "__main__":

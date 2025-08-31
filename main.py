@@ -46,21 +46,17 @@ class CryptoTradingBot:
             setup_logging(self.config.get("logging", {}))
 
             self.logger.info("Initializing CryptoTradingBot")
-            console.print(
-                "[bold green]✓ Configuration loaded successfully[/bold green]"
-            )
+            self.logger.info("Configuration loaded successfully")
 
             # Initialize core engine
             self.bot_engine = BotEngine(self.config)
             await self.bot_engine.initialize()
 
-            console.print(
-                "[bold green]✓ Bot engine initialized successfully[/bold green]"
-            )
+            self.logger.info("Bot engine initialized successfully")
 
         except Exception as e:
             self.logger.error(f"Failed to initialize bot: {str(e)}", exc_info=True)
-            console.print(f"[bold red]✗ Initialization failed: {str(e)}[/bold red]")
+            self.logger.error(f"Initialization failed: {str(e)}")
             sys.exit(1)
 
     async def run(self) -> None:
@@ -69,22 +65,21 @@ class CryptoTradingBot:
         """
         if not self.bot_engine:
             self.logger.error("Bot engine not initialized")
-            console.print("[bold red]✗ Bot engine not initialized[/bold red]")
             return
 
         try:
             self.logger.info("Starting CryptoTradingBot")
-            console.print("[bold green]✓ Starting trading bot...[/bold green]")
+            self.logger.info("Starting trading bot...")
 
             # Start the main bot engine
             await self.bot_engine.run()
 
         except KeyboardInterrupt:
             self.logger.info("Bot stopped by user")
-            console.print("\n[bold yellow]⚠ Bot stopped by user[/bold yellow]")
+            self.logger.warning("Bot stopped by user")
         except Exception as e:
             self.logger.error(f"Bot crashed: {str(e)}", exc_info=True)
-            console.print(f"[bold red]✗ Bot crashed: {str(e)}[/bold red]")
+            self.logger.error(f"Bot crashed: {str(e)}")
         finally:
             await self.shutdown()
 
@@ -93,13 +88,12 @@ class CryptoTradingBot:
         Cleanup and shutdown the bot gracefully.
         """
         self.logger.info("Shutting down bot")
-        console.print("[bold yellow]⚠ Shutting down bot...[/bold yellow]")
+        self.logger.warning("Shutting down bot...")
 
         if self.bot_engine:
             await self.bot_engine.shutdown()
 
         self.logger.info("Bot shutdown complete")
-        console.print("[bold green]✓ Bot shutdown complete[/bold green]")
 
     def _display_banner(self) -> None:
         """Display the startup banner."""
@@ -119,7 +113,19 @@ class CryptoTradingBot:
             border_style="blue",
             padding=(1, 2),
         )
-        console.print(panel)
+        self.logger.info("CryptoTradingBot v1.0.0 - Mode: %s", self._get_mode())
+
+    def _print_help(self) -> None:
+        """Print help message for CLI usage."""
+        help_text = """
+Usage: python main.py [OPTIONS]
+
+Options:
+  --help, -h       Show this help message and exit
+  --status         Show the current trading bot status table and exit
+  (no options)     Run the trading bot normally with live updating status
+"""
+        console.print(help_text)
 
     def _get_mode(self) -> str:
         """Determine the operating mode from command line arguments."""
@@ -130,6 +136,33 @@ class CryptoTradingBot:
 
 async def main():
     """Main async entry point."""
+    # Parse CLI arguments before initializing bot
+    if len(sys.argv) > 1:
+        arg = sys.argv[1].lower()
+        if arg == "--help" or arg == "-h":
+            # Print help message and exit immediately
+            help_text = """
+Usage: python main.py [OPTIONS]
+
+Options:
+  --help, -h       Show this help message and exit
+  --status         Show the current trading bot status table and exit
+  (no options)     Run the trading bot normally with live updating status
+"""
+            console.print(help_text)
+            sys.exit(0)
+        elif arg == "--status":
+            # Load config and print status table once, then exit
+            config = load_config()
+            setup_logging(config.get("logging", {}))
+            # Disable terminal display for CLI status to avoid live panel
+            config["monitoring"]["terminal_display"] = False
+            bot_engine = BotEngine(config)
+            await bot_engine.initialize()
+            bot_engine.print_status_table()
+            await bot_engine.shutdown()
+            sys.exit(0)
+
     bot = CryptoTradingBot()
     await bot.initialize()
     await bot.run()
@@ -139,8 +172,10 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        console.print("\n[bold yellow]⚠ Application terminated by user[/bold yellow]")
+        logger = logging.getLogger(__name__)
+        logger.warning("Application terminated by user")
         sys.exit(0)
     except Exception as e:
-        console.print(f"[bold red]✗ Fatal error: {str(e)}[/bold red]")
+        logger = logging.getLogger(__name__)
+        logger.error(f"Fatal error: {str(e)}")
         sys.exit(1)

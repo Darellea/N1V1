@@ -38,6 +38,9 @@ class OrderProcessor:
         to extract common keys with sensible defaults so downstream code doesn't
         crash when fields are missing or named differently.
         """
+        if not isinstance(response, dict):
+            raise ValueError("Invalid order response")
+
         # Helper to safely fetch nested/alias keys
         def _first(*keys, default=None):
             for k in keys:

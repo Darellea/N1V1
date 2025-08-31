@@ -27,6 +27,7 @@ from risk.risk_manager import RiskManager
 from core.order_manager import OrderManager
 from core.signal_router import SignalRouter
 from notifier.discord_bot import DiscordNotifier
+from core.task_manager import TaskManager
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -81,6 +82,9 @@ class BotEngine:
         self.order_manager: Optional[OrderManager] = None
         self.signal_router: Optional[SignalRouter] = None
         self.notifier: Optional[DiscordNotifier] = None
+
+        # Task management for background tasks
+        self.task_manager: TaskManager = TaskManager()
 
         # Global safe-mode flag (set when any core component signals repeated critical failures)
         self.global_safe_mode: bool = False
@@ -171,14 +175,14 @@ class BotEngine:
             )
         except Exception:
             self.starting_balance = 1000.0
-        self.signal_router = SignalRouter(self.risk_manager)
+        self.signal_router = SignalRouter(self.risk_manager, task_manager=self.task_manager)
 
         # Initialize strategies
         await self._initialize_strategies()
 
         # Initialize notification system if enabled
         if self.config["notifications"]["discord"]["enabled"]:
-            self.notifier = DiscordNotifier(self.config["notifications"]["discord"])
+            self.notifier = DiscordNotifier(self.config["notifications"]["discord"], task_manager=self.task_manager)
             await self.notifier.initialize()
             # register notifier shutdown hook
             if hasattr(self.notifier, "shutdown"):
@@ -215,12 +219,9 @@ class BotEngine:
 
     def _initialize_display(self) -> None:
         """Initialize the Rich terminal display."""
-        self.display_table = Table(title="Trading Bot Status", show_header=True)
-        self.display_table.add_column("Metric")
-        self.display_table.add_column("Value")
-
-        # Use Live in manual start/stop mode so we can control lifecycle
-        self.live_display = Live(self.display_table, refresh_per_second=4)
+        # Start with a simple "Initializing..." panel to avoid duplicate table prints
+        initializing_panel = Panel("Initializing Trading Bot Status...", title="Trading Bot Status")
+        self.live_display = Live(initializing_panel, refresh_per_second=4)
         try:
             self.live_display.start()
         except Exception:
@@ -592,10 +593,45 @@ class BotEngine:
         except Exception:
             logger.exception("Failed to update live display")
 
+    def print_status_table(self) -> None:
+        """Print the Trading Bot Status table once using console.print."""
+        try:
+            table = Table(title="Trading Bot Status", show_header=True)
+            table.add_column("Metric")
+            table.add_column("Value")
+
+            table.add_row("Mode", self.mode.name)
+            table.add_row("Status", "PAUSED" if self.state.paused else "RUNNING")
+            try:
+                balance_str = f"{float(self.state.balance):.2f} {self.config['exchange']['base_currency']}"
+            except Exception:
+                balance_str = str(self.state.balance)
+            try:
+                equity_str = f"{float(self.state.equity):.2f} {self.config['exchange']['base_currency']}"
+            except Exception:
+                equity_str = str(self.state.equity)
+
+            table.add_row("Balance", balance_str)
+            table.add_row("Equity", equity_str)
+            table.add_row("Active Orders", str(self.state.active_orders))
+            table.add_row("Open Positions", str(self.state.open_positions))
+            table.add_row("Total PnL", f"{self.performance_stats.get('total_pnl', 0.0):.2f}")
+            table.add_row("Win Rate", f"{self.performance_stats.get('win_rate', 0.0):.2%}")
+
+            console.print(table)
+        except Exception:
+            logger.exception("Failed to print status table")
+
     async def shutdown(self) -> None:
         """Gracefully shutdown the bot engine."""
         logger.info("Shutting down BotEngine")
         self.state.running = False
+
+        # Cancel all tracked tasks first
+        try:
+            await self.task_manager.cancel_all()
+        except Exception:
+            logger.exception("Error cancelling tracked tasks during shutdown")
 
         # Execute registered shutdown hooks in reverse order to mirror initialization order.
         # Hooks are expected to be zero-arg callables returning an awaitable (coroutine).

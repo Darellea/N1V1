@@ -1,4 +1,5 @@
 import os
+import logging
 
 
 def count_lines(root="."):
@@ -19,7 +20,9 @@ def count_lines(root="."):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
     rows, total = count_lines(".")
     for n, path in rows:
-        print(f"{n}\t{path}")
-    print(f"Total:\t{total}")
+        logger.info("%d\t%s", n, path)
+    logger.info("Total:\t%d", total)

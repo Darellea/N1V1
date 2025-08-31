@@ -39,6 +39,17 @@ class BacktestOrderExecutor:
         Returns:
             Dictionary containing backtest order execution details.
         """
+        # Determine side
+        side = getattr(signal, 'side', None)
+        if side is None:
+            from core.contracts import SignalType
+            if signal.signal_type == SignalType.ENTRY_LONG:
+                side = "buy"
+            elif signal.signal_type == SignalType.ENTRY_SHORT:
+                side = "sell"
+            else:
+                side = "buy"
+
         # Backtest orders are similar to paper trading but with historical data
         executed_price = signal.price  # For backtest, we use the exact price
         fee = self._calculate_fee(signal)
@@ -47,7 +58,7 @@ class BacktestOrderExecutor:
             id=f"backtest_{self.trade_count}",
             symbol=signal.symbol,
             type=signal.order_type,
-            side=signal.side,
+            side=side,
             amount=Decimal(signal.amount),
             price=Decimal(executed_price),
             status=OrderStatus.FILLED,

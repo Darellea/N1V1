@@ -80,16 +80,27 @@ class PaperOrderExecutor:
         Returns:
             Dictionary containing simulated order execution details.
         """
+        # Determine side
+        side = getattr(signal, 'side', None)
+        if side is None:
+            from core.contracts import SignalType
+            if signal.signal_type == SignalType.ENTRY_LONG:
+                side = "buy"
+            elif signal.signal_type == SignalType.ENTRY_SHORT:
+                side = "sell"
+            else:
+                side = "buy"
+
         # Calculate fees and slippage
         fee = self._calculate_fee(signal)
-        executed_price = self._apply_slippage(signal)
+        executed_price = self._apply_slippage(signal, side)
 
         # Calculate order cost
         cost = Decimal(signal.amount) * Decimal(executed_price)
-        total_cost = cost + fee if signal.side == "buy" else cost - fee
+        total_cost = cost + fee if side == "buy" else cost - fee
 
         # Check balance
-        if signal.side == "buy" and total_cost > self.paper_balance:
+        if side == "buy" and total_cost > self.paper_balance:
             raise ValueError("Insufficient balance for paper trading order")
 
         # Create simulated order
@@ -97,7 +108,7 @@ class PaperOrderExecutor:
             id=f"paper_{self.trade_count}",
             symbol=signal.symbol,
             type=signal.order_type,
-            side=signal.side,
+            side=side,
             amount=Decimal(signal.amount),
             price=Decimal(executed_price),
             status=OrderStatus.FILLED,
@@ -121,13 +132,13 @@ class PaperOrderExecutor:
         if self.portfolio_mode and symbol:
             # ensure per-symbol balance exists
             bal = self.paper_balances.setdefault(symbol, Decimal(self.paper_balance))
-            if signal.side == "buy":
+            if side == "buy":
                 bal = bal - total_cost
             else:
                 bal = bal + total_cost
             self.paper_balances[symbol] = _safe_quantize(bal)
         else:
-            if signal.side == "buy":
+            if side == "buy":
                 self.paper_balance -= total_cost
             else:
                 self.paper_balance += total_cost
@@ -150,34 +161,33 @@ class PaperOrderExecutor:
         )
         return Decimal(amt) * fee_rate
 
-    def _apply_slippage(self, signal: Any) -> float:
+    def _apply_slippage(self, signal: Any, side: str) -> Decimal:
         """Apply simulated slippage to order price.
 
         Args:
-            signal: Object providing 'price' and 'side'.
+            signal: Object providing 'price'.
+            side: Side of the order.
 
         Returns:
-            Adjusted price (float) including slippage.
+            Adjusted price (Decimal) including slippage.
         """
         slippage = Decimal(self.config["slippage"])
         price = getattr(
             signal, "price", signal.get("price") if isinstance(signal, dict) else None
         )
-        side = getattr(
-            signal, "side", signal.get("side") if isinstance(signal, dict) else None
-        )
         if price is None:
             raise ValueError("Signal price required for slippage calculation")
         price_d = Decimal(price)
         if side == "buy":
-            return float(price_d * (1 + slippage))
+            return price_d * (Decimal("1") + slippage)
         else:
-            return float(price_d * (1 - slippage))
+            return price_d * (Decimal("1") - slippage)
+
 
     def get_balance(self) -> Decimal:
         """Get current paper balance."""
         if self.portfolio_mode and self.paper_balances:
             # Aggregate per-pair paper balances
-            total = sum([float(v) for v in self.paper_balances.values()])
-            return Decimal(str(total))
+            total = sum(self.paper_balances.values())
+            return total
         return self.paper_balance

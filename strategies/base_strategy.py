@@ -53,16 +53,18 @@ class BaseStrategy(ABC):
     Concrete strategies must implement the abstract methods.
     """
 
-    def __init__(self, config: StrategyConfig):
+    def __init__(self, config):
         """
         Initialize the strategy with its configuration.
 
         Args:
-            config: Strategy configuration parameters
+            config: Strategy configuration parameters (StrategyConfig or dict)
         """
         self.config = config
         # Use ms-based timestamp for deterministic IDs across processes
-        self.id = f"{config.name}_{now_ms()}"
+        # Handle both StrategyConfig objects and dict configs
+        config_name = config.name if hasattr(config, 'name') else config.get('name', 'unknown')
+        self.id = f"{config_name}_{now_ms()}"
         self.data_fetcher: Optional[DataFetcher] = None
         self.initialized = False
         self.last_signal_time = 0
@@ -71,8 +73,9 @@ class BaseStrategy(ABC):
 
     def _setup_logging(self) -> None:
         """Setup strategy-specific logging."""
-        self.logger = logging.getLogger(f"strategy.{self.config.name.lower()}")
-        self.logger.info(f"Initializing {self.config.name} strategy")
+        config_name = self.config.name if hasattr(self.config, 'name') else self.config.get('name', 'unknown')
+        self.logger = logging.getLogger(f"strategy.{config_name.lower()}")
+        self.logger.info(f"Initializing {config_name} strategy")
 
     def __init_subclass__(cls, **kwargs):
         """
@@ -121,7 +124,8 @@ class BaseStrategy(ABC):
         """
         self.data_fetcher = data_fetcher
         self.initialized = True
-        self.logger.info(f"{self.config.name} strategy initialized")
+        config_name = self.config.name if hasattr(self.config, 'name') else self.config.get('name', 'unknown')
+        self.logger.info(f"{config_name} strategy initialized")
 
     @abstractmethod
     async def calculate_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -283,7 +287,8 @@ class BaseStrategy(ABC):
 
     async def shutdown(self) -> None:
         """Cleanup strategy resources."""
-        self.logger.info(f"Shutting down {self.config.name} strategy")
+        config_name = self.config.name if hasattr(self.config, 'name') else self.config.get('name', 'unknown')
+        self.logger.info(f"Shutting down {config_name} strategy")
         self.initialized = False
 
     def get_performance_metrics(self) -> Dict:

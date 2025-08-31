@@ -65,7 +65,7 @@ class PortfolioManager:
                     self.paper_balances[symbol] = per
         except Exception:
             logger.exception("Failed to initialize portfolio")
-            return
+            raise
 
     def update_paper_balance(self, symbol: str, amount: Decimal) -> None:
         """

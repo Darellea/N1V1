@@ -20,18 +20,22 @@ from __future__ import annotations
 import logging
 import sys
 from logging.handlers import RotatingFileHandler
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 from datetime import datetime
 from pathlib import Path
 import json
 import csv
 import uuid
+import errno
 
 from utils.time import now_ms, to_ms, to_iso
 
 from colorama import Fore, Back, Style, init as colorama_init
 
 from utils.adapter import signal_to_dict
+
+# Module-level logger for internal library errors (avoid using TradeLogger for internal errors)
+logger = logging.getLogger(__name__)
 
 # Initialize colorama (for Windows support)
 colorama_init(autoreset=True)
@@ -118,9 +122,13 @@ class TradeLogger(logging.Logger):
                             "pnl",
                         ]
                     )
+        except (OSError, IOError) as e:
+            # I/O issue while initializing trade CSV — log and continue (non-fatal)
+            logger.exception(f"Failed to initialize trade CSV at {self.trade_csv}: {e}")
         except Exception:
-            # Use module-level logger to avoid recursion into TradeLogger
-            logger.exception(f"Failed to initialize trade CSV at {self.trade_csv}")
+            # Unexpected error — log full context and re-raise so calling code can detect programming errors
+            logger.exception("Unexpected error during trade CSV initialization")
+            raise
 
     def trade(self, msg: str, trade_data: Dict[str, Any], extra: Optional[Dict[str, Any]] = None, *args, **kwargs) -> None:
         """Log a trade with structured data. Accepts optional extra context."""
@@ -131,6 +139,8 @@ class TradeLogger(logging.Logger):
             except TypeError:
                 # Older Python logging may not accept extra in this position with custom levels; fallback:
                 self.log(21, msg, *args, **kwargs)
+            # Record trade; errors here should be surfaced if they are programming errors,
+            # but I/O write failures will be handled inside _record_trade.
             self._record_trade({**(trade_data or {}), **extra})
 
     def performance(self, msg: str, metrics: Dict[str, Any], extra: Optional[Dict[str, Any]] = None, *args, **kwargs) -> None:
@@ -148,8 +158,13 @@ class TradeLogger(logging.Logger):
         try:
             sig = signal if isinstance(signal, dict) else signal_to_dict(signal)
             self.trade("New trading signal", {"signal": sig}, extra=extra)
+        except (TypeError, AttributeError, ValueError) as e:
+            # Likely a conversion or unexpected signal object; surface for debugging.
+            logger.exception("Failed to convert or log signal")
+            raise
         except Exception:
-            self.exception("Failed to log signal")
+            logger.exception("Unexpected error while logging signal")
+            raise
 
     def log_order(self, order: Dict[str, Any], mode: str, extra: Optional[Dict[str, Any]] = None) -> None:
         """Log an order execution in structured form with optional context."""
@@ -157,24 +172,36 @@ class TradeLogger(logging.Logger):
             od = order.copy() if isinstance(order, dict) else {"order": str(order)}
             od["mode"] = mode
             self.trade(f"Order executed: {od.get('id', 'n/a')}", od, extra=extra)
+        except (TypeError, AttributeError, ValueError) as e:
+            logger.exception("Failed to convert or log order")
+            raise
         except Exception:
-            self.exception("Failed to log order")
+            logger.exception("Unexpected error while logging order")
+            raise
 
     def log_rejected_signal(self, signal: Any, reason: str, extra: Optional[Dict[str, Any]] = None) -> None:
         """Convenience for rejected signal logging. Accepts objects and dicts."""
         try:
             sig = signal if isinstance(signal, dict) else signal_to_dict(signal)
             self.trade(f"Signal rejected: {reason}", {"signal": sig, "reason": reason}, extra=extra)
+        except (TypeError, AttributeError, ValueError) as e:
+            logger.exception("Failed to convert or log rejected signal")
+            raise
         except Exception:
-            self.exception("Failed to log rejected signal")
+            logger.exception("Unexpected error while logging rejected signal")
+            raise
 
     def log_failed_order(self, signal: Any, error: str, extra: Optional[Dict[str, Any]] = None) -> None:
         """Convenience for failed order logging. Accepts objects and dicts."""
         try:
             sig = signal if isinstance(signal, dict) else signal_to_dict(signal)
             self.trade(f"Order failed: {error}", {"signal": sig, "error": error}, extra=extra)
+        except (TypeError, AttributeError, ValueError) as e:
+            logger.exception("Failed to convert or log failed order")
+            raise
         except Exception:
-            self.exception("Failed to log failed order")
+            logger.exception("Unexpected error while logging failed order")
+            raise
 
     def _record_trade(self, trade_data: Dict[str, Any]) -> None:
         """Append trade to history, update lightweight stats, and persist trade to CSV.
@@ -216,7 +243,7 @@ class TradeLogger(logging.Logger):
                     self.performance_stats["wins"] / total
                 )
 
-            # Persist to CSV for external analysis (non-blocking best-effort)
+            # Persist to CSV for external analysis (best-effort; only I/O errors are swallowed)
             try:
                 # Prefer provided timestamp; default to now (ms)
                 timestamp = trade_data.get("timestamp", now_ms())
@@ -237,11 +264,21 @@ class TradeLogger(logging.Logger):
                 with open(self.trade_csv, "a", newline="", encoding="utf-8") as csvfile:
                     writer = csv.writer(csvfile)
                     writer.writerow(row)
+            except (OSError, IOError) as e:
+                # I/O error while writing CSV should not crash the application; log and continue.
+                logger.exception(f"Failed to write trade to CSV at {self.trade_csv}: {e}")
             except Exception:
-                self.exception("Failed to write trade to CSV")
+                # Unexpected error during write — log and re-raise.
+                logger.exception("Unexpected error while writing trade to CSV")
+                raise
 
+        except (TypeError, ValueError) as e:
+            # Likely a data formatting bug; surface it for debugging.
+            logger.exception("Failed to record trade due to data error")
+            raise
         except Exception:
-            self.exception("Failed to record trade")
+            logger.exception("Unexpected error in _record_trade")
+            raise
 
     def _update_performance(self, metrics: Dict[str, Any]) -> None:
         """Merge simple performance metrics into performance_stats."""
@@ -251,8 +288,12 @@ class TradeLogger(logging.Logger):
                     self.performance_stats[k] = float(
                         self.performance_stats.get(k, 0.0)
                     ) + float(v)
+        except (TypeError, ValueError) as e:
+            logger.exception("Failed to update performance stats due to bad metric types")
+            raise
         except Exception:
-            self.exception("Failed to update performance stats")
+            logger.exception("Unexpected error updating performance stats")
+            raise
 
     def display_performance(self) -> Dict[str, Any]:
         """Return a snapshot of performance statistics."""
@@ -268,17 +309,20 @@ class TradeLogger(logging.Logger):
                 return list(self.trades[:])
             # return most recent trades first
             return list(reversed(self.trades))[:limit]
+        except (TypeError, IndexError) as e:
+            logger.exception("Failed to get trade history due to bad arguments")
+            raise
         except Exception:
-            self.exception("Failed to get trade history")
-            return []
+            logger.exception("Unexpected error getting trade history")
+            raise
 
     def get_performance_stats(self) -> Dict[str, Any]:
         """Compatibility wrapper expected by notifier and other modules."""
         try:
             return self.display_performance()
         except Exception:
-            self.exception("Failed to get performance stats")
-            return {}
+            logger.exception("Failed to get performance stats")
+            raise
 
 
 # Register custom log levels for TRADE and PERF
@@ -423,5 +467,13 @@ def log_to_file(data: Dict[str, Any], filename: str) -> None:
             if mode == "a":
                 f.write("\n")
             json.dump(data, f, indent=2, default=str)
+    except (OSError, IOError) as e:
+        # I/O errors are logged but do not raise to avoid breaking main flow
+        logger.exception(f"Failed to log to file (I/O error): {filepath}: {e}")
+    except TypeError as e:
+        # Data not serializable - programming/data error: surface it
+        logger.exception(f"Failed to serialize data for logging to file {filepath}: {e}")
+        raise
     except Exception:
-        logger.exception(f"Failed to log to file: {filepath}")
+        logger.exception(f"Unexpected error while logging to file: {filepath}")
+        raise

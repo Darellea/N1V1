@@ -45,12 +45,13 @@ class DiscordNotifier:
     Supports both asynchronous alerts and command-based interaction.
     """
 
-    def __init__(self, discord_config: Dict):
+    def __init__(self, discord_config: Dict, task_manager: Optional["TaskManager"] = None):
         """
         Initialize the Discord notifier.
 
         Args:
             discord_config: Discord configuration from main config
+            task_manager: Optional TaskManager for tracking background tasks
         """
         self.config = discord_config
         # Prefer environment variables for sensitive Discord credentials (backward-compatible)
@@ -66,6 +67,7 @@ class DiscordNotifier:
         self.bot = None
         self.session = None
         self._bot_task = None
+        self.task_manager = task_manager
 
         # Initialize based on configuration
         # Priority:
@@ -99,8 +101,7 @@ class DiscordNotifier:
         or REST API calls using a Bot token + channel_id. We keep the method name
         for backward compatibility.
         """
-        if not self.session:
-            self.session = aiohttp.ClientSession()
+        # Don't create session here - it will be created asynchronously in initialize()
         # Informational logging; actual sending path chosen in send_notification based on config.
         if self.bot_token and self.channel_id and not self.webhook_url:
             logger.info("Discord notifier configured to use Bot token + channel (REST API) for alerts")
@@ -213,9 +214,15 @@ class DiscordNotifier:
         """Initialize the Discord connection."""
         if self.bot and self.commands_enabled:
             # Keep reference to bot task so it can be cancelled/awaited on shutdown
-            self._bot_task = asyncio.create_task(self.bot.start(self.bot_token))
+            if self.task_manager:
+                self._bot_task = self.task_manager.create_task(self.bot.start(self.bot_token), name="DiscordBot")
+            else:
+                self._bot_task = asyncio.create_task(self.bot.start(self.bot_token))
             logger.info("Discord bot started")
-        elif self.session and self.alerts_enabled:
+        elif self.alerts_enabled and (self.webhook_url or (self.bot_token and self.channel_id)):
+            # Create aiohttp session asynchronously
+            if not self.session:
+                self.session = aiohttp.ClientSession()
             logger.info("Discord webhook notifications enabled")
 
     async def shutdown(self) -> None:
@@ -224,11 +231,9 @@ class DiscordNotifier:
         try:
             if getattr(self, "_bot_task", None):
                 try:
-                    self._bot_task.cancel()
-                except Exception:
-                    pass
-                try:
-                    await self._bot_task
+                    if not self._bot_task.done():
+                        self._bot_task.cancel()
+                        await self._bot_task
                 except asyncio.CancelledError:
                     pass
                 except Exception:
@@ -260,10 +265,12 @@ class DiscordNotifier:
                 try:
                     if not getattr(self.session, "closed", False):
                         await self.session.close()
+                        logger.info("aiohttp session closed successfully")
                 except Exception:
                     # Best-effort: attempt a close even if attribute checks fail
                     try:
                         await self.session.close()
+                        logger.info("aiohttp session closed successfully")
                     except Exception:
                         logger.exception("Failed to close aiohttp session for discord notifier")
         except Exception:
@@ -319,45 +326,45 @@ class DiscordNotifier:
                     url = self.webhook_url
                     headers = {"Content-Type": "application/json"}
 
-                async with self.session.post(url, json=payload, headers=headers) as resp:
-                    status = resp.status
-                    if status in (200, 201, 204):
-                        return True
+                resp = await self.session.post(url, json=payload, headers=headers)
+                status = int(resp.status)
+                if status in (200, 201, 204):
+                    return True
 
-                    if status == 429:
-                        # Rate limited. Discord typically returns JSON with 'retry_after' (seconds).
+                if status == 429:
+                    # Rate limited. Discord typically returns JSON with 'retry_after' (seconds).
+                    retry_after = None
+                    try:
+                        data = await resp.json()
+                        retry_after = data.get("retry_after", None)
+                    except Exception:
+                        # If body is not JSON or parsing failed, fall back to exponential backoff.
                         retry_after = None
-                        try:
-                            data = await resp.json()
-                            retry_after = data.get("retry_after", None)
-                        except Exception:
-                            # If body is not JSON or parsing failed, fall back to exponential backoff.
-                            retry_after = None
 
-                        if retry_after is not None:
-                            # retry_after may be in seconds (float)
-                            sleep_for = float(retry_after)
-                        else:
-                            # Exponential backoff with jitter
-                            sleep_for = base_backoff * (2 ** attempt) + random.random() * base_backoff
-
-                        logger.warning(f"Discord rate limited (429). Sleeping for {sleep_for:.2f}s (attempt {attempt+1}/{max_retries})")
-                        await asyncio.sleep(sleep_for)
-                        attempt += 1
-                        continue
-
-                    # For other non-success statuses, log body and give up (no retry) unless it's a 5xx.
-                    body = await resp.text()
-                    if 500 <= status < 600:
-                        # Server error: retry with backoff
+                    if retry_after is not None:
+                        # retry_after may be in seconds (float)
+                        sleep_for = float(retry_after)
+                    else:
+                        # Exponential backoff with jitter
                         sleep_for = base_backoff * (2 ** attempt) + random.random() * base_backoff
-                        logger.warning(f"Discord server error {status}. Retrying after {sleep_for:.2f}s (attempt {attempt+1}/{max_retries}) - body: {body}")
-                        await asyncio.sleep(sleep_for)
-                        attempt += 1
-                        continue
 
-                    logger.error(f"Discord notification failed: status={status} body={body}")
-                    return False
+                    logger.warning(f"Discord rate limited (429). Sleeping for {sleep_for:.2f}s (attempt {attempt+1}/{max_retries})")
+                    await asyncio.sleep(sleep_for)
+                    attempt += 1
+                    continue
+
+                # For other non-success statuses, log body and give up (no retry) unless it's a 5xx.
+                body = await resp.text()
+                if 500 <= status < 600:
+                    # Server error: retry with backoff
+                    sleep_for = base_backoff * (2 ** attempt) + random.random() * base_backoff
+                    logger.warning(f"Discord server error {status}. Retrying after {sleep_for:.2f}s (attempt {attempt+1}/{max_retries}) - body: {body}")
+                    await asyncio.sleep(sleep_for)
+                    attempt += 1
+                    continue
+
+                logger.error(f"Discord notification failed: status={status} body={body}")
+                return False
 
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 # Network-level errors: retry with backoff

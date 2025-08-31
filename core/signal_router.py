@@ -34,10 +34,11 @@ class JournalWriter:
     is available it falls back to synchronous writes.
     """
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, task_manager: Optional["TaskManager"] = None):
         self.path: Path = Path(path)
         self._queue: "asyncio.Queue" = asyncio.Queue()
         self._task: Optional[asyncio.Task] = None
+        self.task_manager = task_manager
 
     def _ensure_task(self) -> None:
         """
@@ -49,9 +50,12 @@ class JournalWriter:
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 if not self._task or self._task.done():
-                    # Create the worker task on the running loop
-                    self._task = loop.create_task(self._worker())
-        except Exception:
+                    # Create the worker task using task_manager if available
+                    if self.task_manager:
+                        self._task = self.task_manager.create_task(self._worker(), name="JournalWriter")
+                    else:
+                        self._task = loop.create_task(self._worker())
+        except RuntimeError:
             # No running loop; worker will be lazily started when possible
             pass
 
@@ -94,7 +98,10 @@ class JournalWriter:
             # lazily create the worker on the running loop if needed
             if not self._task or self._task.done():
                 try:
-                    loop.call_soon_threadsafe(lambda: asyncio.create_task(self._worker()))
+                    if self.task_manager:
+                        loop.call_soon_threadsafe(lambda: self.task_manager.create_task(self._worker(), name="JournalWriter"))
+                    else:
+                        loop.call_soon_threadsafe(lambda: asyncio.create_task(self._worker()))
                 except Exception:
                     # fallback to synchronous write
                     try:
@@ -182,6 +189,7 @@ class SignalRouter:
     def __init__(
         self,
         risk_manager: "RiskManager",
+        task_manager: Optional["TaskManager"] = None,
         max_retries: int = 2,
         backoff_base: float = 0.5,
         max_backoff: float = 5.0,
@@ -213,6 +221,9 @@ class SignalRouter:
         # Per-symbol locks to allow concurrent processing across different symbols
         self._symbol_locks: Dict[str, asyncio.Lock] = {}
 
+        # Task manager for tracking background tasks
+        self.task_manager = task_manager or None
+
         # ML integration: attempt to load ML confirmation model from config (if configured)
         try:
             ml_cfg = get_config("ml", {})
@@ -239,7 +250,7 @@ class SignalRouter:
             self._journal_enabled = bool(journal_cfg.get("enabled", False))
             # Journal writer (async background writer, best-effort). It will lazily
             # start background worker when the first entry is appended.
-            self._journal_writer = JournalWriter(self.journal_path)
+            self._journal_writer = JournalWriter(self.journal_path, task_manager=self.task_manager)
             # Replay journal only when explicitly enabled.
             if self._journal_enabled:
                 try:

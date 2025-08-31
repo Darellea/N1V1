@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.10, 3.11]
+        python-version: [3.9, 3.10, 3.11]
 
     steps:
       - name: Checkout repository
@@ -63,9 +63,17 @@ jobs:
             echo "mypy not installed; skipping"
           fi
 
-      - name: Run tests
+      - name: Run tests with coverage
         run: |
-          python -m pytest -q
+          python -m pytest --cov=core --cov=notifier --cov=utils --cov=strategies --cov=data --cov=backtest --cov=ml --cov=risk --cov=tools --cov-report=xml --cov-report=term-missing --cov-fail-under=80
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
 
       - name: Dependency audit (pip-audit)
         continue-on-error: true

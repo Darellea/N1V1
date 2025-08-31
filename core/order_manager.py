@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING, Union
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import random
 import time
 from utils.time import now_ms, to_ms
@@ -31,6 +31,7 @@ from core.execution.order_processor import OrderProcessor
 from core.management.reliability_manager import ReliabilityManager
 from core.management.portfolio_manager import PortfolioManager
 from utils.adapter import signal_to_dict
+from core.contracts import SignalType
 
 logger = logging.getLogger(__name__)
 trade_logger = get_trade_logger()
@@ -57,16 +58,19 @@ class OrderManager:
                 try:
                     # Prefer enum name lookup (e.g., "LIVE", "PAPER", "BACKTEST")
                     self.mode = TradingMode[mode.upper()]
-                except Exception:
+                except KeyError:
                     # Fallback: match by enum value ("live","paper","backtest")
-                    self.mode = next(m for m in TradingMode if m.value == str(mode).lower())
+                    try:
+                        self.mode = next(m for m in TradingMode if m.value == str(mode).lower())
+                    except StopIteration:
+                        self.mode = TradingMode.PAPER
             elif isinstance(mode, TradingMode):
                 self.mode = mode
             else:
                 # Default to PAPER for safety if unknown
                 self.mode = TradingMode.PAPER
-        except Exception:
-            # Defensive fallback
+        except (AttributeError, TypeError, ValueError):
+            # Defensive fallback for unexpected types
             self.mode = TradingMode.PAPER
 
         # normalized mode name (lowercase string) for consistent checks across module
@@ -82,17 +86,19 @@ class OrderManager:
 
         # Set initial paper balance
         initial_balance = None
-        try:
-            initial_balance = config.get("paper", {}).get("initial_balance")
-        except Exception:
-            initial_balance = self.config.get("paper", {}).get("initial_balance", None) if isinstance(self.config.get("paper", None), dict) else None
+        paper_cfg = config.get("paper") if isinstance(config, dict) else None
+        if isinstance(paper_cfg, dict):
+            initial_balance = paper_cfg.get("initial_balance")
+        else:
+            cfg_paper = self.config.get("paper") if isinstance(self.config.get("paper", None), dict) else None
+            if isinstance(cfg_paper, dict):
+                initial_balance = cfg_paper.get("initial_balance")
 
         if initial_balance is None:
             # Last-resort: try top-level key (legacy)
-            try:
-                initial_balance = config.get("initial_balance", None) or self.config.get("initial_balance", None)
-            except Exception:
-                initial_balance = None
+            initial_balance = config.get("initial_balance", None) if isinstance(config, dict) else None
+            if not initial_balance:
+                initial_balance = self.config.get("initial_balance", None)
 
         self.paper_executor.set_initial_balance(initial_balance)
         self.portfolio_manager.set_initial_balance(initial_balance)
@@ -135,7 +141,7 @@ class OrderManager:
                 try:
                     order_response = await self.reliability_manager.retry_async(
                         lambda: self.live_executor.execute_live_order(signal),
-                        exceptions=(NetworkError, ExchangeError, TimeoutError, Exception),
+                        exceptions=(NetworkError, ExchangeError, asyncio.TimeoutError, OSError),
                     )
                     order = self.order_processor.parse_order_response(order_response)
                     processed_order = await self.order_processor.process_order(order)
@@ -151,8 +157,16 @@ class OrderManager:
                 # Unknown mode: treat as paper for safety
                 order = await self.paper_executor.execute_paper_order(signal)
                 return await self.order_processor.process_order(order)
+        except (NetworkError, ExchangeError, OSError) as e:
+            logger.error(f"Order execution failed (exchange/network): {str(e)}", exc_info=True)
+            trade_logger.log_failed_order(signal_to_dict(signal), str(e))
+            return None
+        except asyncio.CancelledError:
+            # Preserve cancellation semantics
+            raise
         except Exception as e:
-            logger.error(f"Order execution failed: {str(e)}", exc_info=True)
+            logger.exception("Unexpected error during order execution")
+            self.reliability_manager.record_critical_error(e, context={"symbol": getattr(signal, "symbol", None)})
             trade_logger.log_failed_order(signal_to_dict(signal), str(e))
             return None
 
@@ -168,8 +182,13 @@ class OrderManager:
                 self.order_processor.closed_orders[order_id] = self.order_processor.open_orders[order_id]
                 del self.order_processor.open_orders[order_id]
             return True
-        except Exception as e:
+        except (NetworkError, ExchangeError, OSError) as e:
             logger.error(f"Failed to cancel order {order_id}: {str(e)}")
+            return False
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(f"Unexpected error cancelling order {order_id}")
             return False
 
     async def cancel_all_orders(self) -> None:
@@ -181,8 +200,14 @@ class OrderManager:
             open_orders = list(self.order_processor.open_orders.keys())
             for order_id in open_orders:
                 await self.cancel_order(order_id)
-        except Exception as e:
+        except (NetworkError, ExchangeError, OSError) as e:
             logger.error(f"Failed to cancel all orders: {str(e)}")
+            raise
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Unexpected error while cancelling all orders")
+            raise
 
     async def get_balance(self) -> Decimal:
         """Get current account balance."""
@@ -190,8 +215,14 @@ class OrderManager:
             try:
                 balance = await self.live_executor.exchange.fetch_balance()
                 return Decimal(str(balance["total"].get(self.config.get("base_currency"), 0)))
-            except Exception:
+            except (NetworkError, ExchangeError, OSError) as e:
+                logger.warning(f"Failed to fetch balance: {e}")
                 return Decimal(0)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Unexpected error fetching balance")
+                raise
         elif self.mode == TradingMode.PAPER:
             return self.paper_executor.get_balance()
         else:
@@ -214,8 +245,17 @@ class OrderManager:
                     ticker = await self.live_executor.exchange.fetch_ticker(symbol)
                     current_price = Decimal(str(ticker.get("last") or ticker.get("close") or 0))
                     unrealized += (current_price - position["entry_price"]) * position["amount"]
-                except Exception:
+                except (NetworkError, ExchangeError, OSError) as e:
+                    logger.warning(f"Failed to fetch ticker for {symbol}: {e}")
                     continue
+                except (TypeError, ValueError, InvalidOperation) as e:
+                    logger.warning(f"Data error while computing unrealized for {symbol}: {e}")
+                    continue
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("Unexpected error while computing unrealized PnL")
+                    raise
             return balance + unrealized
         else:
             # For paper/backtest aggregate per-pair unrealized
@@ -231,8 +271,17 @@ class OrderManager:
                             entry = Decimal(pos.get("entry_price", Decimal(0)))
                             amt = Decimal(pos.get("amount", Decimal(0)))
                             total += entry * amt
-                        except Exception:
+                        except (TypeError, ValueError, InvalidOperation) as e:
+                            logger.warning(f"Invalid position data for {symbol}: {e}")
                             continue
+                        except Exception:
+                            logger.exception("Unexpected error while aggregating positions")
+                            raise
+                    return total
+                except Exception:
+                    # If aggregation fails unexpectedly, surface it
+                    logger.exception("Unexpected error calculating portfolio total")
+                    raise
                     return total
                 except Exception:
                     return balance
@@ -248,17 +297,39 @@ class OrderManager:
             portfolio_mode: Whether portfolio mode is enabled
             allocation: Optional mapping symbol->fraction of total initial balance
         """
+        # Validate inputs
+        if pairs is None:
+            raise TypeError("pairs cannot be None")
+        if not isinstance(pairs, list):
+            raise TypeError("pairs must be a list")
+        if allocation is not None:
+            if not isinstance(allocation, dict):
+                raise TypeError("allocation must be a dict or None")
+            # Validate allocation values are numeric and sum to reasonable total
+            total_allocation = 0.0
+            for symbol, fraction in allocation.items():
+                if not isinstance(fraction, (int, float)):
+                    raise ValueError(f"Allocation fraction for {symbol} must be numeric")
+                if fraction < 0:
+                    raise ValueError(f"Allocation fraction for {symbol} cannot be negative")
+                total_allocation += fraction
+            if total_allocation > 1.01:  # Allow small floating point tolerance
+                raise ValueError(f"Total allocation ({total_allocation}) exceeds 100%")
+
         try:
-            self.pairs = pairs or []
+            self.pairs = pairs
             self.portfolio_mode = bool(portfolio_mode)
-            self.pair_allocation = allocation or None
+            self.pair_allocation = allocation
 
             # Configure both executors and portfolio manager
             self.paper_executor.set_portfolio_mode(portfolio_mode, pairs, allocation)
             self.portfolio_manager.initialize_portfolio(pairs, portfolio_mode, allocation)
-        except Exception:
-            logger.exception("Failed to initialize portfolio")
+        except (ValueError, TypeError, OSError) as e:
+            logger.exception(f"Failed to initialize portfolio (recoverable): {e}")
             return
+        except Exception:
+            logger.exception("Unexpected error initializing portfolio")
+            raise
 
     async def get_active_order_count(self) -> int:
         """Get count of active/open orders."""

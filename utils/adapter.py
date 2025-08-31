@@ -32,15 +32,17 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
     try:
         if dataclasses.is_dataclass(signal):
             return dataclasses.asdict(signal)
-    except Exception:
-        # dataclasses may not be importable in some contexts; continue
+    except (AttributeError, TypeError, ValueError):
+        # If dataclass conversion fails for known reasons, fall back to other methods.
         pass
 
     # to_dict() protocol
     try:
-        if hasattr(signal, "to_dict") and callable(getattr(signal, "to_dict")):
-            return signal.to_dict()
-    except Exception:
+        to_dict = getattr(signal, "to_dict", None)
+        if callable(to_dict):
+            return to_dict()
+    except (TypeError, AttributeError, ValueError):
+        # to_dict() may raise if implementation is buggy; fall back to probing attributes.
         pass
 
     out: Dict[str, Any] = {}
@@ -61,28 +63,39 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
     )
 
     for a in common_attrs:
+        # Use getattr with default to avoid KeyError; properties may raise AttributeError,
+        # so catch AttributeError at the minimal scope.
         try:
             if hasattr(signal, a):
                 val = getattr(signal, a)
-                # Normalize enums (e.g., OrderType) to value or name
-                try:
-                    if hasattr(val, "value"):
-                        val = val.value
-                    elif hasattr(val, "name"):
-                        val = val.name.lower()
-                except Exception:
-                    pass
-                out[a] = val
-        except Exception:
+            else:
+                continue
+        except AttributeError:
+            # If property access raises, skip that attribute.
             continue
 
-    # As a fallback, include any public attributes from __dict__
+        # Normalize enums (e.g., OrderType) to value or name
+        try:
+            if hasattr(val, "value"):
+                val = val.value
+            elif hasattr(val, "name"):
+                # some enums expose .name; convert to lower-case string for readability
+                val = val.name.lower()
+        except AttributeError:
+            # If enum-like object doesn't expose expected attributes, ignore and continue.
+            pass
+
+        out[a] = val
+
+    # As a fallback, include any public attributes from __dict__ (non-callable)
     try:
-        if hasattr(signal, "__dict__"):
-            for k, v in signal.__dict__.items():
-                if k not in out:
+        obj_dict = getattr(signal, "__dict__", None)
+        if isinstance(obj_dict, dict):
+            for k, v in obj_dict.items():
+                if k not in out and not k.startswith("_"):
                     out[k] = v
-    except Exception:
+    except AttributeError:
+        # If accessing __dict__ raises, give up on this fallback.
         pass
 
     return out

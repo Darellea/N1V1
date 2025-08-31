@@ -9,6 +9,7 @@ do not exist on disk.
 This is a static check only (uses AST) and does not execute project code.
 """
 import ast
+import logging
 import os
 import sys
 
@@ -86,6 +87,7 @@ def is_local_module(module_name, project_top_level_dirs):
 
 
 def main():
+    logger = logging.getLogger(__name__)
     # identify top-level project package names (directories with Python files)
     project_dirs = []
     for name in os.listdir(ROOT):
@@ -114,7 +116,7 @@ def main():
                 src = fh.read()
             tree = ast.parse(src, filename=py)
         except Exception as e:
-            print(f"[WARN] Failed to parse {rel_py}: {e}")
+            logger.warning("Failed to parse %s: %s", rel_py, e)
             continue
 
         for node in ast.walk(tree):
