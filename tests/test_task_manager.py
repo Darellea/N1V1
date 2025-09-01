@@ -1,6 +1,6 @@
 import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from core.task_manager import TaskManager
 
 
@@ -79,8 +79,9 @@ class TestTaskManager:
         tm = TaskManager()
         await tm.cancel_all()  # This sets _shutdown = True
 
-        with pytest.raises(RuntimeError, match="TaskManager is shutting down"):
-            tm.create_task(asyncio.sleep(0.1))
+        with patch('asyncio.sleep', new_callable=AsyncMock):
+            with pytest.raises(RuntimeError, match="TaskManager is shutting down"):
+                tm.create_task(asyncio.sleep(0.1))
 
     @pytest.mark.asyncio
     async def test_multiple_concurrent_tasks(self):

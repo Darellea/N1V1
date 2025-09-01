@@ -2,8 +2,8 @@
 
 ## Warnings  
 - [x] Fix async warning in tests/test_discord_notifier.py::TestDiscordNotifier::test_shutdown_with_bot (replace MagicMock with AsyncMock for `_bot_task` and ensure it is awaited).
-- [ ] Fix RuntimeWarning in tests/test_order_manager.py::TestOrderManager::test_cancel_order_live_mode (properly await async mocks).  
-- [ ] Fix RuntimeWarning in tests/test_task_manager.py::TestTaskManager::test_shutdown_prevents_new_tasks (await `asyncio.sleep` or patch with `AsyncMock`).  
+- [x] Fix RuntimeWarning in tests/test_order_manager.py::TestOrderManager::test_cancel_order_live_mode (properly await async mocks).  
+- [x] Fix RuntimeWarning in tests/test_task_manager.py::TestTaskManager::test_shutdown_prevents_new_tasks (await `asyncio.sleep` or patch with `AsyncMock`).  
 
 ## Skipped Tests  
 - [ ] Investigate 16 skipped tests in tests/test_discord_integration.py due to missing environment variables.  
