@@ -262,6 +262,74 @@ class SignalRouter:
             self._journal_enabled = False
             self._journal_writer = None
 
+    def _extract_features_for_ml(self, market_data, signal) -> Optional[pd.DataFrame]:
+        """
+        Extract features for ML prediction from market_data or signal metadata.
+        Returns a single-row DataFrame or None if extraction fails.
+        """
+        if market_data is None:
+            candidate = None
+        elif isinstance(market_data, dict):
+            candidate = market_data.get("features")
+            if candidate is None:
+                candidate = market_data.get("feature_row")
+            if candidate is None:
+                candidate = market_data.get("features_df")
+            if candidate is None:
+                candidate = market_data.get("ohlcv")
+        elif isinstance(market_data, pd.DataFrame):
+            candidate = market_data
+        elif isinstance(market_data, pd.Series):
+            candidate = market_data
+        else:
+            candidate = None
+
+        # Fallback to signal.metadata if candidate is None
+        if candidate is None and hasattr(signal, 'metadata') and signal.metadata and isinstance(signal.metadata, dict):
+            candidate = signal.metadata.get("features")
+            if candidate is None:
+                candidate = signal.metadata.get("feature_row")
+            if candidate is None:
+                candidate = signal.metadata.get("features_df")
+            if candidate is None:
+                candidate = signal.metadata.get("ohlcv")
+
+        if candidate is None:
+            return None
+
+        try:
+            if isinstance(candidate, pd.DataFrame):
+                if candidate.empty:
+                    return None
+                if len(candidate) > 1:
+                    return candidate.iloc[[-1]]
+                return candidate
+            elif isinstance(candidate, pd.Series):
+                return pd.DataFrame([candidate.to_dict()])
+            elif isinstance(candidate, dict):
+                return pd.DataFrame([candidate])
+            elif isinstance(candidate, list):
+                if not candidate:
+                    return None
+                if isinstance(candidate[0], dict):
+                    df = pd.DataFrame(candidate)
+                    if df.empty:
+                        return None
+                    return df.iloc[[-1]]
+                elif all(isinstance(x, (int, float, Decimal)) for x in candidate):
+                    # Assume list of scalars, use 'value' column
+                    return pd.DataFrame({'value': candidate}).iloc[[-1]]
+                else:
+                    return None
+            else:
+                # Try to convert to DataFrame
+                try:
+                    return pd.DataFrame([candidate])
+                except Exception:
+                    return None
+        except Exception:
+            return None
+
     async def process_signal(self, signal: TradingSignal, market_data: Dict = None) -> Optional[TradingSignal]:
         """
         Process and validate a trading signal.
@@ -330,49 +398,10 @@ class SignalRouter:
                 # ML confirmation (optional)
                 try:
                     if self.ml_enabled and self.ml_model and signal.signal_type in {SignalType.ENTRY_LONG, SignalType.ENTRY_SHORT}:
-                        features_df = None
-                        # Try to extract features from market_data
-                        try:
-                            if market_data and isinstance(market_data, dict):
-                                f = market_data.get("features") or market_data.get("feature_row") or market_data.get("features_df")
-                                if f is not None:
-                                    if isinstance(f, pd.DataFrame):
-                                        features_df = f
-                                    elif isinstance(f, dict):
-                                        features_df = pd.DataFrame([f])
-                                    else:
-                                        try:
-                                            features_df = pd.DataFrame([f])
-                                        except Exception:
-                                            features_df = None
-                                if features_df is None and "ohlcv" in market_data:
-                                    try:
-                                        ohlcv = market_data.get("ohlcv")
-                                        features_df = pd.DataFrame([ohlcv]) if ohlcv is not None else None
-                                    except Exception:
-                                        features_df = None
-                            # Fallback to features in signal metadata
-                            if features_df is None and getattr(signal, "metadata", None):
-                                m = signal.metadata.get("features") if isinstance(signal.metadata, dict) else None
-                                if m is not None:
-                                    if isinstance(m, pd.DataFrame):
-                                        features_df = m
-                                    elif isinstance(m, dict):
-                                        features_df = pd.DataFrame([m])
-                                    else:
-                                        try:
-                                            features_df = pd.DataFrame([m])
-                                        except Exception:
-                                            features_df = None
-                        except Exception:
-                            features_df = None
-
+                        features_df = self._extract_features_for_ml(market_data, signal)
                         if features_df is None or features_df.empty:
                             logger.info("ML confirmation skipped: no feature row available")
                         else:
-                            # ensure single-row input (use most recent / last row)
-                            if isinstance(features_df, pd.DataFrame) and len(features_df) > 1:
-                                features_df = features_df.iloc[[-1]]
                             try:
                                 ml_out = ml_predict(self.ml_model, features_df)
                                 ml_pred = ml_out.iloc[0]["prediction"]

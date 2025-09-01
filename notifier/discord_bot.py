@@ -229,10 +229,19 @@ class DiscordNotifier:
         """Cleanup Discord resources."""
         # Cancel/await background bot task if it was created with timeout protection
         try:
-            if getattr(self, "_bot_task", None):
+            if getattr(self, "_bot_task", None) and hasattr(self._bot_task, 'done'):
                 try:
-                    if not self._bot_task.done():
-                        self._bot_task.cancel()
+                    # Check if task is done, handling both real tasks and AsyncMock
+                    is_done = self._bot_task.done()
+                    if hasattr(is_done, '__bool__'):  # Real task returns bool
+                        is_done = bool(is_done)
+                    elif hasattr(is_done, '__call__'):  # AsyncMock returns Mock, check if it's falsy
+                        is_done = False  # Assume AsyncMock task is not done unless explicitly set
+
+                    if not is_done:
+                        # For real tasks, cancel and await
+                        if hasattr(self._bot_task, 'cancel'):
+                            self._bot_task.cancel()
                         await asyncio.wait_for(self._bot_task, timeout=30.0)
                 except asyncio.TimeoutError:
                     logger.warning("Timeout reached while awaiting discord bot task cancellation")

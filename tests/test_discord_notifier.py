@@ -410,10 +410,17 @@ class TestDiscordNotifier:
             mock_bot.return_value = mock_bot_instance
 
             notifier = DiscordNotifier(config)
-            notifier._bot_task = AsyncMock()
-            notifier._bot_task.done.return_value = False
+            # Create a proper mock task that behaves like an asyncio Task
+            mock_task = MagicMock()
+            mock_task.done.return_value = False  # Task is not done
+            mock_task.cancel = MagicMock()  # Mock cancel method
+            # Make sure hasattr works correctly
+            mock_task.configure_mock(**{'done.return_value': False})
+            notifier._bot_task = mock_task
 
             await notifier.shutdown()
 
             mock_bot_instance.logout.assert_called_once()
             mock_bot_instance.close.assert_called_once()
+            # Verify cancel was called on the task
+            mock_task.cancel.assert_called_once()

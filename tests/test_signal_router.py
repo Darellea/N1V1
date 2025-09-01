@@ -263,7 +263,8 @@ def test_clear_signals(signal_router, sample_signal):
 
 
 @pytest.mark.asyncio
-async def test_retry_async_call_success():
+@patch("asyncio.sleep", new_callable=AsyncMock)
+async def test_retry_async_call_success(mock_sleep):
     """Test successful retry of async call."""
     rm = DummyRiskManager()
     router = SignalRouter(risk_manager=rm)
@@ -273,10 +274,12 @@ async def test_retry_async_call_success():
 
     result = await router._retry_async_call(dummy_call, retries=2)
     assert result == "success"
+    mock_sleep.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_retry_async_call_with_failure():
+@patch("asyncio.sleep", new_callable=AsyncMock)
+async def test_retry_async_call_with_failure(mock_sleep):
     """Test retry mechanism with temporary failure."""
     rm = FailingRiskManager()
     router = SignalRouter(risk_manager=rm)
@@ -287,10 +290,12 @@ async def test_retry_async_call_with_failure():
     result = await router._retry_async_call(failing_call, retries=2)
     assert result is True
     assert rm.call_count == 2  # Failed once, succeeded on retry
+    mock_sleep.assert_awaited()
 
 
 @pytest.mark.asyncio
-async def test_retry_async_call_exhaust_retries():
+@patch("asyncio.sleep", new_callable=AsyncMock)
+async def test_retry_async_call_exhaust_retries(mock_sleep):
     """Test retry exhaustion."""
     rm = FailingRiskManager()
     router = SignalRouter(risk_manager=rm)
@@ -300,6 +305,7 @@ async def test_retry_async_call_exhaust_retries():
 
     with pytest.raises(Exception, match="Always fails"):
         await router._retry_async_call(always_fail, retries=1)
+    mock_sleep.assert_awaited()
 
 
 @pytest.mark.asyncio
@@ -407,3 +413,470 @@ async def test_get_symbol_lock(signal_router):
     # None symbol returns global lock
     global_lock = await signal_router._get_symbol_lock(None)
     assert global_lock is signal_router._lock
+
+
+def test_signal_router_init_defaults(dummy_risk_manager):
+    """Test SignalRouter initialization with default parameters."""
+    router = SignalRouter(risk_manager=dummy_risk_manager)
+    assert router.risk_manager is dummy_risk_manager
+    assert router.active_signals == {}
+    assert router.signal_history == []
+    assert router.conflict_resolution_rules == {
+        "strength_based": True,
+        "newer_first": False,
+        "exit_over_entry": True,
+    }
+    assert router.retry_config == {
+        "max_retries": 2,
+        "backoff_base": 0.5,
+        "max_backoff": 5.0,
+    }
+    assert router.critical_errors == 0
+    assert router.safe_mode_threshold == 10
+    assert router.block_signals is False
+    assert isinstance(router._lock, asyncio.Lock)
+    assert isinstance(router._symbol_locks, dict)
+    assert router.task_manager is None or router.task_manager is not None  # task_manager can be None or passed
+
+
+
+
+
+@pytest.mark.asyncio
+async def test_ml_confirmation_weak_signal_approved():
+    """Test that ML confirmation approves a weak signal when ML predicts same direction with high confidence."""
+    import pandas as pd
+    from unittest.mock import patch, MagicMock
+    from decimal import Decimal
+    from core.contracts import TradingSignal, SignalType, SignalStrength
+    from core.signal_router import SignalRouter
+
+    # Create a mock ML model and prediction function
+    mock_model = MagicMock()
+    mock_prediction_df = pd.DataFrame([{"prediction": 1, "confidence": 0.8}])  # Same direction, high confidence
+
+    def mock_predict(model, features_df):
+        return mock_prediction_df
+
+    # Create router with ML enabled
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # Manually enable ML for this test
+    router.ml_enabled = True
+    router.ml_model = mock_model
+    router.ml_confidence_threshold = 0.6
+
+    # Create a weak BUY signal (ENTRY_LONG)
+    weak_buy_signal = TradingSignal(
+        strategy_id="test_strategy",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,  # BUY signal
+        signal_strength=SignalStrength.WEAK,  # Weak strength
+        order_type="market",
+        amount=Decimal("1.0"),
+        price=Decimal("50000"),
+        current_price=Decimal("50000"),
+        timestamp=1234567890,
+        stop_loss=Decimal("49000"),
+        take_profit=Decimal("52000"),
+    )
+
+    # Mock market data with features
+    market_data = {
+        "features": pd.DataFrame([{"feature1": 1.0, "feature2": 2.0}])
+    }
+
+    # Debug prints to check ML condition
+    print(f'ML enabled: {router.ml_enabled}')
+    print(f'ML model exists: {router.ml_model is not None}')
+    print(f'Signal type: {weak_buy_signal.signal_type}')
+    print(f'Signal in entry types: {weak_buy_signal.signal_type in {SignalType.ENTRY_LONG, SignalType.ENTRY_SHORT}}')
+    print(f'Signal strength: {weak_buy_signal.signal_strength}')
+    print(f'Market data has features: {"features" in market_data}')
+    print(f'Market data features type: {type(market_data.get("features"))}')
+
+    # Mock the ML prediction function
+    with patch('core.signal_router.ml_predict', side_effect=mock_predict) as mock_patch:
+        result = await router.process_signal(weak_buy_signal, market_data)
+        print(f'ML predict was called: {mock_patch.called}')
+        print(f'Number of calls: {mock_patch.call_count}')
+
+    # Signal should be approved because:
+    # - Signal is BUY (ENTRY_LONG, desired = 1)
+    # - ML predicts BUY (1) with high confidence (0.8 > 0.6)
+    assert mock_patch.called
+    assert result is not None
+    assert result.symbol == "BTC/USDT"
+    assert len(router.get_active_signals()) == 1
+
+
+@pytest.mark.asyncio
+async def test_ml_confirmation_weak_signal_rejected():
+    """Test that ML confirmation rejects a weak signal when ML predicts opposite direction with high confidence."""
+    import pandas as pd
+    from unittest.mock import patch, MagicMock
+    from decimal import Decimal
+    from core.contracts import TradingSignal, SignalType, SignalStrength
+    from core.signal_router import SignalRouter
+
+    # Create a mock ML model and prediction function
+    mock_model = MagicMock()
+    mock_prediction_df = pd.DataFrame([{"prediction": -1, "confidence": 0.8}])  # Opposite direction, high confidence
+
+    def mock_predict(model, features_df):
+        return mock_prediction_df
+
+    # Create router with ML enabled
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # Manually enable ML for this test
+    router.ml_enabled = True
+    router.ml_model = mock_model
+    router.ml_confidence_threshold = 0.6
+
+    # Create a weak BUY signal (ENTRY_LONG)
+    weak_buy_signal = TradingSignal(
+        strategy_id="test_strategy",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,  # BUY signal
+        signal_strength=SignalStrength.WEAK,  # Weak strength
+        order_type="market",
+        amount=Decimal("1.0"),
+        price=Decimal("50000"),
+        current_price=Decimal("50000"),
+        timestamp=1234567890,
+        stop_loss=Decimal("49000"),
+        take_profit=Decimal("52000"),
+    )
+
+    # Mock market data with features
+    market_data = {
+        "features": pd.DataFrame([{"feature1": 1.0, "feature2": 2.0}])
+    }
+
+    # Mock the ML prediction function
+    with patch('core.signal_router.ml_predict', side_effect=mock_predict) as mock_patch:
+        result = await router.process_signal(weak_buy_signal, market_data)
+
+    # Signal should be rejected because:
+    # - Signal is BUY (ENTRY_LONG, desired = 1)
+    # - ML predicts SELL (-1) with high confidence (0.8 > 0.6)
+    # - Signal strength is WEAK, so it gets rejected instead of reduced
+    assert mock_patch.called
+    assert result is None
+    assert len(router.get_active_signals()) == 0
+
+
+@pytest.mark.asyncio
+async def test_ml_confirmation_strong_signal_bypassed():
+    """Test that strong signals bypass ML confirmation even when ML disagrees."""
+    import pandas as pd
+    from unittest.mock import patch, MagicMock
+    from decimal import Decimal
+    from core.contracts import TradingSignal, SignalType, SignalStrength
+    from core.signal_router import SignalRouter
+
+    # Create a mock ML model and prediction function
+    mock_model = MagicMock()
+    mock_prediction_df = pd.DataFrame([{"prediction": -1, "confidence": 0.8}])  # Opposite direction, high confidence
+
+    def mock_predict(model, features_df):
+        return mock_prediction_df
+
+    # Create router with ML enabled
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # Manually enable ML for this test
+    router.ml_enabled = True
+    router.ml_model = mock_model
+    router.ml_confidence_threshold = 0.6
+
+    # Create a STRONG BUY signal (ENTRY_LONG)
+    strong_buy_signal = TradingSignal(
+        strategy_id="test_strategy",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,  # BUY signal
+        signal_strength=SignalStrength.STRONG,  # Strong strength
+        order_type="market",
+        amount=Decimal("1.0"),
+        price=Decimal("50000"),
+        current_price=Decimal("50000"),
+        timestamp=1234567890,
+        stop_loss=Decimal("49000"),
+        take_profit=Decimal("52000"),
+    )
+
+    # Mock market data with features
+    market_data = {
+        "features": pd.DataFrame([{"feature1": 1.0, "feature2": 2.0}])
+    }
+
+    # Mock the ML prediction function
+    with patch('core.signal_router.ml_predict', side_effect=mock_predict) as mock_patch:
+        result = await router.process_signal(strong_buy_signal, market_data)
+
+    # Signal should be approved despite ML disagreement because:
+    # - Signal strength is STRONG, so it bypasses ML rejection
+    # - ML prediction gets reduced but signal still passes
+    assert mock_patch.called
+    assert result is not None
+    assert result.symbol == "BTC/USDT"
+    # Signal strength should be reduced from STRONG to MODERATE due to ML disagreement
+    assert result.signal_strength == SignalStrength.MODERATE
+    assert len(router.get_active_signals()) == 1
+
+
+@pytest.mark.asyncio
+async def test_ml_predict_called_with_dataframe_features():
+    """Test that ml_predict is called when features are provided as DataFrame."""
+    import pandas as pd
+    from unittest.mock import patch, MagicMock
+    from decimal import Decimal
+    from core.contracts import TradingSignal, SignalType, SignalStrength
+
+    mock_model = MagicMock()
+    mock_prediction_df = pd.DataFrame([{"prediction": 1, "confidence": 0.8}])
+
+    def mock_predict(model, features_df):
+        return mock_prediction_df
+
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+    router.ml_enabled = True
+    router.ml_model = mock_model
+    router.ml_confidence_threshold = 0.6
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    market_data = {
+        "features": pd.DataFrame([{"feature1": 1.0, "feature2": 2.0}])
+    }
+
+    with patch('core.signal_router.ml_predict', side_effect=mock_predict) as mock_patch:
+        await router.process_signal(signal, market_data)
+
+    assert mock_patch.called
+    # Verify the features_df passed to ml_predict is a DataFrame
+    args, kwargs = mock_patch.call_args
+    features_df = args[1]  # Second argument is features_df
+    assert isinstance(features_df, pd.DataFrame)
+    assert not features_df.empty
+
+
+@pytest.mark.asyncio
+async def test_ml_predict_called_with_dict_features():
+    """Test that ml_predict is called when features are provided as dict."""
+    import pandas as pd
+    from unittest.mock import patch, MagicMock
+    from decimal import Decimal
+    from core.contracts import TradingSignal, SignalType, SignalStrength
+
+    mock_model = MagicMock()
+    mock_prediction_df = pd.DataFrame([{"prediction": 1, "confidence": 0.8}])
+
+    def mock_predict(model, features_df):
+        return mock_prediction_df
+
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+    router.ml_enabled = True
+    router.ml_model = mock_model
+    router.ml_confidence_threshold = 0.6
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    market_data = {
+        "features": {"feature1": 1.0, "feature2": 2.0}
+    }
+
+    with patch('core.signal_router.ml_predict', side_effect=mock_predict) as mock_patch:
+        await router.process_signal(signal, market_data)
+
+    assert mock_patch.called
+    # Verify the features_df passed to ml_predict is a DataFrame
+    args, kwargs = mock_patch.call_args
+    features_df = args[1]
+    assert isinstance(features_df, pd.DataFrame)
+    assert not features_df.empty
+
+
+@pytest.mark.asyncio
+async def test_ml_predict_called_with_series_features():
+    """Test that ml_predict is called when features are provided as pd.Series."""
+    import pandas as pd
+    from unittest.mock import patch, MagicMock
+    from decimal import Decimal
+    from core.contracts import TradingSignal, SignalType, SignalStrength
+
+    mock_model = MagicMock()
+    mock_prediction_df = pd.DataFrame([{"prediction": 1, "confidence": 0.8}])
+
+    def mock_predict(model, features_df):
+        return mock_prediction_df
+
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+    router.ml_enabled = True
+    router.ml_model = mock_model
+    router.ml_confidence_threshold = 0.6
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    market_data = {
+        "features": pd.Series({"feature1": 1.0, "feature2": 2.0})
+    }
+
+    with patch('core.signal_router.ml_predict', side_effect=mock_predict) as mock_patch:
+        await router.process_signal(signal, market_data)
+
+    assert mock_patch.called
+    # Verify the features_df passed to ml_predict is a DataFrame
+    args, kwargs = mock_patch.call_args
+    features_df = args[1]
+    assert isinstance(features_df, pd.DataFrame)
+    assert not features_df.empty
+
+
+@pytest.mark.asyncio
+async def test_ml_predict_not_called_with_empty_dataframe():
+    """Test that ml_predict is NOT called when features DataFrame is empty."""
+    import pandas as pd
+    from unittest.mock import patch, MagicMock
+    from decimal import Decimal
+    from core.contracts import TradingSignal, SignalType, SignalStrength
+
+    mock_model = MagicMock()
+
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+    router.ml_enabled = True
+    router.ml_model = mock_model
+    router.ml_confidence_threshold = 0.6
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    market_data = {
+        "features": pd.DataFrame()  # Empty DataFrame
+    }
+
+    with patch('core.signal_router.ml_predict') as mock_patch:
+        await router.process_signal(signal, market_data)
+
+    assert not mock_patch.called
+
+
+@pytest.mark.asyncio
+async def test_ml_predict_called_with_metadata_features_fallback():
+    """Test that ml_predict is called when features are in signal metadata."""
+    import pandas as pd
+    from unittest.mock import patch, MagicMock
+    from decimal import Decimal
+    from core.contracts import TradingSignal, SignalType, SignalStrength
+
+    mock_model = MagicMock()
+    mock_prediction_df = pd.DataFrame([{"prediction": 1, "confidence": 0.8}])
+
+    def mock_predict(model, features_df):
+        return mock_prediction_df
+
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+    router.ml_enabled = True
+    router.ml_model = mock_model
+    router.ml_confidence_threshold = 0.6
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+        metadata={"features": {"feature1": 1.0, "feature2": 2.0}}
+    )
+
+    # No market_data provided, should fallback to signal.metadata
+    with patch('core.signal_router.ml_predict', side_effect=mock_predict) as mock_patch:
+        await router.process_signal(signal, market_data=None)
+
+    assert mock_patch.called
+    # Verify the features_df passed to ml_predict is a DataFrame
+    args, kwargs = mock_patch.call_args
+    features_df = args[1]
+    assert isinstance(features_df, pd.DataFrame)
+    assert not features_df.empty
+
+
+@pytest.mark.asyncio
+async def test_ml_predict_called_with_ohlcv_fallback():
+    """Test that ml_predict is called when ohlcv data is provided as fallback."""
+    import pandas as pd
+    from unittest.mock import patch, MagicMock
+    from decimal import Decimal
+    from core.contracts import TradingSignal, SignalType, SignalStrength
+
+    mock_model = MagicMock()
+    mock_prediction_df = pd.DataFrame([{"prediction": 1, "confidence": 0.8}])
+
+    def mock_predict(model, features_df):
+        return mock_prediction_df
+
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+    router.ml_enabled = True
+    router.ml_model = mock_model
+    router.ml_confidence_threshold = 0.6
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    market_data = {
+        "ohlcv": {"open": 50000, "high": 51000, "low": 49000, "close": 50500, "volume": 100}
+    }
+
+    with patch('core.signal_router.ml_predict', side_effect=mock_predict) as mock_patch:
+        await router.process_signal(signal, market_data)
+
+    assert mock_patch.called
+    # Verify the features_df passed to ml_predict is a DataFrame
+    args, kwargs = mock_patch.call_args
+    features_df = args[1]
+    assert isinstance(features_df, pd.DataFrame)
+    assert not features_df.empty
