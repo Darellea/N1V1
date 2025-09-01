@@ -36,8 +36,8 @@ class TestDiscordIntegration:
             "commands": {
                 "enabled": True
             },
-            "bot_token": os.getenv("TEST_DISCORD_BOT_TOKEN", "test_bot_token"),
-            "channel_id": os.getenv("TEST_DISCORD_CHANNEL_ID", "123456789")
+            "bot_token": os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN", "test_bot_token"),
+            "channel_id": os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID", "123456789")
         }
 
     @pytest.fixture
@@ -176,8 +176,8 @@ class TestDiscordIntegration:
         assert result is True
 
     @pytest.mark.skipif(
-        not os.getenv("TEST_DISCORD_BOT_TOKEN") or not os.getenv("TEST_DISCORD_CHANNEL_ID"),
-        reason="TEST_DISCORD_BOT_TOKEN or TEST_DISCORD_CHANNEL_ID environment variables not set"
+        not os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN") or not os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID"),
+        reason="CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN or CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID environment variables not set"
     )
     @pytest.mark.asyncio
     async def test_bot_integration_basic_notification(self, discord_bot_config):
@@ -193,8 +193,8 @@ class TestDiscordIntegration:
             assert result is True
 
     @pytest.mark.skipif(
-        not os.getenv("TEST_DISCORD_BOT_TOKEN") or not os.getenv("TEST_DISCORD_CHANNEL_ID"),
-        reason="TEST_DISCORD_BOT_TOKEN or TEST_DISCORD_CHANNEL_ID environment variables not set"
+        not os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN") or not os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID"),
+        reason="CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN or CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID environment variables not set"
     )
     @pytest.mark.asyncio
     async def test_bot_integration_trade_alert(self, discord_bot_config, sample_trade_data):
