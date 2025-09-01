@@ -227,13 +227,15 @@ class DiscordNotifier:
 
     async def shutdown(self) -> None:
         """Cleanup Discord resources."""
-        # Cancel/await background bot task if it was created
+        # Cancel/await background bot task if it was created with timeout protection
         try:
             if getattr(self, "_bot_task", None):
                 try:
                     if not self._bot_task.done():
                         self._bot_task.cancel()
-                        await self._bot_task
+                        await asyncio.wait_for(self._bot_task, timeout=30.0)
+                except asyncio.TimeoutError:
+                    logger.warning("Timeout reached while awaiting discord bot task cancellation")
                 except asyncio.CancelledError:
                     pass
                 except Exception:
@@ -248,12 +250,16 @@ class DiscordNotifier:
             if self.bot:
                 try:
                     if hasattr(self.bot, "logout"):
-                        await self.bot.logout()
+                        await asyncio.wait_for(self.bot.logout(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    logger.warning("Timeout reached while awaiting discord bot logout")
                 except Exception:
                     # Not all library versions expose logout or it may fail; continue to close the client anyway.
                     logger.debug("discord.Bot.logout() not available or failed; continuing to close the bot", exc_info=True)
                 try:
-                    await self.bot.close()
+                    await asyncio.wait_for(self.bot.close(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    logger.warning("Timeout reached while awaiting discord bot close")
                 except Exception:
                     logger.exception("Failed to close discord bot client")
         except Exception:
@@ -264,12 +270,14 @@ class DiscordNotifier:
             if self.session:
                 try:
                     if not getattr(self.session, "closed", False):
-                        await self.session.close()
+                        await asyncio.wait_for(self.session.close(), timeout=15.0)
                         logger.info("aiohttp session closed successfully")
+                except asyncio.TimeoutError:
+                    logger.warning("Timeout reached while closing aiohttp session for discord notifier")
                 except Exception:
                     # Best-effort: attempt a close even if attribute checks fail
                     try:
-                        await self.session.close()
+                        await asyncio.wait_for(self.session.close(), timeout=15.0)
                         logger.info("aiohttp session closed successfully")
                     except Exception:
                         logger.exception("Failed to close aiohttp session for discord notifier")

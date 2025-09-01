@@ -7,6 +7,7 @@ Handles initialization, mode selection, and core system startup.
 import asyncio
 import logging
 import sys
+import argparse
 from typing import Optional
 
 from rich.console import Console
@@ -134,24 +135,36 @@ Options:
         return "LIVE"  # Default mode
 
 
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Crypto Trading Bot System",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python main.py                    # Run the trading bot normally
+  python main.py --help            # Show this help message
+  python main.py --status          # Show current status and exit
+        """
+    )
+
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Show the current trading bot status table and exit"
+    )
+
+    return parser.parse_args()
+
+
 async def main():
     """Main async entry point."""
-    # Parse CLI arguments before initializing bot
-    if len(sys.argv) > 1:
-        arg = sys.argv[1].lower()
-        if arg == "--help" or arg == "-h":
-            # Print help message and exit immediately
-            help_text = """
-Usage: python main.py [OPTIONS]
+    # Parse CLI arguments first
+    args = parse_arguments()
 
-Options:
-  --help, -h       Show this help message and exit
-  --status         Show the current trading bot status table and exit
-  (no options)     Run the trading bot normally with live updating status
-"""
-            console.print(help_text)
-            sys.exit(0)
-        elif arg == "--status":
+    # Handle CLI-only commands that should exit immediately
+    if args.status:
+        try:
             # Load config and print status table once, then exit
             config = load_config()
             setup_logging(config.get("logging", {}))
@@ -161,8 +174,13 @@ Options:
             await bot_engine.initialize()
             bot_engine.print_status_table()
             await bot_engine.shutdown()
-            sys.exit(0)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to show status: {str(e)}")
+            sys.exit(1)
+        sys.exit(0)
 
+    # Normal execution path
     bot = CryptoTradingBot()
     await bot.initialize()
     await bot.run()

@@ -102,6 +102,26 @@ class LiveOrderExecutor:
         if not self.exchange:
             raise RuntimeError("Exchange not initialized for live trading")
 
+        # Determine side from signal type if not explicitly provided
+        side = None
+        if isinstance(signal, dict):
+            side = signal.get("side")
+        else:
+            side = getattr(signal, "side", None)
+
+        # If side is not provided, map from signal_type
+        if side is None and hasattr(signal, "signal_type"):
+            from core.contracts import SignalType
+            signal_type = getattr(signal, "signal_type", None)
+            if signal_type == SignalType.ENTRY_LONG:
+                side = "buy"
+            elif signal_type == SignalType.ENTRY_SHORT:
+                side = "sell"
+            elif signal_type == SignalType.EXIT_LONG:
+                side = "sell"
+            elif signal_type == SignalType.EXIT_SHORT:
+                side = "buy"
+
         order_params = {
             "symbol": getattr(
                 signal,
@@ -111,9 +131,7 @@ class LiveOrderExecutor:
             "type": getattr(getattr(signal, "order_type", None), "value", None)
             if not isinstance(signal, dict)
             else signal.get("order_type"),
-            "side": getattr(
-                signal, "side", signal.get("side") if isinstance(signal, dict) else None
-            ),
+            "side": side,
             "amount": float(
                 getattr(
                     signal,
@@ -137,7 +155,7 @@ class LiveOrderExecutor:
             "params": getattr(
                 signal,
                 "params",
-                signal.get("params") if isinstance(signal, dict) else {},
+                signal.get("params") if isinstance(signal, dict) else getattr(signal, "metadata", {}),
             )
             or {},
         }

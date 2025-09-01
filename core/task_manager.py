@@ -64,8 +64,14 @@ class TaskManager:
         for task in self._tasks:
             task.cancel()
 
-        # Wait for all tasks to complete, ignoring exceptions
-        await asyncio.gather(*self._tasks, return_exceptions=True)
+        try:
+            # Wait for all tasks to complete with timeout protection
+            await asyncio.wait_for(asyncio.gather(*self._tasks, return_exceptions=True), timeout=30.0)
+        except asyncio.TimeoutError:
+            logger.warning("Timeout reached while waiting for tasks to cancel")
+        except Exception:
+            logger.exception("Error while waiting for tasks to cancel")
+
         self._tasks.clear()
         logger.info("All tracked tasks cancelled and completed")
 

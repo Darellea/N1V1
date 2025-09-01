@@ -627,17 +627,23 @@ class BotEngine:
         logger.info("Shutting down BotEngine")
         self.state.running = False
 
-        # Cancel all tracked tasks first
+        # Cancel all tracked tasks first with timeout protection
         try:
-            await self.task_manager.cancel_all()
+            await asyncio.wait_for(self.task_manager.cancel_all(), timeout=30.0)
+            logger.info("All tracked tasks cancelled successfully")
+        except asyncio.TimeoutError:
+            logger.warning("Timeout reached while cancelling tracked tasks")
         except Exception:
             logger.exception("Error cancelling tracked tasks during shutdown")
 
-        # Execute registered shutdown hooks in reverse order to mirror initialization order.
+        # Execute registered shutdown hooks in reverse order with timeout protection
         # Hooks are expected to be zero-arg callables returning an awaitable (coroutine).
         for hook in reversed(self._shutdown_hooks):
             try:
-                await hook()
+                await asyncio.wait_for(hook(), timeout=15.0)
+                logger.debug(f"Shutdown hook completed: {hook}")
+            except asyncio.TimeoutError:
+                logger.warning(f"Shutdown hook timed out: {hook}")
             except Exception:
                 logger.exception(f"Shutdown hook failed: {hook}")
 
@@ -655,11 +661,28 @@ class BotEngine:
         """Execute emergency shutdown procedures."""
         logger.critical("Executing emergency shutdown!")
 
+        # Send emergency alert with timeout protection
         if self.notifier:
-            await self.notifier.send_alert("🚨 EMERGENCY SHUTDOWN TRIGGERED!")
+            try:
+                await asyncio.wait_for(
+                    self.notifier.send_alert("🚨 EMERGENCY SHUTDOWN TRIGGERED!"),
+                    timeout=10.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Emergency alert timed out")
+            except Exception:
+                logger.exception("Failed to send emergency alert")
 
-        # Cancel all open orders
+        # Cancel all open orders with timeout protection
         if self.order_manager:
-            await self.order_manager.cancel_all_orders()
+            try:
+                await asyncio.wait_for(
+                    self.order_manager.cancel_all_orders(),
+                    timeout=30.0
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Order cancellation timed out")
+            except Exception:
+                logger.exception("Failed to cancel orders during emergency shutdown")
 
         await self.shutdown()
