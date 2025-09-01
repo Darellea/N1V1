@@ -5,9 +5,9 @@
 - [x] Fix RuntimeWarning in tests/test_order_manager.py::TestOrderManager::test_cancel_order_live_mode (properly await async mocks).  
 - [x] Fix RuntimeWarning in tests/test_task_manager.py::TestTaskManager::test_shutdown_prevents_new_tasks (await `asyncio.sleep` or patch with `AsyncMock`).  
 
-## Skipped Tests  
-- [ ] Investigate 16 skipped tests in tests/test_discord_integration.py due to missing environment variables.  
-- [ ] Add configuration or environment setup to allow Discord integration tests to run OR mark them with `pytest.mark.integration` to exclude from default runs.  
+## Skipped Tests
+- [x] Investigate 16 skipped tests in tests/test_discord_integration.py due to missing environment variables.
+- [x] Add configuration or environment setup to allow Discord integration tests to run OR mark them with `pytest.mark.integration` to exclude from default runs.
 
 ## Coverage Gaps  
 - [ ] Increase coverage for core/bot_engine.py (currently 31%). Add unit tests for main trading loop, shutdown, emergency shutdown, performance metrics update, and display update.  

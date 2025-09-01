@@ -7,6 +7,7 @@ from core.contracts import TradingSignal, SignalType, SignalStrength
 from decimal import Decimal
 
 
+@pytest.mark.integration
 class TestDiscordIntegration:
     """Integration tests for Discord API interactions."""
 
