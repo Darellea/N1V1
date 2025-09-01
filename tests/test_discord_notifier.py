@@ -411,6 +411,7 @@ class TestDiscordNotifier:
 
             notifier = DiscordNotifier(config)
             notifier._bot_task = AsyncMock()
+            notifier._bot_task.done.return_value = False
 
             await notifier.shutdown()
 
