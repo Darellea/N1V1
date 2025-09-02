@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Trading Bot Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .status-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status-card h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .status-running { color: #28a745; }
+        .status-paused { color: #ffc107; }
+        .status-stopped { color: #dc3545; }
+        .chart-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .data-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .data-table {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+        .refresh-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+        .refresh-btn:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Crypto Trading Bot Dashboard</h1>
+            <button class="refresh-btn" onclick="refreshData()">🔄 Refresh Data</button>
+        </div>
+
+        <div class="status-grid">
+            <div class="status-card">
+                <h3>Bot Status</h3>
+                <p id="bot-status">Loading...</p>
+                <p><strong>Mode:</strong> <span id="bot-mode">-</span></p>
+                <p><strong>Pairs:</strong> <span id="bot-pairs">-</span></p>
+            </div>
+
+            <div class="status-card">
+                <h3>Performance</h3>
+                <p><strong>Total P&L:</strong> $<span id="total-pnl">0.00</span></p>
+                <p><strong>Win Rate:</strong> <span id="win-rate">0.00</span>%</p>
+                <p><strong>Wins/Losses:</strong> <span id="wins">0</span>/<span id="losses">0</span></p>
+            </div>
+
+            <div class="status-card">
+                <h3>Current State</h3>
+                <p><strong>Balance:</strong> $<span id="balance">0.00</span></p>
+                <p><strong>Equity:</strong> $<span id="equity">0.00</span></p>
+                <p><strong>Open Positions:</strong> <span id="open-positions">0</span></p>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <h3>Equity Curve</h3>
+            <canvas id="equityChart" width="400" height="200"></canvas>
+        </div>
+
+        <div class="data-section">
+            <div class="data-table">
+                <h3>Recent Orders</h3>
+                <table id="orders-table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Quantity</th>
+                            <th>Price</th>
+                            <th>P&L</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="orders-body">
+                        <tr><td colspan="6">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="data-table">
+                <h3>Recent Signals</h3>
+                <table id="signals-table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Type</th>
+                            <th>Confidence</th>
+                            <th>Strategy</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="signals-body">
+                        <tr><td colspan="5">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let equityChart;
+
+        async function fetchData(endpoint) {
+            const response = await fetch(`/api/v1/${endpoint}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return await response.json();
+        }
+
+        function updateStatus(data) {
+            const statusEl = document.getElementById('bot-status');
+            const modeEl = document.getElementById('bot-mode');
+            const pairsEl = document.getElementById('bot-pairs');
+
+            statusEl.textContent = data.running ? (data.paused ? 'PAUSED' : 'RUNNING') : 'STOPPED';
+            statusEl.className = data.running ? (data.paused ? 'status-paused' : 'status-running') : 'status-stopped';
+
+            modeEl.textContent = data.mode || '-';
+            pairsEl.textContent = data.pairs ? data.pairs.join(', ') : '-';
+        }
+
+        function updatePerformance(data) {
+            document.getElementById('total-pnl').textContent = data.total_pnl?.toFixed(2) || '0.00';
+            document.getElementById('win-rate').textContent = (data.win_rate * 100)?.toFixed(2) || '0.00';
+            document.getElementById('wins').textContent = data.wins || '0';
+            document.getElementById('losses').textContent = data.losses || '0';
+        }
+
+        function updateOrders(orders) {
+            const tbody = document.getElementById('orders-body');
+            tbody.innerHTML = '';
+
+            if (orders.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6">No orders found</td></tr>';
+                return;
+            }
+
+            orders.forEach(order => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${order.symbol || '-'}</td>
+                    <td>${order.side || '-'}</td>
+                    <td>${order.quantity || '-'}</td>
+                    <td>$${order.price?.toFixed(2) || '-'}</td>
+                    <td>$${order.pnl?.toFixed(2) || '-'}</td>
+                    <td>${order.timestamp ? new Date(order.timestamp).toLocaleString() : '-'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateSignals(signals) {
+            const tbody = document.getElementById('signals-body');
+            tbody.innerHTML = '';
+
+            if (signals.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5">No signals found</td></tr>';
+                return;
+            }
+
+            signals.forEach(signal => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${signal.symbol || '-'}</td>
+                    <td>${signal.signal_type || '-'}</td>
+                    <td>${signal.confidence?.toFixed(2) || '-'}</td>
+                    <td>${signal.strategy || '-'}</td>
+                    <td>${signal.timestamp ? new Date(signal.timestamp).toLocaleString() : '-'}</td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function updateEquityChart(equityData) {
+            const ctx = document.getElementById('equityChart').getContext('2d');
+
+            if (equityChart) {
+                equityChart.destroy();
+            }
+
+            const labels = equityData.map(point => point.timestamp ? new Date(point.timestamp).toLocaleDateString() : '');
+            const data = equityData.map(point => point.equity || 0);
+
+            equityChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Equity',
+                        data: data,
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: false
+                        }
+                    }
+                }
+            });
+        }
+
+        async function refreshData() {
+            try {
+                // Fetch all data
+                const [statusData, performanceData, ordersData, signalsData, equityData] = await Promise.all([
+                    fetchData('status'),
+                    fetchData('performance'),
+                    fetchData('orders'),
+                    fetchData('signals'),
+                    fetchData('equity')
+                ]);
+
+                // Update UI
+                updateStatus(statusData);
+                updatePerformance(performanceData);
+                updateOrders(ordersData.orders || []);
+                updateSignals(signalsData.signals || []);
+                updateEquityChart(equityData.equity_curve || []);
+
+            } catch (error) {
+                console.error('Error refreshing data:', error);
+                // Show error in status
+                document.getElementById('bot-status').textContent = 'Error loading data';
+                document.getElementById('bot-status').className = 'status-stopped';
+            }
+        }
+
+        // Initial load
+        refreshData();
+
+        // Auto refresh every 30 seconds
+        setInterval(refreshData, 30000);
+    </script>
+</body>
+</html>

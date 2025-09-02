@@ -14,11 +14,6 @@ from core.types import TradingMode
 
 import numpy as np
 
-from rich.table import Table
-from rich.live import Live
-from rich.panel import Panel
-from rich.console import Console
-
 from utils.logger import setup_logging
 from utils.config_loader import ConfigLoader
 from data.data_fetcher import DataFetcher
@@ -29,7 +24,6 @@ from core.signal_router import SignalRouter
 from notifier.discord_bot import DiscordNotifier
 from core.task_manager import TaskManager
 
-console = Console()
 logger = logging.getLogger(__name__)
 
 
@@ -109,9 +103,9 @@ class BotEngine:
         # Shutdown hooks registered during initialize() for orderly teardown
         self._shutdown_hooks: List = []
 
-        # UI components
-        self.live_display: Optional[Live] = None
-        self.display_table: Optional[Table] = None
+        # UI components (removed rich dependency)
+        self.live_display: Optional[Any] = None
+        self.display_table: Optional[Any] = None
 
     async def initialize(self) -> None:
         """Initialize all components of the trading bot."""
@@ -218,18 +212,10 @@ class BotEngine:
                 logger.warning(f"Strategy not found: {strategy_name}")
 
     def _initialize_display(self) -> None:
-        """Initialize the Rich terminal display."""
-        # Start with a simple "Initializing..." panel to avoid duplicate table prints
-        initializing_panel = Panel("Initializing Trading Bot Status...", title="Trading Bot Status")
-        self.live_display = Live(initializing_panel, refresh_per_second=4)
-        try:
-            self.live_display.start()
-        except Exception:
-            # If Live cannot start (e.g., not a TTY), continue without UI
-            logger.debug(
-                "Rich Live display could not be started (non-interactive environment)"
-            )
-            self.live_display = None
+        """Initialize the terminal display (rich dependency removed)."""
+        # Live display not available without rich
+        self.live_display = None
+        logger.info("Terminal display initialized (rich dependency removed)")
 
     async def run(self) -> None:
         """Main trading loop."""
@@ -549,59 +535,42 @@ class BotEngine:
             logger.exception("Error while checking global safe mode state")
 
     def _update_display(self) -> None:
-        """Update the Rich terminal display."""
-        if not self.live_display:
-            return
+        """Update the terminal display (rich dependency removed)."""
+        # Live display not available without rich
+        # Log status periodically instead
+        if hasattr(self, '_last_display_update'):
+            if now_ms() - self._last_display_update > 60000:  # Log every minute
+                self._log_status()
+                self._last_display_update = now_ms()
+        else:
+            self._last_display_update = now_ms()
+            self._log_status()
 
+    def _log_status(self) -> None:
+        """Log the current bot status."""
         try:
-            # Build a fresh Table each update to avoid mutating internal Live state.
-            table = Table(title="Trading Bot Status", show_header=True)
-            table.add_column("Metric")
-            table.add_column("Value")
-
-            table.add_row("Mode", self.mode.name)
-            table.add_row("Status", "PAUSED" if self.state.paused else "RUNNING")
-            try:
-                balance_str = f"{float(self.state.balance):.2f} {self.config['exchange']['base_currency']}"
-            except Exception:
-                balance_str = str(self.state.balance)
-            try:
-                equity_str = f"{float(self.state.equity):.2f} {self.config['exchange']['base_currency']}"
-            except Exception:
-                equity_str = str(self.state.equity)
-
-            table.add_row("Balance", balance_str)
-            table.add_row("Equity", equity_str)
-            table.add_row("Active Orders", str(self.state.active_orders))
-            table.add_row("Open Positions", str(self.state.open_positions))
-            table.add_row("Total PnL", f"{self.performance_stats.get('total_pnl', 0.0):.2f}")
-            table.add_row("Win Rate", f"{self.performance_stats.get('win_rate', 0.0):.2%}")
-
-            # Use Live.update to replace the shown table atomically. Force refresh to ensure display updates in non-tty environments.
-            try:
-                # Wrap in a Panel for consistent rendering and force an immediate refresh.
-                self.live_display.update(Panel(table), refresh=True)
-                self.display_table = table
-            except Exception:
-                # Fallback: assign table so future updates will use the latest structure.
-                # Attempt a non-refresh update as a last resort.
-                try:
-                    self.live_display.update(table)
-                except Exception:
-                    pass
-                self.display_table = table
+            balance_str = f"{float(self.state.balance):.2f} {self.config['exchange']['base_currency']}"
         except Exception:
-            logger.exception("Failed to update live display")
+            balance_str = str(self.state.balance)
+        try:
+            equity_str = f"{float(self.state.equity):.2f} {self.config['exchange']['base_currency']}"
+        except Exception:
+            equity_str = str(self.state.equity)
+
+        logger.info(f"Bot Status - Mode: {self.mode.name}, Status: {'PAUSED' if self.state.paused else 'RUNNING'}, "
+                   f"Balance: {balance_str}, Equity: {equity_str}, "
+                   f"Active Orders: {self.state.active_orders}, Open Positions: {self.state.open_positions}, "
+                   f"Total PnL: {self.performance_stats.get('total_pnl', 0.0):.2f}, "
+                   f"Win Rate: {self.performance_stats.get('win_rate', 0.0):.2%}")
 
     def print_status_table(self) -> None:
-        """Print the Trading Bot Status table once using console.print."""
+        """Print the Trading Bot Status table (rich dependency removed)."""
         try:
-            table = Table(title="Trading Bot Status", show_header=True)
-            table.add_column("Metric")
-            table.add_column("Value")
-
-            table.add_row("Mode", self.mode.name)
-            table.add_row("Status", "PAUSED" if self.state.paused else "RUNNING")
+            print("\n" + "="*50)
+            print("Trading Bot Status")
+            print("="*50)
+            print(f"Mode: {self.mode.name}")
+            print(f"Status: {'PAUSED' if self.state.paused else 'RUNNING'}")
             try:
                 balance_str = f"{float(self.state.balance):.2f} {self.config['exchange']['base_currency']}"
             except Exception:
@@ -610,15 +579,13 @@ class BotEngine:
                 equity_str = f"{float(self.state.equity):.2f} {self.config['exchange']['base_currency']}"
             except Exception:
                 equity_str = str(self.state.equity)
-
-            table.add_row("Balance", balance_str)
-            table.add_row("Equity", equity_str)
-            table.add_row("Active Orders", str(self.state.active_orders))
-            table.add_row("Open Positions", str(self.state.open_positions))
-            table.add_row("Total PnL", f"{self.performance_stats.get('total_pnl', 0.0):.2f}")
-            table.add_row("Win Rate", f"{self.performance_stats.get('win_rate', 0.0):.2%}")
-
-            console.print(table)
+            print(f"Balance: {balance_str}")
+            print(f"Equity: {equity_str}")
+            print(f"Active Orders: {self.state.active_orders}")
+            print(f"Open Positions: {self.state.open_positions}")
+            print(f"Total PnL: {self.performance_stats.get('total_pnl', 0.0):.2f}")
+            print(f"Win Rate: {self.performance_stats.get('win_rate', 0.0):.2%}")
+            print("="*50)
         except Exception:
             logger.exception("Failed to print status table")
 

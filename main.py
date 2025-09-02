@@ -8,18 +8,23 @@ import asyncio
 import logging
 import sys
 import argparse
+import os
 from typing import Optional
-
-from rich.console import Console
-from rich.panel import Panel
-from rich.text import Text
 
 from utils.config_loader import load_config, ConfigLoader
 from utils.logger import setup_logging
 from core.bot_engine import BotEngine
 
-# Rich console instance for pretty printing
-console = Console()
+# FastAPI imports (optional)
+try:
+    import uvicorn
+    from api.app import app, set_bot_engine
+    FASTAPI_AVAILABLE = True
+except ImportError:
+    FASTAPI_AVAILABLE = False
+    uvicorn = None
+    app = None
+    set_bot_engine = None
 
 
 class CryptoTradingBot:
@@ -52,6 +57,11 @@ class CryptoTradingBot:
             # Initialize core engine
             self.bot_engine = BotEngine(self.config)
             await self.bot_engine.initialize()
+
+            # Set bot engine reference in FastAPI app if available
+            if FASTAPI_AVAILABLE and set_bot_engine:
+                set_bot_engine(self.bot_engine)
+                self.logger.info("Bot engine registered with FastAPI app")
 
             self.logger.info("Bot engine initialized successfully")
 
@@ -98,22 +108,15 @@ class CryptoTradingBot:
 
     def _display_banner(self) -> None:
         """Display the startup banner."""
-        banner_text = Text.assemble(
-            ("CryptoTradingBot\n", "bold blue"),
-            ("Version: 1.0.0\n", "bold green"),
-            ("Mode: ", "bold"),
-            (f"{self._get_mode()}\n", "bold cyan"),
-            ("Status: ", "bold"),
-            ("INITIALIZING", "bold yellow"),
-        )
-
-        panel = Panel(
-            banner_text,
-            title="[bold]Crypto Trading System[/bold]",
-            subtitle="[italic]Secure • Reliable • Profitable[/italic]",
-            border_style="blue",
-            padding=(1, 2),
-        )
+        print("=====================================")
+        print("  Crypto Trading System")
+        print("  Secure • Reliable • Profitable")
+        print("=====================================")
+        print("CryptoTradingBot")
+        print("Version: 1.0.0")
+        print(f"Mode: {self._get_mode()}")
+        print("Status: INITIALIZING")
+        print("=====================================")
         self.logger.info("CryptoTradingBot v1.0.0 - Mode: %s", self._get_mode())
 
     def _print_help(self) -> None:
@@ -126,7 +129,7 @@ Options:
   --status         Show the current trading bot status table and exit
   (no options)     Run the trading bot normally with live updating status
 """
-        console.print(help_text)
+        print(help_text)
 
     def _get_mode(self) -> str:
         """Determine the operating mode from command line arguments."""
@@ -142,9 +145,11 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py                    # Run the trading bot normally
+  python main.py                    # Run the trading bot normally (CLI mode)
   python main.py --help            # Show this help message
   python main.py --status          # Show current status and exit
+  python main.py --api             # Run with FastAPI web interface
+  USE_FASTAPI=true python main.py # Run with FastAPI (environment variable)
         """
     )
 
@@ -154,6 +159,12 @@ Examples:
         help="Show the current trading bot status table and exit"
     )
 
+    parser.add_argument(
+        "--api",
+        action="store_true",
+        help="Run with FastAPI web interface instead of CLI mode"
+    )
+
     return parser.parse_args()
 
 
@@ -161,6 +172,37 @@ async def main():
     """Main async entry point."""
     # Parse CLI arguments first
     args = parse_arguments()
+
+    # Check if FastAPI mode is enabled
+    use_fastapi = args.api or os.getenv("USE_FASTAPI", "").lower() in ("true", "1", "yes")
+
+    if use_fastapi:
+        if not FASTAPI_AVAILABLE:
+            logger = logging.getLogger(__name__)
+            logger.error("FastAPI mode requested but FastAPI dependencies are not installed")
+            logger.error("Install with: pip install fastapi uvicorn")
+            sys.exit(1)
+
+        logger = logging.getLogger(__name__)
+        logger.info("Starting in FastAPI mode")
+
+        # Initialize bot
+        bot = CryptoTradingBot()
+        await bot.initialize()
+
+        # Start FastAPI server
+        logger.info("Starting FastAPI server on http://localhost:8000")
+        logger.info("API documentation available at http://localhost:8000/docs")
+
+        # Run uvicorn server (this will block)
+        uvicorn.run(
+            "api.app:app",
+            host="0.0.0.0",
+            port=8000,
+            reload=False,
+            log_level="info"
+        )
+        return
 
     # Handle CLI-only commands that should exit immediately
     if args.status:
@@ -180,7 +222,9 @@ async def main():
             sys.exit(1)
         sys.exit(0)
 
-    # Normal execution path
+    # Normal CLI execution path
+    logger = logging.getLogger(__name__)
+    logger.info("Starting in CLI mode")
     bot = CryptoTradingBot()
     await bot.initialize()
     await bot.run()
