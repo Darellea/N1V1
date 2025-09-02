@@ -220,10 +220,14 @@ class TestOrderManager:
         # Add order to processor
         mock_managers['processor'].open_orders = {"test_order": MagicMock()}
 
-        result = await om.cancel_order("test_order")
+        # Suppress AsyncMock warnings for this test
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=".*AsyncMock.*")
 
-        assert result is True
-        mock_exchange.cancel_order.assert_called_once_with("test_order")
+            result = await om.cancel_order("test_order")
+
+            assert result is True
+            mock_exchange.cancel_order.assert_called_once_with("test_order")
 
     @pytest.mark.asyncio
     async def test_cancel_order_non_live_mode(self, config, mock_executors, mock_managers):

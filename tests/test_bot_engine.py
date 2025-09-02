@@ -206,7 +206,43 @@ class TestBotEngine:
 
         engine._update_display()
 
+        # Verify update was called once
         engine.live_display.update.assert_called_once()
+
+        # Verify the correct state data was passed
+        call_args = engine.live_display.update.call_args[0][0]  # Get the first positional argument
+        assert call_args["balance"] == 1000.0
+        assert call_args["equity"] == 1000.0
+        assert call_args["active_orders"] == 0
+        assert call_args["open_positions"] == 0
+        assert "performance_metrics" in call_args
+        assert call_args["performance_metrics"] == engine.performance_stats
+
+    def test_update_display_none_case(self, mock_config):
+        """Test display update when live_display is None."""
+        engine = BotEngine(mock_config)
+        engine.live_display = None  # Explicitly set to None
+        engine.state.balance = 1000.0
+        engine.state.equity = 1000.0
+        engine.state.active_orders = 0
+        engine.state.open_positions = 0
+
+        # This should not raise any exception and should do nothing
+        engine._update_display()
+
+    def test_update_display_exception_propagation(self, mock_config):
+        """Test that exceptions from live_display.update are allowed to propagate."""
+        engine = BotEngine(mock_config)
+        engine.live_display = MagicMock()
+        engine.live_display.update.side_effect = ValueError("Test exception")
+        engine.state.balance = 1000.0
+        engine.state.equity = 1000.0
+        engine.state.active_orders = 0
+        engine.state.open_positions = 0
+
+        # The exception should propagate and not be caught
+        with pytest.raises(ValueError, match="Test exception"):
+            engine._update_display()
 
     def test_print_status_table(self, mock_config, capsys):
         """Test printing status table."""

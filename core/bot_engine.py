@@ -535,16 +535,21 @@ class BotEngine:
             logger.exception("Error while checking global safe mode state")
 
     def _update_display(self) -> None:
-        """Update the terminal display (rich dependency removed)."""
-        # Live display not available without rich
-        # Log status periodically instead
-        if hasattr(self, '_last_display_update'):
-            if now_ms() - self._last_display_update > 60000:  # Log every minute
-                self._log_status()
-                self._last_display_update = now_ms()
-        else:
-            self._last_display_update = now_ms()
-            self._log_status()
+        """Update the terminal display with latest engine state."""
+        if self.live_display is None:
+            return
+
+        # Gather latest state
+        state_data = {
+            "balance": self.state.balance,
+            "equity": self.state.equity,
+            "active_orders": self.state.active_orders,
+            "open_positions": self.state.open_positions,
+            "performance_metrics": self.performance_stats
+        }
+
+        # Update the display with the latest state
+        self.live_display.update(state_data)
 
     def _log_status(self) -> None:
         """Log the current bot status."""
@@ -564,28 +569,41 @@ class BotEngine:
                    f"Win Rate: {self.performance_stats.get('win_rate', 0.0):.2%}")
 
     def print_status_table(self) -> None:
-        """Print the Trading Bot Status table (rich dependency removed)."""
+        """Print the Trading Bot Status table in a formatted table layout."""
         try:
-            print("\n" + "="*50)
-            print("Trading Bot Status")
-            print("="*50)
-            print(f"Mode: {self.mode.name}")
-            print(f"Status: {'PAUSED' if self.state.paused else 'RUNNING'}")
+            # Prepare data
+            mode = self.mode.name
+            status = 'PAUSED' if self.state.paused else 'RUNNING'
+
             try:
                 balance_str = f"{float(self.state.balance):.2f} {self.config['exchange']['base_currency']}"
             except Exception:
                 balance_str = str(self.state.balance)
+
             try:
                 equity_str = f"{float(self.state.equity):.2f} {self.config['exchange']['base_currency']}"
             except Exception:
                 equity_str = str(self.state.equity)
-            print(f"Balance: {balance_str}")
-            print(f"Equity: {equity_str}")
-            print(f"Active Orders: {self.state.active_orders}")
-            print(f"Open Positions: {self.state.open_positions}")
-            print(f"Total PnL: {self.performance_stats.get('total_pnl', 0.0):.2f}")
-            print(f"Win Rate: {self.performance_stats.get('win_rate', 0.0):.2%}")
-            print("="*50)
+
+            active_orders = str(self.state.active_orders)
+            open_positions = str(self.state.open_positions)
+            total_pnl = f"{self.performance_stats.get('total_pnl', 0.0):.2f}"
+            win_rate = f"{self.performance_stats.get('win_rate', 0.0):.2%}"
+
+            # Create table with pipes and dashes (ASCII compatible)
+            print("\n+-----------------+---------------------+")
+            print("| Trading Bot Status                  |")
+            print("+-----------------+---------------------+")
+            print(f"| Mode            | {mode:<19} |")
+            print(f"| Status          | {status:<19} |")
+            print(f"| Balance         | {balance_str:<19} |")
+            print(f"| Equity          | {equity_str:<19} |")
+            print(f"| Active Orders   | {active_orders:<19} |")
+            print(f"| Open Positions  | {open_positions:<19} |")
+            print(f"| Total PnL       | {total_pnl:<19} |")
+            print(f"| Win Rate        | {win_rate:<19} |")
+            print("+-----------------+---------------------+")
+
         except Exception:
             logger.exception("Failed to print status table")
 

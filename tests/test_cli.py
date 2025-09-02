@@ -168,6 +168,10 @@ class TestCLI:
 
             # Create mock instances
             mock_exchange = MagicMock()
+            mock_exchange.fetch_currencies = AsyncMock(return_value=[
+                {"id": "BTC", "name": "Bitcoin"},
+                {"id": "ETH", "name": "Ethereum"}
+            ])
             mock_exchange.fetch_balance = AsyncMock(return_value={"total": {"USDT": 10000.0}})
             mock_exchange.fetch_ticker = AsyncMock(return_value={"last": 50000.0})
             mock_exchange.close = AsyncMock()

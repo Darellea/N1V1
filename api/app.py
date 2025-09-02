@@ -8,6 +8,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
+from fastapi.exception_handlers import http_exception_handler
 from typing import Dict, List, Any, Optional
 import logging
 import os
@@ -16,19 +18,58 @@ from sqlalchemy.orm import Session
 from .models import Order, Signal, Equity, get_db
 from .schemas import ErrorResponse
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
+import redis
+
+
 
 # Global reference to bot engine (will be set when app starts)
 bot_engine = None
 
-# API Key authentication
-API_KEY = os.getenv("API_KEY")
-security = HTTPBearer(auto_error=False) if API_KEY else None
+# API Key authentication - will be checked dynamically
+security = HTTPBearer(auto_error=False)
 
 app = FastAPI(
     title="Crypto Trading Bot API",
     description="REST API for monitoring and controlling the crypto trading bot",
     version="1.0.0"
 )
+
+# Add custom exception handling middleware at the very top
+from starlette.middleware.exceptions import ExceptionMiddleware
+
+class CustomExceptionMiddleware(ExceptionMiddleware):
+    """Custom exception middleware to properly handle exceptions."""
+
+    async def __call__(self, scope, receive, send):
+        try:
+            await self.app(scope, receive, send)
+        except Exception as exc:
+            # Check if this is an HTTP request
+            if scope["type"] == "http":
+                # Create a mock request object for the exception handler
+                from starlette.requests import Request
+                from starlette.responses import JSONResponse
+                import logging
+
+                # Create a minimal request object
+                request = Request(scope, receive)
+
+                # Get the global exception handler
+                from .app import global_exception_handler
+                response = await global_exception_handler(request, exc)
+
+                # Send the response
+                await response(scope, receive, send)
+            else:
+                raise
+
+# Add custom exception middleware at the very top
+app.add_middleware(CustomExceptionMiddleware)
 
 # Add CORS middleware
 app.add_middleware(
@@ -65,29 +106,221 @@ losses_total = Counter('losses_total', 'Total number of losing trades')
 open_positions = Counter('open_positions', 'Current number of open positions')
 
 
-async def verify_api_key(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
-    """Verify API key if authentication is enabled."""
-    if API_KEY and credentials:
-        if credentials.credentials != API_KEY:
-            raise HTTPException(
-                status_code=401,
-                detail={
-                    "error": {
-                        "code": 401,
-                        "message": "Invalid API key"
+# Rate limiting configuration
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+def get_remote_address_exempt(request):
+    """Get remote address, but exempt certain endpoints from rate limiting."""
+    if request.url.path in ["/", "/dashboard"]:
+        return None  # Exempt from rate limiting
+    return get_remote_address(request)
+
+def on_breach(request):
+    """Raise RateLimitExceeded exception to be handled by our custom handler."""
+    raise RateLimitExceeded()
+
+# Try to connect to Redis, fallback to in-memory if not available
+limiter = None
+try:
+    redis_client = redis.from_url(REDIS_URL)
+    redis_client.ping()  # Test connection
+    limiter = Limiter(key_func=get_remote_address_exempt, default_limits=["60/minute"], storage_uri=REDIS_URL, headers_enabled=True)
+    logger.info("Rate limiting configured with Redis")
+except (redis.ConnectionError, redis.TimeoutError):
+    logger.warning("Redis not available, falling back to in-memory rate limiting")
+    limiter = Limiter(key_func=get_remote_address_exempt, default_limits=["60/minute"], headers_enabled=True)  # In-memory fallback
+
+
+
+
+class RateLimitJSONMiddleware(BaseHTTPMiddleware):
+    """Custom middleware to convert SlowAPI rate limit responses to JSON."""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+
+        # Check if this is a rate limit response (429 status)
+        if response.status_code == 429:
+            # Get the response body
+            body = b""
+            async for chunk in response.body_iterator:
+                body += chunk
+
+            # Try to decode the body
+            try:
+                text_body = body.decode('utf-8')
+            except UnicodeDecodeError:
+                text_body = str(body)
+
+            # Parse the rate limit information from the response
+            limit = 60
+            window = "1 minute"
+            endpoint = str(request.url.path)
+
+            # Try to extract from headers if available
+            if hasattr(response, 'headers'):
+                limit_header = response.headers.get('X-RateLimit-Limit')
+                if limit_header:
+                    try:
+                        limit = int(limit_header)
+                    except ValueError:
+                        pass
+
+            # Create standardized JSON response
+            json_response = {
+                "error": {
+                    "code": "rate_limit_exceeded",
+                    "message": text_body.strip(),
+                    "details": {
+                        "limit": limit,
+                        "window": window,
+                        "endpoint": endpoint
                     }
                 }
+            }
+
+            # Preserve original headers
+            headers = {}
+            if hasattr(response, 'headers'):
+                for key, value in response.headers.items():
+                    headers[key] = value
+
+            return JSONResponse(
+                status_code=429,
+                content=json_response,
+                headers=headers
             )
-    elif API_KEY and not credentials:
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "error": {
-                    "code": 401,
-                    "message": "API key required"
+
+        return response
+
+
+# Configure SlowAPI
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(RateLimitJSONMiddleware)
+
+
+def format_error(code: int, message: str, details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Centralized error formatting function."""
+    return {
+        "error": {
+            "code": code,
+            "message": message,
+            "details": details
+        }
+    }
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """Custom rate limit exceeded handler with standardized JSON response."""
+    # Parse the original SlowAPI error message
+    # Format: "Rate limit exceeded: X per Y minute(s)"
+    original_message = str(exc)
+    limit = 60  # Default
+    window = "1 minute"  # Default
+
+    # Try to extract limit and window from the message
+    if "Rate limit exceeded:" in original_message:
+        try:
+            # Extract "X per Y minute" part
+            parts = original_message.split(": ")[1].split(" per ")
+            if len(parts) == 2:
+                limit_part = parts[0]
+                window_part = parts[1]
+                limit = int(limit_part) if limit_part.isdigit() else 60
+                window = window_part
+        except (IndexError, ValueError):
+            # Use defaults if parsing fails
+            pass
+
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": {
+                "code": "rate_limit_exceeded",
+                "message": original_message,
+                "details": {
+                    "limit": limit,
+                    "window": window,
+                    "endpoint": str(request.url.path)
                 }
             }
+        },
+        headers=exc.headers
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Custom HTTP exception handler to remove 'detail' wrapper."""
+    if isinstance(exc.detail, dict) and "error" in exc.detail:
+        # Already formatted error
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=exc.detail
         )
+    else:
+        # Plain string detail, format it
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=format_error(exc.status_code, str(exc.detail))
+        )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Global exception handler for unhandled exceptions."""
+    logger.exception("Unhandled exception in %s %s", request.method, request.url.path, exc_info=exc)
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "code": 500,
+                "message": "An unexpected error occurred",
+                "details": {
+                    "path": str(request.url.path),
+                    "method": request.method
+                }
+            }
+        }
+    )
+
+
+async def verify_api_key(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+    """Verify API key if authentication is enabled."""
+    current_api_key = os.getenv("API_KEY")
+    if current_api_key and credentials:
+        if credentials.credentials != current_api_key:
+            raise HTTPException(
+                status_code=401,
+                detail=format_error(401, "Invalid API key")
+            )
+    elif current_api_key and not credentials:
+        raise HTTPException(
+            status_code=401,
+            detail=format_error(401, "API key required")
+        )
+    return True
+
+
+async def optional_api_key(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+    """Optional API key verification - enforces auth when API_KEY is set."""
+    current_api_key = os.getenv("API_KEY")
+    if current_api_key:
+        # API key is required when configured
+        if not credentials:
+            raise HTTPException(
+                status_code=401,
+                detail=format_error(401, "API key required")
+            )
+        if credentials.credentials != current_api_key:
+            raise HTTPException(
+                status_code=401,
+                detail=format_error(401, "Invalid API key")
+            )
+    # No API key configured, allow access
     return True
 
 
@@ -104,261 +337,146 @@ async def root():
 
 
 @api_router.get("/status")
-async def get_status():
+async def get_status(request: Request):
     """Get bot status."""
     if not bot_engine:
         raise HTTPException(
             status_code=503,
-            detail={
-                "error": {
-                    "code": 503,
-                    "message": "Bot engine not available"
-                }
-            }
+            detail="Bot engine not available"
         )
 
-    try:
-        return {
-            "running": bot_engine.state.running,
-            "paused": bot_engine.state.paused,
-            "mode": bot_engine.mode.name,
-            "pairs": bot_engine.pairs,
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.exception("Failed to get bot status")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": {
-                    "code": 500,
-                    "message": "Failed to get bot status",
-                    "details": {"exception": str(e)}
-                }
-            }
-        )
+    return {
+        "running": bot_engine.state.running,
+        "paused": bot_engine.state.paused,
+        "mode": bot_engine.mode.name,
+        "pairs": bot_engine.pairs,
+        "timestamp": datetime.now().isoformat()
+    }
 
 
-@api_router.get("/orders", dependencies=[Depends(verify_api_key)] if API_KEY else [])
-async def get_orders(db: Session = Depends(get_db)):
+@api_router.get("/orders", dependencies=[Depends(optional_api_key)])
+async def get_orders(request: Request, db: Session = Depends(get_db)):
     """Get recent orders/trades."""
-    try:
-        # Query recent orders from database
-        orders_query = db.query(Order).order_by(Order.timestamp.desc()).limit(10).all()
+    # Query recent orders from database
+    orders_query = db.query(Order).order_by(Order.timestamp.desc()).limit(10).all()
 
-        orders = []
-        for order in orders_query:
-            orders.append({
-                "id": order.id,
-                "symbol": order.symbol,
-                "timestamp": order.timestamp.isoformat() if order.timestamp else None,
-                "side": order.side,
-                "quantity": order.quantity,
-                "price": order.price,
-                "pnl": order.pnl,
-                "equity": order.equity,
-                "cumulative_return": order.cumulative_return
-            })
+    orders = []
+    for order in orders_query:
+        orders.append({
+            "id": order.id,
+            "symbol": order.symbol,
+            "timestamp": order.timestamp.isoformat() if order.timestamp else None,
+            "side": order.side,
+            "quantity": order.quantity,
+            "price": order.price,
+            "pnl": order.pnl,
+            "equity": order.equity,
+            "cumulative_return": order.cumulative_return
+        })
 
-        return {"orders": orders}
-    except Exception as e:
-        logger.exception("Failed to get orders")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": {
-                    "code": 500,
-                    "message": "Failed to get orders",
-                    "details": {"exception": str(e)}
-                }
-            }
-        )
+    return {"orders": orders}
 
 
-@api_router.get("/signals", dependencies=[Depends(verify_api_key)] if API_KEY else [])
-async def get_signals(db: Session = Depends(get_db)):
+@api_router.get("/signals", dependencies=[Depends(optional_api_key)])
+async def get_signals(request: Request, db: Session = Depends(get_db)):
     """Get recent trading signals."""
-    try:
-        # Query recent signals from database
-        signals_query = db.query(Signal).order_by(Signal.timestamp.desc()).limit(10).all()
+    # Query recent signals from database
+    signals_query = db.query(Signal).order_by(Signal.timestamp.desc()).limit(10).all()
 
-        signals = []
-        for signal in signals_query:
-            signals.append({
-                "id": signal.id,
-                "symbol": signal.symbol,
-                "timestamp": signal.timestamp.isoformat() if signal.timestamp else None,
-                "confidence": signal.confidence,
-                "signal_type": signal.signal_type,
-                "strategy": signal.strategy
-            })
+    signals = []
+    for signal in signals_query:
+        signals.append({
+            "id": signal.id,
+            "symbol": signal.symbol,
+            "timestamp": signal.timestamp.isoformat() if signal.timestamp else None,
+            "confidence": signal.confidence,
+            "signal_type": signal.signal_type,
+            "strategy": signal.strategy
+        })
 
-        return {"signals": signals}
-    except Exception as e:
-        logger.exception("Failed to get signals")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": {
-                    "code": 500,
-                    "message": "Failed to get signals",
-                    "details": {"exception": str(e)}
-                }
-            }
-        )
+    return {"signals": signals}
 
 
-@api_router.get("/equity", dependencies=[Depends(verify_api_key)] if API_KEY else [])
-async def get_equity(db: Session = Depends(get_db)):
+@api_router.get("/equity", dependencies=[Depends(optional_api_key)])
+async def get_equity(request: Request, db: Session = Depends(get_db)):
     """Get equity curve data."""
-    try:
-        # Query equity data from database
-        equity_query = db.query(Equity).order_by(Equity.timestamp.asc()).all()
+    # Query equity data from database
+    equity_query = db.query(Equity).order_by(Equity.timestamp.asc()).all()
 
-        equity_data = []
-        for equity_point in equity_query:
-            equity_data.append({
-                "timestamp": equity_point.timestamp.isoformat() if equity_point.timestamp else None,
-                "balance": equity_point.balance,
-                "equity": equity_point.equity,
-                "cumulative_return": equity_point.cumulative_return
-            })
+    equity_data = []
+    for equity_point in equity_query:
+        equity_data.append({
+            "timestamp": equity_point.timestamp.isoformat() if equity_point.timestamp else None,
+            "balance": equity_point.balance,
+            "equity": equity_point.equity,
+            "cumulative_return": equity_point.cumulative_return
+        })
 
-        return {"equity_curve": equity_data}
-    except Exception as e:
-        logger.exception("Failed to get equity data")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": {
-                    "code": 500,
-                    "message": "Failed to get equity data",
-                    "details": {"exception": str(e)}
-                }
-            }
-        )
+    return {"equity_curve": equity_data}
 
 
 @api_router.get("/health")
-async def health_check():
+async def health_check(request: Request):
     """Simple health check endpoint."""
     if not bot_engine:
         return {"status": "unhealthy", "detail": "Bot engine not available"}
 
-    try:
-        return {
-            "status": "healthy",
-            "timestamp": datetime.now().isoformat(),
-            "bot_running": bot_engine.state.running
-        }
-    except Exception as e:
-        logger.exception("Health check failed")
-        return {"status": "unhealthy", "detail": str(e)}
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "bot_running": bot_engine.state.running
+    }
 
 
-@api_router.post("/pause", dependencies=[Depends(verify_api_key)] if API_KEY else [])
-async def pause_bot():
+@api_router.post("/pause", dependencies=[Depends(verify_api_key)])
+async def pause_bot(request: Request):
     """Pause the bot."""
     if not bot_engine:
         raise HTTPException(
             status_code=503,
-            detail={
-                "error": {
-                    "code": 503,
-                    "message": "Bot engine not available"
-                }
-            }
+            detail=format_error(503, "Bot engine not available")
         )
 
-    try:
-        bot_engine.state.paused = True
-        logger.info("Bot paused via API")
-        return {"message": "Bot paused successfully"}
-    except Exception as e:
-        logger.exception("Failed to pause bot")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": {
-                    "code": 500,
-                    "message": "Failed to pause bot",
-                    "details": {"exception": str(e)}
-                }
-            }
-        )
+    bot_engine.state.paused = True
+    logger.info("Bot paused via API")
+    return {"message": "Bot paused successfully"}
 
 
-@api_router.post("/resume", dependencies=[Depends(verify_api_key)] if API_KEY else [])
-async def resume_bot():
+@api_router.post("/resume", dependencies=[Depends(verify_api_key)])
+async def resume_bot(request: Request):
     """Resume the bot."""
     if not bot_engine:
         raise HTTPException(
             status_code=503,
-            detail={
-                "error": {
-                    "code": 503,
-                    "message": "Bot engine not available"
-                }
-            }
+            detail=format_error(503, "Bot engine not available")
         )
 
-    try:
-        bot_engine.state.paused = False
-        logger.info("Bot resumed via API")
-        return {"message": "Bot resumed successfully"}
-    except Exception as e:
-        logger.exception("Failed to resume bot")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": {
-                    "code": 500,
-                    "message": "Failed to resume bot",
-                    "details": {"exception": str(e)}
-                }
-            }
-        )
+    bot_engine.state.paused = False
+    logger.info("Bot resumed via API")
+    return {"message": "Bot resumed successfully"}
 
 
-@api_router.get("/performance", dependencies=[Depends(verify_api_key)] if API_KEY else [])
-async def get_performance():
+@api_router.get("/performance", dependencies=[Depends(optional_api_key)])
+async def get_performance(request: Request):
     """Get performance metrics."""
     if not bot_engine:
         raise HTTPException(
             status_code=503,
-            detail={
-                "error": {
-                    "code": 503,
-                    "message": "Bot engine not available"
-                }
-            }
+            detail=format_error(503, "Bot engine not available")
         )
 
-    try:
-        return {
-            "total_pnl": bot_engine.performance_stats.get("total_pnl", 0.0),
-            "win_rate": bot_engine.performance_stats.get("win_rate", 0.0),
-            "wins": bot_engine.performance_stats.get("wins", 0),
-            "losses": bot_engine.performance_stats.get("losses", 0),
-            "sharpe_ratio": bot_engine.performance_stats.get("sharpe_ratio", 0.0),
-            "max_drawdown": bot_engine.performance_stats.get("max_drawdown", 0.0)
-        }
-    except Exception as e:
-        logger.exception("Failed to get performance metrics")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": {
-                    "code": 500,
-                    "message": "Failed to get performance metrics",
-                    "details": {"exception": str(e)}
-                }
-            }
-        )
+    return {
+        "total_pnl": bot_engine.performance_stats.get("total_pnl", 0.0),
+        "win_rate": bot_engine.performance_stats.get("win_rate", 0.0),
+        "wins": bot_engine.performance_stats.get("wins", 0),
+        "losses": bot_engine.performance_stats.get("losses", 0),
+        "sharpe_ratio": bot_engine.performance_stats.get("sharpe_ratio", 0.0),
+        "max_drawdown": bot_engine.performance_stats.get("max_drawdown", 0.0)
+    }
 
 
-@api_router.get("/metrics")
-async def metrics():
+@app.get("/metrics")
+async def metrics(request: Request):
     """Prometheus metrics endpoint."""
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
@@ -366,7 +484,7 @@ async def metrics():
 @app.get("/dashboard")
 async def dashboard(request: Request):
     """Serve the dashboard HTML page."""
-    return templates.TemplateResponse("dashboard.html", {"request": request})
+    return templates.TemplateResponse(request, "dashboard.html")
 
 # Include the API router
 app.include_router(api_router)

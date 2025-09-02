@@ -176,13 +176,24 @@ class TestDiscordNotifier:
              patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(config)
 
-            result = await notifier.send_notification("Test message")
+            try:
+                result = await notifier.send_notification("Test message")
 
-            assert result is True
-            mock_aiohttp_session.post.assert_called_once()
-            # Verify the URL contains the channel endpoint
-            call_args = mock_aiohttp_session.post.call_args
-            assert "channels/123456/messages" in call_args[0][0]
+                assert result is True
+                mock_aiohttp_session.post.assert_called_once()
+                # Verify the URL contains the channel endpoint
+                call_args = mock_aiohttp_session.post.call_args
+                assert "channels/123456/messages" in call_args[0][0]
+            finally:
+                # Ensure proper cleanup to prevent aiohttp session warnings
+                if hasattr(notifier, 'session') and notifier.session:
+                    try:
+                        await notifier.session.close()
+                    except Exception:
+                        # Ignore cleanup errors in tests
+                        pass
+                    finally:
+                        notifier.session = None
 
     @pytest.mark.asyncio
     async def test_send_notification_with_embed(self, discord_config, mock_aiohttp_session, mock_discord_imports):

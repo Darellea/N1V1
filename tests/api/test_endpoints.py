@@ -60,6 +60,8 @@ def client(test_bot_engine):
     """Create a test client with bot engine set."""
     set_bot_engine(test_bot_engine)
     with TestClient(app) as client:
+        # Store reference to bot engine for tests that need it
+        client._test_bot_engine = test_bot_engine
         yield client
 
 
@@ -343,6 +345,145 @@ class TestErrorResponseSchema:
 
         # Restore bot engine for other tests
         set_bot_engine(client._test_bot_engine)
+
+
+class TestRateLimiting:
+    """Test rate limiting functionality."""
+
+    def test_rate_limit_headers_present(self, client):
+        """Test that rate limit headers are present in responses."""
+        response = client.get("/api/v1/health")
+        assert response.status_code == 200
+
+        # Check for rate limit headers
+        assert "X-RateLimit-Limit" in response.headers
+        assert "X-RateLimit-Remaining" in response.headers
+        assert "X-RateLimit-Reset" in response.headers
+
+    def test_rate_limit_exceeded_returns_429(self, client):
+        """Test that exceeding rate limit returns 429 status."""
+        # Make multiple requests to exceed the limit
+        for i in range(65):  # Exceed the 60/minute limit
+            response = client.get("/api/v1/health")
+
+        # The last request should be rate limited
+        assert response.status_code == 429
+
+    def test_rate_limit_exceeded_returns_standardized_error(self, client):
+        """Test that rate limit exceeded returns standardized error format."""
+        # Make multiple requests to exceed the limit
+        for i in range(65):  # Exceed the 60/minute limit
+            response = client.get("/api/v1/health")
+
+        # Check the error response format
+        data = response.json()
+        assert "error" in data
+        assert "code" in data["error"]
+        assert "message" in data["error"]
+        assert data["error"]["code"] == "rate_limit_exceeded"
+        assert "Rate limit exceeded" in data["error"]["message"]
+
+        # Check for rate limit details
+        assert "details" in data["error"]
+        assert "limit" in data["error"]["details"]
+        assert "window" in data["error"]["details"]
+        assert "endpoint" in data["error"]["details"]
+
+    def test_root_endpoints_not_rate_limited(self, client):
+        """Test that root endpoints are not subject to rate limiting."""
+        # Make many requests to root endpoint
+        for i in range(100):
+            response = client.get("/")
+            assert response.status_code == 200
+
+        # Should not be rate limited
+        assert response.status_code == 200
+
+    def test_dashboard_endpoint_not_rate_limited(self, client):
+        """Test that dashboard endpoint is not subject to rate limiting."""
+        # Make many requests to dashboard endpoint
+        for i in range(100):
+            response = client.get("/dashboard")
+            assert response.status_code == 200
+
+        # Should not be rate limited
+        assert response.status_code == 200
+
+
+class TestGlobalExceptionHandler:
+    """Test global exception handler."""
+
+    def test_unhandled_exception_returns_500(self, client):
+        """Test that unhandled exceptions return 500 status."""
+        # Temporarily break the bot engine to cause an exception
+        from api.app import set_bot_engine
+        original_engine = client._test_bot_engine
+
+        # Create a mock engine that raises an exception
+        class BrokenEngine:
+            def __getattr__(self, name):
+                raise RuntimeError("Simulated internal error")
+
+        set_bot_engine(BrokenEngine())
+
+        response = client.get("/api/v1/status")
+        assert response.status_code == 500
+
+        # Restore the original engine
+        set_bot_engine(original_engine)
+
+    def test_unhandled_exception_returns_standardized_error(self, client):
+        """Test that unhandled exceptions return standardized error format."""
+        from api.app import set_bot_engine
+        original_engine = client._test_bot_engine
+
+        # Create a mock engine that raises an exception
+        class BrokenEngine:
+            def __getattr__(self, name):
+                raise RuntimeError("Simulated internal error")
+
+        set_bot_engine(BrokenEngine())
+
+        response = client.get("/api/v1/status")
+        assert response.status_code == 500
+
+        data = response.json()
+        assert "error" in data
+        assert "code" in data["error"]
+        assert "message" in data["error"]
+        assert data["error"]["code"] == 500
+        assert "An unexpected error occurred" in data["error"]["message"]
+
+        # Check for request details in error
+        assert "details" in data["error"]
+        assert "path" in data["error"]["details"]
+        assert "method" in data["error"]["details"]
+
+        # Restore the original engine
+        set_bot_engine(original_engine)
+
+    def test_global_handler_logs_exceptions(self, client, caplog):
+        """Test that global exception handler logs exceptions."""
+        from api.app import set_bot_engine
+        original_engine = client._test_bot_engine
+
+        # Create a mock engine that raises an exception
+        class BrokenEngine:
+            def __getattr__(self, name):
+                raise ValueError("Test exception")
+
+        set_bot_engine(BrokenEngine())
+
+        with caplog.at_level("ERROR"):
+            response = client.get("/api/v1/status")
+
+        # Check that the exception was logged
+        assert "Unhandled exception" in caplog.text
+        assert "ValueError" in caplog.text
+        assert "Test exception" in caplog.text
+
+        # Restore the original engine
+        set_bot_engine(original_engine)
 
 
 # Clean up environment after tests
