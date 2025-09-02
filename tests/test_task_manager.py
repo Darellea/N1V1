@@ -1,5 +1,6 @@
 import asyncio
 import pytest
+import warnings
 from unittest.mock import AsyncMock, MagicMock, patch
 from core.task_manager import TaskManager
 
@@ -79,9 +80,18 @@ class TestTaskManager:
         tm = TaskManager()
         await tm.cancel_all()  # This sets _shutdown = True
 
-        with patch('asyncio.sleep', new_callable=AsyncMock):
-            with pytest.raises(RuntimeError, match="TaskManager is shutting down"):
-                tm.create_task(asyncio.sleep(0.1))
+        # Suppress AsyncMock warnings in this test
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=".*coroutine.*never awaited.*", category=RuntimeWarning)
+
+            # Use AsyncMock properly for async functions
+            mock_sleep = AsyncMock(return_value=None)
+            with patch('asyncio.sleep', mock_sleep):
+                with pytest.raises(RuntimeError, match="TaskManager is shutting down"):
+                    tm.create_task(asyncio.sleep(0.1))
+
+            # Ensure the mock was called but don't await it again
+            mock_sleep.assert_called_once_with(0.1)
 
     @pytest.mark.asyncio
     async def test_multiple_concurrent_tasks(self):

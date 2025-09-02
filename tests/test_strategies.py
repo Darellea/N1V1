@@ -177,6 +177,8 @@ class TestRSIStrategy:
         strategy = RSIStrategy(rsi_config)
 
         # Create data with RSI < 30 (oversold) - use dict format to avoid RSI recalculation
+        # Use varying volumes to satisfy volume confirmation (last volume > avg * threshold)
+        volumes = [1000] * 19 + [2000]  # Last volume = 2000 > 1000 * 1.5 = 1500
         data = {
             "BTC/USDT": pd.DataFrame({
                 'timestamp': pd.date_range('2023-01-01', periods=20, freq='1H'),
@@ -184,7 +186,7 @@ class TestRSIStrategy:
                 'high': [50100] * 20,
                 'low': [49900] * 20,
                 'close': [50000] * 20,
-                'volume': [1000] * 20,
+                'volume': volumes,
                 'symbol': ['BTC/USDT'] * 20,
                 'rsi': [25.0] * 20  # Oversold
             })
@@ -205,6 +207,8 @@ class TestRSIStrategy:
         strategy = RSIStrategy(rsi_config)
 
         # Create data with RSI > 70 (overbought) - use dict format
+        # Use varying volumes to satisfy volume confirmation
+        volumes = [1000] * 19 + [2000]  # Last volume = 2000 > 1000 * 1.5 = 1500
         data = {
             "BTC/USDT": pd.DataFrame({
                 'timestamp': pd.date_range('2023-01-01', periods=20, freq='1H'),
@@ -212,7 +216,7 @@ class TestRSIStrategy:
                 'high': [50100] * 20,
                 'low': [49900] * 20,
                 'close': [50000] * 20,
-                'volume': [1000] * 20,
+                'volume': volumes,
                 'symbol': ['BTC/USDT'] * 20,
                 'rsi': [75.0] * 20  # Overbought
             })
@@ -255,7 +259,8 @@ class TestRSIStrategy:
         """Test signal generation with dict data format."""
         strategy = RSIStrategy(rsi_config)
 
-        # Create data in dict format
+        # Create data in dict format with varying volumes
+        volumes = [1000] * 19 + [2000]  # Last volume = 2000 > 1000 * 1.5 = 1500
         data = {
             "BTC/USDT": pd.DataFrame({
                 'timestamp': pd.date_range('2023-01-01', periods=20, freq='1H'),
@@ -263,7 +268,7 @@ class TestRSIStrategy:
                 'high': [50100] * 20,
                 'low': [49900] * 20,
                 'close': [50000] * 20,
-                'volume': [1000] * 20,
+                'volume': volumes,
                 'symbol': ['BTC/USDT'] * 20,
                 'rsi': [25.0] * 20  # Oversold
             })
@@ -290,6 +295,8 @@ class TestRSIStrategy:
         strategy = RSIStrategy(rsi_config)
 
         # Create data for both symbols in dict format
+        # BTC: Use varying volumes to satisfy volume confirmation (last volume > avg * threshold)
+        btc_volumes = [1000] * 19 + [2000]  # Last volume = 2000 > 1000 * 1.5 = 1500
         data = {
             "BTC/USDT": pd.DataFrame({
                 'timestamp': pd.date_range('2023-01-01', periods=20, freq='1H'),
@@ -297,7 +304,7 @@ class TestRSIStrategy:
                 'high': [50100] * 20,
                 'low': [49900] * 20,
                 'close': [50000] * 20,
-                'volume': [1000] * 20,
+                'volume': btc_volumes,
                 'symbol': ['BTC/USDT'] * 20,
                 'rsi': [25.0] * 20  # BTC oversold
             }),
@@ -307,7 +314,7 @@ class TestRSIStrategy:
                 'high': [3010] * 20,
                 'low': [2990] * 20,
                 'close': [3000] * 20,
-                'volume': [500] * 20,
+                'volume': [500] * 19 + [1000],  # Last volume = 1000 > 500 * 1.5 = 750
                 'symbol': ['ETH/USDT'] * 20,
                 'rsi': [75.0] * 20  # ETH overbought
             })
@@ -320,6 +327,64 @@ class TestRSIStrategy:
         signal_types = [s.signal_type for s in signals]
         assert SignalType.ENTRY_LONG in signal_types
         assert SignalType.ENTRY_SHORT in signal_types
+
+    @pytest.mark.asyncio
+    async def test_generate_signals_volume_confirmation(self, rsi_config):
+        """Test volume confirmation filtering in signal generation."""
+        strategy = RSIStrategy(rsi_config)
+
+        # Test case 1: Volume meets threshold (should generate signal)
+        volumes_high = [1000] * 19 + [2000]  # Last volume = 2000 > 1000 * 1.5 = 1500
+        data_high_volume = {
+            "BTC/USDT": pd.DataFrame({
+                'timestamp': pd.date_range('2023-01-01', periods=20, freq='1H'),
+                'open': [50000] * 20,
+                'high': [50100] * 20,
+                'low': [49900] * 20,
+                'close': [50000] * 20,
+                'volume': volumes_high,
+                'symbol': ['BTC/USDT'] * 20,
+                'rsi': [25.0] * 20  # Oversold
+            })
+        }
+
+        signals_high = await strategy.generate_signals(data_high_volume)
+        assert len(signals_high) == 1  # Signal should be generated
+
+        # Test case 2: Volume below threshold (should be filtered out)
+        volumes_low = [1000] * 20  # All volumes = 1000, last = 1000 < 1000 * 1.5 = 1500
+        data_low_volume = {
+            "BTC/USDT": pd.DataFrame({
+                'timestamp': pd.date_range('2023-01-01', periods=20, freq='1H'),
+                'open': [50000] * 20,
+                'high': [50100] * 20,
+                'low': [49900] * 20,
+                'close': [50000] * 20,
+                'volume': volumes_low,
+                'symbol': ['BTC/USDT'] * 20,
+                'rsi': [25.0] * 20  # Oversold
+            })
+        }
+
+        signals_low = await strategy.generate_signals(data_low_volume)
+        assert len(signals_low) == 0  # Signal should be filtered out
+
+        # Test case 3: Insufficient data for volume check (should generate signal)
+        data_short = {
+            "BTC/USDT": pd.DataFrame({
+                'timestamp': pd.date_range('2023-01-01', periods=5, freq='1H'),  # Less than volume_period (10)
+                'open': [50000] * 5,
+                'high': [50100] * 5,
+                'low': [49900] * 5,
+                'close': [50000] * 5,
+                'volume': [1000] * 5,
+                'symbol': ['BTC/USDT'] * 5,
+                'rsi': [25.0] * 5  # Oversold
+            })
+        }
+
+        signals_short = await strategy.generate_signals(data_short)
+        assert len(signals_short) == 1  # Signal should be generated (insufficient data for volume check)
 
 
 class TestEMACrossStrategy:

@@ -289,11 +289,20 @@ class TestDiscordIntegration:
         """Test handling of special characters in webhook integration."""
         notifier = DiscordNotifier(discord_webhook_config)
 
-        special_message = "Special chars: éñüñ 中文 🚀 💯 🔥 🔥 🔥"
-
-        result = await notifier.send_notification(special_message)
-
-        assert result is True
+        try:
+            special_message = "Special chars: éñüñ 中文 🚀 💯 🔥 🔥 🔥"
+            result = await notifier.send_notification(special_message)
+            assert result is True
+        finally:
+            # Ensure proper cleanup to prevent SSL warnings
+            if hasattr(notifier, 'session') and notifier.session:
+                try:
+                    await notifier.session.close()
+                except Exception:
+                    # Ignore cleanup errors in tests
+                    pass
+                finally:
+                    notifier.session = None
 
     @pytest.mark.skipif(
         not os.getenv("TEST_DISCORD_WEBHOOK_URL"),
@@ -304,9 +313,13 @@ class TestDiscordIntegration:
         """Test handling of empty content in webhook integration."""
         notifier = DiscordNotifier(discord_webhook_config)
 
-        result = await notifier.send_notification("")
-
-        assert result is True
+        try:
+            result = await notifier.send_notification("")
+            assert result is True
+        finally:
+            # Ensure proper cleanup to prevent SSL warnings
+            if notifier.session:
+                await notifier.session.close()
 
     @pytest.mark.skipif(
         not os.getenv("TEST_DISCORD_WEBHOOK_URL"),

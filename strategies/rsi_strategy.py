@@ -24,10 +24,16 @@ class RSIStrategy(BaseStrategy):
             "position_size": 0.1,  # 10% of portfolio
             "stop_loss_pct": 0.05,  # 5%
             "take_profit_pct": 0.1,  # 10%
+            "volume_period": 10,  # Period for volume confirmation
+            "volume_threshold": 1.5,  # Volume must be 1.5x 10-period average
         }
         # Handle both StrategyConfig objects and dict configs
         config_params = config.params if hasattr(config, 'params') else config.get('params', {})
         self.params: Dict[str, float] = {**self.default_params, **(config_params or {})}
+
+        # Signal tracking for monitoring
+        self.signal_counts = {"long": 0, "short": 0, "total": 0}
+        self.last_signal_time = None
 
     async def calculate_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         """Calculate RSI indicator for each symbol."""
@@ -94,6 +100,15 @@ class RSIStrategy(BaseStrategy):
 
         return signals
 
+    def _calculate_dynamic_position_size(self, symbol: str) -> float:
+        """Calculate dynamic position size based on portfolio allocation or ATR."""
+        # For now, use base position size
+        # In a full implementation, this would consider:
+        # - Portfolio allocation for the symbol
+        # - ATR-based volatility adjustment
+        # - Account balance and risk management
+        return self.params["position_size"]
+
     async def _generate_signals_for_symbol(self, symbol: str, data) -> List[TradingSignal]:
         """Generate signals for a specific symbol's data."""
         signals = []
@@ -114,14 +129,49 @@ class RSIStrategy(BaseStrategy):
 
             # Only generate signals if RSI is not NaN
             if not pd.isna(last_row["rsi"]):
+                # Volume confirmation filter
+                volume_confirmed = True
+                if "volume" in last_row.index and not pd.isna(last_row["volume"]):
+                    try:
+                        # Calculate average volume over the specified period
+                        volume_period = int(self.params.get("volume_period", 10))
+                        if len(data_with_rsi) >= volume_period:
+                            avg_volume = data_with_rsi["volume"].tail(volume_period).mean()
+                            current_volume = last_row["volume"]
+                            volume_threshold = self.params.get("volume_threshold", 1.5)
+                            volume_confirmed = current_volume >= (avg_volume * volume_threshold)
+                        else:
+                            # Not enough data for volume check, proceed
+                            volume_confirmed = True
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Volume confirmation failed for {symbol}: {e}")
+                        volume_confirmed = True  # Default to allowing signal
+
+                if not volume_confirmed:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"Volume confirmation failed for {symbol}: signal skipped")
+                    return signals
+
                 if last_row["rsi"] > self.params["overbought"]:
+                    # Track signal
+                    self.signal_counts["short"] += 1
+                    self.signal_counts["total"] += 1
+                    self.last_signal_time = pd.Timestamp.now()
+
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"RSI SHORT signal for {symbol}: RSI={last_row['rsi']:.2f}, total signals: {self.signal_counts['total']}")
+
                     signals.append(
                         self.create_signal(
                             symbol=symbol,
                             signal_type=SignalType.ENTRY_SHORT,
                             strength=SignalStrength.STRONG,
                             order_type="market",
-                            amount=self.params["position_size"],
+                            amount=self._calculate_dynamic_position_size(symbol),
                             current_price=current_price,
                             stop_loss=current_price * (1 + self.params["stop_loss_pct"]),
                             take_profit=current_price * (1 - self.params["take_profit_pct"]),
@@ -130,13 +180,22 @@ class RSIStrategy(BaseStrategy):
                     )
 
                 elif last_row["rsi"] < self.params["oversold"]:
+                    # Track signal
+                    self.signal_counts["long"] += 1
+                    self.signal_counts["total"] += 1
+                    self.last_signal_time = pd.Timestamp.now()
+
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.info(f"RSI LONG signal for {symbol}: RSI={last_row['rsi']:.2f}, total signals: {self.signal_counts['total']}")
+
                     signals.append(
                         self.create_signal(
                             symbol=symbol,
                             signal_type=SignalType.ENTRY_LONG,
                             strength=SignalStrength.STRONG,
                             order_type="market",
-                            amount=self.params["position_size"],
+                            amount=self._calculate_dynamic_position_size(symbol),
                             current_price=current_price,
                             stop_loss=current_price * (1 - self.params["stop_loss_pct"]),
                             take_profit=current_price * (1 + self.params["take_profit_pct"]),

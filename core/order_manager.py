@@ -109,6 +109,15 @@ class OrderManager:
         # Optional allocation mapping symbol->fraction (0..1)
         self.pair_allocation: Optional[Dict[str, float]] = None
 
+        # Rate limiting for KuCoin API (10 req/sec)
+        self._last_request_time: float = 0.0
+        self._request_interval: float = 0.1  # 100ms between requests
+
+        # Ticker cache for performance
+        self._ticker_cache: Dict[str, Dict[str, Any]] = {}
+        self._cache_ttl: float = 5.0  # 5 seconds cache
+        self._cache_timestamps: Dict[str, float] = {}
+
     @property
     def paper_balances(self) -> Dict[str, Decimal]:
         """Compatibility shim: expose paper_balances from PortfolioManager for existing callers/tests."""
@@ -124,7 +133,11 @@ class OrderManager:
         """
         # Safe mode: if activated, do not open new positions
         if self.reliability_manager.safe_mode_active:
-            logger.warning("Safe mode active: skipping new order execution", exc_info=False)
+            # Increment safe mode trigger counter
+            if not hasattr(self, '_safe_mode_triggers'):
+                self._safe_mode_triggers = 0
+            self._safe_mode_triggers += 1
+            logger.warning(f"Safe mode active: skipping new order execution (trigger #{self._safe_mode_triggers})", exc_info=False)
             trade_logger.log_failed_order(signal_to_dict(signal), "safe_mode_active")
             return {"id": None, "symbol": getattr(signal, "symbol", None), "status": "skipped", "reason": "safe_mode_active"}
 
@@ -209,9 +222,40 @@ class OrderManager:
             logger.exception("Unexpected error while cancelling all orders")
             raise
 
+    async def _rate_limit(self) -> None:
+        """Simple rate limiter for KuCoin API calls."""
+        current_time = time.time()
+        time_since_last = current_time - self._last_request_time
+        if time_since_last < self._request_interval:
+            await asyncio.sleep(self._request_interval - time_since_last)
+        self._last_request_time = time.time()
+
+    async def _get_cached_ticker(self, symbol: str) -> Dict[str, Any]:
+        """Get ticker data with caching to reduce API calls."""
+        current_time = time.time()
+        if symbol in self._ticker_cache and (current_time - self._cache_timestamps.get(symbol, 0)) < self._cache_ttl:
+            return self._ticker_cache[symbol]
+
+        if self.mode == TradingMode.LIVE and self.live_executor:
+            await self._rate_limit()
+            try:
+                ticker = await self.live_executor.exchange.fetch_ticker(symbol)
+                self._ticker_cache[symbol] = ticker
+                self._cache_timestamps[symbol] = current_time
+                return ticker
+            except (NetworkError, ExchangeError, OSError) as e:
+                logger.warning(f"Failed to fetch ticker for {symbol}: {e}")
+                # Return cached data if available, even if expired
+                if symbol in self._ticker_cache:
+                    return self._ticker_cache[symbol]
+                raise
+        else:
+            raise ValueError("Ticker fetching only supported in LIVE mode")
+
     async def get_balance(self) -> Decimal:
         """Get current account balance."""
         if self.mode == TradingMode.LIVE and self.live_executor:
+            await self._rate_limit()
             try:
                 balance = await self.live_executor.exchange.fetch_balance()
                 return Decimal(str(balance["total"].get(self.config.get("base_currency"), 0)))
@@ -237,14 +281,24 @@ class OrderManager:
         balance = await self.get_balance()
 
         if self.mode == TradingMode.LIVE and self.live_executor:
-            # For live trading, we'd calculate unrealized PnL from open positions
-            # This is a simplified version - real implementation would fetch current prices
+            # For live trading, calculate unrealized PnL from open positions using cached tickers
             unrealized = Decimal(0)
             for symbol, position in self.order_processor.positions.items():
                 try:
-                    ticker = await self.live_executor.exchange.fetch_ticker(symbol)
+                    # Validate position data
+                    entry_price = position.get("entry_price")
+                    amount = position.get("amount")
+                    if entry_price is None or amount is None:
+                        logger.warning(f"Invalid position data for {symbol}: missing entry_price or amount")
+                        continue
+
+                    entry_price = Decimal(str(entry_price))
+                    amount = Decimal(str(amount))
+
+                    # Use cached ticker to reduce API calls
+                    ticker = await self._get_cached_ticker(symbol)
                     current_price = Decimal(str(ticker.get("last") or ticker.get("close") or 0))
-                    unrealized += (current_price - position["entry_price"]) * position["amount"]
+                    unrealized += (current_price - entry_price) * amount
                 except (NetworkError, ExchangeError, OSError) as e:
                     logger.warning(f"Failed to fetch ticker for {symbol}: {e}")
                     continue
@@ -282,9 +336,6 @@ class OrderManager:
                     # If aggregation fails unexpectedly, surface it
                     logger.exception("Unexpected error calculating portfolio total")
                     raise
-                    return total
-                except Exception:
-                    return balance
             return balance
 
     async def initialize_portfolio(self, pairs: List[str], portfolio_mode: bool, allocation: Optional[Dict[str, float]] = None) -> None:
@@ -319,6 +370,13 @@ class OrderManager:
         try:
             self.pairs = pairs
             self.portfolio_mode = bool(portfolio_mode)
+
+            # Default to equal allocation if None
+            if allocation is None and pairs:
+                equal_allocation = 1.0 / len(pairs)
+                allocation = {pair: equal_allocation for pair in pairs}
+                logger.info(f"Using equal allocation for portfolio: {allocation}")
+
             self.pair_allocation = allocation
 
             # Configure both executors and portfolio manager

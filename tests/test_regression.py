@@ -87,7 +87,7 @@ class TestRegression:
 
             mock_portfolio_instance.paper_balances = {"USDT": Decimal("10000")}
             mock_portfolio_instance.set_initial_balance = MagicMock()
-            mock_portfolio_instance.initialize_portfolio = MagicMock()
+            mock_portfolio_instance.initialize_portfolio = AsyncMock()
 
             mock_processor_instance.process_order = AsyncMock(return_value={"id": "processed_order", "status": "filled"})
             mock_processor_instance.open_orders = {}

@@ -1,5 +1,6 @@
 import asyncio
 import os
+import warnings
 from dotenv import load_dotenv
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch, mock_open
@@ -75,12 +76,23 @@ class TestDiscordNotifier:
         with patch.dict(os.environ, {}, clear=True):
             notifier = DiscordNotifier(discord_config)
 
-        assert notifier.alerts_enabled is True
-        assert notifier.commands_enabled is False
-        assert notifier.webhook_url == "https://discord.com/api/webhooks/test"
-        assert notifier.bot_token == "test_bot_token"
-        assert notifier.channel_id == "123456789"
-        assert notifier.bot is None
+        try:
+            assert notifier.alerts_enabled is True
+            assert notifier.commands_enabled is False
+            assert notifier.webhook_url == "https://discord.com/api/webhooks/test"
+            assert notifier.bot_token == "test_bot_token"
+            assert notifier.channel_id == "123456789"
+            assert notifier.bot is None
+        finally:
+            # Ensure proper cleanup to prevent SSL warnings
+            if hasattr(notifier, 'session') and notifier.session:
+                # Use asyncio.create_task to avoid blocking in sync test
+                import asyncio
+                if asyncio.iscoroutinefunction(notifier.session.close):
+                    asyncio.create_task(notifier.session.close())
+                else:
+                    # If it's a mock, just set to None
+                    notifier.session = None
 
     def test_init_bot_mode(self):
         """Test DiscordNotifier initialization in bot mode."""
@@ -105,17 +117,49 @@ class TestDiscordNotifier:
             assert notifier.bot is not None
             mock_bot.assert_called_once()
 
+            # Ensure proper cleanup to prevent SSL warnings
+            if hasattr(notifier, 'session') and notifier.session:
+                try:
+                    # Use asyncio.create_task to avoid blocking in sync test
+                    import asyncio
+                    if asyncio.iscoroutinefunction(notifier.session.close):
+                        asyncio.create_task(notifier.session.close())
+                    else:
+                        # If it's a mock, just set to None
+                        notifier.session = None
+                except Exception:
+                    # Ignore cleanup errors in tests
+                    pass
+                finally:
+                    notifier.session = None
+
     @pytest.mark.asyncio
     async def test_send_notification_webhook_success(self, discord_config, mock_aiohttp_session, mock_discord_imports):
         """Test successful notification sending via webhook."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
-            notifier = DiscordNotifier(discord_config)
-            await notifier.initialize()
+        # Suppress SSL-related warnings that are hard to avoid in aiohttp tests
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message=".*SSL.*")
+            warnings.filterwarnings("ignore", message=".*Event loop is closed.*")
 
-            result = await notifier.send_notification("Test message")
+            with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+                notifier = DiscordNotifier(discord_config)
+                await notifier.initialize()
 
-            assert result is True
-            mock_aiohttp_session.post.assert_called_once()
+                try:
+                    result = await notifier.send_notification("Test message")
+
+                    assert result is True
+                    mock_aiohttp_session.post.assert_called_once()
+                finally:
+                    # Ensure proper cleanup to prevent SSL warnings
+                    if hasattr(notifier, 'session') and notifier.session:
+                        try:
+                            await notifier.session.close()
+                        except Exception:
+                            # Ignore cleanup errors in tests
+                            pass
+                        finally:
+                            notifier.session = None
 
     @pytest.mark.asyncio
     async def test_send_notification_bot_rest_success(self, mock_aiohttp_session, mock_discord_imports):

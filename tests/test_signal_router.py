@@ -880,3 +880,222 @@ async def test_ml_predict_called_with_ohlcv_fallback():
     features_df = args[1]
     assert isinstance(features_df, pd.DataFrame)
     assert not features_df.empty
+
+
+@pytest.mark.asyncio
+async def test_get_symbol_lock_concurrency():
+    """Test that symbol locks are distinct per symbol and global lock for None symbol."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # Test same symbol returns same lock
+    lock1 = await router._get_symbol_lock("BTC/USDT")
+    lock2 = await router._get_symbol_lock("BTC/USDT")
+    assert lock1 is lock2
+
+    # Test different symbols return different locks
+    lock3 = await router._get_symbol_lock("ETH/USDT")
+    assert lock1 is not lock3
+
+    # Test None symbol returns global lock
+    global_lock = await router._get_symbol_lock(None)
+    assert global_lock is router._lock
+
+    # Test concurrent access to different symbols
+    async def get_lock_for_symbol(symbol):
+        return await router._get_symbol_lock(symbol)
+
+    tasks = [
+        get_lock_for_symbol("BTC/USDT"),
+        get_lock_for_symbol("ETH/USDT"),
+        get_lock_for_symbol("ADA/USDT"),
+    ]
+
+    results = await asyncio.gather(*tasks)
+
+    # All results should be different locks
+    assert len(set(results)) == 3
+    assert all(isinstance(lock, asyncio.Lock) for lock in results)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_signal_processing_different_symbols():
+    """Test concurrent processing of signals for different symbols."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # Create signals for different symbols
+    signals = []
+    for i, symbol in enumerate(["BTC/USDT", "ETH/USDT", "ADA/USDT", "SOL/USDT", "DOT/USDT"]):
+        signal = TradingSignal(
+            strategy_id=f"strategy_{i}",
+            symbol=symbol,
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type="market",
+            amount=Decimal("1.0"),
+            price=Decimal("50000"),
+            current_price=Decimal("50000"),
+            timestamp=1234567890 + i,
+        )
+        signals.append(signal)
+
+    # Process all signals concurrently
+    tasks = [router.process_signal(signal) for signal in signals]
+    results = await asyncio.gather(*tasks)
+
+    # All signals should be approved
+    assert all(result is not None for result in results)
+    assert len(router.get_active_signals()) == len(signals)
+
+    # Each symbol should have exactly one active signal
+    for signal in signals:
+        symbol_signals = router.get_active_signals(signal.symbol)
+        assert len(symbol_signals) == 1
+        assert symbol_signals[0].symbol == signal.symbol
+
+
+@pytest.mark.asyncio
+async def test_concurrent_signal_processing_same_symbol_conflicts():
+    """Test concurrent processing of conflicting signals for the same symbol."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # Create conflicting signals for the same symbol
+    base_timestamp = 1234567890
+    signals = [
+        TradingSignal(
+            strategy_id="strategy_1",
+            symbol="BTC/USDT",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type="market",
+            amount=Decimal("1.0"),
+            price=Decimal("50000"),
+            current_price=Decimal("50000"),
+            timestamp=base_timestamp,
+        ),
+        TradingSignal(
+            strategy_id="strategy_2",
+            symbol="BTC/USDT",
+            signal_type=SignalType.ENTRY_SHORT,  # Opposite direction
+            signal_strength=SignalStrength.WEAK,
+            order_type="market",
+            amount=Decimal("1.0"),
+            price=Decimal("50000"),
+            current_price=Decimal("50000"),
+            timestamp=base_timestamp + 1,
+        ),
+        TradingSignal(
+            strategy_id="strategy_3",
+            symbol="BTC/USDT",
+            signal_type=SignalType.EXIT_LONG,  # Exit signal
+            signal_strength=SignalStrength.STRONG,
+            order_type="market",
+            amount=Decimal("1.0"),
+            price=Decimal("50000"),
+            current_price=Decimal("50000"),
+            timestamp=base_timestamp + 2,
+        ),
+    ]
+
+    # Process all signals concurrently
+    tasks = [router.process_signal(signal) for signal in signals]
+    results = await asyncio.gather(*tasks)
+
+    # Check results - some should be None (rejected)
+    rejected_count = sum(1 for result in results if result is None)
+    assert rejected_count >= 1  # At least one should be rejected
+
+    # At least one signal should be active (the exit signal should win due to exit_over_entry rule)
+    active_signals = router.get_active_signals("BTC/USDT")
+    assert len(active_signals) >= 1
+
+    # The exit signal should be present if it was processed
+    exit_signals = [s for s in active_signals if s.signal_type == SignalType.EXIT_LONG]
+    if exit_signals:
+        assert exit_signals[0].signal_strength == SignalStrength.STRONG
+
+
+@pytest.mark.asyncio
+async def test_retry_async_call_backoff_behavior():
+    """Test that retry backoff increases exponentially with jitter."""
+    import time
+    from unittest.mock import patch
+
+    rm = FailingRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    start_time = time.time()
+
+    async def failing_call():
+        return await rm.evaluate_signal(None)
+
+    # Mock sleep to track call times
+    sleep_calls = []
+    original_sleep = asyncio.sleep
+
+    async def mock_sleep(duration):
+        sleep_calls.append(duration)
+        await original_sleep(0.001)  # Very short sleep for testing
+
+    with patch('asyncio.sleep', side_effect=mock_sleep):
+        result = await router._retry_async_call(failing_call, retries=2, base_backoff=0.1, max_backoff=1.0)
+
+    # Should succeed after 2 failures
+    assert result is True
+    assert rm.call_count == 2
+
+    # Should have slept at least once (after first failure)
+    assert len(sleep_calls) >= 1
+
+    # First sleep should be around base_backoff (0.1)
+    if sleep_calls:
+        assert 0.05 <= sleep_calls[0] <= 0.15  # Allow some jitter
+
+    # If there are multiple sleeps, second should be larger (exponential backoff)
+    if len(sleep_calls) > 1:
+        assert sleep_calls[1] > sleep_calls[0]
+
+
+@pytest.mark.asyncio
+async def test_retry_async_call_max_backoff_cap():
+    """Test that retry backoff is capped at max_backoff."""
+    import time
+    from unittest.mock import patch
+
+    class PersistentFailureManager:
+        def __init__(self):
+            self.call_count = 0
+
+        async def evaluate_signal(self, signal, market_data=None):
+            self.call_count += 1
+            raise Exception("Persistent failure")
+
+    rm = PersistentFailureManager()
+    router = SignalRouter(risk_manager=rm)
+
+    async def failing_call():
+        return await rm.evaluate_signal(None)
+
+    # Mock sleep to track durations
+    sleep_calls = []
+    original_sleep = asyncio.sleep
+
+    async def mock_sleep(duration):
+        sleep_calls.append(duration)
+        await original_sleep(0.001)
+
+    with patch('asyncio.sleep', side_effect=mock_sleep):
+        with pytest.raises(Exception, match="Persistent failure"):
+            await router._retry_async_call(failing_call, retries=3, base_backoff=1.0, max_backoff=2.0)
+
+    # Should have attempted 4 times (initial + 3 retries)
+    assert rm.call_count == 4
+
+    # Should have slept 3 times
+    assert len(sleep_calls) == 3
+
+    # All sleeps should be <= max_backoff + jitter
+    max_expected = 2.0 + (2.0 * 0.1)  # max_backoff + (max_backoff * jitter_factor)
+    assert all(duration <= max_expected + 0.1 for duration in sleep_calls)  # Allow small margin for floating point

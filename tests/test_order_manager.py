@@ -1,5 +1,6 @@
 import asyncio
 import pytest
+import warnings
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from core.order_manager import OrderManager
@@ -210,9 +211,10 @@ class TestOrderManager:
         """Test order cancellation in live mode."""
         om = OrderManager(config, TradingMode.LIVE)
 
-        # Mock exchange
+        # Mock exchange with proper AsyncMock setup
         mock_exchange = MagicMock()
         mock_exchange.cancel_order = AsyncMock(return_value=True)
+        mock_exchange.fetch_ticker = AsyncMock(return_value={"last": 50000.0})  # Add fetch_ticker for balance calculation
         mock_executors['live'].exchange = mock_exchange
 
         # Add order to processor
@@ -237,9 +239,10 @@ class TestOrderManager:
         """Test balance retrieval in live mode."""
         om = OrderManager(config, TradingMode.LIVE)
 
-        # Mock exchange
+        # Mock exchange with all async methods properly mocked
         mock_exchange = MagicMock()
         mock_exchange.fetch_balance = AsyncMock(return_value={"total": {"USDT": 5000.0}})
+        mock_exchange.fetch_ticker = AsyncMock(return_value={"last": 50000.0})
         mock_executors['live'].exchange = mock_exchange
 
         balance = await om.get_balance()
