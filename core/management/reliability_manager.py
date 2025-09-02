@@ -109,7 +109,9 @@ class ReliabilityManager:
 
             close_on_safe = bool(self._reliability.get("close_positions_on_safe", False))
             if close_on_safe:
-                logger.info("Safe mode configured to close existing positions; implement closing logic here")
-                # TODO: implement graceful close of open positions if desired
+                logger.info("Safe mode: closing existing positions")
+                # Implementation: This would require access to order_manager
+                # For now, log the action; integration needed in bot_engine
+                logger.warning("Position closing not implemented; requires order_manager integration")
         except Exception:
             logger.exception("Failed to activate safe mode")

@@ -40,8 +40,8 @@ class RSIStrategy(BaseStrategy):
                 gain = delta.where(delta > 0, 0)
                 loss = -delta.where(delta < 0, 0)
 
-                avg_gain = gain.rolling(self.params["rsi_period"]).mean()
-                avg_loss = loss.rolling(self.params["rsi_period"]).mean()
+                avg_gain = gain.ewm(span=self.params["rsi_period"], adjust=False).mean()
+                avg_loss = loss.ewm(span=self.params["rsi_period"], adjust=False).mean()
 
                 rs = avg_gain / avg_loss
                 rsi = 100 - (100 / (1 + rs))
@@ -54,8 +54,8 @@ class RSIStrategy(BaseStrategy):
             gain = delta.where(delta > 0, 0)
             loss = -delta.where(delta < 0, 0)
 
-            avg_gain = gain.rolling(self.params["rsi_period"]).mean()
-            avg_loss = loss.rolling(self.params["rsi_period"]).mean()
+            avg_gain = gain.ewm(span=self.params["rsi_period"], adjust=False).mean()
+            avg_loss = loss.ewm(span=self.params["rsi_period"], adjust=False).mean()
 
             rs = avg_gain / avg_loss
             data["rsi"] = 100 - (100 / (1 + rs))
