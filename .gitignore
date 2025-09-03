@@ -66,6 +66,7 @@ scrips/
 tools/
 error.txt
 test_logs/
+scripts/
 
 
 # --- Machine Learning models ---
