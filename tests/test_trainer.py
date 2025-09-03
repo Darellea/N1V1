@@ -5,6 +5,9 @@ Tests for ml/trainer.py covering model training, validation, and error handling.
 Tests technical indicators, data processing, model training pipeline, and CLI interface.
 """
 
+import matplotlib
+matplotlib.use("Agg")  # Use non-GUI backend to prevent Tkinter errors
+
 import pytest
 import pandas as pd
 import numpy as np
