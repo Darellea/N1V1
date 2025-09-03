@@ -1,0 +1,9 @@
+{
+  "bad_data": "{1, 2, 3}"
+}
+{
+  "bad_data": "<test_logger.TestLogToFile.test_log_to_file_handles_serialization_error.<locals>.NonSerializable object at 0x00000203452CD4B0>"
+}
+{
+  "bad_data": "<function TestLogToFile.test_log_to_file_handles_serialization_error.<locals>.<lambda> at 0x0000014472274310>"
+}

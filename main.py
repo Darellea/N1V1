@@ -210,12 +210,16 @@ async def main():
             # Load config and print status table once, then exit
             config = load_config()
             setup_logging(config.get("logging", {}))
-            # Disable terminal display for CLI status to avoid live panel
-            config["monitoring"]["terminal_display"] = False
+            # Create a minimal bot engine instance for status display
+            # Avoid full initialization to prevent hanging
             bot_engine = BotEngine(config)
-            await bot_engine.initialize()
+            # Set default values for status display without async initialization
+            bot_engine.state.balance = 0.0
+            bot_engine.state.equity = 0.0
+            bot_engine.state.active_orders = 0
+            bot_engine.state.open_positions = 0
+            bot_engine.state.paused = False
             bot_engine.print_status_table()
-            await bot_engine.shutdown()
         except Exception as e:
             logger = logging.getLogger(__name__)
             logger.error(f"Failed to show status: {str(e)}")

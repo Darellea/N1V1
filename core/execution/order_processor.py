@@ -10,7 +10,7 @@ from decimal import Decimal
 from typing import Dict, Any, Optional
 import numpy as np
 
-from core.types.order_types import Order, OrderStatus
+from core.types.order_types import Order, OrderStatus, OrderType
 from utils.logger import get_trade_logger
 from utils.adapter import signal_to_dict
 from risk.risk_manager import _safe_quantize
@@ -151,13 +151,15 @@ class OrderProcessor:
             if order.id in self.open_orders:
                 del self.open_orders[order.id]
 
+            # Calculate PnL before updating positions (for sell orders)
+            pnl = self._calculate_pnl(order) if order.side == "sell" else None
+
             # Update position tracking
             self._update_positions(order)
         else:
             self.open_orders[order.id] = order
-
-        # Calculate PnL if this was a closing trade
-        pnl = self._calculate_pnl(order) if order.side == "sell" else None
+            # No PnL for non-filled orders
+            pnl = None
 
         # Optionally compute dynamic take-profit when requested via order.params
         take_profit_val: Optional[float] = None
@@ -219,6 +221,7 @@ class OrderProcessor:
             "type": order.type.value,
             "side": order.side,
             "amount": float(order.amount),
+            "filled": float(order.filled),
             "price": float(order.price) if order.price else None,
             "status": order.status.value,
             "cost": float(order.cost),
@@ -267,7 +270,10 @@ class OrderProcessor:
             )
             self.positions[order.symbol] = position
         else:
+            # For sell orders, reduce position proportionally
             position["amount"] -= order.filled
+            # Reduce entry cost proportionally to the amount sold
+            position["entry_cost"] -= position["entry_price"] * order.filled
             if position["amount"] <= 0:
                 del self.positions[order.symbol]
             else:

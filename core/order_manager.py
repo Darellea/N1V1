@@ -209,25 +209,42 @@ class OrderManager:
         if self.mode != TradingMode.LIVE or not self.live_executor:
             return
 
-        try:
-            open_orders = list(self.order_processor.open_orders.keys())
-            for order_id in open_orders:
-                await self.cancel_order(order_id)
-        except (NetworkError, ExchangeError, OSError) as e:
-            logger.error(f"Failed to cancel all orders: {str(e)}")
-            raise
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Unexpected error while cancelling all orders")
-            raise
+        open_orders = list(self.order_processor.open_orders.keys())
+        if not open_orders:
+            return
+
+        failed_cancellations = []
+        successful_cancellations = []
+
+        for order_id in open_orders:
+            try:
+                result = await self.cancel_order(order_id)
+                if result:
+                    successful_cancellations.append(order_id)
+                else:
+                    failed_cancellations.append(order_id)
+            except Exception as e:
+                logger.error(f"Failed to cancel order {order_id}: {str(e)}")
+                failed_cancellations.append(order_id)
+
+        # If all cancellations failed, raise an exception
+        if len(failed_cancellations) == len(open_orders):
+            raise Exception("Failed to cancel orders")
+        elif failed_cancellations:
+            # Some failed, some succeeded - log but don't raise
+            logger.warning(f"Partial cancellation failure: {len(successful_cancellations)} succeeded, {len(failed_cancellations)} failed")
 
     async def _rate_limit(self) -> None:
         """Simple rate limiter for KuCoin API calls."""
         current_time = time.time()
         time_since_last = current_time - self._last_request_time
-        if time_since_last < self._request_interval:
-            await asyncio.sleep(self._request_interval - time_since_last)
+
+        # If this is the first call (_last_request_time is 0.0) or not enough time has passed,
+        # ensure we wait for the full interval
+        if self._last_request_time == 0.0 or time_since_last < self._request_interval:
+            wait_time = self._request_interval if self._last_request_time == 0.0 else self._request_interval - time_since_last
+            await asyncio.sleep(max(0, wait_time))
+
         self._last_request_time = time.time()
 
     async def _get_cached_ticker(self, symbol: str) -> Dict[str, Any]:
@@ -259,14 +276,9 @@ class OrderManager:
             try:
                 balance = await self.live_executor.exchange.fetch_balance()
                 return Decimal(str(balance["total"].get(self.config.get("base_currency"), 0)))
-            except (NetworkError, ExchangeError, OSError) as e:
+            except Exception as e:
                 logger.warning(f"Failed to fetch balance: {e}")
                 return Decimal(0)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception("Unexpected error fetching balance")
-                raise
         elif self.mode == TradingMode.PAPER:
             return self.paper_executor.get_balance()
         else:

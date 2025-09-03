@@ -1,6 +1,7 @@
 import asyncio
 import pytest
 import warnings
+import time
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 from core.order_manager import OrderManager
@@ -75,7 +76,14 @@ class TestOrderManager:
 
             # Mock reliability manager
             mock_reliability_instance.safe_mode_active = False
-            mock_reliability_instance.retry_async = AsyncMock(side_effect=lambda func, **kwargs: func())
+            async def mock_retry_async(func, **kwargs):
+                # For lambda functions that return coroutines, we need to call and await them
+                if callable(func):
+                    result = await func()
+                else:
+                    result = func
+                return result
+            mock_reliability_instance.retry_async = AsyncMock(side_effect=mock_retry_async)
             mock_reliability_instance.record_critical_error = MagicMock()
 
             # Mock portfolio manager
@@ -220,14 +228,10 @@ class TestOrderManager:
         # Add order to processor
         mock_managers['processor'].open_orders = {"test_order": MagicMock()}
 
-        # Suppress AsyncMock warnings for this test
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message=".*AsyncMock.*")
+        result = await om.cancel_order("test_order")
 
-            result = await om.cancel_order("test_order")
-
-            assert result is True
-            mock_exchange.cancel_order.assert_called_once_with("test_order")
+        assert result is True
+        mock_exchange.cancel_order.assert_called_once_with("test_order")
 
     @pytest.mark.asyncio
     async def test_cancel_order_non_live_mode(self, config, mock_executors, mock_managers):
@@ -332,3 +336,234 @@ class TestOrderManager:
         await om.shutdown()
 
         mock_executors['live'].shutdown.assert_called_once()
+
+    def test_init_with_invalid_mode_string(self, config, mock_executors, mock_managers):
+        """Test initialization with invalid mode string to cover fallback."""
+        om = OrderManager(config, "invalid_mode")
+        assert om.mode == TradingMode.PAPER  # Should fallback to PAPER
+
+    def test_init_with_mode_enum_value(self, config, mock_executors, mock_managers):
+        """Test initialization with mode as enum value."""
+        om = OrderManager(config, "live")
+        assert om.mode == TradingMode.LIVE
+
+    @pytest.mark.asyncio
+    async def test_execute_order_safe_mode_trigger_counter(self, config, mock_executors, mock_managers):
+        """Test safe mode trigger counter increment."""
+        om = OrderManager(config, TradingMode.PAPER)
+        mock_managers['reliability'].safe_mode_active = True
+
+        signal = TradingSignal(
+            strategy_id="test_strategy",
+            symbol="BTC/USDT",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type=OrderType.MARKET,
+            amount=Decimal("1.0")
+        )
+
+        await om.execute_order(signal)
+        assert hasattr(om, '_safe_mode_triggers')
+        assert om._safe_mode_triggers == 1
+
+        await om.execute_order(signal)
+        assert om._safe_mode_triggers == 2
+
+    @pytest.mark.asyncio
+    async def test_execute_order_unknown_mode(self, config, mock_executors, mock_managers):
+        """Test order execution with unknown mode (should treat as paper)."""
+        om = OrderManager(config, TradingMode.PAPER)
+        om.mode = "unknown"  # Simulate unknown mode
+
+        signal = TradingSignal(
+            strategy_id="test_strategy",
+            symbol="BTC/USDT",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type=OrderType.MARKET,
+            amount=Decimal("1.0")
+        )
+
+        result = await om.execute_order(signal)
+
+        # Should execute as paper
+        mock_executors['paper'].execute_paper_order.assert_called_once_with(signal)
+
+    @pytest.mark.asyncio
+    async def test_cancel_order_with_exception(self, config, mock_executors, mock_managers):
+        """Test cancel_order with network exception."""
+        om = OrderManager(config, TradingMode.LIVE)
+
+        mock_exchange = MagicMock()
+        mock_exchange.cancel_order = AsyncMock(side_effect=Exception("Network error"))
+        mock_executors['live'].exchange = mock_exchange
+
+        result = await om.cancel_order("test_order")
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_cancel_all_orders_with_exception(self, config, mock_executors, mock_managers):
+        """Test cancel_all_orders with exception."""
+        om = OrderManager(config, TradingMode.LIVE)
+
+        mock_exchange = MagicMock()
+        mock_exchange.cancel_order = AsyncMock(side_effect=Exception("Network error"))
+        mock_executors['live'].exchange = mock_exchange
+
+        mock_managers['processor'].open_orders = {"order1": MagicMock(), "order2": MagicMock()}
+
+        with pytest.raises(Exception):
+            await om.cancel_all_orders()
+
+    @pytest.mark.asyncio
+    async def test_rate_limit(self, config, mock_executors, mock_managers):
+        """Test rate limiting functionality."""
+        om = OrderManager(config, TradingMode.LIVE)
+        om._last_request_time = 0.0
+        om._request_interval = 0.1
+
+        import time
+        start_time = time.time()
+        await om._rate_limit()
+        end_time = time.time()
+
+        # Should have waited at least the interval
+        assert end_time - start_time >= 0.09  # Allow small tolerance
+
+    @pytest.mark.asyncio
+    async def test_get_cached_ticker_cache_hit(self, config, mock_executors, mock_managers):
+        """Test _get_cached_ticker with cache hit."""
+        om = OrderManager(config, TradingMode.LIVE)
+
+        # Pre-populate cache
+        om._ticker_cache["BTC/USDT"] = {"last": 50000.0}
+        om._cache_timestamps["BTC/USDT"] = time.time()
+
+        ticker = await om._get_cached_ticker("BTC/USDT")
+
+        assert ticker == {"last": 50000.0}
+        # Should not call exchange since cache hit
+
+    @pytest.mark.asyncio
+    async def test_get_cached_ticker_live_mode(self, config, mock_executors, mock_managers):
+        """Test _get_cached_ticker in live mode."""
+        om = OrderManager(config, TradingMode.LIVE)
+
+        mock_exchange = MagicMock()
+        mock_exchange.fetch_ticker = AsyncMock(return_value={"last": 50000.0})
+        mock_executors['live'].exchange = mock_exchange
+
+        ticker = await om._get_cached_ticker("BTC/USDT")
+
+        assert ticker == {"last": 50000.0}
+        mock_exchange.fetch_ticker.assert_called_once_with("BTC/USDT")
+
+    @pytest.mark.asyncio
+    async def test_get_cached_ticker_non_live_mode(self, config, mock_executors, mock_managers):
+        """Test _get_cached_ticker in non-live mode raises ValueError."""
+        om = OrderManager(config, TradingMode.PAPER)
+
+        with pytest.raises(ValueError, match="Ticker fetching only supported in LIVE mode"):
+            await om._get_cached_ticker("BTC/USDT")
+
+    @pytest.mark.asyncio
+    async def test_get_balance_live_mode_with_exception(self, config, mock_executors, mock_managers):
+        """Test get_balance in live mode with exception."""
+        om = OrderManager(config, TradingMode.LIVE)
+
+        mock_exchange = MagicMock()
+        mock_exchange.fetch_balance = AsyncMock(side_effect=Exception("Network error"))
+        mock_executors['live'].exchange = mock_exchange
+
+        balance = await om.get_balance()
+
+        assert balance == Decimal("0")
+
+    @pytest.mark.asyncio
+    async def test_get_balance_backtest_portfolio_mode(self, config, mock_executors, mock_managers):
+        """Test get_balance in backtest mode with portfolio."""
+        om = OrderManager(config, TradingMode.BACKTEST)
+        om.portfolio_mode = True
+        mock_managers['portfolio'].paper_balances = {"USDT": Decimal("5000"), "BTC": Decimal("0.1")}
+
+        balance = await om.get_balance()
+
+        assert balance == Decimal("5000.1")
+
+    @pytest.mark.asyncio
+    async def test_get_equity_live_mode_with_positions(self, config, mock_executors, mock_managers):
+        """Test get_equity in live mode with positions."""
+        om = OrderManager(config, TradingMode.LIVE)
+
+        mock_exchange = MagicMock()
+        mock_exchange.fetch_balance = AsyncMock(return_value={"total": {"USDT": 5000.0}})
+        mock_exchange.fetch_ticker = AsyncMock(return_value={"last": 51000.0})
+        mock_executors['live'].exchange = mock_exchange
+
+        # Add position
+        mock_managers['processor'].positions = {
+            "BTC/USDT": {"entry_price": 50000.0, "amount": 0.1}
+        }
+
+        equity = await om.get_equity()
+
+        # Balance 5000 + unrealized (51000 - 50000) * 0.1 = 5000 + 100 = 5100
+        assert equity == Decimal("5100")
+
+    @pytest.mark.asyncio
+    async def test_get_equity_with_invalid_position_data(self, config, mock_executors, mock_managers):
+        """Test get_equity with invalid position data."""
+        om = OrderManager(config, TradingMode.LIVE)
+
+        mock_exchange = MagicMock()
+        mock_exchange.fetch_balance = AsyncMock(return_value={"total": {"USDT": 5000.0}})
+        mock_exchange.fetch_ticker = AsyncMock(return_value={"last": 51000.0})
+        mock_executors['live'].exchange = mock_exchange
+
+        # Add invalid position
+        mock_managers['processor'].positions = {
+            "BTC/USDT": {"entry_price": None, "amount": 0.1}
+        }
+
+        equity = await om.get_equity()
+
+        # Should skip invalid position and return balance
+        assert equity == Decimal("5000")
+
+    @pytest.mark.asyncio
+    async def test_initialize_portfolio_invalid_inputs(self, config, mock_executors, mock_managers):
+        """Test initialize_portfolio with invalid inputs."""
+        om = OrderManager(config, TradingMode.PAPER)
+
+        # Test None pairs
+        with pytest.raises(TypeError, match="pairs cannot be None"):
+            await om.initialize_portfolio(None, True)
+
+        # Test non-list pairs
+        with pytest.raises(TypeError, match="pairs must be a list"):
+            await om.initialize_portfolio("not_a_list", True)
+
+        # Test invalid allocation
+        with pytest.raises(TypeError, match="allocation must be a dict or None"):
+            await om.initialize_portfolio(["BTC/USDT"], True, "not_a_dict")
+
+        # Test negative allocation
+        with pytest.raises(ValueError, match="cannot be negative"):
+            await om.initialize_portfolio(["BTC/USDT"], True, {"BTC/USDT": -0.1})
+
+        # Test allocation sum > 1
+        with pytest.raises(ValueError, match="exceeds 100%"):
+            await om.initialize_portfolio(["BTC/USDT", "ETH/USDT"], True, {"BTC/USDT": 0.7, "ETH/USDT": 0.4})
+
+    @pytest.mark.asyncio
+    async def test_initialize_portfolio_equal_allocation(self, config, mock_executors, mock_managers):
+        """Test initialize_portfolio with default equal allocation."""
+        om = OrderManager(config, TradingMode.PAPER)
+
+        pairs = ["BTC/USDT", "ETH/USDT"]
+
+        await om.initialize_portfolio(pairs, True, None)
+
+        expected_allocation = {"BTC/USDT": 0.5, "ETH/USDT": 0.5}
+        assert om.pair_allocation == expected_allocation

@@ -49,6 +49,9 @@ tmp/
 *.jsonl
 *.db
 *.sqlite
+*.png
+error.txt
+.market_cache/
 
 # --- Trading Bot specific ---
 output/
@@ -61,6 +64,9 @@ checkpoints/
 .test_cache/
 scrips/
 tools/
+error.txt
+test_logs/
+
 
 # --- Machine Learning models ---
 *.h5

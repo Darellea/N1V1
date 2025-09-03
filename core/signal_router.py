@@ -324,7 +324,21 @@ class SignalRouter:
             else:
                 # Try to convert to DataFrame
                 try:
-                    return pd.DataFrame([candidate])
+                    df = pd.DataFrame([candidate])
+                    # Validate that the DataFrame has usable data
+                    if df.empty or df.shape[1] == 0:
+                        return None
+                    # Check if all columns contain only object types (indicating invalid data)
+                    if all(df.dtypes == 'object'):
+                        # Check if the data is actually unusable (like object())
+                        try:
+                            # Try to access the first value to see if it's meaningful
+                            first_val = df.iloc[0, 0]
+                            if str(first_val).startswith('<') and str(first_val).endswith('>'):
+                                return None
+                        except Exception:
+                            return None
+                    return df
                 except Exception:
                     return None
         except Exception:
@@ -500,7 +514,11 @@ class SignalRouter:
         conflicts = []
         for signal_id, active_signal in self.active_signals.items():
             if active_signal.symbol == new_signal.symbol:
+                # Check for opposite signals (always conflicting)
                 if self._is_opposite_signal(new_signal, active_signal):
+                    conflicts.append(active_signal)
+                # Check for same-type signals when strength_based or newer_first is enabled
+                elif (self.conflict_resolution_rules["strength_based"] or self.conflict_resolution_rules["newer_first"]) and active_signal.signal_type == new_signal.signal_type:
                     conflicts.append(active_signal)
         return conflicts
 

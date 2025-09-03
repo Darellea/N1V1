@@ -1,459 +1,158 @@
-C:\Users\TU\Desktop\new project\N1V1>pytest tests/api/test_endpoints.py --maxfail=1
-================================================= test session starts =================================================
-platform win32 -- Python 3.10.11, pytest-8.0.0, pluggy-1.6.0
-rootdir: C:\Users\TU\Desktop\new project\N1V1
-configfile: pytest.ini
-plugins: anyio-4.10.0, hypothesis-6.92.6, asyncio-0.23.5, cov-4.1.0, mock-3.12.0, xdist-3.5.0
-asyncio: mode=strict
-collected 36 items
+PS C:\Users\TU\Desktop\new project\N1V1> pytest -q
+......................................................................................................... [ 16%]
+......................................................................................................... [ 33%]
+......................................................................................................... [ 50%]
+......................................................................................................... [ 67%]
+......................................................................................................... [ 83%]
+...............................................F.....................................................     [100%]
+=================================================== FAILURES =================================================== 
+________________________________ TestModelTraining.test_train_model_eval_profit ________________________________ 
 
-tests\api\test_endpoints.py .................................F
+self = <test_trainer.TestModelTraining object at 0x0000020D4276E8F0>
+mock_plot_importance = <MagicMock name='plot_importance' id='2255804174816'>
+mock_plt_close = <MagicMock name='close' id='2255975806960'>
+mock_plt_savefig = <MagicMock name='savefig' id='2255976268656'>
+mock_lgb_classifier = <MagicMock name='LGBMClassifier' id='2255976685552'>
+mock_json_dump = <MagicMock name='dump' id='2255976683824'>
+mock_joblib_dump = <MagicMock name='dump' id='2255976718896'>
+sample_training_data =           Open        High        Low       Close  ...  StochRSI  TrendStrength  Volatility  Label
+0   103.745401  110...101.078914  117.798755  90.853475  107.545429  ...  0.417898       0.085384    2.617692    
+  0
 
-====================================================== FAILURES =======================================================
-___________________________ TestGlobalExceptionHandler.test_unhandled_exception_returns_500 ___________________________
-  + Exception Group Traceback (most recent call last):
-  |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_utils.py", line 79, in collapse_excgroups
-  |     yield
-  |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 183, in __call__
-  |     async with anyio.create_task_group() as task_group:
-  |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\anyio\_backends\_asyncio.py", line 772, in __aexit__
-  |     raise BaseExceptionGroup(
-  | exceptiongroup.ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
-  +-+---------------- 1 ----------------
-    | Traceback (most recent call last):
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\_pytest\runner.py", line 345, in from_call
-    |     result: Optional[TResult] = func()
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\_pytest\runner.py", line 266, in <lambda>
-    |     lambda: ihook(item=item, **kwds), when=when, reraise=reraise
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_hooks.py", line 512, in __call__
-    |     return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
-    |     return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_callers.py", line 167, in _multicall
-    |     raise exception
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_callers.py", line 139, in _multicall
-    |     teardown.throw(exception)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\_pytest\threadexception.py", line 87, in pytest_runtest_call
-    |     yield from thread_exception_runtest_hook()
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\_pytest\threadexception.py", line 63, in thread_exception_runtest_hook
-    |     yield
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_callers.py", line 139, in _multicall
-    |     teardown.throw(exception)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\_pytest\unraisableexception.py", line 90, in pytest_runtest_call
-    |     yield from unraisable_exception_runtest_hook()
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\_pytest\unraisableexception.py", line 65, in unraisable_exception_runtest_hook
-    |     yield
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_callers.py", line 139, in _multicall
-    |     teardown.throw(exception)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\_pytest\logging.py", line 839, in pytest_runtest_call
-    |     yield from self._runtest_for(item, "call")
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\_pytest\logging.py", line 822, in _runtest_for
-    |     yield
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_callers.py", line 139, in _multicall
-    |     teardown.throw(exception)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\_pytest\capture.py", line 882, in pytest_runtest_call
-    |     return (yield)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_callers.py", line 139, in _multicall
-    |     teardown.throw(exception)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_callers.py", line 53, in run_old_style_hookwrapper
-    |     return result.get_result()
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_result.py", line 103, in get_result
-    |     raise exc.with_traceback(tb)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_callers.py", line 38, in run_old_style_hookwrapper
-    |     res = yield
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_callers.py", line 139, in _multicall
-    |     teardown.throw(exception)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\_pytest\skipping.py", line 257, in pytest_runtest_call
-    |     return (yield)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_callers.py", line 121, in _multicall
-    |     res = hook_impl.function(*args)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\_pytest\runner.py", line 181, in pytest_runtest_call
-    |     raise e
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\_pytest\runner.py", line 173, in pytest_runtest_call
-    |     item.runtest()
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\_pytest\python.py", line 1836, in runtest
-    |     self.ihook.pytest_pyfunc_call(pyfuncitem=self)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_hooks.py", line 512, in __call__
-    |     return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_manager.py", line 120, in _hookexec
-    |     return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_callers.py", line 167, in _multicall
-    |     raise exception
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_callers.py", line 139, in _multicall
-    |     teardown.throw(exception)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_callers.py", line 53, in run_old_style_hookwrapper
-    |     return result.get_result()
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_result.py", line 103, in get_result
-    |     raise exc.with_traceback(tb)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_callers.py", line 38, in run_old_style_hookwrapper
-    |     res = yield
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\pluggy\_callers.py", line 121, in _multicall
-    |     res = hook_impl.function(*args)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\_pytest\python.py", line 193, in pytest_pyfunc_call
-    |     result = testfunction(**testargs)
-    |   File "C:\Users\TU\Desktop\new project\N1V1\tests\api\test_endpoints.py", line 429, in test_unhandled_exception_returns_500
-    |     response = client.get("/api/v1/status")
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\testclient.py", line 479, in get
-    |     return super().get(
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\httpx\_client.py", line 1041, in get
-    |     return self.request(
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\testclient.py", line 451, in request
-    |     return super().request(
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\httpx\_client.py", line 814, in request
-    |     return self.send(request, auth=auth, follow_redirects=follow_redirects)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\httpx\_client.py", line 901, in send
-    |     response = self._send_handling_auth(
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\httpx\_client.py", line 929, in _send_handling_auth
-    |     response = self._send_handling_redirects(
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\httpx\_client.py", line 966, in _send_handling_redirects
-    |     response = self._send_single_request(request)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\httpx\_client.py", line 1002, in _send_single_request
-    |     response = transport.handle_request(request)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\testclient.py", line 354, in handle_request
-    |     raise exc
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\testclient.py", line 351, in handle_request
-    |     portal.call(self.app, scope, receive, send)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\anyio\from_thread.py", line 291, in call
-    |     return cast(T_Retval, self.start_task_soon(func, *args).result())
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\concurrent\futures\_base.py", line 458, in result
-    |     return self.__get_result()
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\concurrent\futures\_base.py", line 403, in __get_result
-    |     raise self._exception
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\anyio\from_thread.py", line 222, in _call_func
-    |     retval = await retval_or_awaitable
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\fastapi\applications.py", line 1054, in __call__
-    |     await super().__call__(scope, receive, send)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\applications.py", line 113, in __call__
-    |     await self.middleware_stack(scope, receive, send)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
-    |     raise exc
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
-    |     await self.app(scope, receive, _send)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 182, in __call__
-    |     with recv_stream, send_stream, collapse_excgroups():
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\contextlib.py", line 153, in __exit__
-    |     self.gen.throw(typ, value, traceback)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_utils.py", line 85, in collapse_excgroups
-    |     raise exc
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 184, in __call__
-    |     response = await self.dispatch_func(request, call_next)
-    |   File "C:\Users\TU\Desktop\new project\N1V1\api\app.py", line 108, in dispatch
-    |     response = await call_next(request)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 159, in call_next
-    |     raise app_exc
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 144, in coro
-    |     await self.app(scope, receive_or_disconnect, send_no_error)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 182, in __call__
-    |     with recv_stream, send_stream, collapse_excgroups():
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\contextlib.py", line 153, in __exit__
-    |     self.gen.throw(typ, value, traceback)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_utils.py", line 85, in collapse_excgroups
-    |     raise exc
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 184, in __call__
-    |     response = await self.dispatch_func(request, call_next)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\slowapi\middleware.py", line 136, in dispatch
-    |     response = await call_next(request)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 159, in call_next
-    |     raise app_exc
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 144, in coro
-    |     await self.app(scope, receive_or_disconnect, send_no_error)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\cors.py", line 85, in __call__
-    |     await self.app(scope, receive, send)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
-    |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
-    |     raise exc
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
-    |     await app(scope, receive, sender)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py", line 716, in __call__
-    |     await self.middleware_stack(scope, receive, send)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py", line 736, in app
-    |     await route.handle(scope, receive, send)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py", line 290, in handle
-    |     await self.app(scope, receive, send)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py", line 78, in app
-    |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
-    |     raise exc
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
-    |     await app(scope, receive, sender)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py", line 75, in app
-    |     response = await f(request)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\fastapi\routing.py", line 302, in app
-    |     raw_response = await run_endpoint_function(
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\fastapi\routing.py", line 213, in run_endpoint_function
-    |     return await dependant.call(**values)
-    |   File "C:\Users\TU\Desktop\new project\N1V1\api\app.py", line 317, in get_status
-    |     "running": bot_engine.state.running,
-    |   File "C:\Users\TU\Desktop\new project\N1V1\tests\api\test_endpoints.py", line 425, in __getattr__
-    |     raise RuntimeError("Simulated internal error")
-    | RuntimeError: Simulated internal error
-    +------------------------------------
+[100 rows x 13 columns]
 
-During handling of the above exception, another exception occurred:
+    @patch('ml.trainer.joblib.dump')
+    @patch('ml.trainer.json.dump')
+    @patch('ml.trainer.lgb.LGBMClassifier')
+    @patch('ml.trainer.plt.savefig')
+    @patch('ml.trainer.plt.close')
+    @patch('ml.trainer.lgb.plot_importance')
+    def test_train_model_eval_profit(self, mock_plot_importance, mock_plt_close,
+                                   mock_plt_savefig, mock_lgb_classifier,
+                                   mock_json_dump, mock_joblib_dump, sample_training_data):
+        """Test model training with profit evaluation."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_path = os.path.join(temp_dir, 'model.pkl')
 
-self = <test_endpoints.TestGlobalExceptionHandler object at 0x0000023D64218E20>
-client = <starlette.testclient.TestClient object at 0x0000023D643993F0>
+            # Mock LightGBM classifier
+            mock_model = MagicMock()
+            mock_lgb_classifier.return_value = mock_model
 
-    def test_unhandled_exception_returns_500(self, client):
-        """Test that unhandled exceptions return 500 status."""
-        # Temporarily break the bot engine to cause an exception
-        from api.app import set_bot_engine
-        original_engine = client._test_bot_engine
+            mock_json_dump.return_value = None
+            mock_joblib_dump.return_value = None
+            mock_plt_savefig.return_value = None
+            mock_plt_close.return_value = None
+            mock_plot_importance.return_value = None
 
-        # Create a mock engine that raises an exception
-        class BrokenEngine:
-            def __getattr__(self, name):
-                raise RuntimeError("Simulated internal error")
+            # Train with profit evaluation
+>           train_model(
+                sample_training_data,
+                model_path,
+                eval_profit=True,
+                n_splits=2
+            )
 
-        set_bot_engine(BrokenEngine())
+tests\test_trainer.py:545:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _  
+ml\trainer.py:563: in train_model
+    plt.figure(figsize=(10, 8))
+..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\matplotlib\pyplot.py:934: in figure
+    manager = new_figure_manager(
+..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\matplotlib\pyplot.py:465: in new_figure_manager
+    return _get_backend_mod().new_figure_manager(*args, **kwargs)
+..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\matplotlib\backend_bases.py:3402: in new_figure_manager
+    return cls.new_figure_manager_given_figure(num, fig)
+..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\matplotlib\backend_bases.py:3407: in new_figure_manager_given_figure
+    return cls.FigureCanvas.new_manager(figure, num)
+..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\matplotlib\backend_bases.py:1785: in new_manager
+    return cls.manager_class.create_with_canvas(cls, figure, num)
+..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\matplotlib\backends\_backend_tk.py:486: in create_with_canvas
+    window = tk.Tk(className="matplotlib")
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _  
 
->       response = client.get("/api/v1/status")
+self = <tkinter.Tk object .>, screenName = None, baseName = 'pytest', className = 'matplotlib', useTk = True     
+sync = False, use = None
 
-tests\api\test_endpoints.py:429:
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\testclient.py:479: in get
-    return super().get(
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\httpx\_client.py:1041: in get
-    return self.request(
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\testclient.py:451: in request
-    return super().request(
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\httpx\_client.py:814: in request
-    return self.send(request, auth=auth, follow_redirects=follow_redirects)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\httpx\_client.py:901: in send
-    response = self._send_handling_auth(
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\httpx\_client.py:929: in _send_handling_auth
-    response = self._send_handling_redirects(
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\httpx\_client.py:966: in _send_handling_redirects
-    response = self._send_single_request(request)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\httpx\_client.py:1002: in _send_single_request
-    response = transport.handle_request(request)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\testclient.py:354: in handle_request
-    raise exc
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\testclient.py:351: in handle_request
-    portal.call(self.app, scope, receive, send)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\anyio\from_thread.py:291: in call
-    return cast(T_Retval, self.start_task_soon(func, *args).result())
-..\..\..\AppData\Local\Programs\Python\Python310\lib\concurrent\futures\_base.py:458: in result
-    return self.__get_result()
-..\..\..\AppData\Local\Programs\Python\Python310\lib\concurrent\futures\_base.py:403: in __get_result
-    raise self._exception
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\anyio\from_thread.py:222: in _call_func
-    retval = await retval_or_awaitable
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\fastapi\applications.py:1054: in __call__
-    await super().__call__(scope, receive, send)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\applications.py:113: in __call__
-    await self.middleware_stack(scope, receive, send)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\errors.py:186: in __call__
-    raise exc
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\errors.py:164: in __call__
-    await self.app(scope, receive, _send)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py:182: in __call__
-    with recv_stream, send_stream, collapse_excgroups():
-..\..\..\AppData\Local\Programs\Python\Python310\lib\contextlib.py:153: in __exit__
-    self.gen.throw(typ, value, traceback)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_utils.py:85: in collapse_excgroups
-    raise exc
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py:184: in __call__
-    response = await self.dispatch_func(request, call_next)
-api\app.py:108: in dispatch
-    response = await call_next(request)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py:159: in call_next
-    raise app_exc
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py:144: in coro
-    await self.app(scope, receive_or_disconnect, send_no_error)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py:182: in __call__
-    with recv_stream, send_stream, collapse_excgroups():
-..\..\..\AppData\Local\Programs\Python\Python310\lib\contextlib.py:153: in __exit__
-    self.gen.throw(typ, value, traceback)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_utils.py:85: in collapse_excgroups
-    raise exc
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py:184: in __call__
-    response = await self.dispatch_func(request, call_next)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\slowapi\middleware.py:136: in dispatch
-    response = await call_next(request)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py:159: in call_next
-    raise app_exc
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py:144: in coro
-    await self.app(scope, receive_or_disconnect, send_no_error)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\cors.py:85: in __call__
-    await self.app(scope, receive, send)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\exceptions.py:63: in __call__
-    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
-    raise exc
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
-    await app(scope, receive, sender)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py:716: in __call__
-    await self.middleware_stack(scope, receive, send)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py:736: in app
-    await route.handle(scope, receive, send)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py:290: in handle
-    await self.app(scope, receive, send)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py:78: in app
-    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_exception_handler.py:53: in wrapped_app
-    raise exc
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_exception_handler.py:42: in wrapped_app
-    await app(scope, receive, sender)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py:75: in app
-    response = await f(request)
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\fastapi\routing.py:302: in app
-    raw_response = await run_endpoint_function(
-..\..\..\AppData\Local\Programs\Python\Python310\lib\site-packages\fastapi\routing.py:213: in run_endpoint_function
-    return await dependant.call(**values)
-api\app.py:317: in get_status
-    "running": bot_engine.state.running,
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+    def __init__(self, screenName=None, baseName=None, className='Tk',
+                 useTk=True, sync=False, use=None):
+        """Return a new top level widget on screen SCREENNAME. A new Tcl interpreter will
+        be created. BASENAME will be used for the identification of the profile file (see
+        readprofile).
+        It is constructed from sys.argv[0] without extensions if None is given. CLASSNAME
+        is the name of the widget class."""
+        self.master = None
+        self.children = {}
+        self._tkloaded = False
+        # to avoid recursions in the getattr code in case of failure, we
+        # ensure that self.tk is always _something_.
+        self.tk = None
+        if baseName is None:
+            import os
+            baseName = os.path.basename(sys.argv[0])
+            baseName, ext = os.path.splitext(baseName)
+            if ext not in ('.py', '.pyc'):
+                baseName = baseName + ext
+        interactive = False
+>       self.tk = _tkinter.create(screenName, baseName, className, interactive, wantobjects, useTk, sync, use)   
+E       _tkinter.TclError: invalid command name "tcl_findLibrary"
 
-self = <test_endpoints.TestGlobalExceptionHandler.test_unhandled_exception_returns_500.<locals>.BrokenEngine object at 0x0000023D64398E50>
-name = 'state'
+..\..\..\AppData\Local\Programs\Python\Python310\lib\tkinter\__init__.py:2299: TclError
+---------------------------------------------- Captured log call ----------------------------------------------- 
+WARNING  root:trainer.py:416 Fold 1 - Empty predictions or test set, skipping fold
+WARNING  root:trainer.py:416 Fold 2 - Empty predictions or test set, skipping fold
+=============================================== warnings summary =============================================== 
+tests/test_discord_integration.py::TestDiscordIntegration::test_webhook_integration_rate_limit_handling
+tests/test_regression.py::TestRegression::test_portfolio_initialization_with_invalid_data
+  C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\_pytest\unraisableexception.py:80: PytestUnraisableExceptionWarning: Exception ignored in: <function _SSLProtocolTransport.__del__ at 0x0000020D29F66DD0> 
 
-    def __getattr__(self, name):
->       raise RuntimeError("Simulated internal error")
-E       RuntimeError: Simulated internal error
+  Traceback (most recent call last):
+    File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\asyncio\sslproto.py", line 690, in _process_write_backlog
+      self._transport.write(chunk)
+    File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\asyncio\proactor_events.py", line 365, in write      self._loop_writing(data=bytes(data))
+    File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\asyncio\proactor_events.py", line 401, in _loop_writing
+      self._write_fut = self._loop._proactor.send(self._sock, data)
+  AttributeError: 'NoneType' object has no attribute 'send'
 
-tests\api\test_endpoints.py:425: RuntimeError
--------------------------------------------------- Captured log call --------------------------------------------------
-ERROR    api.app:app.py:242 Unhandled exception in GET /api/v1/status
-  + Exception Group Traceback (most recent call last):
-  |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_utils.py", line 79, in collapse_excgroups
-  |     yield
-  |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 183, in __call__
-  |     async with anyio.create_task_group() as task_group:
-  |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\anyio\_backends\_asyncio.py", line 772, in __aexit__
-  |     raise BaseExceptionGroup(
-  | exceptiongroup.ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
-  +-+---------------- 1 ----------------
-    | Traceback (most recent call last):
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
-    |     await self.app(scope, receive, _send)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 182, in __call__
-    |     with recv_stream, send_stream, collapse_excgroups():
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\contextlib.py", line 153, in __exit__
-    |     self.gen.throw(typ, value, traceback)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_utils.py", line 85, in collapse_excgroups
-    |     raise exc
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 184, in __call__
-    |     response = await self.dispatch_func(request, call_next)
-    |   File "C:\Users\TU\Desktop\new project\N1V1\api\app.py", line 108, in dispatch
-    |     response = await call_next(request)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 159, in call_next
-    |     raise app_exc
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 144, in coro
-    |     await self.app(scope, receive_or_disconnect, send_no_error)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 182, in __call__
-    |     with recv_stream, send_stream, collapse_excgroups():
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\contextlib.py", line 153, in __exit__
-    |     self.gen.throw(typ, value, traceback)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_utils.py", line 85, in collapse_excgroups
-    |     raise exc
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 184, in __call__
-    |     response = await self.dispatch_func(request, call_next)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\slowapi\middleware.py", line 136, in dispatch
-    |     response = await call_next(request)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 159, in call_next
-    |     raise app_exc
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 144, in coro
-    |     await self.app(scope, receive_or_disconnect, send_no_error)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\cors.py", line 85, in __call__
-    |     await self.app(scope, receive, send)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
-    |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
-    |     raise exc
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
-    |     await app(scope, receive, sender)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py", line 716, in __call__
-    |     await self.middleware_stack(scope, receive, send)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py", line 736, in app
-    |     await route.handle(scope, receive, send)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py", line 290, in handle
-    |     await self.app(scope, receive, send)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py", line 78, in app
-    |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
-    |     raise exc
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
-    |     await app(scope, receive, sender)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py", line 75, in app
-    |     response = await f(request)
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\fastapi\routing.py", line 302, in app
-    |     raw_response = await run_endpoint_function(
-    |   File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\fastapi\routing.py", line 213, in run_endpoint_function
-    |     return await dependant.call(**values)
-    |   File "C:\Users\TU\Desktop\new project\N1V1\api\app.py", line 317, in get_status
-    |     "running": bot_engine.state.running,
-    |   File "C:\Users\TU\Desktop\new project\N1V1\tests\api\test_endpoints.py", line 425, in __getattr__
-    |     raise RuntimeError("Simulated internal error")
-    | RuntimeError: Simulated internal error
-    +------------------------------------
+  During handling of the above exception, another exception occurred:
 
-During handling of the above exception, another exception occurred:
+  Traceback (most recent call last):
+    File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\asyncio\sslproto.py", line 321, in __del__     
+      self.close()
+    File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\asyncio\sslproto.py", line 316, in close       
+      self._ssl_protocol._start_shutdown()
+    File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\asyncio\sslproto.py", line 599, in _start_shutdown
+      self._write_appdata(b'')
+    File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\asyncio\sslproto.py", line 604, in _write_appdata
+      self._process_write_backlog()
+    File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\asyncio\sslproto.py", line 712, in _process_write_backlog
+      self._fatal_error(exc, 'Fatal error on SSL transport')
+    File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\asyncio\sslproto.py", line 726, in _fatal_error      self._transport._force_close(exc)
+    File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\asyncio\proactor_events.py", line 152, in _force_close
+      self._loop.call_soon(self._call_connection_lost, exc)
+    File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\asyncio\base_events.py", line 753, in call_soon      self._check_closed()
+    File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\asyncio\base_events.py", line 515, in _check_closed
+      raise RuntimeError('Event loop is closed')
+  RuntimeError: Event loop is closed
 
-Traceback (most recent call last):
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
-    await self.app(scope, receive, _send)
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 182, in __call__
-    with recv_stream, send_stream, collapse_excgroups():
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\contextlib.py", line 153, in __exit__
-    self.gen.throw(typ, value, traceback)
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_utils.py", line 85, in collapse_excgroups
-    raise exc
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 184, in __call__
-    response = await self.dispatch_func(request, call_next)
-  File "C:\Users\TU\Desktop\new project\N1V1\api\app.py", line 108, in dispatch
-    response = await call_next(request)
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 159, in call_next
-    raise app_exc
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 144, in coro
-    await self.app(scope, receive_or_disconnect, send_no_error)
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 182, in __call__
-    with recv_stream, send_stream, collapse_excgroups():
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\contextlib.py", line 153, in __exit__
-    self.gen.throw(typ, value, traceback)
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_utils.py", line 85, in collapse_excgroups
-    raise exc
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 184, in __call__
-    response = await self.dispatch_func(request, call_next)
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\slowapi\middleware.py", line 136, in dispatch
-    response = await call_next(request)
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 159, in call_next
-    raise app_exc
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\base.py", line 144, in coro
-    await self.app(scope, receive_or_disconnect, send_no_error)
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\cors.py", line 85, in __call__
-    await self.app(scope, receive, send)
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
-    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
-    raise exc
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
-    await app(scope, receive, sender)
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py", line 716, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py", line 736, in app
-    await route.handle(scope, receive, send)
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py", line 290, in handle
-    await self.app(scope, receive, send)
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py", line 78, in app
-    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
-    raise exc
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
-    await app(scope, receive, sender)
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\starlette\routing.py", line 75, in app
-    response = await f(request)
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\fastapi\routing.py", line 302, in app
-    raw_response = await run_endpoint_function(
-  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\site-packages\fastapi\routing.py", line 213, in run_endpoint_function
-    return await dependant.call(**values)
-  File "C:\Users\TU\Desktop\new project\N1V1\api\app.py", line 317, in get_status
-    "running": bot_engine.state.running,
-  File "C:\Users\TU\Desktop\new project\N1V1\tests\api\test_endpoints.py", line 425, in __getattr__
-    raise RuntimeError("Simulated internal error")
-RuntimeError: Simulated internal error
-=============================================== short test summary info ===============================================
-FAILED tests/api/test_endpoints.py::TestGlobalExceptionHandler::test_unhandled_exception_returns_500 - RuntimeError: Simulated internal error
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-============================================ 1 failed, 33 passed in 20.62s ============================================
+    warnings.warn(pytest.PytestUnraisableExceptionWarning(msg))
+
+tests/test_discord_integration.py::TestDiscordIntegration::test_bot_integration_shutdown
+  C:\Users\TU\Desktop\new project\N1V1\tests\test_discord_integration.py:325: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    await discord_bot_integration_notifier.shutdown()
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_main.py::TestMainFunction::test_main_status_mode
+  C:\Users\TU\Desktop\new project\N1V1\main.py:222: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    bot_engine.print_status_table()
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_signal_router.py::test_retry_async_call_with_custom_backoff
+  C:\Users\TU\Desktop\new project\N1V1\core\signal_router.py:788: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    await asyncio.sleep(max(0.0, sleep_for))
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================================== short test summary info ============================================ 
+FAILED tests/test_trainer.py::TestModelTraining::test_train_model_eval_profit - _tkinter.TclError: invalid command name "tcl_findLibrary"

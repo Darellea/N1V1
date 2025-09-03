@@ -33,6 +33,10 @@ def _safe_quantize(value: Decimal, exp: Decimal = Decimal(".000001")) -> Decimal
     Safely quantize a Decimal to the given exponent. Fall back to string formatting
     when Decimal.quantize raises InvalidOperation.
     """
+    # Handle NaN values first
+    if value.is_nan():
+        return Decimal("0")
+
     try:
         return value.quantize(exp, rounding=ROUND_HALF_UP)
     except (InvalidOperation, Exception):
@@ -264,7 +268,8 @@ class RiskManager:
         true_range = np.maximum.reduce([high_low, high_close, low_close])
         atr = true_range.mean()
 
-        if atr <= 0:
+        # Handle NaN or zero ATR
+        if atr <= 0 or np.isnan(atr):
             return await self._fixed_fractional_position_size(signal)
 
         account_balance = await self._get_current_balance()
@@ -406,6 +411,10 @@ class RiskManager:
             return
 
         volatility = returns.std() * np.sqrt(252)  # Annualized volatility
+
+        # Don't store NaN values
+        if np.isnan(volatility):
+            return
 
         self.symbol_volatility[symbol] = {
             "volatility": float(volatility),

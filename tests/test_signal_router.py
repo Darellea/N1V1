@@ -1099,3 +1099,917 @@ async def test_retry_async_call_max_backoff_cap():
     # All sleeps should be <= max_backoff + jitter
     max_expected = 2.0 + (2.0 * 0.1)  # max_backoff + (max_backoff * jitter_factor)
     assert all(duration <= max_expected + 0.1 for duration in sleep_calls)  # Allow small margin for floating point
+
+
+# Additional tests for journal recovery functionality (lines 581-595, 605-611, 624-632, 645-752)
+@pytest.mark.asyncio
+async def test_journal_recovery_with_corrupted_entries():
+    """Test journal recovery handles corrupted/malformed entries gracefully."""
+    import tempfile
+    import os
+    from pathlib import Path
+
+    rm = DummyRiskManager()
+    with tempfile.TemporaryDirectory() as temp_dir:
+        journal_path = Path(temp_dir) / "test_journal.jsonl"
+
+        # Create journal with some corrupted entries
+        with open(journal_path, "w") as f:
+            f.write('{"action": "store", "id": "test_1", "signal": {"strategy_id": "test"}}\n')  # Valid
+            f.write('{"action": "store", "id": "test_2"}\n')  # Missing signal
+            f.write('invalid json line\n')  # Invalid JSON
+            f.write('{"action": "store", "id": "test_3", "signal": {}}\n')  # Empty signal
+            f.write('{"action": "cancel", "id": "test_1"}\n')  # Valid cancel
+
+        router = SignalRouter(risk_manager=rm)
+        router.journal_path = journal_path
+        router._journal_enabled = True
+
+        # Should not raise exceptions despite corrupted entries
+        router.recover_from_journal()
+
+        # Should have recovered the valid entry and processed the cancel
+        assert "test_1" not in router.active_signals
+        # The empty signal dict should not be recovered
+        assert "test_3" not in router.active_signals
+
+
+@pytest.mark.asyncio
+async def test_journal_recovery_signal_reconstruction():
+    """Test journal recovery properly reconstructs TradingSignal objects."""
+    import tempfile
+    import json
+    from pathlib import Path
+
+    rm = DummyRiskManager()
+    with tempfile.TemporaryDirectory() as temp_dir:
+        journal_path = Path(temp_dir) / "test_journal.jsonl"
+
+        # Create a comprehensive signal entry
+        signal_data = {
+            "strategy_id": "test_strategy",
+            "symbol": "BTC/USDT",
+            "signal_type": "ENTRY_LONG",
+            "signal_strength": "STRONG",
+            "order_type": "market",
+            "amount": "1.5",
+            "price": "50000.0",
+            "current_price": "50100.0",
+            "timestamp": 1234567890,
+            "stop_loss": "49000.0",
+            "take_profit": "52000.0",
+            "metadata": {"test_key": "test_value"}
+        }
+
+        with open(journal_path, "w") as f:
+            json.dump({
+                "action": "store",
+                "id": "test_signal_1234567890_BTC/USDT",
+                "timestamp": 1234567890,
+                "signal": signal_data
+            }, f)
+            f.write('\n')
+
+        router = SignalRouter(risk_manager=rm)
+        router.journal_path = journal_path
+        router._journal_enabled = True
+
+        router.recover_from_journal()
+
+        # Should have reconstructed the signal
+        assert "test_signal_1234567890_BTC/USDT" in router.active_signals
+        recovered = router.active_signals["test_signal_1234567890_BTC/USDT"]
+
+        # Verify all fields were properly reconstructed
+        assert recovered.strategy_id == "test_strategy"
+        assert recovered.symbol == "BTC/USDT"
+        assert recovered.signal_type == SignalType.ENTRY_LONG
+        assert recovered.signal_strength == SignalStrength.STRONG
+        assert str(recovered.amount) == "1.5"
+        assert str(recovered.price) == "50000.0"
+        assert recovered.metadata == {"test_key": "test_value"}
+
+
+@pytest.mark.asyncio
+async def test_journal_recovery_enum_conversion_edge_cases():
+    """Test journal recovery handles enum conversion edge cases."""
+    import tempfile
+    import json
+    from pathlib import Path
+
+    rm = DummyRiskManager()
+    with tempfile.TemporaryDirectory() as temp_dir:
+        journal_path = Path(temp_dir) / "test_journal.jsonl"
+
+        # Test various enum representations
+        test_cases = [
+            {"signal_type": 1, "signal_strength": 3},  # Integer values
+            {"signal_type": "ENTRY_SHORT", "signal_strength": "WEAK"},  # String names
+            {"signal_type": "invalid", "signal_strength": 99},  # Invalid values
+        ]
+
+        with open(journal_path, "w") as f:
+            for i, case in enumerate(test_cases):
+                signal_data = {
+                    "strategy_id": f"test_{i}",
+                    "symbol": f"BTC{i}/USDT",
+                    "order_type": "market",
+                    "amount": "1.0",
+                    "timestamp": 1234567890 + i,
+                    **case
+                }
+                json.dump({
+                    "action": "store",
+                    "id": f"test_{i}_1234567890_BTC{i}/USDT",
+                    "signal": signal_data
+                }, f)
+                f.write('\n')
+
+        router = SignalRouter(risk_manager=rm)
+        router.journal_path = journal_path
+        router._journal_enabled = True
+
+        router.recover_from_journal()
+
+        # Should have recovered signals with fallback enum values for invalid cases
+        assert len(router.active_signals) == 3
+
+        for i in range(3):
+            signal_id = f"test_{i}_1234567890_BTC{i}/USDT"
+            assert signal_id in router.active_signals
+            recovered = router.active_signals[signal_id]
+
+            # Invalid enum values should fallback to defaults
+            if i == 2:  # Invalid case
+                assert recovered.signal_type == SignalType.ENTRY_LONG  # Default
+                assert recovered.signal_strength == SignalStrength.WEAK  # Default
+
+
+# Additional tests for ML feature extraction edge cases (lines 143-144, 148-151)
+@pytest.mark.asyncio
+async def test_extract_features_edge_cases():
+    """Test _extract_features_for_ml handles various edge cases."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    # Test with None market_data
+    result = router._extract_features_for_ml(None, signal)
+    assert result is None
+
+    # Test with empty dict
+    result = router._extract_features_for_ml({}, signal)
+    assert result is None
+
+    # Test with empty DataFrame
+    import pandas as pd
+    empty_df = pd.DataFrame()
+    result = router._extract_features_for_ml({"features": empty_df}, signal)
+    # Empty DataFrame should return None
+    assert result is None or (isinstance(result, pd.DataFrame) and result.empty)
+
+    # Test with empty Series
+    empty_series = pd.Series(dtype=float)
+    result = router._extract_features_for_ml({"features": empty_series}, signal)
+    # Empty Series gets converted to empty DataFrame
+    assert result is not None and isinstance(result, pd.DataFrame) and result.empty
+
+    # Test with empty list
+    result = router._extract_features_for_ml({"features": []}, signal)
+    assert result is None
+
+    # Test with list of non-numeric values
+    result = router._extract_features_for_ml({"features": ["a", "b", "c"]}, signal)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_extract_features_fallback_to_metadata():
+    """Test _extract_features_for_ml falls back to signal metadata."""
+    import pandas as pd
+
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+        metadata={"features": {"feature1": 1.0, "feature2": 2.0}}
+    )
+
+    # Should extract from signal metadata when market_data is None
+    result = router._extract_features_for_ml(None, signal)
+    assert result is not None
+    assert isinstance(result, pd.DataFrame)
+    assert not result.empty
+
+
+@pytest.mark.asyncio
+async def test_extract_features_multiple_fallbacks():
+    """Test _extract_features_for_ml tries multiple fallback locations."""
+    import pandas as pd
+
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    # Test fallback chain: features -> feature_row -> features_df -> ohlcv
+    market_data = {
+        "feature_row": {"feature1": 1.0, "feature2": 2.0}
+    }
+    result = router._extract_features_for_ml(market_data, signal)
+    assert result is not None
+    assert isinstance(result, pd.DataFrame)
+
+    # Test ohlcv fallback
+    market_data = {
+        "ohlcv": {"open": 50000, "high": 51000, "low": 49000, "close": 50500, "volume": 100}
+    }
+    result = router._extract_features_for_ml(market_data, signal)
+    assert result is not None
+    assert isinstance(result, pd.DataFrame)
+
+
+# Additional tests for error handling in _retry_async_call (lines 389-396)
+@pytest.mark.asyncio
+async def test_retry_async_call_with_different_exception_types():
+    """Test _retry_async_call handles different exception types appropriately."""
+    from unittest.mock import patch
+
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    call_count = 0
+
+    async def failing_call():
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise ConnectionError("Network error")
+        elif call_count == 2:
+            raise TimeoutError("Timeout")
+        else:
+            return "success"
+
+    result = await router._retry_async_call(failing_call, retries=2)
+    assert result == "success"
+    assert call_count == 3  # Failed twice, succeeded on third try
+
+
+@pytest.mark.asyncio
+async def test_retry_async_call_zero_retries():
+    """Test _retry_async_call with zero retries."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    async def failing_call():
+        raise Exception("Always fails")
+
+    with pytest.raises(Exception, match="Always fails"):
+        await router._retry_async_call(failing_call, retries=0)
+
+    # Should have attempted only once (no retries)
+    # Note: We can't easily track call count without modifying the function
+
+
+@pytest.mark.asyncio
+async def test_retry_async_call_with_custom_backoff():
+    """Test _retry_async_call with custom backoff parameters."""
+    from unittest.mock import patch, AsyncMock
+
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    async def failing_call():
+        raise Exception("Temporary failure")
+
+    sleep_calls = []
+    mock_sleep = AsyncMock()
+
+    def capture_sleep_duration(*args, **kwargs):
+        duration = args[0] if args else kwargs.get('delay', 0)
+        sleep_calls.append(duration)
+        return mock_sleep(*args, **kwargs)
+
+    with patch('asyncio.sleep', side_effect=capture_sleep_duration):
+        with pytest.raises(Exception, match="Temporary failure"):
+            await router._retry_async_call(
+                failing_call,
+                retries=2,
+                base_backoff=0.5,
+                max_backoff=10.0
+            )
+
+    # Should have slept twice (after first and second failures)
+    assert len(sleep_calls) == 2
+    # First sleep should be around base_backoff
+    assert 0.4 <= sleep_calls[0] <= 0.6  # Allow for jitter
+    # Second sleep should be larger (exponential backoff)
+    assert sleep_calls[1] > sleep_calls[0]
+
+
+# Additional tests for process_signal method sections (lines 235-243, 256-263, 280-285, 291-298, 305-318, 323-331, 346-348, 356-360, 369-370)
+@pytest.mark.asyncio
+async def test_process_signal_ml_confirmation_disabled():
+    """Test process_signal when ML is disabled."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # Ensure ML is disabled
+    router.ml_enabled = False
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    result = await router.process_signal(signal)
+    assert result is not None
+    assert result.symbol == "BTC/USDT"
+
+
+@pytest.mark.asyncio
+async def test_process_signal_ml_model_none():
+    """Test process_signal when ML model is None."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # ML enabled but model is None
+    router.ml_enabled = True
+    router.ml_model = None
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    result = await router.process_signal(signal)
+    assert result is not None
+    assert result.symbol == "BTC/USDT"
+
+
+@pytest.mark.asyncio
+async def test_process_signal_non_entry_signal_type():
+    """Test process_signal with non-entry signal types (should skip ML)."""
+    import pandas as pd
+    from unittest.mock import patch
+
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # Enable ML
+    router.ml_enabled = True
+    router.ml_model = "mock_model"
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.EXIT_LONG,  # Not an entry signal
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    # Mock market data with features
+    market_data = {
+        "features": pd.DataFrame([{"feature1": 1.0, "feature2": 2.0}])
+    }
+
+    with patch('core.signal_router.ml_predict') as mock_predict:
+        result = await router.process_signal(signal, market_data)
+
+    # Should not call ML predict for non-entry signals
+    mock_predict.assert_not_called()
+    assert result is not None
+
+
+@pytest.mark.asyncio
+async def test_process_signal_ml_prediction_error_handling():
+    """Test process_signal handles ML prediction errors gracefully."""
+    import pandas as pd
+    from unittest.mock import patch
+
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # Enable ML
+    router.ml_enabled = True
+    router.ml_model = "mock_model"
+    router.ml_confidence_threshold = 0.6
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    market_data = {
+        "features": pd.DataFrame([{"feature1": 1.0, "feature2": 2.0}])
+    }
+
+    # Mock ml_predict to raise an exception
+    with patch('core.signal_router.ml_predict', side_effect=Exception("ML prediction failed")):
+        result = await router.process_signal(signal, market_data)
+
+    # Should still process the signal despite ML error
+    assert result is not None
+    assert result.symbol == "BTC/USDT"
+
+
+@pytest.mark.asyncio
+async def test_process_signal_ml_low_confidence_ignored():
+    """Test process_signal ignores ML predictions with low confidence."""
+    import pandas as pd
+    from unittest.mock import patch, MagicMock
+
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # Enable ML with high confidence threshold
+    router.ml_enabled = True
+    router.ml_model = "mock_model"
+    router.ml_confidence_threshold = 0.8  # High threshold
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    market_data = {
+        "features": pd.DataFrame([{"feature1": 1.0, "feature2": 2.0}])
+    }
+
+    # Mock low confidence prediction
+    mock_prediction_df = pd.DataFrame([{"prediction": -1, "confidence": 0.5}])  # Low confidence
+
+    def mock_predict(model, features_df):
+        return mock_prediction_df
+
+    with patch('core.signal_router.ml_predict', side_effect=mock_predict) as mock_patch:
+        result = await router.process_signal(signal, market_data)
+
+    # Should call ML predict but ignore low confidence result
+    mock_patch.assert_called_once()
+    assert result is not None
+    # Signal strength should remain unchanged (STRONG)
+    assert result.signal_strength == SignalStrength.STRONG
+
+
+@pytest.mark.asyncio
+async def test_process_signal_blocking_mode():
+    """Test process_signal when router is in blocking mode."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # Enable blocking mode
+    router.block_signals = True
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    result = await router.process_signal(signal)
+    assert result is None
+    assert len(router.get_active_signals()) == 0
+
+
+@pytest.mark.asyncio
+async def test_process_signal_risk_manager_failure():
+    """Test process_signal handles risk manager failures."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # Mock risk manager to fail
+    async def failing_evaluate(signal, market_data=None):
+        raise Exception("Risk manager failure")
+
+    rm.evaluate_signal = failing_evaluate
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    result = await router.process_signal(signal)
+    assert result is None
+    assert len(router.get_active_signals()) == 0
+
+
+@pytest.mark.asyncio
+async def test_process_signal_validation_failure():
+    """Test process_signal handles validation failures."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # Create invalid signal (missing amount)
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("0"),  # Invalid amount
+    )
+
+    result = await router.process_signal(signal)
+    assert result is None
+    assert len(router.get_active_signals()) == 0
+
+
+# Additional tests for _record_router_error (lines 423)
+@pytest.mark.asyncio
+async def test_record_router_error_threshold_trigger():
+    """Test _record_router_error triggers blocking when threshold exceeded."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm, safe_mode_threshold=3)
+
+    # Record errors up to threshold
+    for i in range(3):
+        await router._record_router_error(Exception(f"Error {i}"))
+
+    assert router.critical_errors == 3
+    assert router.block_signals is True
+
+
+@pytest.mark.asyncio
+async def test_record_router_error_context_logging():
+    """Test _record_router_error logs context information."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    context = {"symbol": "BTC/USDT", "strategy": "test_strategy"}
+    await router._record_router_error(Exception("Test error"), context)
+
+    assert router.critical_errors == 1
+    assert router.block_signals is False  # Below threshold
+
+
+# Additional tests for update_signal_status (lines 441-444)
+@pytest.mark.asyncio
+async def test_update_signal_status_nonexistent_signal():
+    """Test update_signal_status with nonexistent signal ID."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # Try to update a signal that doesn't exist
+    await router.update_signal_status(
+        TradingSignal(
+            strategy_id="test",
+            symbol="BTC/USDT",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type="market",
+            amount=Decimal("1.0"),
+        ),
+        "executed",
+        "test reason"
+    )
+
+    # Should not raise exception
+    assert len(router.get_active_signals()) == 0
+
+
+# Additional tests for get_active_signals and get_signal_history (lines 451-452, 460-467)
+@pytest.mark.asyncio
+async def test_get_active_signals_empty():
+    """Test get_active_signals when no signals are active."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    assert router.get_active_signals() == []
+    assert router.get_active_signals("BTC/USDT") == []
+
+
+@pytest.mark.asyncio
+async def test_get_signal_history_limit():
+    """Test get_signal_history respects limit parameter."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # Add multiple signals
+    for i in range(5):
+        signal = TradingSignal(
+            strategy_id=f"test_{i}",
+            symbol="BTC/USDT",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type="market",
+            amount=Decimal("1.0"),
+        )
+        router._store_signal(signal)
+
+    # Test limit
+    history = router.get_signal_history(limit=3)
+    assert len(history) == 3
+
+    # Test no limit
+    history = router.get_signal_history()
+    assert len(history) == 5
+
+
+# Additional tests for close_journal (lines 482-486)
+@pytest.mark.asyncio
+async def test_close_journal_no_journal():
+    """Test close_journal when no journal is configured."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # Should not raise exception when no journal
+    await router.close_journal()
+
+
+@pytest.mark.asyncio
+async def test_close_journal_with_journal():
+    """Test close_journal with active journal."""
+    import tempfile
+    from pathlib import Path
+
+    rm = DummyRiskManager()
+    with tempfile.TemporaryDirectory() as temp_dir:
+        journal_path = Path(temp_dir) / "test_journal.jsonl"
+
+        router = SignalRouter(risk_manager=rm)
+        router.journal_path = journal_path
+        router._journal_enabled = True
+        router._journal_writer = "mock_writer"  # Mock writer
+
+        # Should not raise exception
+        await router.close_journal()
+
+
+# Additional tests for _get_symbol_lock (lines 532, 548)
+@pytest.mark.asyncio
+async def test_get_symbol_lock_none_symbol():
+    """Test _get_symbol_lock with None symbol returns global lock."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    lock = await router._get_symbol_lock(None)
+    assert lock is router._lock
+
+
+@pytest.mark.asyncio
+async def test_get_symbol_lock_creates_new_lock():
+    """Test _get_symbol_lock creates new lock for new symbol."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    lock = await router._get_symbol_lock("NEW_SYMBOL")
+    assert isinstance(lock, asyncio.Lock)
+    assert "NEW_SYMBOL" in router._symbol_locks
+    assert router._symbol_locks["NEW_SYMBOL"] is lock
+
+@pytest.mark.asyncio
+async def test_process_signal_with_invalid_symbol_lock():
+    """Test process_signal handles invalid symbol gracefully."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="",  # Invalid symbol
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    result = await router.process_signal(signal)
+    assert result is None
+
+@pytest.mark.asyncio
+async def test_resolve_conflicts_with_empty_list():
+    """Test _resolve_conflicts with empty conflicting signals list."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    result = await router._resolve_conflicts(signal, [])
+    assert result == signal
+
+@pytest.mark.asyncio
+async def test_resolve_conflicts_strength_based():
+    """Test conflict resolution based on strength."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    weak_signal = TradingSignal(
+        strategy_id="weak",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.WEAK,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    strong_signal = TradingSignal(
+        strategy_id="strong",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    # Add strong signal first
+    await router.process_signal(strong_signal)
+    assert len(router.get_active_signals()) == 1
+
+    # Try to add weak signal - should be rejected
+    result = await router.process_signal(weak_signal)
+    assert result is None
+    assert len(router.get_active_signals()) == 1
+
+@pytest.mark.asyncio
+async def test_resolve_conflicts_newer_first():
+    """Test conflict resolution based on timestamp (newer first)."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    # Disable strength-based resolution
+    router.conflict_resolution_rules["strength_based"] = False
+    router.conflict_resolution_rules["newer_first"] = True
+
+    old_signal = TradingSignal(
+        strategy_id="old",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+        timestamp=1000,
+    )
+
+    new_signal = TradingSignal(
+        strategy_id="new",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+        timestamp=2000,
+    )
+
+    # Add old signal first
+    await router.process_signal(old_signal)
+    assert len(router.get_active_signals()) == 1
+
+    # Add new signal - should replace old one
+    result = await router.process_signal(new_signal)
+    assert result is not None
+    assert len(router.get_active_signals()) == 1
+    assert router.get_active_signals()[0].strategy_id == "new"
+
+@pytest.mark.asyncio
+async def test_store_signal_with_journal_disabled():
+    """Test _store_signal when journal is disabled."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+    router._journal_enabled = False
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    router._store_signal(signal)
+    assert len(router.active_signals) == 1
+    assert len(router.signal_history) == 1
+
+@pytest.mark.asyncio
+async def test_cancel_signal_with_journal_disabled():
+    """Test _cancel_signal when journal is disabled."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+    router._journal_enabled = False
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    router._store_signal(signal)
+    assert len(router.active_signals) == 1
+
+    await router._cancel_signal(signal)
+    assert len(router.active_signals) == 0
+
+@pytest.mark.asyncio
+async def test_recover_from_journal_disabled():
+    """Test recover_from_journal when disabled."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+    router._journal_enabled = False
+
+    # Should return early without doing anything
+    router.recover_from_journal()
+    assert len(router.active_signals) == 0
+
+@pytest.mark.asyncio
+async def test_ml_extract_features_with_list_of_scalars():
+    """Test _extract_features_for_ml with list of scalars."""
+    import pandas as pd
+
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    market_data = {
+        "features": [1.0, 2.0, 3.0]
+    }
+
+    result = router._extract_features_for_ml(market_data, signal)
+    assert result is not None
+    assert isinstance(result, pd.DataFrame)
+    assert result.shape == (1, 1)  # Single row, single column named 'value'
+
+@pytest.mark.asyncio
+async def test_ml_extract_features_with_invalid_data():
+    """Test _extract_features_for_ml with invalid data types."""
+    rm = DummyRiskManager()
+    router = SignalRouter(risk_manager=rm)
+
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=Decimal("1.0"),
+    )
+
+    # Test with non-convertible object
+    market_data = {
+        "features": object()  # Not convertible to DataFrame
+    }
+
+    result = router._extract_features_for_ml(market_data, signal)
+    assert result is None

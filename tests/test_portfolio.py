@@ -96,3 +96,181 @@ def test_compute_backtest_metrics_returns_per_symbol_groups():
     # Overall metrics should also be present
     assert "total_trades" in metrics
     assert metrics["total_trades"] == 4
+
+
+def test_portfolio_manager_init():
+    """Test PortfolioManager initialization."""
+    from core.management.portfolio_manager import PortfolioManager
+
+    pm = PortfolioManager()
+    assert pm.portfolio_mode is False
+    assert pm.pairs == []
+    assert pm.pair_allocation is None
+    assert pm.paper_balances == {}
+    assert pm.paper_balance == Decimal("0")
+
+
+def test_set_initial_balance_valid():
+    """Test set_initial_balance with valid input."""
+    from core.management.portfolio_manager import PortfolioManager
+
+    pm = PortfolioManager()
+    pm.set_initial_balance(Decimal("1000"))
+    assert pm.paper_balance == Decimal("1000")
+
+
+def test_set_initial_balance_invalid():
+    """Test set_initial_balance with invalid input to cover exception handling."""
+    from core.management.portfolio_manager import PortfolioManager
+
+    pm = PortfolioManager()
+    pm.set_initial_balance("invalid")  # Should trigger exception and set to 0
+    assert pm.paper_balance == Decimal("0")
+
+
+def test_set_initial_balance_none():
+    """Test set_initial_balance with None input."""
+    from core.management.portfolio_manager import PortfolioManager
+
+    pm = PortfolioManager()
+    pm.set_initial_balance(None)
+    assert pm.paper_balance == Decimal("0")
+
+
+def test_initialize_portfolio_no_portfolio_mode():
+    """Test initialize_portfolio when portfolio_mode is False."""
+    from core.management.portfolio_manager import PortfolioManager
+
+    pm = PortfolioManager()
+    pm.set_initial_balance(Decimal("1000"))
+    pm.initialize_portfolio(["BTC/USDT"], False)
+    assert pm.portfolio_mode is False
+    assert pm.pairs == ["BTC/USDT"]
+    assert pm.paper_balances == {}
+
+
+def test_initialize_portfolio_empty_pairs():
+    """Test initialize_portfolio with empty pairs list."""
+    from core.management.portfolio_manager import PortfolioManager
+
+    pm = PortfolioManager()
+    pm.set_initial_balance(Decimal("1000"))
+    pm.initialize_portfolio([], True)
+    assert pm.portfolio_mode is True
+    assert pm.pairs == []
+    assert pm.paper_balances == {}
+
+
+def test_initialize_portfolio_with_allocation():
+    """Test initialize_portfolio with custom allocation."""
+    from core.management.portfolio_manager import PortfolioManager
+
+    pm = PortfolioManager()
+    pm.set_initial_balance(Decimal("1000"))
+    allocation = {"BTC/USDT": 0.6, "ETH/USDT": 0.4}
+    pm.initialize_portfolio(["BTC/USDT", "ETH/USDT"], True, allocation)
+    assert pm.portfolio_mode is True
+    assert pm.pairs == ["BTC/USDT", "ETH/USDT"]
+    assert pm.pair_allocation == allocation
+    assert pm.paper_balances["BTC/USDT"] == Decimal("600")
+    assert pm.paper_balances["ETH/USDT"] == Decimal("400")
+
+
+def test_initialize_portfolio_equal_allocation():
+    """Test initialize_portfolio with equal allocation (default)."""
+    from core.management.portfolio_manager import PortfolioManager
+
+    pm = PortfolioManager()
+    pm.set_initial_balance(Decimal("1000"))
+    pm.initialize_portfolio(["BTC/USDT", "ETH/USDT"], True, None)
+    assert pm.portfolio_mode is True
+    assert pm.pairs == ["BTC/USDT", "ETH/USDT"]
+    assert pm.pair_allocation is None
+    assert pm.paper_balances["BTC/USDT"] == Decimal("500")
+    assert pm.paper_balances["ETH/USDT"] == Decimal("500")
+
+
+def test_initialize_portfolio_exception():
+    """Test initialize_portfolio with exception handling."""
+    from core.management.portfolio_manager import PortfolioManager
+    import unittest.mock
+
+    pm = PortfolioManager()
+    pm.set_initial_balance(Decimal("1000"))
+
+    # Mock _safe_quantize to raise exception
+    with unittest.mock.patch('core.management.portfolio_manager._safe_quantize', side_effect=Exception("Test exception")):
+        with pytest.raises(Exception):
+            pm.initialize_portfolio(["BTC/USDT"], True)
+
+
+def test_update_paper_balance_portfolio_mode():
+    """Test update_paper_balance in portfolio mode."""
+    from core.management.portfolio_manager import PortfolioManager
+
+    pm = PortfolioManager()
+    pm.portfolio_mode = True
+    pm.paper_balances = {"BTC/USDT": Decimal("500")}
+
+    pm.update_paper_balance("BTC/USDT", Decimal("50"))
+    assert pm.paper_balances["BTC/USDT"] == Decimal("550")
+
+
+def test_update_paper_balance_non_portfolio_mode():
+    """Test update_paper_balance in non-portfolio mode."""
+    from core.management.portfolio_manager import PortfolioManager
+
+    pm = PortfolioManager()
+    pm.portfolio_mode = False
+    pm.paper_balance = Decimal("500")
+
+    pm.update_paper_balance("BTC/USDT", Decimal("50"))
+    assert pm.paper_balance == Decimal("550")
+
+
+def test_get_balance_portfolio_mode():
+    """Test get_balance in portfolio mode."""
+    from core.management.portfolio_manager import PortfolioManager
+
+    pm = PortfolioManager()
+    pm.portfolio_mode = True
+    pm.paper_balances = {"BTC/USDT": Decimal("300"), "ETH/USDT": Decimal("200")}
+
+    balance = pm.get_balance()
+    assert balance == Decimal("500")
+
+
+def test_get_balance_non_portfolio_mode():
+    """Test get_balance in non-portfolio mode."""
+    from core.management.portfolio_manager import PortfolioManager
+
+    pm = PortfolioManager()
+    pm.portfolio_mode = False
+    pm.paper_balance = Decimal("500")
+
+    balance = pm.get_balance()
+    assert balance == Decimal("500")
+
+
+def test_get_symbol_balance_portfolio_mode():
+    """Test get_symbol_balance in portfolio mode."""
+    from core.management.portfolio_manager import PortfolioManager
+
+    pm = PortfolioManager()
+    pm.portfolio_mode = True
+    pm.paper_balances = {"BTC/USDT": Decimal("300")}
+
+    balance = pm.get_symbol_balance("BTC/USDT")
+    assert balance == Decimal("300")
+
+
+def test_get_symbol_balance_non_portfolio_mode():
+    """Test get_symbol_balance in non-portfolio mode."""
+    from core.management.portfolio_manager import PortfolioManager
+
+    pm = PortfolioManager()
+    pm.portfolio_mode = False
+    pm.paper_balance = Decimal("500")
+
+    balance = pm.get_symbol_balance("BTC/USDT")
+    assert balance == Decimal("500")

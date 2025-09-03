@@ -100,8 +100,17 @@ class PaperOrderExecutor:
         total_cost = cost + fee if side == "buy" else cost - fee
 
         # Check balance
-        if side == "buy" and total_cost > self.paper_balance:
-            raise ValueError("Insufficient balance for paper trading order")
+        symbol = getattr(signal, "symbol", None) or (signal.get("symbol") if isinstance(signal, dict) else None)
+        if side == "buy":
+            if self.portfolio_mode and symbol:
+                # Check per-symbol balance in portfolio mode
+                available_balance = self.paper_balances.get(symbol, self.paper_balance)
+            else:
+                # Check main balance in single mode
+                available_balance = self.paper_balance
+
+            if total_cost > available_balance:
+                raise ValueError("Insufficient balance for paper trading order")
 
         # Create simulated order
         order = Order(
@@ -186,8 +195,12 @@ class PaperOrderExecutor:
 
     def get_balance(self) -> Decimal:
         """Get current paper balance."""
-        if self.portfolio_mode and self.paper_balances:
-            # Aggregate per-pair paper balances
-            total = sum(self.paper_balances.values())
-            return total
+        if self.portfolio_mode:
+            if self.paper_balances:
+                # Aggregate per-pair paper balances
+                total = sum(self.paper_balances.values())
+                return total
+            else:
+                # Portfolio mode but no balances allocated yet
+                return Decimal("0")
         return self.paper_balance

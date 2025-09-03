@@ -13,7 +13,7 @@ include_trailing_comma = true
 
 [tool.ruff]
 line-length = 88
-select = ["E", "F", "W", "C", "B", "TIDY", "I"]
+select = ["E", "F", "W", "C", "B", "I"]
 ignore = ["E203", "W503"]
 extend-ignore = []
 exclude = ["build", "dist", ".venv", "venv", "__pycache__", "data", "output"]
