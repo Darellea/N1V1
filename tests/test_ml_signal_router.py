@@ -22,21 +22,22 @@ class DummyRiskManager:
 async def test_ml_confirmation_rejects_weak_signal_on_opposite_prediction():
     """Test that ML confirmation rejects a weak signal when ML predicts opposite direction with high confidence."""
 
-    # Create a mock ML model and prediction function
-    mock_model = MagicMock()
-    mock_prediction_df = pd.DataFrame([{"prediction": -1, "confidence": 0.8}])  # Opposite direction, high confidence
-
-    def mock_predict(model, features_df):
-        return mock_prediction_df
-
     # Create router with ML enabled
     rm = DummyRiskManager()
     router = SignalRouter(risk_manager=rm)
 
     # Manually enable ML for this test
     router.ml_enabled = True
-    router.ml_model = mock_model
     router.ml_confidence_threshold = 0.6
+
+    # Create a mock ML filter that rejects the signal
+    mock_filter = MagicMock()
+    mock_filter.filter_signal.return_value = {
+        'approved': False,
+        'confidence': 0.8,
+        'reason': 'direction_mismatch'
+    }
+    router.ml_filter = mock_filter
 
     # Create a weak BUY signal (ENTRY_LONG)
     weak_buy_signal = TradingSignal(
@@ -58,16 +59,13 @@ async def test_ml_confirmation_rejects_weak_signal_on_opposite_prediction():
         "features": pd.DataFrame([{"feature1": 1.0, "feature2": 2.0}])
     }
 
-    # Mock the ML prediction function
-    with patch('core.signal_router.ml_predict', side_effect=mock_predict):
-        result = await router.process_signal(weak_buy_signal, market_data)
+    result = await router.process_signal(weak_buy_signal, market_data)
 
-    # Signal should be rejected because:
-    # - Signal is BUY (ENTRY_LONG, desired = 1)
-    # - ML predicts SELL (-1) with high confidence (0.8 > 0.6)
-    # - Signal strength is WEAK, so it gets rejected instead of reduced
+    # Signal should be rejected because ML filter returned approved=False
     assert result is None
     assert len(router.get_active_signals()) == 0
+    # Verify the ML filter was called
+    mock_filter.filter_signal.assert_called_once()
 
 
 @pytest.mark.asyncio

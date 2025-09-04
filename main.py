@@ -108,15 +108,15 @@ class CryptoTradingBot:
 
     def _display_banner(self) -> None:
         """Display the startup banner."""
-        print("=====================================")
-        print("  Crypto Trading System")
-        print("  Secure • Reliable • Profitable")
-        print("=====================================")
-        print("CryptoTradingBot")
-        print("Version: 1.0.0")
-        print(f"Mode: {self._get_mode()}")
-        print("Status: INITIALIZING")
-        print("=====================================")
+        self.logger.info("=====================================")
+        self.logger.info("  Crypto Trading System")
+        self.logger.info("  Secure • Reliable • Profitable")
+        self.logger.info("=====================================")
+        self.logger.info("CryptoTradingBot")
+        self.logger.info("Version: 1.0.0")
+        self.logger.info(f"Mode: {self._get_mode()}")
+        self.logger.info("Status: INITIALIZING")
+        self.logger.info("=====================================")
         self.logger.info("CryptoTradingBot v1.0.0 - Mode: %s", self._get_mode())
 
     def _print_help(self) -> None:
@@ -129,7 +129,7 @@ Options:
   --status         Show the current trading bot status table and exit
   (no options)     Run the trading bot normally with live updating status
 """
-        print(help_text)
+        self.logger.info(help_text)
 
     def _get_mode(self) -> str:
         """Determine the operating mode from command line arguments."""

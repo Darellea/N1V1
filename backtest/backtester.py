@@ -315,3 +315,98 @@ def export_equity_from_botengine(
     export_metrics(metrics, out_path=metrics_json_path)
 
     return equity_csv
+
+
+def compare_ensemble_vs_individual(
+    ensemble_equity: List[Dict[str, Any]],
+    individual_equities: Dict[str, List[Dict[str, Any]]],
+    out_path: str = "results/ensemble_comparison.json"
+) -> Dict[str, Any]:
+    """
+    Compare ensemble performance against individual strategy performances.
+
+    Args:
+        ensemble_equity: Equity progression for ensemble strategy
+        individual_equities: Dict of strategy_id -> equity progression
+        out_path: Path to save comparison results
+
+    Returns:
+        Comparison metrics dictionary
+    """
+    _ensure_results_dir(out_path)
+
+    # Compute metrics for ensemble
+    ensemble_metrics = compute_backtest_metrics(ensemble_equity)
+
+    # Compute metrics for each individual strategy
+    individual_metrics = {}
+    for strategy_id, equity in individual_equities.items():
+        individual_metrics[strategy_id] = compute_backtest_metrics(equity)
+
+    # Compute comparison metrics
+    comparison = {
+        "ensemble": ensemble_metrics,
+        "individual_strategies": individual_metrics,
+        "comparison": {}
+    }
+
+    # Calculate improvement metrics
+    ensemble_return = ensemble_metrics.get("total_return", 0)
+    ensemble_sharpe = ensemble_metrics.get("sharpe_ratio", 0)
+    ensemble_win_rate = ensemble_metrics.get("win_rate", 0)
+
+    best_individual_return = max(
+        (metrics.get("total_return", 0) for metrics in individual_metrics.values()),
+        default=0
+    )
+    best_individual_sharpe = max(
+        (metrics.get("sharpe_ratio", 0) for metrics in individual_metrics.values()),
+        default=0
+    )
+    best_individual_win_rate = max(
+        (metrics.get("win_rate", 0) for metrics in individual_metrics.values()),
+        default=0
+    )
+
+    comparison["comparison"] = {
+        "return_improvement": ensemble_return - best_individual_return,
+        "sharpe_improvement": ensemble_sharpe - best_individual_sharpe,
+        "win_rate_improvement": ensemble_win_rate - best_individual_win_rate,
+        "ensemble_vs_best_individual": {
+            "total_return": {
+                "ensemble": ensemble_return,
+                "best_individual": best_individual_return,
+                "improvement_pct": ((ensemble_return - best_individual_return) / abs(best_individual_return) * 100) if best_individual_return != 0 else 0
+            },
+            "sharpe_ratio": {
+                "ensemble": ensemble_sharpe,
+                "best_individual": best_individual_sharpe,
+                "improvement": ensemble_sharpe - best_individual_sharpe
+            },
+            "win_rate": {
+                "ensemble": ensemble_win_rate,
+                "best_individual": best_individual_win_rate,
+                "improvement_pct": (ensemble_win_rate - best_individual_win_rate) * 100
+            }
+        },
+        "ensemble_vs_average": {
+            "total_return": {
+                "ensemble": ensemble_return,
+                "average_individual": sum(metrics.get("total_return", 0) for metrics in individual_metrics.values()) / len(individual_metrics) if individual_metrics else 0
+            },
+            "sharpe_ratio": {
+                "ensemble": ensemble_sharpe,
+                "average_individual": sum(metrics.get("sharpe_ratio", 0) for metrics in individual_metrics.values()) / len(individual_metrics) if individual_metrics else 0
+            },
+            "win_rate": {
+                "ensemble": ensemble_win_rate,
+                "average_individual": sum(metrics.get("win_rate", 0) for metrics in individual_metrics.values()) / len(individual_metrics) if individual_metrics else 0
+            }
+        }
+    }
+
+    # Save comparison results
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(comparison, f, indent=2, default=str)
+
+    return comparison

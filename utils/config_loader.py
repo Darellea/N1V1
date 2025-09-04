@@ -122,11 +122,38 @@ class ConfigLoader:
         # Risk management defaults (medium-term feature support)
         "risk_management": {
             "require_stop_loss": True,
-            "position_sizing_method": "fixed_percent",  # fixed_percent | volatility | kelly
+            "position_sizing_method": "adaptive_atr",  # fixed_percent | volatility | kelly | adaptive_atr
             "fixed_percent": 0.1,  # When using fixed_percent, uses this fraction of balance
             "max_position_size": 0.3,
             "max_daily_drawdown": 0.1,
             "risk_reward_ratio": 2.0,
+            # Adaptive position sizing
+            "risk_per_trade": 0.02,  # 2% risk per trade
+            "atr_k_factor": 2.0,  # ATR multiplier for position sizing
+            # Dynamic stop loss
+            "stop_loss_method": "atr",  # atr | percentage | fixed
+            "atr_sl_multiplier": 2.0,  # ATR multiplier for stop loss
+            "stop_loss_percentage": 0.02,  # 2% for percentage-based SL
+            # Adaptive take profit
+            "tp_base_multiplier": 2.0,  # Base risk-reward ratio
+            "enable_adaptive_tp": True,  # Enable trend-based TP adjustment
+            # Trailing stop
+            "enable_trailing_stop": True,
+            "trailing_stop_method": "percentage",  # atr | percentage
+            "trailing_distance": 0.02,  # 2% trailing distance
+            "trailing_atr_multiplier": 1.5,  # ATR multiplier for trailing
+            "trailing_step_size": 0.005,  # Step size for step-based trailing
+            # Time-based exits
+            "enable_time_based_exit": True,
+            "max_holding_candles": 72,  # Max candles to hold (72 = 3 days on 1h)
+            "timeframe": "1h",  # Chart timeframe for time calculations
+            # Regime-based exits
+            "enable_regime_based_exit": True,
+            "exit_on_regime_change": True,  # Exit trend positions when regime changes
+            # Enhanced logging
+            "enhanced_trade_logging": True,
+            "track_exit_reasons": True,
+            "log_sl_tp_details": True,
         },
         "portfolio": {
             "pair_allocations": {}
@@ -139,8 +166,182 @@ class ConfigLoader:
         },
         "ml": {
             "enabled": False,
-            "model_path": "models/lightgbm_model.pkl",
-            "confidence_threshold": 0.6
+            "model_path": "models/ml_filter.pkl",
+            "model_type": "logistic_regression",
+            "confidence_threshold": 0.6,
+            "fallback_to_raw_signals": True
+        },
+        "strategy_selector": {
+            "enabled": False,
+            "mode": "rule_based",
+            "ensemble": False,
+            "rules": {
+                "adx_trend_threshold": 25,
+                "adx_sideways_threshold": 20
+            },
+            "ml_config": {
+                "learning_rate": 0.1,
+                "min_trades_for_learning": 10
+            }
+        },
+        "ensemble": {
+            "enabled": False,
+            "mode": "weighted_vote",
+            "dynamic_weights": True,
+            "strategies": [
+                {
+                    "id": "ema_trend",
+                    "weight": 0.3
+                },
+                {
+                    "id": "bollinger_reversion",
+                    "weight": 0.2
+                },
+                {
+                    "id": "ml_filter",
+                    "weight": 0.5
+                }
+            ],
+            "thresholds": {
+                "confidence": 0.6,
+                "vote_ratio": 0.66
+            }
+        },
+        "market_regime": {
+            "enabled": True,
+            "mode": "rule_based",
+            "adx_trend_threshold": 25,
+            "adx_sideways_threshold": 20,
+            "atr_volatility_factor": 1.5,
+            "atr_period": 14,
+            "adx_period": 14,
+            "stability_window": 3,
+            "ml_method": "clustering",
+            "n_clusters": 3,
+            "lookback_window": 50
+        },
+        "predictive_models": {
+            "enabled": False,
+            "confidence_threshold": 0.5,
+            "models": {
+                "price_direction": {
+                    "enabled": True,
+                    "type": "lightgbm",
+                    "confidence_threshold": 0.6,
+                    "lookback": 50,
+                    "model_path": "models/price_lightgbm.pkl",
+                    "scaler_path": "models/price_scaler.pkl"
+                },
+                "volatility": {
+                    "enabled": True,
+                    "type": "garch",
+                    "forecast_horizon": 5,
+                    "threshold": 0.02,
+                    "confidence_threshold": 0.6,
+                    "lookback": 100,
+                    "model_path": "models/volatility_garch.pkl",
+                    "scaler_path": "models/volatility_scaler.pkl",
+                    "block_high_volatility": False
+                },
+                "volume_surge": {
+                    "enabled": True,
+                    "type": "zscore",
+                    "threshold": 2.5,
+                    "confidence_threshold": 0.6,
+                    "lookback": 50,
+                    "model_path": "models/volume_zscore.pkl",
+                    "scaler_path": "models/volume_scaler.pkl",
+                    "require_surge": False
+                }
+            }
+        },
+        "execution": {
+            "enabled": True,
+            "mode": "smart",
+            "smart": {
+                "split_threshold": 5000,
+                "max_parts": 5,
+                "delay_seconds": 2,
+                "fallback_mode": "market"
+            },
+            "twap": {
+                "duration_minutes": 30,
+                "parts": 10,
+                "fallback_mode": "market"
+            },
+            "vwap": {
+                "lookback_minutes": 60,
+                "parts": 10,
+                "fallback_mode": "market"
+            },
+            "dca": {
+                "interval_minutes": 60,
+                "parts": 5,
+                "fallback_mode": "market"
+            }
+        },
+        "optimization": {
+            "enabled": False,
+            "mode": "wfo",
+            "wfo": {
+                "train_window_days": 90,
+                "test_window_days": 30,
+                "rolling": True,
+                "min_observations": 1000,
+                "improvement_threshold": 0.05
+            },
+            "ga": {
+                "population_size": 20,
+                "generations": 10,
+                "mutation_rate": 0.1,
+                "crossover_rate": 0.7,
+                "elitism_rate": 0.1,
+                "tournament_size": 3
+            },
+            "rl": {
+                "alpha": 0.1,
+                "gamma": 0.95,
+                "epsilon": 0.1,
+                "episodes": 100,
+                "max_steps_per_episode": 50,
+                "reward_function": "sharpe_ratio"
+            },
+            "fitness_metric": "sharpe_ratio",
+            "fitness_weights": {
+                "sharpe_ratio": 1.0,
+                "total_return": 0.3,
+                "win_rate": 0.2,
+                "max_drawdown": -0.1
+            }
+        },
+        "portfolio": {
+            "enabled": False,
+            "rotation": {
+                "method": "momentum",
+                "lookback_days": 30,
+                "top_n": 5
+            },
+            "rebalancing": {
+                "mode": "threshold",
+                "threshold": 0.05,
+                "period_days": 7,
+                "scheme": "risk_parity"
+            },
+            "hedging": {
+                "enabled": False,
+                "max_stablecoin_pct": 0.3,
+                "trigger": {
+                    "adx_below": 15,
+                    "volatility_above": 0.05,
+                    "drawdown_above": 0.1
+                }
+            },
+            "allocation": {
+                "min_position_size": 100.0,
+                "max_position_size": 10000.0,
+                "max_assets": 10,
+                "risk_per_asset": 0.02
+            }
         },
     }
 

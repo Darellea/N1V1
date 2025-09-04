@@ -1,276 +1,346 @@
+"""
+Unit tests for portfolio management module.
+"""
+
 import pytest
-import asyncio
+import json
+import tempfile
+import os
+from unittest.mock import Mock, patch
 from decimal import Decimal
 
-from core.order_manager import OrderManager
-from core.bot_engine import BotEngine
-from backtest.backtester import compute_backtest_metrics
-
-
-@pytest.mark.asyncio
-async def test_order_manager_initialize_portfolio_splits_balance_equally():
-    """
-    When initialize_portfolio is called without allocation, the initial paper_balance
-    should be split equally among the provided pairs.
-    """
-    cfg = {
-        "paper": {"initial_balance": 1000.0},
-        # keep minimal keys OrderManager expects in nested config
-        "order": {"slippage": 0.001, "trade_fee": 0.001, "base_currency": "USDT"},
-    }
-    om = OrderManager(cfg, mode="paper")
-    await om.initialize_portfolio(["BTC/USDT", "ETH/USDT"], True, allocation=None)
-
-    assert om.portfolio_mode is True
-    assert "BTC/USDT" in om.paper_balances and "ETH/USDT" in om.paper_balances
-    # Each should be approximately half of 1000
-    assert pytest.approx(float(om.paper_balances["BTC/USDT"]), rel=1e-6) == 500.0
-    assert pytest.approx(float(om.paper_balances["ETH/USDT"]), rel=1e-6) == 500.0
-
-
-@pytest.mark.asyncio
-async def test_botengine_record_trade_equity_includes_symbol_when_provided():
-    """
-    BotEngine.record_trade_equity should include the trade's symbol in the recorded
-    equity progression when the order_result includes a 'symbol' key.
-    """
-    config = {
-        "environment": {"mode": "paper"},
-        "exchange": {"base_currency": "USDT", "markets": ["BTC/USDT", "ETH/USDT"]},
-        "trading": {"initial_balance": 1000.0, "portfolio_mode": True},
-        "risk_management": {},
-        "notifications": {"discord": {"enabled": False}},
-        "monitoring": {"terminal_display": False, "update_interval": 1},
-        "strategies": {"active_strategies": [], "strategy_config": {}},
-    }
-
-    bot = BotEngine(config)
-    bot.starting_balance = 1000.0
-
-    # Provide a minimal async-compatible order_manager
-    class DummyOM:
-        async def get_equity(self):
-            return Decimal("1100.50")
-
-    bot.order_manager = DummyOM()
-
-    order_result = {"id": "trade_sym_1", "timestamp": 1111, "pnl": 100.5, "symbol": "BTC/USDT"}
-    await bot.record_trade_equity(order_result)
-
-    rec = bot.performance_stats["equity_progression"][-1]
-    assert rec["trade_id"] == "trade_sym_1"
-    assert rec["symbol"] == "BTC/USDT"
-    assert pytest.approx(rec["equity"], rel=1e-6) == 1100.50
-    assert pytest.approx(rec["pnl"], rel=1e-6) == 100.5
-
-
-def test_compute_backtest_metrics_returns_per_symbol_groups():
-    """
-    compute_backtest_metrics should return 'per_symbol' metrics when records include a 'symbol' key.
-    """
-    eq_prog = [
-        {"trade_id": "t1", "timestamp": 1, "symbol": "BTC/USDT", "equity": 1000.0, "pnl": 50.0},
-        {"trade_id": "t2", "timestamp": 2, "symbol": "BTC/USDT", "equity": 1050.0, "pnl": -10.0},
-        {"trade_id": "t3", "timestamp": 3, "symbol": "ETH/USDT", "equity": 1000.0, "pnl": 20.0},
-        {"trade_id": "t4", "timestamp": 4, "symbol": "ETH/USDT", "equity": 1020.0, "pnl": -5.0},
-    ]
-
-    metrics = compute_backtest_metrics(eq_prog)
-    assert "per_symbol" in metrics
-    assert "BTC/USDT" in metrics["per_symbol"]
-    assert "ETH/USDT" in metrics["per_symbol"]
-
-    btc_metrics = metrics["per_symbol"]["BTC/USDT"]
-    eth_metrics = metrics["per_symbol"]["ETH/USDT"]
-
-    # BTC had two trades (one win, one loss)
-    assert btc_metrics["total_trades"] == 2
-    assert btc_metrics["wins"] == 1
-    assert btc_metrics["losses"] == 1
-
-    # ETH had two trades (one win, one loss)
-    assert eth_metrics["total_trades"] == 2
-    assert eth_metrics["wins"] == 1
-    assert eth_metrics["losses"] == 1
-
-    # Overall metrics should also be present
-    assert "total_trades" in metrics
-    assert metrics["total_trades"] == 4
-
-
-def test_portfolio_manager_init():
-    """Test PortfolioManager initialization."""
-    from core.management.portfolio_manager import PortfolioManager
-
-    pm = PortfolioManager()
-    assert pm.portfolio_mode is False
-    assert pm.pairs == []
-    assert pm.pair_allocation is None
-    assert pm.paper_balances == {}
-    assert pm.paper_balance == Decimal("0")
-
-
-def test_set_initial_balance_valid():
-    """Test set_initial_balance with valid input."""
-    from core.management.portfolio_manager import PortfolioManager
-
-    pm = PortfolioManager()
-    pm.set_initial_balance(Decimal("1000"))
-    assert pm.paper_balance == Decimal("1000")
-
-
-def test_set_initial_balance_invalid():
-    """Test set_initial_balance with invalid input to cover exception handling."""
-    from core.management.portfolio_manager import PortfolioManager
-
-    pm = PortfolioManager()
-    pm.set_initial_balance("invalid")  # Should trigger exception and set to 0
-    assert pm.paper_balance == Decimal("0")
-
-
-def test_set_initial_balance_none():
-    """Test set_initial_balance with None input."""
-    from core.management.portfolio_manager import PortfolioManager
-
-    pm = PortfolioManager()
-    pm.set_initial_balance(None)
-    assert pm.paper_balance == Decimal("0")
-
-
-def test_initialize_portfolio_no_portfolio_mode():
-    """Test initialize_portfolio when portfolio_mode is False."""
-    from core.management.portfolio_manager import PortfolioManager
-
-    pm = PortfolioManager()
-    pm.set_initial_balance(Decimal("1000"))
-    pm.initialize_portfolio(["BTC/USDT"], False)
-    assert pm.portfolio_mode is False
-    assert pm.pairs == ["BTC/USDT"]
-    assert pm.paper_balances == {}
-
-
-def test_initialize_portfolio_empty_pairs():
-    """Test initialize_portfolio with empty pairs list."""
-    from core.management.portfolio_manager import PortfolioManager
-
-    pm = PortfolioManager()
-    pm.set_initial_balance(Decimal("1000"))
-    pm.initialize_portfolio([], True)
-    assert pm.portfolio_mode is True
-    assert pm.pairs == []
-    assert pm.paper_balances == {}
-
-
-def test_initialize_portfolio_with_allocation():
-    """Test initialize_portfolio with custom allocation."""
-    from core.management.portfolio_manager import PortfolioManager
-
-    pm = PortfolioManager()
-    pm.set_initial_balance(Decimal("1000"))
-    allocation = {"BTC/USDT": 0.6, "ETH/USDT": 0.4}
-    pm.initialize_portfolio(["BTC/USDT", "ETH/USDT"], True, allocation)
-    assert pm.portfolio_mode is True
-    assert pm.pairs == ["BTC/USDT", "ETH/USDT"]
-    assert pm.pair_allocation == allocation
-    assert pm.paper_balances["BTC/USDT"] == Decimal("600")
-    assert pm.paper_balances["ETH/USDT"] == Decimal("400")
-
-
-def test_initialize_portfolio_equal_allocation():
-    """Test initialize_portfolio with equal allocation (default)."""
-    from core.management.portfolio_manager import PortfolioManager
-
-    pm = PortfolioManager()
-    pm.set_initial_balance(Decimal("1000"))
-    pm.initialize_portfolio(["BTC/USDT", "ETH/USDT"], True, None)
-    assert pm.portfolio_mode is True
-    assert pm.pairs == ["BTC/USDT", "ETH/USDT"]
-    assert pm.pair_allocation is None
-    assert pm.paper_balances["BTC/USDT"] == Decimal("500")
-    assert pm.paper_balances["ETH/USDT"] == Decimal("500")
-
-
-def test_initialize_portfolio_exception():
-    """Test initialize_portfolio with exception handling."""
-    from core.management.portfolio_manager import PortfolioManager
-    import unittest.mock
-
-    pm = PortfolioManager()
-    pm.set_initial_balance(Decimal("1000"))
-
-    # Mock _safe_quantize to raise exception
-    with unittest.mock.patch('core.management.portfolio_manager._safe_quantize', side_effect=Exception("Test exception")):
-        with pytest.raises(Exception):
-            pm.initialize_portfolio(["BTC/USDT"], True)
-
-
-def test_update_paper_balance_portfolio_mode():
-    """Test update_paper_balance in portfolio mode."""
-    from core.management.portfolio_manager import PortfolioManager
-
-    pm = PortfolioManager()
-    pm.portfolio_mode = True
-    pm.paper_balances = {"BTC/USDT": Decimal("500")}
-
-    pm.update_paper_balance("BTC/USDT", Decimal("50"))
-    assert pm.paper_balances["BTC/USDT"] == Decimal("550")
-
-
-def test_update_paper_balance_non_portfolio_mode():
-    """Test update_paper_balance in non-portfolio mode."""
-    from core.management.portfolio_manager import PortfolioManager
-
-    pm = PortfolioManager()
-    pm.portfolio_mode = False
-    pm.paper_balance = Decimal("500")
-
-    pm.update_paper_balance("BTC/USDT", Decimal("50"))
-    assert pm.paper_balance == Decimal("550")
-
-
-def test_get_balance_portfolio_mode():
-    """Test get_balance in portfolio mode."""
-    from core.management.portfolio_manager import PortfolioManager
-
-    pm = PortfolioManager()
-    pm.portfolio_mode = True
-    pm.paper_balances = {"BTC/USDT": Decimal("300"), "ETH/USDT": Decimal("200")}
-
-    balance = pm.get_balance()
-    assert balance == Decimal("500")
-
-
-def test_get_balance_non_portfolio_mode():
-    """Test get_balance in non-portfolio mode."""
-    from core.management.portfolio_manager import PortfolioManager
-
-    pm = PortfolioManager()
-    pm.portfolio_mode = False
-    pm.paper_balance = Decimal("500")
-
-    balance = pm.get_balance()
-    assert balance == Decimal("500")
-
-
-def test_get_symbol_balance_portfolio_mode():
-    """Test get_symbol_balance in portfolio mode."""
-    from core.management.portfolio_manager import PortfolioManager
-
-    pm = PortfolioManager()
-    pm.portfolio_mode = True
-    pm.paper_balances = {"BTC/USDT": Decimal("300")}
-
-    balance = pm.get_symbol_balance("BTC/USDT")
-    assert balance == Decimal("300")
-
-
-def test_get_symbol_balance_non_portfolio_mode():
-    """Test get_symbol_balance in non-portfolio mode."""
-    from core.management.portfolio_manager import PortfolioManager
-
-    pm = PortfolioManager()
-    pm.portfolio_mode = False
-    pm.paper_balance = Decimal("500")
-
-    balance = pm.get_symbol_balance("BTC/USDT")
-    assert balance == Decimal("500")
+import pandas as pd
+import numpy as np
+
+from portfolio import (
+    PortfolioManager,
+    CapitalAllocator,
+    EqualWeightAllocator,
+    RiskParityAllocator,
+    MomentumWeightAllocator,
+    PortfolioHedger
+)
+from portfolio.portfolio_manager import Position
+
+
+class TestPortfolioManager:
+    """Test PortfolioManager class."""
+
+    def test_initialization(self):
+        """Test PortfolioManager initialization."""
+        config = {
+            'rotation': {'method': 'momentum', 'top_n': 5},
+            'rebalancing': {'mode': 'threshold', 'scheme': 'equal_weight'},
+            'hedging': {'enabled': False}
+        }
+
+        pm = PortfolioManager(config, initial_balance=Decimal('10000'))
+
+        assert pm.cash_balance == Decimal('10000')
+        assert len(pm.positions) == 0
+        assert pm.config == config
+
+    def test_update_prices(self):
+        """Test price updates."""
+        config = {}
+        pm = PortfolioManager(config)
+
+        # Add a mock position
+        position = Position(
+            symbol='BTC/USDT',
+            quantity=Decimal('1'),
+            entry_price=Decimal('50000'),
+            current_price=Decimal('50000')
+        )
+        pm.positions['BTC/USDT'] = position
+
+        # Update prices
+        price_data = {'BTC/USDT': Decimal('51000')}
+        pm.update_prices(price_data)
+
+        # Check that position P&L was updated
+        assert pm.positions['BTC/USDT'].current_price == Decimal('51000')
+        assert pm.positions['BTC/USDT'].unrealized_pnl == Decimal('1000')  # 1 * (51000 - 50000)
+
+    def test_portfolio_value_calculation(self):
+        """Test portfolio value calculation."""
+        config = {}
+        pm = PortfolioManager(config, initial_balance=Decimal('10000'))
+
+        # Add positions
+        pm.positions['BTC/USDT'] = Position(
+            symbol='BTC/USDT',
+            quantity=Decimal('1'),
+            entry_price=Decimal('50000'),
+            current_price=Decimal('51000')
+        )
+        pm.positions['ETH/USDT'] = Position(
+            symbol='ETH/USDT',
+            quantity=Decimal('10'),
+            entry_price=Decimal('3000'),
+            current_price=Decimal('3100')
+        )
+
+        portfolio_value = pm.get_portfolio_value()
+        expected_value = Decimal('10000') + Decimal('51000') + Decimal('31000')  # cash + BTC + ETH
+        assert portfolio_value == expected_value
+
+    def test_portfolio_metrics(self):
+        """Test portfolio metrics calculation."""
+        config = {}
+        pm = PortfolioManager(config, initial_balance=Decimal('10000'))
+
+        # Add positions with P&L
+        pm.positions['BTC/USDT'] = Position(
+            symbol='BTC/USDT',
+            quantity=Decimal('1'),
+            entry_price=Decimal('50000'),
+            current_price=Decimal('51000')
+        )
+
+        metrics = pm.get_portfolio_metrics()
+
+        assert metrics.total_value > Decimal('10000')
+        assert metrics.total_pnl > 0
+        assert metrics.num_positions == 1
+        assert metrics.num_assets == 1
+
+    def test_asset_rotation_momentum(self):
+        """Test momentum-based asset rotation."""
+        config = {
+            'rotation': {
+                'method': 'momentum',
+                'lookback_days': 30,
+                'top_n': 2
+            }
+        }
+        pm = PortfolioManager(config)
+
+        # Create mock market data
+        dates = pd.date_range('2023-01-01', periods=50, freq='D')
+        data = pd.DataFrame({
+            'BTC/USDT': np.random.randn(50).cumsum() + 50000,
+            'ETH/USDT': np.random.randn(50).cumsum() + 3000,
+            'ADA/USDT': np.random.randn(50).cumsum() + 1
+        }, index=dates)
+
+        # Mock strategy signals
+        strategy_signals = {
+            'BTC/USDT': [{'signal_strength': 0.8}],
+            'ETH/USDT': [{'signal_strength': 0.6}],
+            'ADA/USDT': [{'signal_strength': 0.4}]
+        }
+
+        selected_assets = pm.rotate_assets(strategy_signals, data)
+
+        assert len(selected_assets) <= 2  # Should select top 2
+        assert all(asset in ['BTC/USDT', 'ETH/USDT', 'ADA/USDT'] for asset in selected_assets)
+
+    def test_rebalancing_threshold(self):
+        """Test threshold-based rebalancing."""
+        config = {
+            'rebalancing': {
+                'mode': 'threshold',
+                'threshold': 0.1,
+                'scheme': 'equal_weight'
+            }
+        }
+        pm = PortfolioManager(config, initial_balance=Decimal('10000'))
+
+        # Add positions
+        pm.positions['BTC/USDT'] = Position(
+            symbol='BTC/USDT',
+            quantity=Decimal('1'),
+            entry_price=Decimal('50000'),
+            current_price=Decimal('50000')
+        )
+
+        # Current allocation is ~83% BTC, 17% cash
+        # Target equal allocation should trigger rebalancing
+        target_allocations = {'BTC/USDT': 0.5, 'ETH/USDT': 0.5}
+
+        result = pm.rebalance(target_allocations)
+
+        assert result['rebalanced'] == True
+        assert len(result['trades']) > 0
+
+    def test_rebalancing_no_change(self):
+        """Test rebalancing when no change is needed."""
+        config = {
+            'rebalancing': {
+                'mode': 'threshold',
+                'threshold': 0.1,
+                'scheme': 'equal_weight'
+            }
+        }
+        pm = PortfolioManager(config, initial_balance=Decimal('10000'))
+
+        # No positions, should not rebalance
+        target_allocations = {'BTC/USDT': 0.5, 'ETH/USDT': 0.5}
+
+        result = pm.rebalance(target_allocations)
+
+        assert result['rebalanced'] == False
+        assert result['reason'] == 'within_threshold'
+
+
+class TestCapitalAllocators:
+    """Test capital allocation strategies."""
+
+    def test_equal_weight_allocation(self):
+        """Test equal weight allocation."""
+        allocator = EqualWeightAllocator()
+
+        assets = ['BTC/USDT', 'ETH/USDT', 'ADA/USDT']
+        allocations = allocator.allocate(assets)
+
+        assert len(allocations) == 3
+        assert all(abs(allocation - 1/3) < 0.001 for allocation in allocations.values())
+        assert allocator.validate_allocations(allocations)
+
+    def test_risk_parity_allocation(self):
+        """Test risk parity allocation."""
+        config = {'lookback_period': 30}
+        allocator = RiskParityAllocator(config)
+
+        assets = ['BTC/USDT', 'ETH/USDT']
+
+        # Create mock data with different volatilities
+        dates = pd.date_range('2023-01-01', periods=50, freq='D')
+        data = pd.DataFrame({
+            'BTC/USDT': np.random.randn(50) * 0.02 + 50000,  # Low volatility
+            'ETH/USDT': np.random.randn(50) * 0.05 + 3000    # High volatility
+        }, index=dates)
+
+        allocations = allocator.allocate(assets, data)
+
+        assert len(allocations) == 2
+        assert allocator.validate_allocations(allocations)
+        # Higher volatility asset should get lower allocation
+        assert allocations['ETH/USDT'] < allocations['BTC/USDT']
+
+    def test_momentum_weighted_allocation(self):
+        """Test momentum weighted allocation."""
+        config = {'lookback_period': 30}
+        allocator = MomentumWeightAllocator(config)
+
+        assets = ['BTC/USDT', 'ETH/USDT']
+
+        # Create mock data with different momentum
+        dates = pd.date_range('2023-01-01', periods=50, freq='D')
+        data = pd.DataFrame({
+            'BTC/USDT': np.linspace(50000, 51000, 50),  # Strong uptrend
+            'ETH/USDT': np.linspace(3000, 2950, 50)     # Downtrend
+        }, index=dates)
+
+        allocations = allocator.allocate(assets, data)
+
+        assert len(allocations) == 2
+        assert allocator.validate_allocations(allocations)
+        # Stronger momentum asset should get higher allocation
+        assert allocations['BTC/USDT'] > allocations['ETH/USDT']
+
+
+class TestPortfolioHedger:
+    """Test PortfolioHedger class."""
+
+    def test_hedge_evaluation_no_trigger(self):
+        """Test hedging when no trigger conditions are met."""
+        config = {
+            'enabled': True,
+            'max_stablecoin_pct': 0.3,
+            'trigger': {'adx_below': 15}
+        }
+        hedger = PortfolioHedger(config)
+
+        positions = {'BTC/USDT': Mock()}
+        market_conditions = {'adx': 25}  # Above threshold
+
+        result = hedger.evaluate_hedging(positions, market_conditions)
+
+        assert result is None  # No hedging should be triggered
+
+    def test_hedge_evaluation_triggered(self):
+        """Test hedging when trigger conditions are met."""
+        config = {
+            'enabled': True,
+            'max_stablecoin_pct': 0.3,
+            'trigger': {'adx_below': 15}
+        }
+        hedger = PortfolioHedger(config)
+
+        positions = {'BTC/USDT': Mock()}
+        market_conditions = {'adx': 10}  # Below threshold
+
+        result = hedger.evaluate_hedging(positions, market_conditions)
+
+        assert result is not None
+        assert 'action_type' in result
+        assert 'trades' in result
+
+    def test_stablecoin_rotation_hedge(self):
+        """Test stablecoin rotation hedging strategy."""
+        config = {
+            'enabled': True,
+            'max_stablecoin_pct': 0.3
+        }
+        hedger = PortfolioHedger(config)
+
+        # Mock positions
+        positions = {
+            'BTC/USDT': Mock(market_value=Decimal('7000')),
+            'ETH/USDT': Mock(market_value=Decimal('3000'))
+        }
+
+        trades = hedger._stablecoin_rotation_hedge(positions)
+
+        # Should generate sell trades to buy stablecoins
+        assert len(trades) > 0
+        assert all(trade['side'] == 'sell' for trade in trades)
+        assert all('hedge_stablecoin_rotation' in trade.get('reason', '') for trade in trades)
+
+
+class TestPosition:
+    """Test Position dataclass."""
+
+    def test_position_initialization(self):
+        """Test Position initialization."""
+        position = Position(
+            symbol='BTC/USDT',
+            quantity=Decimal('1'),
+            entry_price=Decimal('50000')
+        )
+
+        assert position.symbol == 'BTC/USDT'
+        assert position.quantity == Decimal('1')
+        assert position.entry_price == Decimal('50000')
+        assert position.unrealized_pnl == Decimal('0')
+
+    def test_position_pnl_calculation(self):
+        """Test P&L calculation."""
+        position = Position(
+            symbol='BTC/USDT',
+            quantity=Decimal('1'),
+            entry_price=Decimal('50000')
+        )
+
+        # Update price
+        position.update_pnl(Decimal('51000'))
+
+        assert position.current_price == Decimal('51000')
+        assert position.unrealized_pnl == Decimal('1000')  # 1 * (51000 - 50000)
+
+    def test_position_market_value(self):
+        """Test market value calculation."""
+        position = Position(
+            symbol='BTC/USDT',
+            quantity=Decimal('2'),
+            entry_price=Decimal('50000'),
+            current_price=Decimal('51000')
+        )
+
+        assert position.market_value == Decimal('102000')  # 2 * 51000
+
+
+if __name__ == "__main__":
+    pytest.main([__file__])

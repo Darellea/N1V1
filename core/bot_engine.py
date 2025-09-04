@@ -7,6 +7,7 @@ Handles the main event loop, mode switching, and module coordination.
 
 import asyncio
 import logging
+import time
 from utils.time import now_ms, to_ms, to_iso
 from typing import Dict, Optional, List, Any
 from dataclasses import dataclass
@@ -23,6 +24,7 @@ from core.order_manager import OrderManager
 from core.signal_router import SignalRouter
 from notifier.discord_bot import DiscordNotifier
 from core.task_manager import TaskManager
+from strategy_selector import get_strategy_selector, update_strategy_performance
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +111,11 @@ class BotEngine:
         # UI components (removed rich dependency)
         self.live_display: Optional[Any] = None
         self.display_table: Optional[Any] = None
+
+        # Market data cache for performance
+        self.market_data_cache: Dict[str, Any] = {}
+        self.cache_timestamp: float = 0.0
+        self.cache_ttl: float = 60.0  # 1 minute cache
 
     async def initialize(self) -> None:
         """Initialize all components of the trading bot."""
@@ -247,14 +254,36 @@ class BotEngine:
     async def _trading_cycle(self) -> None:
         """Execute one complete trading cycle."""
         # 1. Fetch market data
-        # Support portfolio mode by fetching realtime/historical data per-symbol.
+        market_data = await self._fetch_market_data()
+
+        # 2. Check safe mode conditions
+        if await self._check_safe_mode_conditions():
+            return
+
+        # 3. Generate signals from strategies
+        signals = await self._generate_signals(market_data)
+
+        # 4. Route signals through risk management
+        approved_signals = await self._evaluate_risk(signals, market_data)
+
+        # 5. Execute orders
+        await self._execute_orders(approved_signals)
+
+        # 6. Update bot state
+        await self._update_state()
+
+    async def _fetch_market_data(self) -> Dict[str, Any]:
+        """Fetch market data with caching to reduce API calls."""
+        current_time = time.time()
+        if self.market_data_cache and (current_time - self.cache_timestamp) < self.cache_ttl:
+            logger.debug("Using cached market data")
+            return self.market_data_cache
+
         market_data = {}
         try:
             if self.portfolio_mode and hasattr(self.data_fetcher, "get_realtime_data"):
-                # DataFetcher.get_realtime_data accepts a list of symbols and returns a dict
                 market_data = await self.data_fetcher.get_realtime_data(self.pairs)
             elif not self.portfolio_mode and hasattr(self.data_fetcher, "get_historical_data"):
-                # Legacy single-symbol path: fetch historical data for the primary pair
                 symbol = self.pairs[0] if self.pairs else None
                 if symbol:
                     df = await self.data_fetcher.get_historical_data(
@@ -264,71 +293,128 @@ class BotEngine:
                     )
                     market_data = {symbol: df}
             else:
-                # As a graceful fallback, try get_multiple_historical_data if available
                 if hasattr(self.data_fetcher, "get_multiple_historical_data"):
                     market_data = await self.data_fetcher.get_multiple_historical_data(self.pairs)
-                else:
-                    market_data = {}
+
+            # Cache the fetched data
+            self.market_data_cache = market_data
+            self.cache_timestamp = current_time
+            logger.debug("Fetched and cached new market data")
         except Exception:
             logger.exception("Failed to fetch market data")
-            market_data = {}
 
-        # Check for component-level safe-mode flags and update global state.
+        return market_data
+
+    async def _check_safe_mode_conditions(self) -> bool:
+        """Check various safe mode conditions and return True if trading should be skipped."""
         try:
             await self._check_global_safe_mode()
             if self.global_safe_mode:
-                # When global safe mode is active, skip opening new positions for safety.
                 if not self._safe_mode_notified:
                     logger.warning("Global safe mode active: skipping trading cycle")
                     self._safe_mode_notified = True
-                    # Send one-time notification via notifier if available
                     try:
                         if self.notifier and self.config["notifications"]["discord"]["enabled"]:
                             await self.notifier.send_alert("Bot entering SAFE MODE: suspending new trades.")
                     except Exception:
                         logger.exception("Failed to send safe-mode notification")
-                return
+                return True
         except Exception:
-            # If global mode check fails for any reason, log and proceed conservatively (do not enable trading)
             logger.exception("Failed to perform global safe-mode check; skipping trading cycle")
-            return
+            return True
 
-        # Additional check for individual component safe mode (for test compatibility)
         try:
             order_safe = bool(getattr(self.order_manager, "safe_mode_active", False))
             if order_safe and not self._safe_mode_notified:
                 logger.warning("Order manager safe mode active: skipping trading cycle")
                 self._safe_mode_notified = True
-                # Send one-time notification via notifier if available
                 try:
                     if self.notifier and self.config["notifications"]["discord"]["enabled"]:
                         await self.notifier.send_alert("Bot entering SAFE MODE: suspending new trades.")
                 except Exception:
                     logger.exception("Failed to send safe-mode notification")
-                return
+                return True
         except Exception:
-            # If individual safe mode check fails, continue with normal operation
             pass
 
-        # 2. Generate signals from strategies
+        return False
+
+    async def _generate_signals(self, market_data: Dict[str, Any]) -> List[Any]:
+        """Generate trading signals from all active strategies."""
+        signals = []
+        strategy_selector = get_strategy_selector()
+
+        if strategy_selector.enabled and market_data:
+            primary_symbol = list(market_data.keys())[0] if market_data else None
+            if primary_symbol and primary_symbol in market_data:
+                selected_strategy_class = strategy_selector.select_strategy(market_data[primary_symbol])
+                if selected_strategy_class:
+                    selected_strategy = None
+                    for strategy in self.strategies:
+                        if type(strategy) == selected_strategy_class:
+                            selected_strategy = strategy
+                            break
+
+                    if selected_strategy:
+                        logger.info(f"Strategy selector chose: {selected_strategy_class.__name__}")
+                        strategy_signals = await selected_strategy.generate_signals(market_data)
+                        signals.extend(strategy_signals)
+                    else:
+                        logger.warning(f"Selected strategy {selected_strategy_class.__name__} not found in active strategies")
+                        signals = await self._generate_signals_from_all_strategies(market_data)
+                else:
+                    logger.warning("Strategy selector returned no strategy, using all available strategies")
+                    signals = await self._generate_signals_from_all_strategies(market_data)
+            else:
+                signals = await self._generate_signals_from_all_strategies(market_data)
+        else:
+            signals = await self._generate_signals_from_all_strategies(market_data)
+
+        return signals
+
+    async def _generate_signals_from_all_strategies(self, market_data: Dict[str, Any]) -> List[Any]:
+        """Generate signals from all strategies when strategy selector is disabled or fails."""
         signals = []
         for strategy in self.strategies:
             strategy_signals = await strategy.generate_signals(market_data)
             signals.extend(strategy_signals)
+        return signals
 
-        # 3. Route signals through risk management
+    async def _evaluate_risk(self, signals: List[Any], market_data: Dict[str, Any]) -> List[Any]:
+        """Evaluate signals through risk management and return approved signals."""
         approved_signals = []
         for signal in signals:
             if await self.risk_manager.evaluate_signal(signal, market_data):
                 approved_signals.append(signal)
+        return approved_signals
 
-        # 4. Execute orders
+    async def _execute_orders(self, approved_signals: List[Any]) -> None:
+        """Execute approved trading signals and handle results."""
+        strategy_selector = get_strategy_selector()
+        selected_strategy = None
+
+        # Find selected strategy if strategy selector is enabled
+        if strategy_selector.enabled:
+            for strategy in self.strategies:
+                if hasattr(strategy_selector, '_selected_strategy_class') and strategy_selector._selected_strategy_class:
+                    if type(strategy) == strategy_selector._selected_strategy_class:
+                        selected_strategy = strategy
+                        break
+
         for signal in approved_signals:
             order_result = await self.order_manager.execute_order(signal)
 
             # Update performance metrics
             if order_result and "pnl" in order_result:
                 self._update_performance_metrics(order_result["pnl"])
+
+                # Update strategy selector performance if enabled
+                if strategy_selector.enabled and selected_strategy:
+                    pnl = order_result.get("pnl", 0.0)
+                    returns = pnl / self.starting_balance if self.starting_balance > 0 else 0.0
+                    is_win = pnl > 0
+                    update_strategy_performance(selected_strategy.__class__.__name__, pnl, returns, is_win)
+
                 # Record equity progression after each trade execution
                 try:
                     await self.record_trade_equity(order_result)
@@ -338,9 +424,6 @@ class BotEngine:
             # Send notifications
             if self.notifier:
                 await self.notifier.send_order_notification(order_result)
-
-        # 5. Update bot state
-        await self._update_state()
 
     async def _update_state(self) -> None:
         """Update the bot's internal state."""
@@ -588,7 +671,7 @@ class BotEngine:
                    f"Win Rate: {self.performance_stats.get('win_rate', 0.0):.2%}")
 
     def print_status_table(self) -> None:
-        """Print the Trading Bot Status table in a formatted table layout."""
+        """Log the Trading Bot Status table in a formatted table layout."""
         try:
             # Prepare data
             mode = self.mode.name
@@ -609,7 +692,7 @@ class BotEngine:
             total_pnl = f"{self.performance_stats.get('total_pnl', 0.0):.2f}"
             win_rate = f"{self.performance_stats.get('win_rate', 0.0):.2%}"
 
-            # Create table with pipes and dashes (ASCII compatible)
+            # Print table with pipes and dashes (ASCII compatible)
             print("\n+-----------------+---------------------+")
             print("| Trading Bot Status                  |")
             print("+-----------------+---------------------+")
@@ -624,7 +707,7 @@ class BotEngine:
             print("+-----------------+---------------------+")
 
         except Exception:
-            logger.exception("Failed to print status table")
+            logger.exception("Failed to log status table")
 
     async def shutdown(self) -> None:
         """Gracefully shutdown the bot engine."""

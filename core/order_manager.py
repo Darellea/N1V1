@@ -118,6 +118,14 @@ class OrderManager:
         self._cache_ttl: float = 5.0  # 5 seconds cache
         self._cache_timestamps: Dict[str, float] = {}
 
+        # Balance and equity cache for performance
+        self._balance_cache: Optional[Decimal] = None
+        self._equity_cache: Optional[Decimal] = None
+        self._balance_cache_timestamp: float = 0.0
+        self._equity_cache_timestamp: float = 0.0
+        self._balance_cache_ttl: float = 10.0  # 10 seconds cache for balance
+        self._equity_cache_ttl: float = 5.0   # 5 seconds cache for equity
+
     @property
     def paper_balances(self) -> Dict[str, Decimal]:
         """Compatibility shim: expose paper_balances from PortfolioManager for existing callers/tests."""
@@ -270,26 +278,54 @@ class OrderManager:
             raise ValueError("Ticker fetching only supported in LIVE mode")
 
     async def get_balance(self) -> Decimal:
-        """Get current account balance."""
+        """Get current account balance with caching for performance."""
+        current_time = time.time()
+
+        # Check cache for live mode
+        if (self.mode == TradingMode.LIVE and
+            self._balance_cache is not None and
+            (current_time - self._balance_cache_timestamp) < self._balance_cache_ttl):
+            return self._balance_cache
+
         if self.mode == TradingMode.LIVE and self.live_executor:
             await self._rate_limit()
             try:
                 balance = await self.live_executor.exchange.fetch_balance()
-                return Decimal(str(balance["total"].get(self.config.get("base_currency"), 0)))
+                balance_value = Decimal(str(balance["total"].get(self.config.get("base_currency"), 0)))
+                # Cache the result
+                self._balance_cache = balance_value
+                self._balance_cache_timestamp = current_time
+                return balance_value
             except Exception as e:
                 logger.warning(f"Failed to fetch balance: {e}")
                 return Decimal(0)
         elif self.mode == TradingMode.PAPER:
-            return self.paper_executor.get_balance()
+            balance_value = self.paper_executor.get_balance()
+            # Cache paper balance as well
+            self._balance_cache = balance_value
+            self._balance_cache_timestamp = current_time
+            return balance_value
         else:
             # Backtest doesn't track balance; aggregate closed PnL if requested elsewhere
             if self.portfolio_mode and self.portfolio_manager.paper_balances:
                 total = sum([float(v) for v in self.portfolio_manager.paper_balances.values()])
-                return Decimal(str(total))
-            return Decimal(0)
+                balance_value = Decimal(str(total))
+            else:
+                balance_value = Decimal(0)
+            # Cache backtest balance
+            self._balance_cache = balance_value
+            self._balance_cache_timestamp = current_time
+            return balance_value
 
     async def get_equity(self) -> Decimal:
-        """Get current account equity (balance + unrealized PnL)."""
+        """Get current account equity (balance + unrealized PnL) with caching for performance."""
+        current_time = time.time()
+
+        # Check cache first
+        if (self._equity_cache is not None and
+            (current_time - self._equity_cache_timestamp) < self._equity_cache_ttl):
+            return self._equity_cache
+
         balance = await self.get_balance()
 
         if self.mode == TradingMode.LIVE and self.live_executor:
@@ -322,7 +358,7 @@ class OrderManager:
                 except Exception:
                     logger.exception("Unexpected error while computing unrealized PnL")
                     raise
-            return balance + unrealized
+            equity_value = balance + unrealized
         else:
             # For paper/backtest aggregate per-pair unrealized
             if self.portfolio_mode:
@@ -343,12 +379,18 @@ class OrderManager:
                         except Exception:
                             logger.exception("Unexpected error while aggregating positions")
                             raise
-                    return total
+                    equity_value = total
                 except Exception:
                     # If aggregation fails unexpectedly, surface it
                     logger.exception("Unexpected error calculating portfolio total")
                     raise
-            return balance
+            else:
+                equity_value = balance
+
+        # Cache the result
+        self._equity_cache = equity_value
+        self._equity_cache_timestamp = current_time
+        return equity_value
 
     async def initialize_portfolio(self, pairs: List[str], portfolio_mode: bool, allocation: Optional[Dict[str, float]] = None) -> None:
         """

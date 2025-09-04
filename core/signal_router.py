@@ -25,6 +25,7 @@ from utils.logger import get_trade_logger
 from core.types import OrderType  # Backward-compatible export: tests expect OrderType here
 from typing import TYPE_CHECKING
 from utils.adapter import signal_to_dict
+from core.ensemble_manager import EnsembleManager
 
 # Lightweight async journal writer (best-effort, no extra deps)
 class JournalWriter:
@@ -153,6 +154,12 @@ class JournalWriter:
 # ML integration
 from utils.config_loader import get_config
 from ml.model_loader import load_model, predict as ml_predict
+from ml_filter import create_ml_filter, load_ml_filter
+from features import FeatureExtractor
+from indicators import calculate_all_indicators
+
+# Predictive models integration
+from predictive_models import PredictiveModelManager
 
 if TYPE_CHECKING:
     from risk.risk_manager import RiskManager
@@ -224,23 +231,64 @@ class SignalRouter:
         # Task manager for tracking background tasks
         self.task_manager = task_manager or None
 
-        # ML integration: attempt to load ML confirmation model from config (if configured)
+        # Ensemble manager for combining multiple strategies
+        self.ensemble_manager = EnsembleManager()
+
+        # Predictive models manager
+        try:
+            predictive_cfg = get_config("predictive_models", {})
+            self.predictive_manager = PredictiveModelManager(predictive_cfg)
+            if self.predictive_manager.enabled:
+                self.predictive_manager.load_models()
+                logger.info("Predictive models loaded and ready")
+        except Exception as e:
+            logger.warning(f"Failed to initialize predictive models: {e}")
+            self.predictive_manager = PredictiveModelManager({"enabled": False})
+
+        # ML integration: attempt to load ML filter from config (if configured)
         try:
             ml_cfg = get_config("ml", {})
             self.ml_enabled = bool(ml_cfg.get("enabled", False))
+            self.ml_filter = None
             self.ml_model = None
+            self.ml_fallback_to_raw = bool(ml_cfg.get("fallback_to_raw_signals", True))
             self.ml_confidence_threshold = float(ml_cfg.get("confidence_threshold", 0.6))
-            ml_path = ml_cfg.get("model_path")
-            if self.ml_enabled and ml_path:
-                try:
-                    self.ml_model = load_model(ml_path)
-                    logger.info(f"ML model loaded for signal confirmation: {ml_path}")
-                except Exception as e:
-                    self.ml_enabled = False
-                    logger.warning(f"Failed to load ML model at {ml_path}: {e}")
-        except Exception:
+
+            if self.ml_enabled:
+                ml_path = ml_cfg.get("model_path")
+                model_type = ml_cfg.get("model_type", "logistic_regression")
+
+                if ml_path and Path(ml_path).exists():
+                    try:
+                        self.ml_filter = load_ml_filter(ml_path)
+                        self.ml_model = load_model(ml_path)  # Load the raw model for ml_predict
+                        logger.info(f"ML filter and model loaded: {model_type} from {ml_path}")
+                    except Exception as e:
+                        logger.warning(f"Failed to load ML filter/model from {ml_path}: {e}")
+                        # Try to create a new filter if loading fails
+                        try:
+                            self.ml_filter = create_ml_filter(model_type, ml_cfg)
+                            self.ml_model = self.ml_filter  # Use filter as model if no separate model
+                            logger.info(f"Created new ML filter: {model_type}")
+                        except Exception as e2:
+                            logger.warning(f"Failed to create ML filter: {e2}")
+                            self.ml_enabled = False
+                else:
+                    # Create new filter if no saved model exists
+                    try:
+                        self.ml_filter = create_ml_filter(model_type, ml_cfg)
+                        self.ml_model = self.ml_filter  # Use filter as model
+                        logger.info(f"Created new ML filter: {model_type}")
+                    except Exception as e:
+                        logger.warning(f"Failed to create ML filter: {e}")
+                        self.ml_enabled = False
+
+        except Exception as e:
             # If config not loaded or any error occurs, disable ML integration gracefully
+            logger.warning(f"ML integration initialization failed: {e}")
             self.ml_enabled = False
+            self.ml_filter = None
+            self.ml_model = None
 
         # Optional append-only signal journal for recovery (best-effort).
         try:
@@ -336,11 +384,73 @@ class SignalRouter:
                             first_val = df.iloc[0, 0]
                             if str(first_val).startswith('<') and str(first_val).endswith('>'):
                                 return None
-                        except Exception:
+                        except (IndexError, KeyError, TypeError):
                             return None
+                    return df
+                except (ValueError, TypeError):
+                    return None
+        except (AttributeError, TypeError, ValueError):
+            return None
+
+    def _extract_market_data_for_prediction(self, market_data, signal) -> Optional[pd.DataFrame]:
+        """
+        Extract market data DataFrame for predictive models from market_data or signal metadata.
+        Returns a DataFrame with OHLCV columns or None if extraction fails.
+        """
+        if market_data is None:
+            candidate = None
+        elif isinstance(market_data, dict):
+            candidate = market_data.get("ohlcv")
+            if candidate is None:
+                candidate = market_data.get("data")
+            if candidate is None:
+                candidate = market_data.get("market_data")
+        elif isinstance(market_data, pd.DataFrame):
+            candidate = market_data
+        else:
+            candidate = None
+
+        # Fallback to signal.metadata if candidate is None
+        if candidate is None and hasattr(signal, 'metadata') and signal.metadata and isinstance(signal.metadata, dict):
+            candidate = signal.metadata.get("ohlcv")
+            if candidate is None:
+                candidate = signal.metadata.get("data")
+            if candidate is None:
+                candidate = signal.metadata.get("market_data")
+
+        if candidate is None:
+            return None
+
+        try:
+            if isinstance(candidate, pd.DataFrame):
+                if candidate.empty:
+                    return None
+                # Ensure required columns exist
+                required_cols = ['open', 'high', 'low', 'close']
+                if not all(col in candidate.columns for col in required_cols):
+                    return None
+                return candidate
+            elif isinstance(candidate, dict):
+                # Try to convert dict to DataFrame
+                try:
+                    df = pd.DataFrame([candidate])
+                    if not all(col in df.columns for col in ['open', 'high', 'low', 'close']):
+                        return None
                     return df
                 except Exception:
                     return None
+            elif isinstance(candidate, list):
+                if not candidate:
+                    return None
+                try:
+                    df = pd.DataFrame(candidate)
+                    if not all(col in df.columns for col in ['open', 'high', 'low', 'close']):
+                        return None
+                    return df
+                except Exception:
+                    return None
+            else:
+                return None
         except Exception:
             return None
 
@@ -361,7 +471,25 @@ class SignalRouter:
             trade_logger.log_rejected_signal(signal_to_dict(signal), "router_blocking")
             return None
 
-        # 1. Validate basic signal properties
+        # 1. Check ensemble manager first (if enabled and signal is from individual strategy)
+        if (self.ensemble_manager.enabled and
+            signal.strategy_id != "ensemble" and
+            hasattr(signal, 'metadata') and
+            not signal.metadata.get('ensemble', False)):
+
+            try:
+                ensemble_signal = self.ensemble_manager.get_ensemble_signal(market_data)
+                if ensemble_signal:
+                    logger.info("Ensemble signal generated, using ensemble decision")
+                    signal = ensemble_signal
+                elif self.ensemble_manager.voting_mode.value != "majority_vote":
+                    # For non-majority modes, if no consensus, don't process individual signal
+                    logger.info("No ensemble consensus, skipping individual signal")
+                    return None
+            except Exception as e:
+                logger.warning(f"Ensemble processing failed: {e}, proceeding with individual signal")
+
+        # 2. Validate basic signal properties
         try:
             if not self._validate_signal(signal):
                 logger.debug("Signal validation failed", exc_info=False)
@@ -411,59 +539,146 @@ class SignalRouter:
 
                 # ML confirmation (optional)
                 try:
-                    if self.ml_enabled and self.ml_model and signal.signal_type in {SignalType.ENTRY_LONG, SignalType.ENTRY_SHORT}:
+                    if self.ml_enabled and self.ml_filter:
+                        ml_result = self.ml_filter.filter_signal(signal, market_data)
+                        if not ml_result.get("approved", True):
+                            logger.info(
+                                f"ML filter rejected signal: {ml_result.get('reason')} "
+                                f"(confidence={ml_result.get('confidence', 0):.2f})"
+                            )
+                            return None  # <-- reject immediately
+
+                    if (self.ml_enabled and self.ml_model and
+                        signal.signal_type in {SignalType.ENTRY_LONG, SignalType.ENTRY_SHORT}):
+
                         features_df = self._extract_features_for_ml(market_data, signal)
                         if features_df is None or features_df.empty:
                             logger.info("ML confirmation skipped: no feature row available")
-                        else:
-                            try:
-                                ml_out = ml_predict(self.ml_model, features_df)
-                                ml_pred = ml_out.iloc[0]["prediction"]
-                                ml_conf = float(ml_out.iloc[0].get("confidence", 0.0))
-                            except Exception as e:
-                                logger.warning(f"ML prediction failed: {e}")
-                                ml_pred = None
-                                ml_conf = 0.0
-
-                            # Determine desired direction from signal
-                            desired = 1 if signal.signal_type == SignalType.ENTRY_LONG else -1
-                            sig_text = "BUY" if desired == 1 else "SELL"
-                            ml_text = "UNK"
-                            if ml_pred == 1:
-                                ml_text = "BUY"
-                            elif ml_pred == -1:
-                                ml_text = "SELL"
-                            elif ml_pred == 0:
-                                ml_text = "HOLD"
-
-                            decision = "ACCEPT"
-                            # Apply confirmation rules only when ML returned a prediction
-                            if ml_pred is not None:
-                                if ml_conf >= self.ml_confidence_threshold:
-                                    if ml_pred == desired:
-                                        decision = "ACCEPT"
-                                    else:
-                                        # ML disagrees: reduce strength or reject if already weak
-                                        if signal.signal_strength == SignalStrength.WEAK:
-                                            decision = "REJECT"
-                                        else:
-                                            # degrade strength by one level
-                                            try:
-                                                new_value = max(SignalStrength.WEAK.value, signal.signal_strength.value - 1)
-                                                signal.signal_strength = SignalStrength(new_value)
-                                                decision = "REDUCE"
-                                            except Exception:
-                                                decision = "REDUCE"
-                                else:
-                                    decision = "NO_ML"  # low-confidence ML -> ignore ML
-                            # Log combined decision
-                            logger.info(f"Signal: {sig_text} | ML: {ml_text} ({ml_conf:.2f} confidence) → Decision: {decision}")
-                            trade_logger.trade("ML confirmation", {"signal": sig_text, "ml": ml_text, "confidence": ml_conf, "decision": decision})
-                            if decision == "REJECT":
-                                trade_logger.log_rejected_signal(signal_to_dict(signal), "ml_reject")
+                            if not self.ml_fallback_to_raw:
+                                logger.warning("ML required but no features available, rejecting signal")
+                                trade_logger.log_rejected_signal(signal_to_dict(signal), "ml_no_features")
                                 return None
-                except Exception:
-                    logger.exception("ML confirmation step failed; proceeding with indicator-only decision")
+                        else:
+                            # Call ML prediction
+                            logger.debug(f"Calling ML prediction with features shape: {features_df.shape}")
+                            ml_result = ml_predict(self.ml_model, features_df)
+
+                            if ml_result is None or ml_result.empty:
+                                logger.warning("ML prediction returned None or empty result")
+                                if not self.ml_fallback_to_raw:
+                                    trade_logger.log_rejected_signal(signal_to_dict(signal), "ml_error")
+                                    return None
+                            else:
+                                # Check if ML rejected the signal
+                                if not ml_result.get("approved", True):
+                                    logger.info(
+                                        f"ML rejected signal {signal.symbol} "
+                                        f"(confidence={ml_result.get('confidence')}, reason={ml_result.get('reason')})"
+                                    )
+                                    return None
+                                # Extract prediction and confidence
+                                prediction_row = ml_result.iloc[0]
+                                ml_prediction = prediction_row.get('prediction', 0)
+                                ml_confidence = prediction_row.get('confidence', 0.0)
+
+                                # Convert prediction to signal direction
+                                desired_direction = 1 if signal.signal_type == SignalType.ENTRY_LONG else -1
+                                ml_direction = 1 if ml_prediction > 0 else -1
+
+                                logger.info(f"ML prediction: direction={ml_direction}, confidence={ml_confidence:.3f}")
+
+                                # Apply ML decision rules
+                                confidence_threshold = getattr(self, 'ml_confidence_threshold', 0.6)
+
+                                if ml_confidence >= confidence_threshold:
+                                    # High confidence ML prediction - apply decision rules
+                                    if signal.signal_strength == SignalStrength.WEAK:
+                                        # Weak signals require ML confirmation
+                                        if ml_direction == desired_direction:
+                                            logger.info("Weak signal approved by ML (same direction, high confidence)")
+                                            trade_logger.trade("ML confirmation", {
+                                                "signal": "BUY" if desired_direction == 1 else "SELL",
+                                                "confidence": ml_confidence,
+                                                "approved": True,
+                                                "reason": "weak_signal_confirmed"
+                                            })
+                                        else:
+                                            logger.info("Weak signal rejected by ML (opposite direction)")
+                                            trade_logger.log_rejected_signal(signal_to_dict(signal), "ml_opposite_direction")
+                                            return None
+                                    else:
+                                        # Strong signals bypass ML rejection but still log the result
+                                        if ml_direction != desired_direction:
+                                            # Reduce signal strength due to ML disagreement
+                                            if signal.signal_strength == SignalStrength.STRONG:
+                                                signal.signal_strength = SignalStrength.MODERATE
+                                                logger.info("Signal strength reduced due to ML disagreement")
+                                            elif signal.signal_strength == SignalStrength.MODERATE:
+                                                signal.signal_strength = SignalStrength.WEAK
+                                                logger.info("Signal strength reduced due to ML disagreement")
+
+                                        trade_logger.trade("ML confirmation", {
+                                            "signal": "BUY" if desired_direction == 1 else "SELL",
+                                            "confidence": ml_confidence,
+                                            "approved": True,
+                                            "reason": "strong_signal_bypass"
+                                        })
+                                else:
+                                    # Low confidence - ignore ML result and proceed with original signal
+                                    logger.info(f"ML confidence too low ({ml_confidence:.3f} < {confidence_threshold}), ignoring ML result")
+                                    trade_logger.trade("ML confirmation", {
+                                        "signal": "BUY" if desired_direction == 1 else "SELL",
+                                        "confidence": ml_confidence,
+                                        "approved": True,
+                                        "reason": "low_confidence_ignored"
+                                    })
+
+                except Exception as e:
+                    logger.exception("ML confirmation step failed")
+                    if not self.ml_fallback_to_raw:
+                        logger.warning("ML required but failed, rejecting signal")
+                        trade_logger.log_rejected_signal(signal_to_dict(signal), "ml_error")
+                        return None
+                    else:
+                        logger.warning("ML failed, proceeding with raw signal")
+
+                # Predictive models filtering (optional)
+                try:
+                    if (self.predictive_manager.enabled and
+                        signal.signal_type in {SignalType.ENTRY_LONG, SignalType.ENTRY_SHORT}):
+
+                        # Extract market data for predictions
+                        market_df = self._extract_market_data_for_prediction(market_data, signal)
+                        if market_df is not None and not market_df.empty:
+                            # Generate predictions
+                            predictions = self.predictive_manager.predict(market_df)
+
+                            # Check if signal should be allowed based on predictions
+                            signal_type_str = "BUY" if signal.signal_type == SignalType.ENTRY_LONG else "SELL"
+                            if not self.predictive_manager.should_allow_signal(signal_type_str, predictions):
+                                logger.info(f"Signal rejected by predictive models: {predictions.price_direction}, {predictions.volatility}, surge={predictions.volume_surge}")
+                                trade_logger.log_rejected_signal(signal_to_dict(signal), "predictive_filter")
+                                return None
+                            else:
+                                logger.debug(f"Signal approved by predictive models (confidence: {predictions.confidence:.3f})")
+                                trade_logger.trade("Predictive models", {
+                                    "signal": signal_type_str,
+                                    "price_direction": predictions.price_direction,
+                                    "volatility": predictions.volatility,
+                                    "volume_surge": predictions.volume_surge,
+                                    "confidence": predictions.confidence,
+                                    "approved": True
+                                })
+
+                                # Store predictions in signal metadata for later use
+                                if not hasattr(signal, 'metadata') or signal.metadata is None:
+                                    signal.metadata = {}
+                                signal.metadata['predictions'] = predictions.to_dict()
+                        else:
+                            logger.debug("Predictive models skipped: no market data available")
+                except Exception as e:
+                    logger.exception("Predictive models filtering failed")
+                    # Don't reject signal on predictive model failure - continue with processing
 
                 # Finalize and store the signal while still holding the symbol lock.
                 try:

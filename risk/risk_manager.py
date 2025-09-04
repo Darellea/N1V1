@@ -9,17 +9,20 @@ import logging
 import asyncio
 import random
 from typing import Dict, Optional, Tuple, List, Any, Callable
-from decimal import Decimal, getcontext, InvalidOperation, ROUND_HALF_UP
+from decimal import Decimal, getcontext, ROUND_HALF_UP
 import math
 import numpy as np
 import pandas as pd
 import time
 from utils.time import now_ms, to_ms
+from datetime import datetime, timedelta
+from enum import Enum
 
 from core.contracts import TradingSignal
 from utils.config_loader import ConfigLoader
 from utils.logger import get_trade_logger
 from utils.adapter import signal_to_dict
+from market_regime import get_market_regime_detector, MarketRegime
 
 logger = logging.getLogger(__name__)
 trade_logger = get_trade_logger()
@@ -92,12 +95,57 @@ class RiskManager:
         self.fixed_percent = Decimal(str(config.get("fixed_percent", 0.1)))
         # Kelly criterion fallback assumptions
         self.kelly_assumed_win_rate = float(config.get("kelly_assumed_win_rate", 0.55))
-        # max_position_size kept as Decimal above
+
+        # Adaptive position sizing parameters
+        self.risk_per_trade = Decimal(str(config.get("risk_per_trade", 0.02)))
+        self.atr_k_factor = Decimal(str(config.get("atr_k_factor", 2.0)))
+
+        # Dynamic stop loss parameters
+        self.stop_loss_method = config.get("stop_loss_method", "atr")
+        self.atr_sl_multiplier = Decimal(str(config.get("atr_sl_multiplier", 2.0)))
+        self.stop_loss_percentage = Decimal(str(config.get("stop_loss_percentage", 0.02)))
+
+        # Adaptive take profit parameters
+        self.tp_base_multiplier = Decimal(str(config.get("tp_base_multiplier", 2.0)))
+        self.enable_adaptive_tp = config.get("enable_adaptive_tp", True)
+
+        # Trailing stop parameters
+        self.enable_trailing_stop = config.get("enable_trailing_stop", True)
+        self.trailing_stop_method = config.get("trailing_stop_method", "percentage")
+        self.trailing_distance = Decimal(str(config.get("trailing_distance", 0.02)))
+        self.trailing_atr_multiplier = Decimal(str(config.get("trailing_atr_multiplier", 1.5)))
+        self.trailing_step_size = Decimal(str(config.get("trailing_step_size", 0.005)))
+
+        # Time-based exit parameters
+        self.enable_time_based_exit = config.get("enable_time_based_exit", True)
+        self.max_holding_candles = config.get("max_holding_candles", 72)
+        self.timeframe = config.get("timeframe", "1h")
+
+        # Regime-based exit parameters
+        self.enable_regime_based_exit = config.get("enable_regime_based_exit", True)
+        self.exit_on_regime_change = config.get("exit_on_regime_change", True)
+
+        # Enhanced logging parameters
+        self.enhanced_trade_logging = config.get("enhanced_trade_logging", True)
+        self.track_exit_reasons = config.get("track_exit_reasons", True)
+        self.log_sl_tp_details = config.get("log_sl_tp_details", True)
 
         # Initialize volatility tracker
         self.symbol_volatility = {}
         # Track per-symbol loss streaks for adaptive sizing
         self.loss_streaks = {}
+
+        # Position tracking for trailing stops
+        self.position_tracking = {}  # symbol -> tracking data
+
+        # Exit type statistics
+        self.exit_type_stats = {
+            "sl_hit": {"wins": 0, "losses": 0},
+            "tp_hit": {"wins": 0, "losses": 0},
+            "time_limit": {"wins": 0, "losses": 0},
+            "regime_change": {"wins": 0, "losses": 0},
+            "manual": {"wins": 0, "losses": 0}
+        }
 
         # Reliability / retry defaults (can be overridden via config["reliability"])
         rel_cfg = config.get("reliability", {}) if isinstance(config, dict) else {}
@@ -134,11 +182,6 @@ class RiskManager:
             if not await self._check_portfolio_risk(signal):
                 return False
 
-            # Validate stop loss if required
-            if self.require_stop_loss and not signal.stop_loss:
-                trade_logger.log_rejected_signal(signal_to_dict(signal), "missing_stop_loss")
-                return False
-
             # Calculate position size if not provided
             if not hasattr(signal, "amount") or signal.amount <= 0:
                 signal.amount = await self.calculate_position_size(signal, market_data)
@@ -164,6 +207,15 @@ class RiskManager:
             if not await self._validate_position_size(signal):
                 return False
 
+            # Calculate stop loss if not provided
+            if not signal.stop_loss:
+                signal.stop_loss = await self.calculate_dynamic_stop_loss(signal, market_data)
+
+            # Validate stop loss if required
+            if self.require_stop_loss and not signal.stop_loss:
+                trade_logger.log_rejected_signal(signal_to_dict(signal), "missing_stop_loss")
+                return False
+
             # Calculate take profit if not provided
             if not signal.take_profit:
                 signal.take_profit = await self.calculate_take_profit(signal)
@@ -186,6 +238,7 @@ class RiskManager:
         Calculate appropriate position size based on configured sizing method.
 
         Supported methods (configurable via risk_management.position_sizing_method):
+          - adaptive_atr: ATR-based volatility scaling (NEW)
           - fixed_percent: allocate a fixed fraction of account balance (fixed_percent)
           - volatility: size based on ATR / volatility (uses market_data)
           - martingale: experimental doubling scheme (testing only)
@@ -200,6 +253,8 @@ class RiskManager:
             Position size in base currency (Decimal)
         """
         method = str(self.position_sizing_method).lower()
+        if method == "adaptive_atr":
+            return await self.calculate_adaptive_position_size(signal, market_data)
         if method == "volatility" or method == "volatility_based":
             return await self._volatility_based_position_size(signal, market_data)
         if method == "martingale":
@@ -550,3 +605,460 @@ class RiskManager:
             params["volatility"] = self.symbol_volatility[symbol]["volatility"]
 
         return params
+
+    # ===== NEW ADAPTIVE RISK MANAGEMENT METHODS =====
+
+    async def calculate_adaptive_position_size(
+        self, signal: TradingSignal, market_data: Optional[Dict[str, Any]] = None
+    ) -> Decimal:
+        """
+        Calculate adaptive position size based on ATR volatility scaling.
+
+        Formula: position_size = (account_equity * risk_per_trade) / (ATR * k_factor)
+
+        Args:
+            signal: TradingSignal to calculate for
+            market_data: Market data containing OHLCV data
+
+        Returns:
+            Position size in base currency (Decimal)
+        """
+        try:
+            account_balance = await self._get_current_balance()
+            risk_per_trade = Decimal(str(self.config.get("risk_per_trade", 0.02)))  # 2% default
+
+            if not market_data or "close" not in market_data:
+                # Fallback to fixed percentage
+                return _safe_quantize(account_balance * risk_per_trade)
+
+            # Calculate ATR
+            atr = await self._calculate_atr(market_data)
+            if atr <= 0:
+                return _safe_quantize(account_balance * risk_per_trade)
+
+            # Get k-factor (volatility multiplier)
+            k_factor = Decimal(str(self.config.get("atr_k_factor", 2.0)))
+
+            # Calculate position size
+            position_size = (account_balance * risk_per_trade) / (atr * k_factor)
+
+            # Apply maximum position size constraint
+            max_allowed = account_balance * self.max_position_size
+            position_size = min(position_size, max_allowed)
+
+            return _safe_quantize(position_size)
+
+        except Exception as e:
+            logger.warning(f"Error calculating adaptive position size: {e}")
+            # Fallback to fixed percentage
+            account_balance = await self._get_current_balance()
+            risk_per_trade = Decimal(str(self.config.get("risk_per_trade", 0.02)))
+            return _safe_quantize(account_balance * risk_per_trade)
+
+    async def calculate_dynamic_stop_loss(
+        self, signal: TradingSignal, market_data: Optional[Dict[str, Any]] = None
+    ) -> Optional[Decimal]:
+        """
+        Calculate dynamic stop loss based on ATR or percentage.
+
+        Args:
+            signal: TradingSignal to calculate for
+            market_data: Market data for ATR calculation
+
+        Returns:
+            Stop loss price as Decimal, or None if cannot be computed
+        """
+        if not signal.current_price:
+            return None
+
+        entry_price = Decimal(str(signal.current_price))
+        sl_method = self.stop_loss_method  # atr, percentage, fixed
+
+        try:
+            if sl_method == "atr":
+                if not market_data:
+                    return None
+                atr = await self._calculate_atr(market_data)
+                if atr <= 0:
+                    return None
+
+                atr_multiplier = Decimal(str(self.config.get("atr_sl_multiplier", 2.0)))
+                atr_sl_distance = atr * atr_multiplier
+
+                if signal.signal_type.name.endswith("LONG"):
+                    return _safe_quantize(entry_price - atr_sl_distance)
+                else:  # SHORT
+                    return _safe_quantize(entry_price + atr_sl_distance)
+
+            elif sl_method == "percentage":
+                sl_percentage = self.stop_loss_percentage  # 2%
+                sl_distance = entry_price * sl_percentage
+
+                if signal.signal_type.name.endswith("LONG"):
+                    return _safe_quantize(entry_price * (1 - sl_percentage))
+                else:  # SHORT
+                    return _safe_quantize(entry_price * (1 + sl_percentage))
+
+            else:  # fixed
+                # Use existing logic or fallback
+                return await self._calculate_fixed_stop_loss(signal)
+
+        except Exception as e:
+            logger.warning(f"Error calculating dynamic stop loss: {e}")
+            return None
+
+    async def calculate_adaptive_take_profit(
+        self, signal: TradingSignal, market_data: Optional[Dict[str, Any]] = None
+    ) -> Optional[Decimal]:
+        """
+        Calculate adaptive take profit based on risk multiples and trend strength.
+
+        Args:
+            signal: TradingSignal to calculate for
+            market_data: Market data for ADX calculation
+
+        Returns:
+            Take profit price as Decimal, or None if cannot be computed
+        """
+        if not signal.stop_loss or not signal.current_price:
+            return None
+
+        entry_price = Decimal(str(signal.current_price))
+        stop_loss = Decimal(str(signal.stop_loss))
+
+        # Calculate risk amount
+        if signal.signal_type.name.endswith("LONG"):
+            risk_amount = entry_price - stop_loss
+        else:  # SHORT
+            risk_amount = stop_loss - entry_price
+
+        # Get TP multiplier (default 2R, 3R based on trend strength)
+        base_multiplier = Decimal(str(self.config.get("tp_base_multiplier", 2.0)))
+
+        # Adjust multiplier based on trend strength (ADX)
+        trend_multiplier = await self._calculate_trend_multiplier(market_data)
+        final_multiplier = base_multiplier * trend_multiplier
+
+        # Calculate take profit
+        if signal.signal_type.name.endswith("LONG"):
+            take_profit = entry_price + (risk_amount * final_multiplier)
+        else:  # SHORT
+            take_profit = entry_price - (risk_amount * final_multiplier)
+
+        return _safe_quantize(take_profit)
+
+    async def calculate_trailing_stop(
+        self, signal: TradingSignal, current_price: Decimal,
+        highest_price: Optional[Decimal] = None, lowest_price: Optional[Decimal] = None,
+        market_data: Optional[Dict[str, Any]] = None
+    ) -> Optional[Decimal]:
+        """
+        Calculate trailing stop loss based on ATR or percentage.
+
+        Args:
+            signal: TradingSignal for the position
+            current_price: Current market price
+            highest_price: Highest price since entry (for LONG positions)
+            lowest_price: Lowest price since entry (for SHORT positions)
+            market_data: Market data for ATR calculation
+
+        Returns:
+            Trailing stop price as Decimal, or None if cannot be computed
+        """
+        try:
+            trail_method = self.trailing_stop_method  # atr, percentage
+            trail_distance = Decimal(str(self.config.get("trailing_distance", 0.02)))  # 2% default
+
+            if trail_method == "atr":
+                if not market_data:
+                    return None
+                atr = await self._calculate_atr(market_data)
+                if atr <= 0:
+                    return None
+
+                atr_multiplier = Decimal(str(self.config.get("trailing_atr_multiplier", 1.5)))
+                trail_distance = atr * atr_multiplier
+
+            # Calculate trailing stop
+            if signal.signal_type.name.endswith("LONG"):
+                if highest_price:
+                    # Trail below the highest price
+                    trailing_stop = highest_price * (1 - trail_distance)
+                    # Don't move stop loss up, only down
+                    if signal.stop_loss:
+                        trailing_stop = max(trailing_stop, Decimal(str(signal.stop_loss)))
+                    return _safe_quantize(trailing_stop)
+            else:  # SHORT
+                if lowest_price:
+                    # Trail above the lowest price
+                    trailing_stop = lowest_price * (1 + trail_distance)
+                    # Don't move stop loss down, only up
+                    if signal.stop_loss:
+                        trailing_stop = min(trailing_stop, Decimal(str(signal.stop_loss)))
+                    return _safe_quantize(trailing_stop)
+
+            return None
+
+        except Exception as e:
+            logger.warning(f"Error calculating trailing stop: {e}")
+            return None
+
+    async def should_exit_time_based(
+        self, entry_timestamp: int, current_timestamp: int,
+        timeframe: str = "1h", max_candles: int = 72
+    ) -> Tuple[bool, str]:
+        """
+        Check if position should be closed based on time criteria.
+
+        Args:
+            entry_timestamp: Entry timestamp in milliseconds
+            current_timestamp: Current timestamp in milliseconds
+            timeframe: Chart timeframe (e.g., '1h', '4h', '1d')
+            max_candles: Maximum number of candles to hold position
+
+        Returns:
+            Tuple of (should_exit, exit_reason)
+        """
+        try:
+            # Calculate time difference in milliseconds
+            time_diff_ms = current_timestamp - entry_timestamp
+
+            # Convert timeframe to milliseconds
+            timeframe_ms = self._timeframe_to_ms(timeframe)
+
+            # Calculate number of candles elapsed
+            candles_elapsed = time_diff_ms / timeframe_ms
+
+            if candles_elapsed >= max_candles:
+                return True, f"time_limit_{max_candles}_candles"
+
+            return False, ""
+
+        except Exception as e:
+            logger.warning(f"Error checking time-based exit: {e}")
+            return False, ""
+
+    async def should_exit_regime_change(
+        self, signal: TradingSignal, market_data: Optional[Dict[str, Any]] = None
+    ) -> Tuple[bool, str]:
+        """
+        Check if position should be closed due to market regime change.
+
+        Args:
+            signal: TradingSignal for the position
+            market_data: Current market data
+
+        Returns:
+            Tuple of (should_exit, exit_reason)
+        """
+        try:
+            if not market_data:
+                return False, ""
+
+            # Get market regime detector
+            regime_detector = get_market_regime_detector()
+            regime_result = regime_detector.detect_regime(pd.DataFrame(market_data))
+
+            # Exit trend positions when regime switches to sideways
+            if signal.signal_type.name.endswith("LONG") or signal.signal_type.name.endswith("SHORT"):
+                if regime_result.regime == MarketRegime.SIDEWAYS:
+                    # Check if we were previously in trending regime
+                    previous_regime = regime_result.previous_regime
+                    if previous_regime == MarketRegime.TRENDING:
+                        return True, f"regime_change_{previous_regime.value}_to_{regime_result.regime.value}"
+
+            return False, ""
+
+        except Exception as e:
+            logger.warning(f"Error checking regime-based exit: {e}")
+            return False, ""
+
+    async def update_position_tracking(
+        self, signal: TradingSignal, current_price: Decimal,
+        highest_price: Optional[Decimal] = None, lowest_price: Optional[Decimal] = None
+    ) -> Dict[str, Any]:
+        """
+        Update position tracking for trailing stops and exit conditions.
+
+        Args:
+            signal: TradingSignal for the position
+            current_price: Current market price
+            highest_price: Highest price since entry
+            lowest_price: Lowest price since entry
+
+        Returns:
+            Updated tracking information
+        """
+        try:
+            # Update highest/lowest prices
+            if signal.signal_type.name.endswith("LONG"):
+                if highest_price is None:
+                    highest_price = current_price
+                else:
+                    highest_price = max(highest_price, current_price)
+            else:  # SHORT
+                if lowest_price is None:
+                    lowest_price = current_price
+                else:
+                    lowest_price = min(lowest_price, current_price)
+
+            # Calculate trailing stop
+            trailing_stop = await self.calculate_trailing_stop(
+                signal, current_price, highest_price, lowest_price
+            )
+
+            return {
+                "highest_price": highest_price,
+                "lowest_price": lowest_price,
+                "trailing_stop": trailing_stop,
+                "current_price": current_price,
+                "last_updated": now_ms()
+            }
+
+        except Exception as e:
+            logger.warning(f"Error updating position tracking: {e}")
+            return {}
+
+    async def log_trade_with_exit_details(
+        self, signal: TradingSignal, exit_price: Decimal, exit_reason: str,
+        pnl: Decimal, entry_price: Decimal, stop_loss: Optional[Decimal] = None,
+        take_profit: Optional[Decimal] = None
+    ) -> None:
+        """
+        Enhanced trade logging with SL/TP details and exit reason tracking.
+
+        Args:
+            signal: TradingSignal for the trade
+            exit_price: Price at which position was closed
+            exit_reason: Reason for exit (sl_hit, tp_hit, time_limit, regime_change, etc.)
+            pnl: Profit/loss from the trade
+            entry_price: Entry price
+            stop_loss: Stop loss price
+            take_profit: Take profit price
+        """
+        try:
+            trade_details = {
+                "symbol": signal.symbol,
+                "signal_type": signal.signal_type.name if signal.signal_type else "UNKNOWN",
+                "entry_price": float(entry_price),
+                "exit_price": float(exit_price),
+                "pnl": float(pnl),
+                "exit_reason": exit_reason,
+                "stop_loss": float(stop_loss) if stop_loss else None,
+                "take_profit": float(take_profit) if take_profit else None,
+                "timestamp": now_ms(),
+                "position_size": float(signal.amount) if hasattr(signal, 'amount') else None
+            }
+
+            trade_logger.performance("Trade closed", trade_details)
+
+            # Update win rate by exit type
+            await self._update_exit_type_stats(exit_reason, pnl > 0)
+
+        except Exception as e:
+            logger.exception("Failed to log trade with exit details")
+
+    # ===== HELPER METHODS =====
+
+    async def _calculate_atr(self, market_data: Dict[str, Any], period: int = 14) -> Decimal:
+        """Calculate Average True Range from market data."""
+        try:
+            if "high" not in market_data or "low" not in market_data or "close" not in market_data:
+                return Decimal("0")
+
+            high = pd.Series(market_data["high"])
+            low = pd.Series(market_data["low"])
+            close = pd.Series(market_data["close"])
+
+            if len(high) < period + 1:
+                return Decimal("0")
+
+            # Calculate True Range
+            hl = high - low
+            hc = (high - close.shift(1)).abs()
+            lc = (low - close.shift(1)).abs()
+            tr_values = np.maximum.reduce([hl.values, hc.values, lc.values])
+            tr = pd.Series(tr_values, index=high.index)
+
+            # Calculate ATR
+            atr = tr.rolling(window=period).mean().iloc[-1]
+
+            if np.isnan(atr) or atr <= 0:
+                return Decimal("0")
+
+            return Decimal(str(atr))
+
+        except Exception as e:
+            logger.warning(f"Error calculating ATR: {e}")
+            return Decimal("0")
+
+    async def _calculate_trend_multiplier(self, market_data: Optional[Dict[str, Any]] = None) -> Decimal:
+        """Calculate trend strength multiplier based on ADX."""
+        try:
+            if not market_data:
+                return Decimal("1.0")
+
+            # Get ADX value (would need to be calculated or provided in market_data)
+            adx_value = market_data.get("adx", 25)  # Default to neutral
+
+            # Higher ADX = stronger trend = higher TP multiplier
+            if adx_value >= 40:  # Strong trend
+                return Decimal("1.5")
+            elif adx_value >= 25:  # Moderate trend
+                return Decimal("1.2")
+            else:  # Weak trend
+                return Decimal("0.8")
+
+        except Exception:
+            return Decimal("1.0")
+
+    async def _calculate_fixed_stop_loss(self, signal: TradingSignal) -> Optional[Decimal]:
+        """Calculate fixed stop loss as fallback."""
+        if not signal.current_price:
+            return None
+
+        entry_price = Decimal(str(signal.current_price))
+        sl_percentage = Decimal(str(self.config.get("stop_loss_percentage", 0.02)))
+
+        if signal.signal_type.name.endswith("LONG"):
+            return _safe_quantize(entry_price * (1 - sl_percentage))
+        else:  # SHORT
+            return _safe_quantize(entry_price * (1 + sl_percentage))
+
+    def _timeframe_to_ms(self, timeframe: str) -> int:
+        """Convert timeframe string to milliseconds."""
+        timeframe = timeframe.lower()
+
+        if timeframe == "1m":
+            return 60 * 1000
+        elif timeframe == "5m":
+            return 5 * 60 * 1000
+        elif timeframe == "15m":
+            return 15 * 60 * 1000
+        elif timeframe == "30m":
+            return 30 * 60 * 1000
+        elif timeframe == "1h":
+            return 60 * 60 * 1000
+        elif timeframe == "4h":
+            return 4 * 60 * 60 * 1000
+        elif timeframe == "1d":
+            return 24 * 60 * 60 * 1000
+        else:
+            # Default to 1 hour
+            return 60 * 60 * 1000
+
+    async def _update_exit_type_stats(self, exit_reason: str, is_win: bool) -> None:
+        """Update statistics for exit types."""
+        try:
+            if exit_reason in self.exit_type_stats:
+                if is_win:
+                    self.exit_type_stats[exit_reason]["wins"] += 1
+                else:
+                    self.exit_type_stats[exit_reason]["losses"] += 1
+            else:
+                # Initialize new exit reason
+                self.exit_type_stats[exit_reason] = {"wins": 1 if is_win else 0, "losses": 0 if is_win else 1}
+
+            logger.info(f"Exit type '{exit_reason}' resulted in {'win' if is_win else 'loss'}")
+        except Exception:
+            logger.exception("Failed to update exit type statistics")

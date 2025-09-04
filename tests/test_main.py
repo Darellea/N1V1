@@ -194,31 +194,36 @@ class TestCryptoTradingBot:
 
         # Should not raise exception
 
-    @patch('builtins.print')
-    def test_display_banner(self, mock_print, bot):
+    def test_display_banner(self, bot):
         """Test banner display (lines 101-117)."""
-        with patch.object(bot, '_get_mode', return_value='TEST_MODE'):
+        with patch.object(bot, '_get_mode', return_value='TEST_MODE'), \
+             patch.object(bot.logger, 'info') as mock_info:
             bot._display_banner()
 
-        # Verify print calls were made
-        assert mock_print.call_count > 0
+        # Verify logger.info calls were made
+        assert mock_info.call_count > 0
 
         # Check for expected banner content
-        calls = [str(call) for call in mock_print.call_args_list]
+        calls = [str(call) for call in mock_info.call_args_list]
         banner_text = ' '.join(calls)
 
         assert 'Crypto Trading System' in banner_text
         assert 'TEST_MODE' in banner_text
         assert 'INITIALIZING' in banner_text
 
-    def test_print_help(self, bot, capsys):
+    def test_print_help(self, bot):
         """Test help message printing (lines 121-129)."""
-        bot._print_help()
+        with patch.object(bot.logger, 'info') as mock_info:
+            bot._print_help()
 
-        captured = capsys.readouterr()
-        assert '--help' in captured.out
-        assert '--status' in captured.out
-        assert 'Usage:' in captured.out
+        # Verify logger.info was called
+        mock_info.assert_called_once()
+
+        # Check the help text content
+        call_args = str(mock_info.call_args)
+        assert '--help' in call_args
+        assert '--status' in call_args
+        assert 'Usage:' in call_args
 
     @patch('sys.argv', ['main.py'])
     def test_get_mode_default(self, bot):
