@@ -39,8 +39,9 @@ class TestCryptoTradingBot:
     @patch('main.setup_logging')
     @patch('main.BotEngine')
     @patch('main.set_bot_engine', None)  # Mock as unavailable
+    @patch('main.sys.exit')  # Prevent sys.exit from terminating test
     @pytest.mark.asyncio
-    async def test_initialize_success(self, mock_bot_engine_class, mock_setup_logging,
+    async def test_initialize_success(self, mock_exit, mock_bot_engine_class, mock_setup_logging,
                                    mock_load_config, bot):
         """Test successful bot initialization (lines 41-61)."""
         # Setup mocks
@@ -48,11 +49,16 @@ class TestCryptoTradingBot:
         mock_load_config.return_value = mock_config
 
         mock_bot_engine = AsyncMock()
+        # Keep print_status_table as regular mock since it's not async
+        mock_bot_engine.print_status_table = MagicMock()
         mock_bot_engine_class.return_value = mock_bot_engine
 
         # Mock banner display to avoid print statements
         with patch.object(bot, '_display_banner'):
             await bot.initialize()
+
+        # Verify sys.exit was not called (successful initialization)
+        mock_exit.assert_not_called()
 
         # Verify configuration was loaded
         assert bot.config == mock_config
@@ -81,6 +87,8 @@ class TestCryptoTradingBot:
         mock_load_config.return_value = mock_config
 
         mock_bot_engine = AsyncMock()
+        # Override print_status_table to be a regular mock since it's not async in reality
+        mock_bot_engine.print_status_table = MagicMock()
         mock_bot_engine_class.return_value = mock_bot_engine
 
         # Mock banner display
@@ -362,7 +370,10 @@ class TestMainFunction:
         mock_config = {"monitoring": {"terminal_display": True}}
         mock_load_config.return_value = mock_config
 
-        mock_bot_engine = AsyncMock()
+        mock_bot_engine = MagicMock()
+        # Make async methods AsyncMock
+        mock_bot_engine.initialize = AsyncMock()
+        mock_bot_engine.shutdown = AsyncMock()
         mock_bot_engine_class.return_value = mock_bot_engine
 
         with patch('sys.exit') as mock_exit:
@@ -377,6 +388,8 @@ class TestMainFunction:
             assert mock_bot_engine_class.call_count == 2
             # The status bot engine calls
             mock_bot_engine.initialize.assert_called()
+            # Note: print_status_table is not async in the actual implementation
+            # so we don't await it in the test
             mock_bot_engine.print_status_table.assert_called()
             mock_bot_engine.shutdown.assert_called()
             mock_exit.assert_called_once_with(0)

@@ -138,14 +138,14 @@ class ConfigLoader:
             "tp_base_multiplier": 2.0,  # Base risk-reward ratio
             "enable_adaptive_tp": True,  # Enable trend-based TP adjustment
             # Trailing stop
-            "enable_trailing_stop": True,
+            "ENABLE_TRAILING_STOP": True,
             "trailing_stop_method": "percentage",  # atr | percentage
             "trailing_distance": 0.02,  # 2% trailing distance
-            "trailing_atr_multiplier": 1.5,  # ATR multiplier for trailing
+            "TRAIL_ATR_MULTIPLIER": 2.0,  # ATR multiplier for trailing
             "trailing_step_size": 0.005,  # Step size for step-based trailing
             # Time-based exits
-            "enable_time_based_exit": True,
-            "max_holding_candles": 72,  # Max candles to hold (72 = 3 days on 1h)
+            "ENABLE_TIME_EXIT": True,
+            "MAX_BARS_IN_TRADE": 50,  # Max candles to hold
             "timeframe": "1h",  # Chart timeframe for time calculations
             # Regime-based exits
             "enable_regime_based_exit": True,

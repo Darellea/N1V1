@@ -1018,10 +1018,10 @@ async def test_concurrent_signal_processing_same_symbol_conflicts():
 
 
 @pytest.mark.asyncio
-async def test_retry_async_call_backoff_behavior():
+async def test_retry_async_call_with_custom_backoff():
     """Test that retry backoff increases exponentially with jitter."""
     import time
-    from unittest.mock import patch
+    from unittest.mock import patch, AsyncMock
 
     rm = FailingRiskManager()
     router = SignalRouter(risk_manager=rm)
@@ -1033,13 +1033,14 @@ async def test_retry_async_call_backoff_behavior():
 
     # Mock sleep to track call times
     sleep_calls = []
-    original_sleep = asyncio.sleep
+    mock_sleep = AsyncMock()
 
-    async def mock_sleep(duration):
+    async def capture_sleep_duration(*args, **kwargs):
+        duration = args[0] if args else kwargs.get('delay', 0)
         sleep_calls.append(duration)
-        await original_sleep(0.001)  # Very short sleep for testing
+        await mock_sleep(*args, **kwargs)
 
-    with patch('asyncio.sleep', side_effect=mock_sleep):
+    with patch('asyncio.sleep', side_effect=capture_sleep_duration):
         result = await router._retry_async_call(failing_call, retries=2, base_backoff=0.1, max_backoff=1.0)
 
     # Should succeed after 2 failures
@@ -1406,10 +1407,10 @@ async def test_retry_async_call_with_custom_backoff():
     sleep_calls = []
     mock_sleep = AsyncMock()
 
-    def capture_sleep_duration(*args, **kwargs):
+    async def capture_sleep_duration(*args, **kwargs):
         duration = args[0] if args else kwargs.get('delay', 0)
         sleep_calls.append(duration)
-        return mock_sleep(*args, **kwargs)
+        await mock_sleep(*args, **kwargs)
 
     with patch('asyncio.sleep', side_effect=capture_sleep_duration):
         with pytest.raises(Exception, match="Temporary failure"):

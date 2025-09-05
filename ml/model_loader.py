@@ -141,6 +141,9 @@ def predict(model, features: pd.DataFrame) -> pd.DataFrame:
                 confs.append(float(np.max(proba[idx])))
             else:
                 confs.append(float(proba[idx, i]))
+        # Ensure confs has the same length as out; fallback if empty
+        if not confs:
+            confs = [1.0] * len(out)
         out["confidence"] = confs
     else:
         # No probabilities available: set confidence to 1.0

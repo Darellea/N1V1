@@ -117,8 +117,8 @@ class RiskManager:
         self.trailing_step_size = Decimal(str(config.get("trailing_step_size", 0.005)))
 
         # Time-based exit parameters
-        self.enable_time_based_exit = config.get("enable_time_based_exit", True)
-        self.max_holding_candles = config.get("max_holding_candles", 72)
+        self.enable_time_based_exit = config.get("ENABLE_TIME_EXIT", True)
+        self.max_holding_candles = config.get("MAX_BARS_IN_TRADE", 50)
         self.timeframe = config.get("timeframe", "1h")
 
         # Regime-based exit parameters
@@ -776,7 +776,7 @@ class RiskManager:
                 if atr <= 0:
                     return None
 
-                atr_multiplier = Decimal(str(self.config.get("trailing_atr_multiplier", 1.5)))
+                atr_multiplier = Decimal(str(self.config.get("TRAIL_ATR_MULTIPLIER", 2.0)))
                 trail_distance = atr * atr_multiplier
 
             # Calculate trailing stop

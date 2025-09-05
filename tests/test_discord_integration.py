@@ -318,9 +318,9 @@ class TestDiscordIntegration:
     async def test_bot_integration_shutdown(self, discord_bot_integration_notifier):
         """Test bot shutdown in integration."""
         # Create a mock task for the bot
-        mock_task = AsyncMock()
-        mock_task.done.return_value = False
-        mock_task.cancel = MagicMock()
+        mock_task = MagicMock()
+        mock_task.done = MagicMock(return_value=False)
+        mock_task.cancel = MagicMock()  # Make cancel a regular mock
         discord_bot_integration_notifier._bot_task = mock_task
 
         # Mock the bot's logout and close methods to be AsyncMock
@@ -332,3 +332,5 @@ class TestDiscordIntegration:
         # Verify the bot methods were called
         discord_bot_integration_notifier.bot.logout.assert_called_once()
         discord_bot_integration_notifier.bot.close.assert_called_once()
+        # Verify task was cancelled
+        mock_task.cancel.assert_called_once()

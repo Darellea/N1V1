@@ -13,7 +13,7 @@ from decimal import Decimal
 from datetime import datetime, timedelta
 
 from .base_executor import BaseExecutor
-from core.contracts import TradingSignal
+from core.contracts import TradingSignal, SignalType
 from core.types.order_types import Order, OrderStatus, OrderType
 from utils.logger import get_trade_logger
 
@@ -286,7 +286,17 @@ class VWAPExecutor(BaseExecutor):
             raise ValueError("Exchange API not configured")
 
         # Determine order parameters
-        side = "buy" if signal.signal_type.value == "ENTRY_LONG" else "sell"
+        if signal.signal_type == SignalType.ENTRY_LONG:
+            side = "buy"
+        elif signal.signal_type == SignalType.ENTRY_SHORT:
+            side = "sell"
+        elif signal.signal_type == SignalType.EXIT_LONG:
+            side = "sell"
+        elif signal.signal_type == SignalType.EXIT_SHORT:
+            side = "buy"
+        else:
+            raise ValueError(f"Unsupported signal type: {signal.signal_type}")
+
         order_type = signal.order_type.value if signal.order_type else "market"
 
         params = {
@@ -342,11 +352,23 @@ class VWAPExecutor(BaseExecutor):
         Returns:
             Mock Order object
         """
+        # Determine order side
+        if signal.signal_type == SignalType.ENTRY_LONG:
+            side = "buy"
+        elif signal.signal_type == SignalType.ENTRY_SHORT:
+            side = "sell"
+        elif signal.signal_type == SignalType.EXIT_LONG:
+            side = "sell"
+        elif signal.signal_type == SignalType.EXIT_SHORT:
+            side = "buy"
+        else:
+            raise ValueError(f"Unsupported signal type: {signal.signal_type}")
+
         return Order(
             id=str(uuid.uuid4()),
             symbol=signal.symbol,
             type=signal.order_type or OrderType.MARKET,
-            side="buy" if signal.signal_type.value == "ENTRY_LONG" else "sell",
+            side=side,
             amount=signal.amount,
             price=signal.price,
             status=OrderStatus.FILLED,

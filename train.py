@@ -12,6 +12,7 @@ import numpy as np
 from pathlib import Path
 from typing import Dict, Any, Optional
 import json
+import sys
 from datetime import datetime
 
 from predictive_models import PredictiveModelManager
@@ -151,31 +152,30 @@ def main():
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='Enable verbose logging')
 
-    args = parser.parse_args()
-
-    # Setup logging
-    log_level = logging.DEBUG if args.verbose else logging.INFO
-    logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-
     try:
+        args = parser.parse_args()
+
+        # Setup logging
+        log_level = logging.DEBUG if args.verbose else logging.INFO
+        logging.basicConfig(
+            level=log_level,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
         # Load configuration
         logger.info(f"Loading configuration from {args.config}")
         config = load_config(args.config)
+
+        # Check if predictive models are enabled before loading data
+        predictive_config = config.get('predictive_models', {})
+        if not predictive_config.get('enabled', False):
+            logger.warning("Predictive models are disabled in config")
+            return
 
         # Load historical data
         df = load_historical_data(args.data, args.symbol)
 
         # Prepare training data
         df = prepare_training_data(df, args.min_samples)
-
-        # Initialize predictive model manager
-        predictive_config = config.get('predictive_models', {})
-        if not predictive_config.get('enabled', False):
-            logger.warning("Predictive models are disabled in config")
-            return
 
         manager = PredictiveModelManager(predictive_config)
 
@@ -225,12 +225,15 @@ def main():
         logger.info(f"Results saved to: {args.output}")
         logger.info("="*50)
 
+    except KeyboardInterrupt:
+        logger.info("Training interrupted by user")
+        sys.exit(1)
     except Exception as e:
         logger.error(f"Training failed: {e}")
         if args.verbose:
             import traceback
             traceback.print_exc()
-        exit(1)
+        sys.exit(1)
 
 
 if __name__ == '__main__':

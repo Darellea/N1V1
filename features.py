@@ -117,6 +117,11 @@ class FeatureExtractor:
         Returns:
             DataFrame with extracted and processed features
         """
+        # Handle empty data gracefully
+        if data.empty:
+            logger.warning("Input data is empty, returning empty feature DataFrame")
+            return pd.DataFrame()
+
         if not validate_ohlcv_data(data):
             raise ValueError("Data must contain OHLCV columns: open, high, low, close, volume")
 
@@ -254,9 +259,9 @@ class FeatureExtractor:
             # Fill missing values
             fill_method = validation_config.get('fill_method', 'ffill')
             if fill_method == 'ffill':
-                df = df.fillna(method='ffill')
+                df = df.ffill()
             elif fill_method == 'bfill':
-                df = df.fillna(method='bfill')
+                df = df.bfill()
             else:
                 # Fill with specific value
                 df = df.fillna(0)
