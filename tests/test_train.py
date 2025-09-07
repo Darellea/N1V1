@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch, mock_open, MagicMock
 import argparse
 
-from train import (
+from ml.train import (
     load_historical_data,
     prepare_training_data,
     save_training_results,
@@ -241,11 +241,11 @@ class TestSaveTrainingResults:
 class TestMainFunction:
     """Test main function."""
 
-    @patch('train.load_config')
-    @patch('train.load_historical_data')
-    @patch('train.prepare_training_data')
-    @patch('train.PredictiveModelManager')
-    @patch('train.save_training_results')
+    @patch('ml.train.load_config')
+    @patch('ml.train.load_historical_data')
+    @patch('ml.train.prepare_training_data')
+    @patch('ml.train.PredictiveModelManager')
+    @patch('ml.train.save_training_results')
     @patch('argparse.ArgumentParser.parse_args')
     def test_main_success(self, mock_parse_args, mock_save_results, mock_manager_class,
                          mock_prepare_data, mock_load_data, mock_load_config):
@@ -304,7 +304,7 @@ class TestMainFunction:
         mock_manager.train_models.assert_called_once()
         mock_save_results.assert_called_once()
 
-    @patch('train.load_config')
+    @patch('ml.train.load_config')
     @patch('argparse.ArgumentParser.parse_args')
     def test_main_predictive_models_disabled(self, mock_parse_args, mock_load_config):
         """Test main function when predictive models are disabled."""
@@ -329,8 +329,8 @@ class TestMainFunction:
             # Should exit successfully without training
             mock_exit.assert_not_called()
 
-    @patch('train.load_config')
-    @patch('train.load_historical_data')
+    @patch('ml.train.load_config')
+    @patch('ml.train.load_historical_data')
     @patch('argparse.ArgumentParser.parse_args')
     def test_main_training_failure(self, mock_parse_args, mock_load_data, mock_load_config):
         """Test main function with training failure."""

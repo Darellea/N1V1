@@ -1,15 +1,18 @@
 """
-Event bus for signal routing using publish/subscribe pattern.
+Event bus for event-driven architecture using publish/subscribe pattern.
 
-Provides a centralized mechanism for routing signals between strategies,
-risk managers, executors, and other components.
+Provides a centralized mechanism for routing events between all system components
+including strategies, risk managers, executors, knowledge base, and monitoring.
 """
 
 import asyncio
 import logging
-from typing import Dict, List, Callable, Any, Optional, Awaitable
+import json
+from typing import Dict, List, Callable, Any, Optional, Awaitable, Union
 from dataclasses import dataclass
+from datetime import datetime
 from core.contracts import TradingSignal
+from .events import BaseEvent, EventType
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +150,287 @@ class EventBus:
         if event_type:
             return len(self._subscribers.get(event_type, []))
         return sum(len(subs) for subs in self._subscribers.values())
+
+
+class EnhancedEventBus:
+    """
+    Enhanced event bus supporting the full event-driven architecture.
+
+    Features:
+    - Support for structured events (BaseEvent and subclasses)
+    - Async and sync operation modes
+    - Configurable buffer size and error handling
+    - Event serialization and logging
+    - Thread-safe operations
+    """
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """
+        Initialize the enhanced event bus.
+
+        Args:
+            config: Configuration dictionary
+        """
+        self.config = config or {}
+        self.async_mode = self.config.get('async_mode', True)
+        self.log_all_events = self.config.get('log_all_events', True)
+        self.buffer_size = self.config.get('buffer_size', 1000)
+
+        # Subscriber registry
+        self._subscribers: Dict[str, List[Callable]] = {}
+        self._event_history: List[Union[SignalEvent, BaseEvent]] = []
+        self._lock = asyncio.Lock()
+
+        # Performance tracking
+        self._event_count = 0
+        self._dropped_events = 0
+        self._error_count = 0
+
+        logger.info("EnhancedEventBus initialized")
+
+    async def publish(self, event: Union[SignalEvent, BaseEvent]) -> None:
+        """
+        Publish an event to all subscribers.
+
+        Args:
+            event: The event to publish (SignalEvent or BaseEvent)
+        """
+        async with self._lock:
+            try:
+                # Store in history with buffer management
+                self._event_history.append(event)
+                if len(self._event_history) > self.buffer_size:
+                    self._event_history.pop(0)
+                    self._dropped_events += 1
+
+                self._event_count += 1
+
+                # Get event type for subscription lookup
+                if isinstance(event, BaseEvent):
+                    event_type = event.event_type.value
+                else:
+                    event_type = event.event_type
+
+                # Notify subscribers
+                if event_type in self._subscribers:
+                    tasks = []
+                    for subscriber in self._subscribers[event_type]:
+                        try:
+                            if self.async_mode and asyncio.iscoroutinefunction(subscriber):
+                                tasks.append(subscriber(event))
+                            elif not self.async_mode:
+                                # Run sync subscriber in thread pool
+                                loop = asyncio.get_event_loop()
+                                tasks.append(loop.run_in_executor(None, subscriber, event))
+                            else:
+                                # Async mode but sync subscriber - run in thread pool
+                                loop = asyncio.get_event_loop()
+                                tasks.append(loop.run_in_executor(None, subscriber, event))
+                        except Exception as e:
+                            logger.exception(f"Error queuing subscriber notification: {e}")
+                            self._error_count += 1
+
+                    # Execute notifications
+                    if tasks:
+                        try:
+                            if self.async_mode:
+                                # For async mode, still wait for completion to ensure test reliability
+                                # In production, this could be fire-and-forget
+                                await self._notify_subscribers_async(tasks)
+                            else:
+                                # Wait for completion in sync mode
+                                results = await asyncio.gather(*tasks, return_exceptions=True)
+                                # Check for exceptions in results
+                                for result in results:
+                                    if isinstance(result, Exception):
+                                        logger.exception(f"Error in subscriber notification: {result}")
+                                        self._error_count += 1
+                        except Exception as e:
+                            logger.exception(f"Error in event notification: {e}")
+                            self._error_count += 1
+
+                # Log event if configured
+                if self.log_all_events:
+                    await self._log_event(event)
+
+                logger.debug(f"Published event: {event_type}")
+
+            except Exception as e:
+                logger.exception(f"Error publishing event: {e}")
+                self._error_count += 1
+
+    async def _notify_subscribers_async(self, tasks: List[Awaitable]) -> None:
+        """
+        Notify subscribers asynchronously (fire and forget).
+
+        Args:
+            tasks: List of notification tasks
+        """
+        try:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            # Check for exceptions in results
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.exception(f"Error in async subscriber notification: {result}")
+                    self._error_count += 1
+        except Exception as e:
+            logger.exception(f"Error in async subscriber notification: {e}")
+            self._error_count += 1
+
+    async def subscribe(self, event_type: Union[str, EventType], callback: Callable) -> None:
+        """
+        Subscribe to events of a specific type.
+
+        Args:
+            event_type: Type of event to subscribe to (string or EventType)
+            callback: Callback function to handle the event
+        """
+        async with self._lock:
+            # Convert EventType to string if needed
+            if isinstance(event_type, EventType):
+                event_type = event_type.value
+
+            if event_type not in self._subscribers:
+                self._subscribers[event_type] = []
+            self._subscribers[event_type].append(callback)
+            logger.debug(f"Subscribed to {event_type} events")
+
+    async def unsubscribe(self, event_type: Union[str, EventType], callback: Callable) -> None:
+        """
+        Unsubscribe from events of a specific type.
+
+        Args:
+            event_type: Type of event to unsubscribe from
+            callback: Callback function to remove
+        """
+        async with self._lock:
+            # Convert EventType to string if needed
+            if isinstance(event_type, EventType):
+                event_type = event_type.value
+
+            if event_type in self._subscribers:
+                try:
+                    self._subscribers[event_type].remove(callback)
+                    logger.debug(f"Unsubscribed from {event_type} events")
+                except ValueError:
+                    logger.warning(f"Callback not found in subscribers for {event_type}")
+
+    async def publish_event(self, event: BaseEvent) -> None:
+        """
+        Convenience method to publish a BaseEvent.
+
+        Args:
+            event: The BaseEvent to publish
+        """
+        await self.publish(event)
+
+    def get_event_history(
+        self,
+        event_type: Optional[Union[str, EventType]] = None,
+        limit: int = 100
+    ) -> List[Union[SignalEvent, BaseEvent]]:
+        """
+        Get recent event history.
+
+        Args:
+            event_type: Optional event type filter
+            limit: Maximum number of events to return
+
+        Returns:
+            List of recent events
+        """
+        events = self._event_history
+
+        if event_type:
+            # Convert EventType to string if needed
+            if isinstance(event_type, EventType):
+                event_type = event_type.value
+
+            if isinstance(event_type, str):
+                events = [e for e in events if
+                         (isinstance(e, BaseEvent) and e.event_type.value == event_type) or
+                         (isinstance(e, SignalEvent) and e.event_type == event_type)]
+
+        return events[-limit:]
+
+    async def clear_subscribers(self) -> None:
+        """
+        Clear all subscribers (useful for testing or shutdown).
+        """
+        async with self._lock:
+            self._subscribers.clear()
+            logger.info("Cleared all event subscribers")
+
+    def get_subscriber_count(self, event_type: Optional[Union[str, EventType]] = None) -> int:
+        """
+        Get the number of subscribers.
+
+        Args:
+            event_type: Optional event type filter
+
+        Returns:
+            Number of subscribers
+        """
+        if event_type:
+            # Convert EventType to string if needed
+            if isinstance(event_type, EventType):
+                event_type = event_type.value
+            return len(self._subscribers.get(event_type, []))
+        return sum(len(subs) for subs in self._subscribers.values())
+
+    async def _log_event(self, event: Union[SignalEvent, BaseEvent]) -> None:
+        """
+        Log an event for monitoring and debugging.
+
+        Args:
+            event: The event to log
+        """
+        try:
+            if isinstance(event, BaseEvent):
+                log_data = {
+                    "event_type": event.event_type.value,
+                    "source": event.source,
+                    "timestamp": event.timestamp.isoformat(),
+                    "payload": event.payload
+                }
+                if event.metadata:
+                    log_data["metadata"] = event.metadata
+
+                logger.info(f"Event: {event.event_type.value}", extra={"event_data": log_data})
+            else:
+                # Legacy SignalEvent logging
+                logger.info(f"Signal Event: {event.event_type} from {event.source}")
+
+        except Exception as e:
+            logger.exception(f"Error logging event: {e}")
+
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        Get event bus statistics.
+
+        Returns:
+            Dictionary with statistics
+        """
+        event_counts = {}
+        for event in self._event_history:
+            if isinstance(event, BaseEvent):
+                event_type = event.event_type.value
+            else:
+                event_type = event.event_type
+            event_counts[event_type] = event_counts.get(event_type, 0) + 1
+
+        return {
+            "total_events": self._event_count,
+            "events_in_history": len(self._event_history),
+            "dropped_events": self._dropped_events,
+            "error_count": self._error_count,
+            "subscribers": self.get_subscriber_count(),
+            "event_counts": event_counts,
+            "buffer_size": self.buffer_size,
+            "async_mode": self.async_mode
+        }
+
+
 
 
 class SignalRouter:
@@ -365,8 +649,9 @@ class SignalRouter:
         return stats
 
 
-# Global event bus instance
+# Global event bus instances
 default_event_bus = EventBus()
+default_enhanced_event_bus = EnhancedEventBus()
 
 # Convenience functions
 async def publish_signal_event(signal: TradingSignal, event_type: str, source: str,
@@ -389,6 +674,16 @@ async def publish_signal_event(signal: TradingSignal, event_type: str, source: s
     await default_event_bus.publish(event)
 
 
+async def publish_event(event: BaseEvent) -> None:
+    """
+    Convenience function to publish a structured event.
+
+    Args:
+        event: The BaseEvent to publish
+    """
+    await default_enhanced_event_bus.publish_event(event)
+
+
 def get_default_event_bus() -> EventBus:
     """
     Get the default event bus instance.
@@ -397,6 +692,16 @@ def get_default_event_bus() -> EventBus:
         Default EventBus instance
     """
     return default_event_bus
+
+
+def get_default_enhanced_event_bus() -> EnhancedEventBus:
+    """
+    Get the default enhanced event bus instance.
+
+    Returns:
+        Default EnhancedEventBus instance
+    """
+    return default_enhanced_event_bus
 
 
 def create_signal_router(event_bus: Optional[EventBus] = None) -> SignalRouter:
@@ -410,3 +715,16 @@ def create_signal_router(event_bus: Optional[EventBus] = None) -> SignalRouter:
         SignalRouter instance
     """
     return SignalRouter(event_bus)
+
+
+def create_enhanced_event_bus(config: Optional[Dict[str, Any]] = None) -> EnhancedEventBus:
+    """
+    Create a new enhanced event bus instance.
+
+    Args:
+        config: Optional configuration dictionary
+
+    Returns:
+        EnhancedEventBus instance
+    """
+    return EnhancedEventBus(config)

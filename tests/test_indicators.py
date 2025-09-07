@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 from unittest.mock import patch
 
-from indicators import (
+from ml.indicators import (
     calculate_rsi,
     calculate_ema,
     calculate_macd,
@@ -316,7 +316,7 @@ class TestUtilityFunctions:
 class TestErrorHandling:
     """Test error handling in indicators."""
 
-    @patch('indicators.logger')
+    @patch('ml.indicators.logger')
     def test_calculate_rsi_with_exception(self, mock_logger):
         """Test RSI error handling."""
         data = pd.DataFrame({'close': []})  # Empty data
@@ -324,7 +324,7 @@ class TestErrorHandling:
         rsi = calculate_rsi(data, period=14)
         assert len(rsi) == 0
 
-    @patch('indicators.logger')
+    @patch('ml.indicators.logger')
     def test_calculate_all_indicators_with_exception(self, mock_logger):
         """Test calculate_all_indicators error handling."""
         data = pd.DataFrame({

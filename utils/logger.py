@@ -33,6 +33,8 @@ from utils.time import now_ms, to_ms, to_iso
 from colorama import Fore, Back, Style, init as colorama_init
 
 from utils.adapter import signal_to_dict
+from core.signal_router.events import BaseEvent, EventType
+from core.signal_router.event_bus import get_default_enhanced_event_bus
 
 # Module-level logger for internal library errors (avoid using TradeLogger for internal errors)
 logger = logging.getLogger(__name__)
@@ -324,12 +326,176 @@ class TradeLogger(logging.Logger):
             logger.exception("Failed to get performance stats")
             raise
 
+    # ===== EVENT-DRIVEN ARCHITECTURE METHODS =====
 
-# Register custom log levels for TRADE and PERF
+    async def handle_event(self, event: BaseEvent) -> None:
+        """
+        Handle incoming events from the event bus.
+
+        Args:
+            event: The event to handle
+        """
+        try:
+            if event.event_type == EventType.TRADE_EXECUTED:
+                await self._handle_trade_executed_event(event)
+            elif event.event_type == EventType.STRATEGY_SWITCH:
+                await self._handle_strategy_switch_event(event)
+            elif event.event_type == EventType.RISK_LIMIT_TRIGGERED:
+                await self._handle_risk_limit_triggered_event(event)
+            elif event.event_type == EventType.DIAGNOSTIC_ALERT:
+                await self._handle_diagnostic_alert_event(event)
+            elif event.event_type == EventType.KNOWLEDGE_ENTRY_CREATED:
+                await self._handle_knowledge_entry_created_event(event)
+            elif event.event_type == EventType.REGIME_CHANGE:
+                await self._handle_regime_change_event(event)
+            elif event.event_type == EventType.SYSTEM_STATUS_UPDATE:
+                await self._handle_system_status_update_event(event)
+            else:
+                # Log other events at debug level
+                self.debug(f"Event received: {event.event_type.value}", extra={"event_data": event.to_dict()})
+
+        except Exception as e:
+            logger.exception(f"Error handling event {event.event_type.value}: {e}")
+
+    async def _handle_trade_executed_event(self, event: BaseEvent) -> None:
+        """Handle trade executed events."""
+        payload = event.payload
+        trade_data = {
+            "timestamp": event.timestamp.isoformat(),
+            "pair": payload.get("symbol", ""),
+            "action": payload.get("side", ""),
+            "size": payload.get("quantity", ""),
+            "entry_price": payload.get("price", ""),
+            "pnl": 0.0,  # Will be updated when trade closes
+            "strategy": payload.get("strategy", ""),
+            "trade_id": payload.get("trade_id", ""),
+            "slippage": payload.get("slippage", ""),
+            "commission": payload.get("commission", "")
+        }
+
+        self.trade("Trade executed", trade_data, extra={
+            "symbol": payload.get("symbol"),
+            "component": event.source,
+            "correlation_id": generate_correlation_id()
+        })
+
+    async def _handle_strategy_switch_event(self, event: BaseEvent) -> None:
+        """Handle strategy switch events."""
+        payload = event.payload
+        strategy_data = {
+            "previous_strategy": payload.get("previous_strategy"),
+            "new_strategy": payload.get("new_strategy"),
+            "rationale": payload.get("rationale"),
+            "confidence": payload.get("confidence"),
+            "market_conditions": payload.get("market_conditions")
+        }
+
+        self.performance("Strategy switched", strategy_data, extra={
+            "component": event.source,
+            "correlation_id": generate_correlation_id()
+        })
+
+    async def _handle_risk_limit_triggered_event(self, event: BaseEvent) -> None:
+        """Handle risk limit triggered events."""
+        payload = event.payload
+        risk_data = {
+            "risk_factor": payload.get("risk_factor"),
+            "trigger_condition": payload.get("trigger_condition"),
+            "current_value": payload.get("current_value"),
+            "threshold_value": payload.get("threshold_value"),
+            "defensive_action": payload.get("defensive_action"),
+            "symbol": payload.get("symbol")
+        }
+
+        self.warning("Risk limit triggered", extra={
+            "symbol": payload.get("symbol"),
+            "component": event.source,
+            "correlation_id": generate_correlation_id(),
+            "risk_data": risk_data
+        })
+
+    async def _handle_diagnostic_alert_event(self, event: BaseEvent) -> None:
+        """Handle diagnostic alert events."""
+        payload = event.payload
+        alert_type = payload.get("alert_type", "info")
+        component = payload.get("component", "unknown")
+        message = payload.get("message", "")
+
+        if alert_type == "error":
+            self.error(f"Diagnostic alert from {component}: {message}", extra={
+                "component": event.source,
+                "correlation_id": generate_correlation_id(),
+                "alert_details": payload.get("details")
+            })
+        elif alert_type == "warning":
+            self.warning(f"Diagnostic alert from {component}: {message}", extra={
+                "component": event.source,
+                "correlation_id": generate_correlation_id(),
+                "alert_details": payload.get("details")
+            })
+        else:
+            self.info(f"Diagnostic alert from {component}: {message}", extra={
+                "component": event.source,
+                "correlation_id": generate_correlation_id(),
+                "alert_details": payload.get("details")
+            })
+
+    async def _handle_knowledge_entry_created_event(self, event: BaseEvent) -> None:
+        """Handle knowledge entry created events."""
+        payload = event.payload
+        knowledge_data = {
+            "entry_id": payload.get("entry_id"),
+            "regime": payload.get("regime"),
+            "strategy": payload.get("strategy"),
+            "outcome": payload.get("outcome"),
+            "performance_metrics": payload.get("performance_metrics")
+        }
+
+        # Use custom KNOWLEDGE level
+        self.log(KNOWLEDGE_LEVEL, "Knowledge entry created", extra={
+            "component": event.source,
+            "correlation_id": generate_correlation_id(),
+            "knowledge_data": knowledge_data
+        })
+
+    async def _handle_regime_change_event(self, event: BaseEvent) -> None:
+        """Handle regime change events."""
+        payload = event.payload
+        regime_data = {
+            "old_regime": payload.get("old_regime"),
+            "new_regime": payload.get("new_regime"),
+            "confidence": payload.get("confidence")
+        }
+
+        self.info("Market regime changed", extra={
+            "component": event.source,
+            "correlation_id": generate_correlation_id(),
+            "regime_data": regime_data
+        })
+
+    async def _handle_system_status_update_event(self, event: BaseEvent) -> None:
+        """Handle system status update events."""
+        payload = event.payload
+        status_data = {
+            "component": payload.get("component"),
+            "status": payload.get("status"),
+            "details": payload.get("details")
+        }
+
+        self.info(f"System status update: {payload.get('component')} is {payload.get('status')}", extra={
+            "component": event.source,
+            "correlation_id": generate_correlation_id(),
+            "status_data": status_data
+        })
+
+
+# Register custom log levels for TRADE, PERF, and KNOWLEDGE
 TRADE_LEVEL = 21
 PERF_LEVEL = 22
+KNOWLEDGE_LEVEL = 23
 logging.addLevelName(TRADE_LEVEL, "TRADE")
 logging.addLevelName(PERF_LEVEL, "PERF")
+logging.addLevelName(KNOWLEDGE_LEVEL, "KNOWLEDGE")
 
 
 # Expose a module-level singleton logger (created by setup_logging)
@@ -414,6 +580,20 @@ def setup_logging(config: Optional[Dict[str, Any]] = None) -> TradeLogger:
 
     # Prevent propagation to root handlers to avoid duplicate log messages
     trade_logger.propagate = False
+
+    # Subscribe to event bus for event-driven logging
+    try:
+        event_bus = get_default_enhanced_event_bus()
+
+        # Subscribe to all event types for logging
+        for event_type in EventType:
+            event_bus.subscribe(event_type, trade_logger.handle_event)
+
+        logger.info("TradeLogger subscribed to event bus for event-driven logging")
+
+    except Exception as e:
+        logger.warning(f"Failed to subscribe TradeLogger to event bus: {e}")
+        # Continue without event subscription - logging will still work
 
     return trade_logger
 

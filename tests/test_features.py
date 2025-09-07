@@ -9,7 +9,7 @@ from unittest.mock import patch, MagicMock
 import tempfile
 import os
 
-from features import (
+from ml.features import (
     FeatureExtractor,
     create_feature_pipeline,
     extract_features_for_symbol,
@@ -44,7 +44,7 @@ class TestFeatureExtractor:
         assert extractor.config['indicator_params']['rsi_period'] == 21
         assert extractor.config['scaling']['method'] == 'minmax'
 
-    @patch('features.validate_ohlcv_data')
+    @patch('ml.features.validate_ohlcv_data')
     def test_extract_features_insufficient_data(self, mock_validate):
         """Test feature extraction with insufficient data."""
         mock_validate.return_value = True
@@ -62,9 +62,9 @@ class TestFeatureExtractor:
 
         assert result.empty
 
-    @patch('features.validate_ohlcv_data')
-    @patch('features.calculate_all_indicators')
-    @patch('features.get_indicator_names')
+    @patch('ml.features.validate_ohlcv_data')
+    @patch('ml.features.calculate_all_indicators')
+    @patch('ml.features.get_indicator_names')
     def test_extract_features_success(self, mock_get_names, mock_calculate, mock_validate):
         """Test successful feature extraction."""
         mock_validate.return_value = True
@@ -90,7 +90,7 @@ class TestFeatureExtractor:
         assert 'ema' in extractor.feature_columns
         mock_calculate.assert_called_once()
 
-    @patch('features.validate_ohlcv_data')
+    @patch('ml.features.validate_ohlcv_data')
     def test_extract_features_invalid_data(self, mock_validate):
         """Test feature extraction with invalid data."""
         mock_validate.return_value = False
@@ -315,7 +315,7 @@ class TestModuleFunctions:
         assert isinstance(extractor, FeatureExtractor)
         assert extractor.config['scaling']['method'] == 'minmax'
 
-    @patch('features.FeatureExtractor')
+    @patch('ml.features.FeatureExtractor')
     def test_extract_features_for_symbol(self, mock_extractor_class):
         """Test extracting features for a symbol."""
         mock_extractor = MagicMock()
@@ -336,7 +336,7 @@ class TestModuleFunctions:
         assert not features.empty
         mock_extractor.extract_features.assert_called_once_with(data)
 
-    @patch('features.FeatureExtractor')
+    @patch('ml.features.FeatureExtractor')
     def test_batch_extract_features(self, mock_extractor_class):
         """Test batch feature extraction."""
         mock_extractor = MagicMock()
@@ -366,7 +366,7 @@ class TestModuleFunctions:
         assert 'ETH/USDT' in results
         assert len(mock_extractor.extract_features.call_args_list) == 2
 
-    @patch('features.FeatureExtractor')
+    @patch('ml.features.FeatureExtractor')
     def test_batch_extract_features_with_error(self, mock_extractor_class):
         """Test batch feature extraction with error handling."""
         mock_extractor = MagicMock()

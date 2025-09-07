@@ -12,6 +12,16 @@ from .walk_forward import WalkForwardOptimizer
 from .genetic_optimizer import GeneticOptimizer
 from .rl_optimizer import RLOptimizer
 from .optimizer_factory import OptimizerFactory
+from .cross_asset_validation import (
+    CrossAssetValidator,
+    ValidationCriteria,
+    AssetSelector,
+    ValidationAsset,
+    AssetValidationResult,
+    CrossAssetValidationResult,
+    create_cross_asset_validator,
+    run_cross_asset_validation
+)
 
 __all__ = [
     'BaseOptimizer',
@@ -20,5 +30,13 @@ __all__ = [
     'WalkForwardOptimizer',
     'GeneticOptimizer',
     'RLOptimizer',
-    'OptimizerFactory'
+    'OptimizerFactory',
+    'CrossAssetValidator',
+    'ValidationCriteria',
+    'AssetSelector',
+    'ValidationAsset',
+    'AssetValidationResult',
+    'CrossAssetValidationResult',
+    'create_cross_asset_validator',
+    'run_cross_asset_validation'
 ]

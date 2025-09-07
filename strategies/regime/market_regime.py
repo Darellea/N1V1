@@ -6,12 +6,18 @@ adapt to different market conditions. It supports both rule-based and ML-based d
 methods with configurable parameters and stability windows.
 
 Supported Regimes:
-- TRENDING: Strong directional movement (ADX > threshold)
-- SIDEWAYS: Range-bound, low volatility (ADX < threshold, low ATR)
-- VOLATILE: High volatility breakout conditions (high ATR relative to average)
+- TREND_UP: Strong upward trending market
+- TREND_DOWN: Strong downward trending market
+- RANGE_TIGHT: Low volatility range-bound market
+- RANGE_WIDE: High volatility range-bound market
+- VOLATILE_SPIKE: Sudden volatility spike
+- TRENDING: Legacy trending regime (backward compatibility)
+- SIDEWAYS: Legacy sideways regime (backward compatibility)
+- VOLATILE: Legacy volatile regime (backward compatibility)
+- UNKNOWN: Unknown or insufficient data regime
 
 Detection Methods:
-- Rule-based: Uses ADX, ATR, and trend indicators
+- Rule-based: Uses ADX, ATR, trend slope, Bollinger Bandwidth, volume for sub-regime detection
 - ML-based: K-means clustering on volatility and momentum features
 - HMM-based: Hidden Markov Models for probabilistic regime transitions
 """
@@ -31,7 +37,7 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 import warnings
 
-from indicators import calculate_adx, calculate_atr
+from ml.indicators import calculate_adx, calculate_atr, calculate_bollinger_bands
 from utils.config_loader import get_config
 
 logger = logging.getLogger(__name__)
@@ -42,6 +48,12 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 
 class MarketRegime(Enum):
     """Market regime classifications."""
+    TREND_UP = "trend_up"
+    TREND_DOWN = "trend_down"
+    RANGE_TIGHT = "range_tight"
+    RANGE_WIDE = "range_wide"
+    VOLATILE_SPIKE = "volatile_spike"
+    # Legacy regimes for backward compatibility
     TRENDING = "trending"
     SIDEWAYS = "sideways"
     VOLATILE = "volatile"
@@ -57,6 +69,28 @@ class RegimeDetectionResult:
     timestamp: datetime
     stability_count: int
     previous_regime: Optional[MarketRegime] = None
+
+
+@dataclass
+class EnhancedRegimeResult:
+    """Enhanced regime detection result with structured output."""
+    regime_name: str
+    confidence_score: float
+    reasons: Dict[str, float]
+    timestamp: datetime
+    stability_count: int
+    previous_regime: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "regime_name": self.regime_name,
+            "confidence_score": self.confidence_score,
+            "reasons": self.reasons,
+            "timestamp": self.timestamp.isoformat(),
+            "stability_count": self.stability_count,
+            "previous_regime": self.previous_regime
+        }
 
 
 class RegimeDetector(ABC):
@@ -136,6 +170,12 @@ class RuleBasedRegimeDetector(RegimeDetector):
         self.atr_volatility_factor = self.config.get('atr_volatility_factor', 1.5)
         self.atr_period = self.config.get('atr_period', 14)
         self.adx_period = self.config.get('adx_period', 14)
+        # New thresholds for enhanced detection
+        self.slope_threshold = self.config.get('slope_threshold', 0.05)
+        self.trend_strength_threshold = self.config.get('trend_strength_threshold', 0.3)
+        self.bb_width_tight_threshold = self.config.get('bb_width_tight_threshold', 0.02)
+        self.bb_width_wide_threshold = self.config.get('bb_width_wide_threshold', 0.05)
+        self.volume_spike_threshold = self.config.get('volume_spike_threshold', 2.0)
 
     def detect_regime(self, data: pd.DataFrame) -> RegimeDetectionResult:
         """Detect regime using rule-based approach."""
@@ -194,34 +234,52 @@ class RuleBasedRegimeDetector(RegimeDetector):
             else:
                 volatility = 0.0
 
-            # Calculate Bollinger Band width for low volatility detection
+            # Calculate Bollinger Band width for range detection
             bb_width = 0.0
             if len(data) >= 20:
                 try:
-                    from indicators import calculate_bollinger_bands
                     bb_data = calculate_bollinger_bands(data, period=20, std_dev=2)
-                    if bb_data is not None and isinstance(bb_data, dict):
-                        if 'upper' in bb_data and 'lower' in bb_data and 'middle' in bb_data:
-                            upper_band = bb_data['upper']
-                            lower_band = bb_data['lower']
-                            middle_band = bb_data['middle']
+                    if bb_data is not None and len(bb_data) == 3:
+                        upper_band, middle_band, lower_band = bb_data
+                        # Extract scalar values safely
+                        if hasattr(upper_band, 'iloc'):
+                            upper_val = float(upper_band.iloc[-1])
+                            lower_val = float(lower_band.iloc[-1])
+                            middle_val = float(middle_band.iloc[-1])
+                        else:
+                            upper_val = float(upper_band[-1]) if isinstance(upper_band, (list, tuple)) else float(upper_band)
+                            lower_val = float(lower_band[-1]) if isinstance(lower_band, (list, tuple)) else float(lower_band)
+                            middle_val = float(middle_band[-1]) if isinstance(middle_band, (list, tuple)) else float(middle_band)
 
-                            # Extract scalar values safely
-                            if hasattr(upper_band, 'iloc'):
-                                upper_val = float(upper_band.iloc[-1])
-                                lower_val = float(lower_band.iloc[-1])
-                                middle_val = float(middle_band.iloc[-1])
-                            else:
-                                upper_val = float(upper_band[-1]) if isinstance(upper_band, (list, tuple)) else float(upper_band)
-                                lower_val = float(lower_band[-1]) if isinstance(lower_band, (list, tuple)) else float(lower_band)
-                                middle_val = float(middle_band[-1]) if isinstance(middle_band, (list, tuple)) else float(middle_band)
-
-                            bb_width = (upper_val - lower_val) / middle_val if middle_val > 0 else 0.0
+                        bb_width = (upper_val - lower_val) / middle_val if middle_val > 0 else 0.0
                 except Exception as bb_error:
                     logger.debug(f"Bollinger Band calculation failed: {bb_error}")
                     bb_width = 0.0
 
-            # Rule-based classification with improved trend detection
+            # Calculate volume spike detection
+            volume_spike = 1.0
+            if 'volume' in data.columns and len(data) >= 20:
+                try:
+                    recent_volume = data['volume'].tail(5).mean()
+                    historical_volume = data['volume'].tail(20).head(15).mean()
+                    if historical_volume > 0:
+                        volume_spike = recent_volume / historical_volume
+                except Exception as vol_error:
+                    logger.debug(f"Volume spike calculation failed: {vol_error}")
+                    volume_spike = 1.0
+
+            # Calculate autocorrelation for trend persistence
+            autocorrelation = 0.0
+            if len(data) >= 30:
+                try:
+                    returns = data['close'].pct_change().dropna()
+                    if len(returns) >= 20:
+                        autocorrelation = returns.autocorr(lag=1)
+                except Exception as ac_error:
+                    logger.debug(f"Autocorrelation calculation failed: {ac_error}")
+                    autocorrelation = 0.0
+
+            # Enhanced regime detection with new sub-regimes
             features = {
                 'adx': current_adx,
                 'atr': current_atr,
@@ -229,60 +287,13 @@ class RuleBasedRegimeDetector(RegimeDetector):
                 'slope': slope_normalized,
                 'trend_strength': trend_strength,
                 'volatility': volatility,
-                'bb_width': bb_width
+                'bb_width': bb_width,
+                'volume_spike': volume_spike,
+                'autocorrelation': autocorrelation
             }
 
-            # Determine regime with improved logic using slope + trend_strength as alternative to ADX
-            slope_threshold = 0.05  # Minimum slope for trending detection
-            trend_strength_threshold = 0.3  # Minimum trend strength for confirmation
-
-            # Primary condition: ADX-based trending detection
-            if current_adx > self.adx_trend_threshold:
-                if slope_normalized > 0.01:
-                    # Positive slope + high ADX = trending up
-                    regime = MarketRegime.TRENDING
-                    confidence = min((abs(slope_normalized) * 2.0 + current_adx / 50.0) / 3.0, 1.0)
-                elif slope_normalized < -0.01:
-                    # Negative slope + high ADX = trending down (still TRENDING for strategy selection)
-                    regime = MarketRegime.TRENDING
-                    confidence = min((abs(slope_normalized) * 2.0 + current_adx / 50.0) / 3.0, 1.0)
-                else:
-                    # High ADX but no clear slope direction
-                    regime = MarketRegime.TRENDING
-                    confidence = min(current_adx / 50.0, 1.0)
-
-            # Secondary condition: Slope + trend strength based trending detection (when ADX is flat)
-            elif abs(slope_normalized) > slope_threshold and trend_strength > trend_strength_threshold:
-                if slope_normalized > 0:
-                    # Strong positive slope + trend strength = trending up
-                    regime = MarketRegime.TRENDING
-                    confidence = min((abs(slope_normalized) * 2.0 + trend_strength) / 3.0, 1.0)
-                else:
-                    # Strong negative slope + trend strength = trending down (still TRENDING for strategy selection)
-                    regime = MarketRegime.TRENDING
-                    confidence = min((abs(slope_normalized) * 2.0 + trend_strength) / 3.0, 1.0)
-
-            # Volatility-based regimes
-            elif current_atr > (current_atr_ma * self.atr_volatility_factor):
-                # High volatility relative to average
-                regime = MarketRegime.VOLATILE
-                confidence = min(current_atr / current_atr_ma, 2.0) / 2.0  # Normalize to 0-1
-
-            # Low volatility sideways detection
-            elif bb_width > 0 and bb_width < 0.02:
-                # Very narrow Bollinger Bands = low volatility sideways
-                regime = MarketRegime.SIDEWAYS
-                confidence = 0.9
-            elif current_adx < self.adx_sideways_threshold and volatility < 0.02:
-                # Low ADX and low volatility = sideways
-                regime = MarketRegime.SIDEWAYS
-                confidence = 1.0 - (current_adx / self.adx_sideways_threshold)
-
-            # Default fallback
-            else:
-                # Default to sideways if unclear
-                regime = MarketRegime.SIDEWAYS
-                confidence = 0.5
+            # Determine regime with enhanced logic
+            regime, confidence = self._determine_enhanced_regime(features)
 
             # Apply stability window
             stable_regime = self._check_stability(regime)
@@ -311,6 +322,74 @@ class RuleBasedRegimeDetector(RegimeDetector):
                 stability_count=0
             )
 
+    def _determine_enhanced_regime(self, features: Dict[str, float]) -> Tuple[MarketRegime, float]:
+        """Determine enhanced regime with confidence score."""
+        adx = features['adx']
+        slope = features['slope']
+        trend_strength = features['trend_strength']
+        bb_width = features['bb_width']
+        volume_spike = features['volume_spike']
+        autocorrelation = features['autocorrelation']
+        atr = features['atr']
+        atr_ma = features['atr_ma']
+
+        # Priority 1: Volatile Spike Detection
+        if volume_spike > self.volume_spike_threshold and atr > (atr_ma * self.atr_volatility_factor):
+            confidence = min((volume_spike / self.volume_spike_threshold + atr / atr_ma) / 3.0, 1.0)
+            return MarketRegime.VOLATILE_SPIKE, confidence
+
+        # Priority 2: Trend Detection (Up/Down)
+        if adx > self.adx_trend_threshold:
+            if slope > self.slope_threshold and trend_strength > self.trend_strength_threshold:
+                # Strong upward trend
+                confidence = min((abs(slope) * 2.0 + adx / 50.0 + autocorrelation) / 4.0, 1.0)
+                return MarketRegime.TREND_UP, confidence
+            elif slope < -self.slope_threshold and trend_strength > self.trend_strength_threshold:
+                # Strong downward trend
+                confidence = min((abs(slope) * 2.0 + adx / 50.0 + abs(autocorrelation)) / 4.0, 1.0)
+                return MarketRegime.TREND_DOWN, confidence
+            else:
+                # Legacy trending (direction unclear)
+                confidence = min(adx / 50.0, 1.0)
+                return MarketRegime.TRENDING, confidence
+
+        # Priority 3: Range Detection (Tight/Wide)
+        if adx < self.adx_sideways_threshold:
+            if bb_width > 0 and bb_width < self.bb_width_tight_threshold:
+                # Tight range
+                confidence = max(0.8, 1.0 - bb_width / self.bb_width_tight_threshold)
+                return MarketRegime.RANGE_TIGHT, confidence
+            elif bb_width > self.bb_width_wide_threshold:
+                # Wide range
+                confidence = min(bb_width / self.bb_width_wide_threshold, 1.0)
+                return MarketRegime.RANGE_WIDE, confidence
+            else:
+                # Legacy sideways
+                confidence = 1.0 - adx / self.adx_sideways_threshold
+                return MarketRegime.SIDEWAYS, confidence
+
+        # Priority 4: Legacy Volatile (fallback)
+        if atr > (atr_ma * self.atr_volatility_factor):
+            confidence = min(atr / atr_ma, 2.0) / 2.0
+            return MarketRegime.VOLATILE, confidence
+
+        # Default fallback
+        return MarketRegime.SIDEWAYS, 0.5
+
+    def detect_enhanced_regime(self, data: pd.DataFrame) -> EnhancedRegimeResult:
+        """Detect regime with enhanced structured output."""
+        result = self.detect_regime(data)
+
+        # Convert to enhanced result
+        return EnhancedRegimeResult(
+            regime_name=result.regime.value,
+            confidence_score=result.confidence,
+            reasons=result.features,
+            timestamp=result.timestamp,
+            stability_count=result.stability_count,
+            previous_regime=result.previous_regime.value if result.previous_regime else None
+        )
+
 
 class MLBasedRegimeDetector(RegimeDetector):
     """ML-based regime detection using clustering and statistical methods."""
@@ -322,7 +401,7 @@ class MLBasedRegimeDetector(RegimeDetector):
         self.lookback_window = self.config.get('lookback_window', 50)
         self.feature_columns = self.config.get('feature_columns', [
             'returns_volatility', 'volume_volatility', 'trend_strength',
-            'adx', 'atr_normalized', 'momentum'
+            'adx', 'atr_normalized', 'momentum', 'bb_width', 'autocorrelation'
         ])
 
         # ML components
@@ -442,6 +521,37 @@ class MLBasedRegimeDetector(RegimeDetector):
         else:
             features['trend_strength'] = 0
 
+        # Bollinger Band width
+        if len(data) >= 20:
+            try:
+                bb_data = calculate_bollinger_bands(data, period=20, std_dev=2)
+                if bb_data is not None and len(bb_data) == 3:
+                    upper_band, middle_band, lower_band = bb_data
+                    if hasattr(upper_band, 'iloc'):
+                        upper_val = float(upper_band.iloc[-1])
+                        lower_val = float(lower_band.iloc[-1])
+                        middle_val = float(middle_band.iloc[-1])
+                    else:
+                        upper_val = float(upper_band[-1]) if isinstance(upper_band, (list, tuple)) else float(upper_band)
+                        lower_val = float(lower_band[-1]) if isinstance(lower_band, (list, tuple)) else float(lower_band)
+                        middle_val = float(middle_band[-1]) if isinstance(middle_band, (list, tuple)) else float(middle_band)
+                    features['bb_width'] = (upper_val - lower_val) / middle_val if middle_val > 0 else 0.0
+                else:
+                    features['bb_width'] = 0.0
+            except:
+                features['bb_width'] = 0.0
+        else:
+            features['bb_width'] = 0.0
+
+        # Autocorrelation
+        if len(returns) >= 20:
+            try:
+                features['autocorrelation'] = returns.autocorr(lag=1)
+            except:
+                features['autocorrelation'] = 0.0
+        else:
+            features['autocorrelation'] = 0.0
+
         # Convert to array in correct order
         feature_array = np.array([features[col] for col in self.feature_columns])
         return feature_array
@@ -516,9 +626,18 @@ class MLBasedRegimeDetector(RegimeDetector):
         for cluster_id, stats in cluster_stats.items():
             # Decision logic based on feature values
             if stats['adx'] > 25:  # High ADX = trending
-                self.cluster_regime_mapping[cluster_id] = MarketRegime.TRENDING
-            elif stats['atr_normalized'] > 1.2:  # High ATR = volatile
-                self.cluster_regime_mapping[cluster_id] = MarketRegime.VOLATILE
+                if stats['momentum'] > 0.01:
+                    self.cluster_regime_mapping[cluster_id] = MarketRegime.TREND_UP
+                elif stats['momentum'] < -0.01:
+                    self.cluster_regime_mapping[cluster_id] = MarketRegime.TREND_DOWN
+                else:
+                    self.cluster_regime_mapping[cluster_id] = MarketRegime.TRENDING
+            elif stats['bb_width'] < 0.02:  # Tight Bollinger Bands
+                self.cluster_regime_mapping[cluster_id] = MarketRegime.RANGE_TIGHT
+            elif stats['bb_width'] > 0.05:  # Wide Bollinger Bands
+                self.cluster_regime_mapping[cluster_id] = MarketRegime.RANGE_WIDE
+            elif stats['atr_normalized'] > 1.5:  # High ATR
+                self.cluster_regime_mapping[cluster_id] = MarketRegime.VOLATILE_SPIKE
             else:  # Default to sideways
                 self.cluster_regime_mapping[cluster_id] = MarketRegime.SIDEWAYS
 
@@ -589,7 +708,13 @@ class MarketRegimeDetector:
             'stability_window': 3,
             'ml_method': 'clustering',
             'n_clusters': 3,
-            'lookback_window': 50
+            'lookback_window': 50,
+            # New enhanced detection parameters
+            'slope_threshold': 0.05,
+            'trend_strength_threshold': 0.3,
+            'bb_width_tight_threshold': 0.02,
+            'bb_width_wide_threshold': 0.05,
+            'volume_spike_threshold': 2.0
         }
 
     def detect_regime(self, data: pd.DataFrame) -> RegimeDetectionResult:
@@ -612,6 +737,39 @@ class MarketRegimeDetector:
             )
 
         return self.current_detector.detect_regime(data)
+
+    def detect_enhanced_regime(self, data: pd.DataFrame) -> EnhancedRegimeResult:
+        """
+        Detect regime with enhanced structured output.
+
+        Args:
+            data: OHLCV DataFrame
+
+        Returns:
+            EnhancedRegimeResult with structured output
+        """
+        if not self.enabled or data.empty:
+            return EnhancedRegimeResult(
+                regime_name="unknown",
+                confidence_score=0.0,
+                reasons={},
+                timestamp=datetime.now(),
+                stability_count=0
+            )
+
+        if hasattr(self.current_detector, 'detect_enhanced_regime'):
+            return self.current_detector.detect_enhanced_regime(data)
+        else:
+            # Fallback to regular detection and convert
+            result = self.detect_regime(data)
+            return EnhancedRegimeResult(
+                regime_name=result.regime.value,
+                confidence_score=result.confidence,
+                reasons=result.features,
+                timestamp=result.timestamp,
+                stability_count=result.stability_count,
+                previous_regime=result.previous_regime.value if result.previous_regime else None
+            )
 
     def train_ml_model(self, historical_data: pd.DataFrame, labels: Optional[List[int]] = None):
         """
@@ -704,12 +862,51 @@ def detect_market_regime(data: pd.DataFrame) -> RegimeDetectionResult:
     return detector.detect_regime(data)
 
 
+def detect_enhanced_market_regime(data: pd.DataFrame) -> EnhancedRegimeResult:
+    """
+    Convenience function to detect market regime with enhanced output.
+
+    Args:
+        data: OHLCV DataFrame
+
+    Returns:
+        EnhancedRegimeResult with structured output
+    """
+    detector = get_market_regime_detector()
+    return detector.detect_enhanced_regime(data)
+
+
 # Strategy recommendations based on regime
 REGIME_STRATEGY_MAPPING = {
-    MarketRegime.TRENDING: ['EMACrossStrategy', 'MACDStrategy'],
-    MarketRegime.SIDEWAYS: ['RSIStrategy', 'BollingerBandsStrategy'],
-    MarketRegime.VOLATILE: ['BreakoutStrategy', 'MomentumStrategy'],
-    MarketRegime.UNKNOWN: ['RSIStrategy']  # Default fallback
+    # Enhanced regime mappings
+    MarketRegime.TREND_UP: [
+        'EMACrossStrategy', 'MACDStrategy', 'DonchianBreakoutStrategy'
+    ],
+    MarketRegime.TREND_DOWN: [
+        'EMACrossStrategy', 'MACDStrategy', 'DonchianBreakoutStrategy'
+    ],
+    MarketRegime.RANGE_TIGHT: [
+        'RSIStrategy', 'BollingerReversionStrategy', 'StochasticStrategy'
+    ],
+    MarketRegime.RANGE_WIDE: [
+        'RSIStrategy', 'BollingerReversionStrategy', 'StochasticStrategy'
+    ],
+    MarketRegime.VOLATILE_SPIKE: [
+        'ATRBreakoutStrategy', 'KeltnerChannelStrategy', 'OBVStrategy'
+    ],
+    # Legacy mappings for backward compatibility
+    MarketRegime.TRENDING: [
+        'EMACrossStrategy', 'MACDStrategy', 'DonchianBreakoutStrategy'
+    ],
+    MarketRegime.SIDEWAYS: [
+        'RSIStrategy', 'BollingerReversionStrategy', 'StochasticStrategy'
+    ],
+    MarketRegime.VOLATILE: [
+        'ATRBreakoutStrategy', 'KeltnerChannelStrategy', 'OBVStrategy'
+    ],
+    MarketRegime.UNKNOWN: [
+        'RSIStrategy', 'EMACrossStrategy'
+    ]  # Default fallback
 }
 
 
@@ -737,6 +934,12 @@ def get_regime_risk_multiplier(regime: MarketRegime) -> float:
         Risk multiplier (higher = more conservative)
     """
     multipliers = {
+        MarketRegime.TREND_UP: 1.0,      # Normal risk for uptrend
+        MarketRegime.TREND_DOWN: 1.2,    # Slightly more conservative for downtrend
+        MarketRegime.RANGE_TIGHT: 0.8,   # Less conservative for tight range
+        MarketRegime.RANGE_WIDE: 1.1,    # More conservative for wide range
+        MarketRegime.VOLATILE_SPIKE: 0.6, # Very conservative for spikes
+        # Legacy multipliers
         MarketRegime.TRENDING: 1.0,      # Normal risk
         MarketRegime.SIDEWAYS: 0.8,      # Slightly reduced risk
         MarketRegime.VOLATILE: 0.6,      # Significantly reduced risk

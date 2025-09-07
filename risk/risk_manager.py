@@ -22,7 +22,9 @@ from core.contracts import TradingSignal
 from utils.config_loader import ConfigLoader
 from utils.logger import get_trade_logger
 from utils.adapter import signal_to_dict
-from market_regime import get_market_regime_detector, MarketRegime
+from strategies.regime.market_regime import get_market_regime_detector, MarketRegime
+from risk.anomaly_detector import get_anomaly_detector, AnomalyResponse
+from risk.adaptive_policy import get_adaptive_risk_policy, get_risk_multiplier
 
 logger = logging.getLogger(__name__)
 trade_logger = get_trade_logger()
@@ -178,6 +180,10 @@ class RiskManager:
             if not await self._validate_signal_basics(signal):
                 return False
 
+            # Check for market anomalies
+            if not await self._check_anomalies(signal, market_data):
+                return False
+
             # Check portfolio-level risk constraints
             if not await self._check_portfolio_risk(signal):
                 return False
@@ -235,7 +241,7 @@ class RiskManager:
         self, signal: TradingSignal, market_data: Optional[Dict[str, Any]] = None
     ) -> Decimal:
         """
-        Calculate appropriate position size based on configured sizing method.
+        Calculate appropriate position size based on configured sizing method and adaptive risk policy.
 
         Supported methods (configurable via risk_management.position_sizing_method):
           - adaptive_atr: ATR-based volatility scaling (NEW)
@@ -245,6 +251,9 @@ class RiskManager:
           - kelly: position using simplified Kelly criterion (requires assumptions)
           - fixed (or any other): fixed fractional sizing (position_size in config)
 
+        The calculated position size is then adjusted by the adaptive risk multiplier
+        based on current market conditions and performance metrics.
+
         Args:
             signal: TradingSignal to calculate for
             market_data: Optional market data used by volatility sizing
@@ -252,22 +261,37 @@ class RiskManager:
         Returns:
             Position size in base currency (Decimal)
         """
+        # Calculate base position size using selected method
         method = str(self.position_sizing_method).lower()
         if method == "adaptive_atr":
-            return await self.calculate_adaptive_position_size(signal, market_data)
-        if method == "volatility" or method == "volatility_based":
-            return await self._volatility_based_position_size(signal, market_data)
-        if method == "martingale":
-            return await self._martingale_position_size(signal)
-        if method == "kelly" or method == "kelly_criterion":
-            return await self._kelly_position_size(signal, market_data)
-        if method == "fixed_percent":
+            base_position = await self.calculate_adaptive_position_size(signal, market_data)
+        elif method == "volatility" or method == "volatility_based":
+            base_position = await self._volatility_based_position_size(signal, market_data)
+        elif method == "martingale":
+            base_position = await self._martingale_position_size(signal)
+        elif method == "kelly" or method == "kelly_criterion":
+            base_position = await self._kelly_position_size(signal, market_data)
+        elif method == "fixed_percent":
             # Use configured fixed_percent fraction of account balance
             account_balance = await self._get_current_balance()
-            position = _safe_quantize(self.fixed_percent * account_balance)
-            return position
-        # Default: fixed fractional position sizing (legacy)
-        return await self._fixed_fractional_position_size(signal)
+            base_position = _safe_quantize(self.fixed_percent * account_balance)
+        else:
+            # Default: fixed fractional position sizing (legacy)
+            base_position = await self._fixed_fractional_position_size(signal)
+
+        # Apply adaptive risk multiplier
+        risk_multiplier = await self._get_adaptive_risk_multiplier(signal.symbol, market_data)
+
+        # Calculate final position size
+        adjusted_position = base_position * Decimal(str(risk_multiplier))
+
+        # Log the adjustment
+        logger.info(
+            f"Position size for {signal.symbol}: base={base_position:.2f}, "
+            f"multiplier={risk_multiplier:.2f}, adjusted={adjusted_position:.2f}"
+        )
+
+        return _safe_quantize(adjusted_position)
 
     async def _fixed_fractional_position_size(self, signal: TradingSignal) -> Decimal:
         """
@@ -425,6 +449,59 @@ class RiskManager:
             return False
 
         return True
+
+    async def _check_anomalies(self, signal: TradingSignal, market_data: Optional[Dict] = None) -> bool:
+        """
+        Check for market anomalies that should prevent trade execution.
+
+        Args:
+            signal: TradingSignal to check
+            market_data: Current market data
+
+        Returns:
+            True if no anomalies detected, False if trade should be blocked
+        """
+        try:
+            if not market_data:
+                return True  # No market data available, allow trade
+
+            # Get anomaly detector
+            anomaly_detector = get_anomaly_detector()
+
+            # Convert market data to DataFrame for anomaly detection
+            if isinstance(market_data, dict):
+                # Convert dict to DataFrame if needed
+                data_df = pd.DataFrame(market_data)
+            else:
+                data_df = market_data
+
+            # Check for anomalies
+            should_proceed, response, anomaly = anomaly_detector.check_signal_anomaly(
+                signal_to_dict(signal), data_df, signal.symbol
+            )
+
+            if not should_proceed:
+                # Log the rejection reason
+                reason = f"anomaly_{anomaly.anomaly_type.value}_{anomaly.severity.value}" if anomaly else "anomaly_detected"
+                trade_logger.log_rejected_signal(signal_to_dict(signal), reason)
+
+                # Apply response mechanism
+                if response == AnomalyResponse.SCALE_DOWN:
+                    # Scale down position size
+                    if hasattr(signal, 'amount') and signal.amount:
+                        original_amount = signal.amount
+                        scale_factor = anomaly_detector.scale_down_factor
+                        signal.amount = Decimal(str(signal.amount)) * Decimal(str(scale_factor))
+                        logger.info(f"Scaled down position size from {original_amount} to {signal.amount} due to anomaly")
+
+                return should_proceed
+
+            return True
+
+        except Exception as e:
+            logger.warning(f"Error checking for anomalies: {e}")
+            # On error, allow trade to proceed (fail-safe)
+            return True
 
     async def _check_portfolio_risk(self, signal: TradingSignal) -> bool:
         """Check portfolio-level risk constraints."""
@@ -1062,3 +1139,45 @@ class RiskManager:
             logger.info(f"Exit type '{exit_reason}' resulted in {'win' if is_win else 'loss'}")
         except Exception:
             logger.exception("Failed to update exit type statistics")
+
+    async def _get_adaptive_risk_multiplier(
+        self, symbol: str, market_data: Optional[Dict[str, Any]] = None
+    ) -> float:
+        """
+        Get adaptive risk multiplier from the adaptive risk policy.
+
+        Args:
+            symbol: Trading symbol
+            market_data: Current market data
+
+        Returns:
+            Risk multiplier (0.1 to 1.0)
+        """
+        try:
+            # Convert market data to DataFrame if needed
+            if market_data and isinstance(market_data, dict):
+                # Convert dict to DataFrame for the adaptive policy
+                data_df = pd.DataFrame()
+                for key, values in market_data.items():
+                    if isinstance(values, (list, np.ndarray)):
+                        data_df[key] = values
+                    else:
+                        # Single value, create series
+                        data_df[key] = [values] * 20  # Pad with same value
+            elif market_data is not None:
+                data_df = market_data
+            else:
+                data_df = None
+
+            # Get risk multiplier from adaptive policy
+            multiplier, reasoning = get_risk_multiplier(symbol, data_df)
+
+            # Log the multiplier decision
+            logger.info(f"Adaptive risk multiplier for {symbol}: {multiplier:.2f} - {reasoning}")
+
+            return multiplier
+
+        except Exception as e:
+            logger.warning(f"Error getting adaptive risk multiplier for {symbol}: {e}")
+            # Return neutral multiplier on error
+            return 1.0

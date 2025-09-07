@@ -26,13 +26,33 @@ from datetime import datetime, timedelta
 from enum import Enum
 import asyncio
 
-from indicators import calculate_adx, calculate_atr, calculate_bollinger_bands
+from ml.indicators import calculate_adx, calculate_atr, calculate_bollinger_bands
 from strategies.base_strategy import BaseStrategy, StrategyConfig
 from strategies.ema_cross_strategy import EMACrossStrategy
 from strategies.rsi_strategy import RSIStrategy
+from strategies.macd_strategy import MACDStrategy
+from strategies.donchian_breakout_strategy import DonchianBreakoutStrategy
+from strategies.bollinger_reversion_strategy import BollingerReversionStrategy
+from strategies.stochastic_strategy import StochasticStrategy
+from strategies.atr_breakout_strategy import ATRBreakoutStrategy
+from strategies.keltner_channel_strategy import KeltnerChannelStrategy
+from strategies.obv_strategy import OBVStrategy
+from strategies.vwap_pullback_strategy import VWAPPullbackStrategy
 from core.contracts import TradingSignal, SignalType, SignalStrength
 from utils.config_loader import get_config
-from market_regime import get_market_regime_detector, MarketRegime, get_recommended_strategies
+from strategies.regime.market_regime import get_market_regime_detector, MarketRegime, get_recommended_strategies, detect_enhanced_market_regime, EnhancedRegimeResult
+from backtest.backtester import compute_regime_aware_metrics, export_regime_aware_report
+
+# Knowledge base imports
+try:
+    from knowledge_base import (
+        get_knowledge_manager, MarketCondition, StrategyMetadata,
+        StrategyCategory, MarketRegime as KBMarketRegime
+    )
+    KNOWLEDGE_BASE_AVAILABLE = True
+except ImportError:
+    KNOWLEDGE_BASE_AVAILABLE = False
+    logger.warning("Knowledge base not available, running without adaptive learning")
 
 logger = logging.getLogger(__name__)
 
@@ -255,28 +275,60 @@ class RuleBasedSelector:
         if market_data.empty:
             return None
 
-        # Use market regime detector for more sophisticated analysis
-        regime_detector = get_market_regime_detector()
-        regime_result = regime_detector.detect_regime(market_data)
-        regime = regime_result.regime
+        # Use enhanced market regime detector for sophisticated analysis
+        try:
+            enhanced_result = detect_enhanced_market_regime(market_data)
+            regime_name = enhanced_result.regime_name
+            confidence = enhanced_result.confidence_score
+            reasons = enhanced_result.reasons
 
-        # Debug: Log the regime type and value
-        logger.debug(f"Regime type: {type(regime)}, value: {regime.value if hasattr(regime, 'value') else str(regime)}")
-        logger.debug(f"MarketRegime.SIDEWAYS: {MarketRegime.SIDEWAYS}")
-        logger.debug(f"Are they equal? {regime == MarketRegime.SIDEWAYS}")
+            # Log regime detection details
+            logger.info(f"Market Regime Detected: {regime_name} (confidence: {confidence:.3f})")
+            logger.info(f"Regime Reasons: {json.dumps(reasons, indent=2)}")
 
-        strategies_for_regime = self.regime_to_strategy.get(regime, [])
+            # Map regime name to MarketRegime enum for strategy mapping
+            regime_mapping = {
+                "trend_up": MarketRegime.TREND_UP,
+                "trend_down": MarketRegime.TREND_DOWN,
+                "range_tight": MarketRegime.RANGE_TIGHT,
+                "range_wide": MarketRegime.RANGE_WIDE,
+                "volatile_spike": MarketRegime.VOLATILE_SPIKE,
+                "trending": MarketRegime.TRENDING,
+                "sideways": MarketRegime.SIDEWAYS,
+                "volatile": MarketRegime.VOLATILE,
+                "unknown": MarketRegime.UNKNOWN
+            }
+
+            regime = regime_mapping.get(regime_name, MarketRegime.UNKNOWN)
+
+        except Exception as e:
+            logger.warning(f"Enhanced regime detection failed, falling back to basic detection: {e}")
+            # Fallback to basic regime detection
+            regime_detector = get_market_regime_detector()
+            regime_result = regime_detector.detect_regime(market_data)
+            regime = regime_result.regime
+            confidence = regime_result.confidence
+
+            logger.info(f"Fallback Regime Detected: {regime.value} (confidence: {confidence:.3f})")
+
+        # Get recommended strategies for the detected regime
+        recommended_strategies = get_recommended_strategies(regime)
+        logger.info(f"Recommended strategies for {regime.value}: {recommended_strategies}")
+
+        # Find matching strategy from available strategies
         for strat in available_strategies:
-            if strat.__name__ in strategies_for_regime:
+            if strat.__name__ in recommended_strategies:
+                logger.info(f"Selected strategy: {strat.__name__} for regime {regime.value}")
                 return strat
             # Extra matching to handle mocks
-            if any(key in strat.__name__ for key in strategies_for_regime):
+            if any(key in strat.__name__ for key in recommended_strategies):
+                logger.info(f"Selected strategy (mock): {strat.__name__} for regime {regime.value}")
                 return strat
 
         # Fallback to first available strategy
         if available_strategies:
             fallback = available_strategies[0]
-            logger.warning(f"No matching strategy found for regime {regime.value if hasattr(regime, 'value') else str(regime)}, using {fallback.__name__}")
+            logger.warning(f"No matching strategy found for regime {regime.value}, using fallback {fallback.__name__}")
             return fallback
 
         return None
@@ -411,31 +463,38 @@ class StrategySelector:
         """Load all available strategy classes."""
         strategies = []
 
-        # Import available strategies - use the module-level imports which may be mocked
-        try:
-            from unittest.mock import MagicMock
-            # Check if EMACrossStrategy is a mock (patched by tests)
-            if isinstance(EMACrossStrategy, MagicMock) or (hasattr(EMACrossStrategy, '_mock_name') and EMACrossStrategy._mock_name):
-                strategies.append(EMACrossStrategy)
-            else:
-                strategies.append(EMACrossStrategy)
-        except (ImportError, AttributeError):
-            logger.warning("EMACrossStrategy not available")
+        # Trend-following strategies
+        strategy_classes = [
+            (EMACrossStrategy, "EMACrossStrategy"),
+            (MACDStrategy, "MACDStrategy"),
+            (DonchianBreakoutStrategy, "DonchianBreakoutStrategy"),
 
-        try:
-            from unittest.mock import MagicMock
-            # Check if RSIStrategy is a mock (patched by tests)
-            if isinstance(RSIStrategy, MagicMock) or (hasattr(RSIStrategy, '_mock_name') and RSIStrategy._mock_name):
-                strategies.append(RSIStrategy)
-            else:
-                strategies.append(RSIStrategy)
-        except (ImportError, AttributeError):
-            logger.warning("RSIStrategy not available")
+            # Mean reversion strategies
+            (RSIStrategy, "RSIStrategy"),
+            (BollingerReversionStrategy, "BollingerReversionStrategy"),
+            (StochasticStrategy, "StochasticStrategy"),
 
-        # TODO: Add more strategies as they become available
-        # - MACDStrategy
-        # - BollingerBandsStrategy
-        # - BreakoutStrategy
+            # Volatility-based strategies
+            (ATRBreakoutStrategy, "ATRBreakoutStrategy"),
+            (KeltnerChannelStrategy, "KeltnerChannelStrategy"),
+
+            # Volume-based strategies
+            (OBVStrategy, "OBVStrategy"),
+            (VWAPPullbackStrategy, "VWAPPullbackStrategy"),
+        ]
+
+        for strategy_class, strategy_name in strategy_classes:
+            try:
+                from unittest.mock import MagicMock
+                # Check if strategy is a mock (patched by tests)
+                if isinstance(strategy_class, MagicMock) or (hasattr(strategy_class, '_mock_name') and strategy_class._mock_name):
+                    strategies.append(strategy_class)
+                    logger.debug(f"Loaded mock strategy: {strategy_name}")
+                else:
+                    strategies.append(strategy_class)
+                    logger.debug(f"Loaded strategy: {strategy_name}")
+            except (ImportError, AttributeError) as e:
+                logger.warning(f"{strategy_name} not available: {e}")
 
         logger.info(f"Loaded {len(strategies)} strategies: {[s.__name__ for s in strategies]}")
         return strategies
@@ -456,6 +515,7 @@ class StrategySelector:
         if not self.enabled or not strategies:
             return strategies[0] if strategies else None
 
+        # Get initial selection from rule-based or ML-based selector
         if self.mode == 'rule_based':
             selected = self.rule_selector.select_strategy(market_data, strategies)
         elif self.mode == 'ml_based':
@@ -467,6 +527,10 @@ class StrategySelector:
         else:
             logger.warning(f"Unknown selection mode: {self.mode}, using rule_based")
             selected = self.rule_selector.select_strategy(market_data, strategies)
+
+        # Apply knowledge base adaptive weighting if available
+        if KNOWLEDGE_BASE_AVAILABLE and selected:
+            selected = self._apply_knowledge_base_weighting(market_data, strategies, selected)
 
         if selected:
             self.current_strategy = selected
@@ -510,6 +574,165 @@ class StrategySelector:
 
         logger.info(f"Ensemble selection: {[s.__name__ for s in selected]}")
         return selected[:max_strategies]  # Ensure we don't exceed max_strategies
+
+    def _apply_knowledge_base_weighting(
+        self,
+        market_data: pd.DataFrame,
+        available_strategies: List[type],
+        initial_selection: type
+    ) -> type:
+        """
+        Apply knowledge base adaptive weighting to potentially override initial selection.
+
+        Args:
+            market_data: Current market data
+            available_strategies: List of available strategy classes
+            initial_selection: Initially selected strategy class
+
+        Returns:
+            Final selected strategy class (may be different from initial)
+        """
+        try:
+            # Get knowledge manager
+            knowledge_manager = get_knowledge_manager()
+
+            # Convert market data to market condition
+            market_condition = self._extract_market_condition(market_data)
+
+            # Convert available strategies to metadata
+            strategy_metadata_list = []
+            for strategy_class in available_strategies:
+                metadata = self._create_strategy_metadata(strategy_class)
+                strategy_metadata_list.append(metadata)
+
+            # Get adaptive weights from knowledge base
+            adaptive_weights = knowledge_manager.get_adaptive_weights(
+                market_condition, strategy_metadata_list
+            )
+
+            # Log knowledge base influence
+            logger.info("KNOWLEDGE_QUERY: Retrieved adaptive weights from knowledge base")
+            for strategy_name, weight in adaptive_weights.items():
+                logger.info(f"KNOWLEDGE_APPLY: Strategy {strategy_name} weight: {weight:.3f}")
+
+            # Check if any strategy has significantly better weight
+            initial_strategy_name = initial_selection.__name__
+            initial_weight = adaptive_weights.get(initial_strategy_name, 1.0)
+
+            # Find strategy with highest weight
+            best_strategy_name = max(adaptive_weights.items(), key=lambda x: x[1])[0]
+            best_weight = adaptive_weights[best_strategy_name]
+
+            # Override selection if best strategy has much higher weight
+            weight_threshold = 1.3  # 30% better performance
+            if best_weight > initial_weight * weight_threshold:
+                # Find the strategy class that matches the best strategy name
+                for strategy_class in available_strategies:
+                    if strategy_class.__name__ == best_strategy_name:
+                        logger.info(
+                            f"KNOWLEDGE_OVERRIDE: Overriding {initial_strategy_name} "
+                            f"with {best_strategy_name} (weight: {best_weight:.3f} vs {initial_weight:.3f})"
+                        )
+                        return strategy_class
+
+            logger.info(
+                f"KNOWLEDGE_MAINTAIN: Keeping initial selection {initial_strategy_name} "
+                f"(weight: {initial_weight:.3f})"
+            )
+            return initial_selection
+
+        except Exception as e:
+            logger.warning(f"KNOWLEDGE_ERROR: Failed to apply knowledge base weighting: {e}")
+            return initial_selection
+
+    def _extract_market_condition(self, market_data: pd.DataFrame) -> MarketCondition:
+        """Extract market condition from market data."""
+        if market_data.empty:
+            return MarketCondition(
+                regime=KBMarketRegime.UNKNOWN,
+                volatility=0.0,
+                trend_strength=0.0
+            )
+
+        try:
+            # Calculate basic market metrics
+            returns = market_data['close'].pct_change().dropna()
+            volatility = returns.std() if len(returns) > 0 else 0.0
+
+            # Calculate trend strength using ADX-like calculation
+            if len(market_data) >= 14:
+                adx = calculate_adx(market_data, period=14)
+                trend_strength = adx.iloc[-1] if not pd.isna(adx.iloc[-1]) else 0.0
+            else:
+                trend_strength = 0.0
+
+            # Determine regime based on trend strength and volatility
+            if trend_strength > 25:
+                regime = KBMarketRegime.TRENDING
+            elif volatility > returns.quantile(0.7) if len(returns) > 0 else False:
+                regime = KBMarketRegime.HIGH_VOLATILITY
+            else:
+                regime = KBMarketRegime.SIDEWAYS
+
+            return MarketCondition(
+                regime=regime,
+                volatility=float(volatility),
+                trend_strength=float(trend_strength),
+                timestamp=datetime.now()
+            )
+
+        except Exception as e:
+            logger.warning(f"Failed to extract market condition: {e}")
+            return MarketCondition(
+                regime=KBMarketRegime.UNKNOWN,
+                volatility=0.0,
+                trend_strength=0.0
+            )
+
+    def _create_strategy_metadata(self, strategy_class: type) -> StrategyMetadata:
+        """Create strategy metadata from strategy class."""
+        strategy_name = strategy_class.__name__
+
+        # Map strategy names to categories (simplified mapping)
+        category_mapping = {
+            'EMACrossStrategy': StrategyCategory.TREND_FOLLOWING,
+            'MACDStrategy': StrategyCategory.TREND_FOLLOWING,
+            'DonchianBreakoutStrategy': StrategyCategory.BREAKOUT,
+            'RSIStrategy': StrategyCategory.MEAN_REVERSION,
+            'BollingerReversionStrategy': StrategyCategory.MEAN_REVERSION,
+            'StochasticStrategy': StrategyCategory.MEAN_REVERSION,
+            'ATRBreakoutStrategy': StrategyCategory.BREAKOUT,
+            'KeltnerChannelStrategy': StrategyCategory.TREND_FOLLOWING,
+            'OBVStrategy': StrategyCategory.VOLUME_BASED,
+            'VWAPPullbackStrategy': StrategyCategory.MEAN_REVERSION
+        }
+
+        category = category_mapping.get(strategy_name, StrategyCategory.TREND_FOLLOWING)
+
+        # Get indicators used (simplified)
+        indicators_mapping = {
+            'EMACrossStrategy': ['ema'],
+            'MACDStrategy': ['macd'],
+            'DonchianBreakoutStrategy': ['donchian'],
+            'RSIStrategy': ['rsi'],
+            'BollingerReversionStrategy': ['bollinger_bands'],
+            'StochasticStrategy': ['stochastic'],
+            'ATRBreakoutStrategy': ['atr'],
+            'KeltnerChannelStrategy': ['keltner'],
+            'OBVStrategy': ['obv'],
+            'VWAPPullbackStrategy': ['vwap']
+        }
+
+        indicators = indicators_mapping.get(strategy_name, ['price'])
+
+        return StrategyMetadata(
+            name=strategy_name,
+            category=category,
+            parameters={},  # Could be populated from strategy config
+            timeframe="1h",
+            indicators_used=indicators,
+            risk_profile="medium"
+        )
 
     def update_performance(self, strategy_name: str, pnl: float,
                           returns: float, is_win: bool):
@@ -596,6 +819,34 @@ class StrategySelector:
         self.current_strategy = None
         self.current_strategy_instance = None
         logger.info("Strategy selector reset")
+
+    def generate_regime_aware_backtest_report(self, equity_progression: List[Dict[str, Any]],
+                                             regime_data: List[Dict[str, Any]],
+                                             output_path: str = "results/regime_aware_backtest_report.json"):
+        """
+        Generate a comprehensive regime-aware backtest report.
+
+        Args:
+            equity_progression: List of equity progression records
+            regime_data: List of regime detection results
+            output_path: Path to save the report
+
+        Returns:
+            Path to the generated report
+        """
+        try:
+            # Compute regime-aware metrics
+            regime_metrics = compute_regime_aware_metrics(equity_progression, regime_data)
+
+            # Export comprehensive report
+            report_path = export_regime_aware_report(regime_metrics, output_path)
+
+            logger.info(f"Regime-aware backtest report generated: {report_path}")
+            return report_path
+
+        except Exception as e:
+            logger.error(f"Failed to generate regime-aware backtest report: {e}")
+            return None
 
 
 # Global strategy selector instance

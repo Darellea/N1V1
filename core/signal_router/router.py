@@ -31,7 +31,7 @@ from .event_bus import EventBus, SignalRouter as ModularSignalRouter
 from core.ensemble_manager import EnsembleManager
 from predictive_models import PredictiveModelManager
 from ml.model_loader import load_model
-from ml_filter import create_ml_filter, load_ml_filter
+from ml.ml_filter import create_ml_filter, load_ml_filter
 import sys  # For dynamic access to patched ml_predict
 
 if TYPE_CHECKING:

@@ -10,7 +10,7 @@ from pathlib import Path
 import tempfile
 import os
 
-from strategy_selector import (
+from strategies.regime.strategy_selector import (
     StrategySelector,
     RuleBasedSelector,
     MLBasedSelector,
@@ -137,8 +137,8 @@ class TestRuleBasedSelector:
         selector = RuleBasedSelector(config)
         assert selector.adx_trend_threshold == 30
 
-    @patch('strategy_selector.EMACrossStrategy')
-    @patch('strategy_selector.RSIStrategy')
+    @patch('strategies.regime.strategy_selector.EMACrossStrategy')
+    @patch('strategies.regime.strategy_selector.RSIStrategy')
     def test_select_strategy_trending(self, mock_rsi, mock_ema):
         """Test strategy selection for trending market."""
         # Mock the strategy classes
@@ -162,9 +162,9 @@ class TestRuleBasedSelector:
         # Should select EMA for trending markets
         assert selected == mock_ema
 
-    @patch('strategy_selector.get_market_regime_detector')
-    @patch('strategy_selector.EMACrossStrategy')
-    @patch('strategy_selector.RSIStrategy')
+    @patch('strategies.regime.strategy_selector.get_market_regime_detector')
+    @patch('strategies.regime.strategy_selector.EMACrossStrategy')
+    @patch('strategies.regime.strategy_selector.RSIStrategy')
     def test_select_strategy_sideways(self, mock_rsi, mock_ema, mock_get_detector):
         """Test strategy selection for sideways market."""
         # Note: patch order means mock_rsi is RSIStrategy, mock_ema is EMACrossStrategy
@@ -172,7 +172,7 @@ class TestRuleBasedSelector:
         mock_ema.__name__ = 'EMACrossStrategy'
 
         # Mock the regime detector to return SIDEWAYS
-        from market_regime import MarketRegime
+        from strategies.regime.market_regime import MarketRegime
         mock_detector = MagicMock()
         mock_result = MagicMock()
         mock_result.regime = MarketRegime.SIDEWAYS
@@ -215,8 +215,8 @@ class TestMLBasedSelector:
         selector = MLBasedSelector(config)
         assert selector.learning_rate == 0.2
 
-    @patch('strategy_selector.EMACrossStrategy')
-    @patch('strategy_selector.RSIStrategy')
+    @patch('strategies.regime.strategy_selector.EMACrossStrategy')
+    @patch('strategies.regime.strategy_selector.RSIStrategy')
     def test_select_strategy(self, mock_rsi, mock_ema):
         """Test ML-based strategy selection."""
         mock_ema.__name__ = 'EMACrossStrategy'
@@ -225,7 +225,7 @@ class TestMLBasedSelector:
         selector = MLBasedSelector()
 
         # Create mock performance data with proper attributes
-        from strategy_selector import StrategyPerformance
+        from strategies.regime.strategy_selector import StrategyPerformance
         perf_ema = StrategyPerformance('EMACrossStrategy')
         perf_rsi = StrategyPerformance('RSIStrategy')
 
@@ -269,7 +269,7 @@ class TestMLBasedSelector:
 class TestStrategySelector:
     """Test StrategySelector."""
 
-    @patch('strategy_selector.get_config')
+    @patch('strategies.regime.strategy_selector.get_config')
     def test_init(self, mock_get_config):
         """Test initialization."""
         mock_get_config.return_value = {
@@ -283,9 +283,9 @@ class TestStrategySelector:
         assert selector.mode == 'rule_based'
         assert selector.ensemble is False
 
-    @patch('strategy_selector.get_config')
-    @patch('strategy_selector.EMACrossStrategy')
-    @patch('strategy_selector.RSIStrategy')
+    @patch('strategies.regime.strategy_selector.get_config')
+    @patch('strategies.regime.strategy_selector.EMACrossStrategy')
+    @patch('strategies.regime.strategy_selector.RSIStrategy')
     def test_select_strategy_rule_based(self, mock_rsi, mock_ema, mock_get_config):
         """Test rule-based strategy selection."""
         mock_get_config.return_value = {
@@ -310,7 +310,7 @@ class TestStrategySelector:
         selected = selector.select_strategy(data)
         assert selected in [mock_ema, mock_rsi]
 
-    @patch('strategy_selector.get_config')
+    @patch('strategies.regime.strategy_selector.get_config')
     def test_select_strategy_disabled(self, mock_get_config):
         """Test strategy selection when disabled."""
         mock_get_config.return_value = {'enabled': False}
@@ -322,7 +322,7 @@ class TestStrategySelector:
         # When disabled, it returns the first available strategy as fallback
         assert selected is not None
 
-    @patch('strategy_selector.get_config')
+    @patch('strategies.regime.strategy_selector.get_config')
     def test_update_performance(self, mock_get_config):
         """Test performance update."""
         mock_get_config.return_value = {'enabled': True}
@@ -335,7 +335,7 @@ class TestStrategySelector:
         assert perf.total_trades == 1
         assert perf.winning_trades == 1
 
-    @patch('strategy_selector.get_config')
+    @patch('strategies.regime.strategy_selector.get_config')
     def test_get_strategy_performance(self, mock_get_config):
         """Test getting strategy performance."""
         mock_get_config.return_value = {'enabled': True}
@@ -347,7 +347,7 @@ class TestStrategySelector:
         assert perf['total_trades'] == 1
         assert perf['win_rate'] == 1.0
 
-    @patch('strategy_selector.get_config')
+    @patch('strategies.regime.strategy_selector.get_config')
     def test_save_load_performance_history(self, mock_get_config):
         """Test saving and loading performance history."""
         mock_get_config.return_value = {'enabled': True}
@@ -377,7 +377,7 @@ class TestStrategySelector:
 class TestGlobalFunctions:
     """Test global convenience functions."""
 
-    @patch('strategy_selector.get_strategy_selector')
+    @patch('strategies.regime.strategy_selector.get_strategy_selector')
     def test_select_strategy_global(self, mock_get_selector):
         """Test global select_strategy function."""
         mock_selector = MagicMock()
@@ -390,7 +390,7 @@ class TestGlobalFunctions:
         assert result == 'TestStrategy'
         mock_selector.select_strategy.assert_called_once_with(data)
 
-    @patch('strategy_selector.get_strategy_selector')
+    @patch('strategies.regime.strategy_selector.get_strategy_selector')
     def test_update_strategy_performance_global(self, mock_get_selector):
         """Test global update_strategy_performance function."""
         mock_selector = MagicMock()
@@ -404,7 +404,7 @@ class TestGlobalFunctions:
 class TestErrorHandling:
     """Test error handling."""
 
-    @patch('strategy_selector.get_config')
+    @patch('strategies.regime.strategy_selector.get_config')
     def test_strategy_selector_init_error_handling(self, mock_get_config):
         """Test initialization error handling."""
         mock_get_config.return_value = {'enabled': True}
@@ -413,7 +413,7 @@ class TestErrorHandling:
         selector = StrategySelector()
         assert selector is not None
 
-    @patch('strategy_selector.get_config')
+    @patch('strategies.regime.strategy_selector.get_config')
     def test_market_state_analyzer_error_handling(self, mock_get_config):
         """Test market state analyzer error handling."""
         analyzer = MarketStateAnalyzer()
@@ -440,9 +440,9 @@ class TestErrorHandling:
 class TestIntegration:
     """Test integration scenarios."""
 
-    @patch('strategy_selector.get_config')
-    @patch('strategy_selector.EMACrossStrategy')
-    @patch('strategy_selector.RSIStrategy')
+    @patch('strategies.regime.strategy_selector.get_config')
+    @patch('strategies.regime.strategy_selector.EMACrossStrategy')
+    @patch('strategies.regime.strategy_selector.RSIStrategy')
     def test_full_selection_workflow(self, mock_rsi, mock_ema, mock_get_config):
         """Test full strategy selection workflow."""
         mock_get_config.return_value = {
@@ -476,7 +476,7 @@ class TestIntegration:
         assert perf['total_trades'] == 1
         assert perf['win_rate'] == 1.0
 
-    @patch('strategy_selector.get_config')
+    @patch('strategies.regime.strategy_selector.get_config')
     def test_ensemble_mode(self, mock_get_config):
         """Test ensemble mode selection."""
         mock_get_config.return_value = {

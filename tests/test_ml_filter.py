@@ -10,7 +10,7 @@ from pathlib import Path
 import tempfile
 import os
 
-from ml_filter import (
+from ml.ml_filter import (
     MLFilter,
     LogisticRegressionModel,
     RandomForestModel,
@@ -147,14 +147,14 @@ class TestRandomForestModel:
 class TestXGBoostModel:
     """Test XGBoostModel."""
 
-    @pytest.mark.skipif("not hasattr(__import__('ml_filter'), 'XGBOOST_AVAILABLE') or not __import__('ml_filter').XGBOOST_AVAILABLE")
+    @pytest.mark.skipif("not hasattr(__import__('ml.ml_filter'), 'XGBOOST_AVAILABLE') or not __import__('ml.ml_filter').XGBOOST_AVAILABLE")
     def test_init(self):
         """Test initialization."""
         model = XGBoostModel()
         assert model.model is None
         assert not model.is_trained
 
-    @pytest.mark.skipif("not hasattr(__import__('ml_filter'), 'XGBOOST_AVAILABLE') or not __import__('ml_filter').XGBOOST_AVAILABLE")
+    @pytest.mark.skipif("not hasattr(__import__('ml.ml_filter'), 'XGBOOST_AVAILABLE') or not __import__('ml.ml_filter').XGBOOST_AVAILABLE")
     def test_fit_and_predict(self):
         """Test fit and predict methods."""
         model = XGBoostModel()
@@ -179,14 +179,14 @@ class TestXGBoostModel:
 class TestLightGBMModel:
     """Test LightGBMModel."""
 
-    @pytest.mark.skipif("not hasattr(__import__('ml_filter'), 'LIGHTGBM_AVAILABLE') or not __import__('ml_filter').LIGHTGBM_AVAILABLE")
+    @pytest.mark.skipif("not hasattr(__import__('ml.ml_filter'), 'LIGHTGBM_AVAILABLE') or not __import__('ml.ml_filter').LIGHTGBM_AVAILABLE")
     def test_init(self):
         """Test initialization."""
         model = LightGBMModel()
         assert model.model is None
         assert not model.is_trained
 
-    @pytest.mark.skipif("not hasattr(__import__('ml_filter'), 'LIGHTGBM_AVAILABLE') or not __import__('ml_filter').LIGHTGBM_AVAILABLE")
+    @pytest.mark.skipif("not hasattr(__import__('ml.ml_filter'), 'LIGHTGBM_AVAILABLE') or not __import__('ml.ml_filter').LIGHTGBM_AVAILABLE")
     def test_fit_and_predict(self):
         """Test fit and predict methods."""
         model = LightGBMModel()
@@ -443,19 +443,19 @@ class TestFactoryFunctions:
 class TestErrorHandling:
     """Test error handling."""
 
-    @patch('ml_filter.SKLEARN_AVAILABLE', False)
+    @patch('ml.ml_filter.SKLEARN_AVAILABLE', False)
     def test_logistic_regression_unavailable(self):
         """Test LogisticRegressionModel when sklearn unavailable."""
         with pytest.raises(ImportError, match="scikit-learn is required"):
             LogisticRegressionModel()
 
-    @patch('ml_filter.XGBOOST_AVAILABLE', False)
+    @patch('ml.ml_filter.XGBOOST_AVAILABLE', False)
     def test_xgboost_unavailable(self):
         """Test XGBoostModel when XGBoost unavailable."""
         with pytest.raises(ImportError, match="XGBoost is required"):
             XGBoostModel()
 
-    @patch('ml_filter.LIGHTGBM_AVAILABLE', False)
+    @patch('ml.ml_filter.LIGHTGBM_AVAILABLE', False)
     def test_lightgbm_unavailable(self):
         """Test LightGBMModel when LightGBM unavailable."""
         with pytest.raises(ImportError, match="LightGBM is required"):

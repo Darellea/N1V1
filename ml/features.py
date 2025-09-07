@@ -19,7 +19,7 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 import logging
 from datetime import datetime, timedelta
 
-from indicators import (
+from ml.indicators import (
     calculate_all_indicators,
     get_indicator_names,
     validate_ohlcv_data

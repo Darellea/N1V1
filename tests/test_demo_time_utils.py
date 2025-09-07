@@ -5,7 +5,7 @@ from io import StringIO
 import sys
 
 # Import the demo function
-from demo_time_utils import demo_time_utilities
+from demo.demo_time_utils import demo_time_utilities
 
 
 class TestDemoTimeUtils:
@@ -14,15 +14,15 @@ class TestDemoTimeUtils:
     @pytest.fixture
     def mock_logger(self):
         """Mock logger to capture log output."""
-        with patch('demo_time_utils.logger') as mock_logger:
+        with patch('demo.demo_time_utils.logger') as mock_logger:
             yield mock_logger
 
     @pytest.fixture
     def mock_time_functions(self):
         """Mock time utility functions."""
-        with patch('demo_time_utils.now_ms') as mock_now_ms, \
-             patch('demo_time_utils.to_ms') as mock_to_ms, \
-             patch('demo_time_utils.to_iso') as mock_to_iso:
+        with patch('demo.demo_time_utils.now_ms') as mock_now_ms, \
+             patch('demo.demo_time_utils.to_ms') as mock_to_ms, \
+             patch('demo.demo_time_utils.to_iso') as mock_to_iso:
 
             # Set up mock return values
             mock_now_ms.return_value = 1672574400000  # 2023-01-01 12:00:00 UTC
@@ -157,7 +157,7 @@ class TestDemoTimeUtils:
         ch = logging.StreamHandler(log_capture_string)
         ch.setLevel(logging.INFO)
 
-        logger = logging.getLogger('demo_time_utils')
+        logger = logging.getLogger('demo.demo_time_utils')
         logger.setLevel(logging.INFO)
         logger.addHandler(ch)
 
@@ -183,12 +183,12 @@ class TestDemoTimeUtils:
         """Test execution when run as main script."""
         # Mock sys.argv and other dependencies
         with patch('sys.argv', ['demo_time_utils.py']), \
-             patch('demo_time_utils.demo_time_utilities') as mock_demo:
+             patch('demo.demo_time_utils.demo_time_utilities') as mock_demo:
 
             # Import and run as main
-            import demo_time_utils
+            import demo.demo_time_utils
             # Simulate the if __name__ == "__main__" block
-            demo_time_utils.main()
+            demo.demo_time_utils.main()
 
             # Verify demo function was called
             mock_demo.assert_called_once()
@@ -196,9 +196,9 @@ class TestDemoTimeUtils:
     def test_demo_time_utilities_error_handling(self, mock_logger):
         """Test error handling in demo function."""
         # Mock time functions to raise exceptions
-        with patch('demo_time_utils.now_ms', side_effect=Exception("Test error")), \
-             patch('demo_time_utils.to_ms'), \
-             patch('demo_time_utils.to_iso'):
+        with patch('demo.demo_time_utils.now_ms', side_effect=Exception("Test error")), \
+             patch('demo.demo_time_utils.to_ms'), \
+             patch('demo.demo_time_utils.to_iso'):
 
             # Should not crash, but may log errors
             demo_time_utilities()
@@ -235,9 +235,9 @@ class TestDemoTimeUtils:
     ])
     def test_demo_time_utilities_parametrized_examples(self, mock_logger, input_val, expected_desc):
         """Test specific conversion examples with parametrization."""
-        with patch('demo_time_utils.now_ms', return_value=1672574400000), \
-             patch('demo_time_utils.to_iso', return_value="2023-01-01T12:00:00.000Z"), \
-             patch('demo_time_utils.to_ms') as mock_to_ms:
+        with patch('demo.demo_time_utils.now_ms', return_value=1672574400000), \
+             patch('demo.demo_time_utils.to_iso', return_value="2023-01-01T12:00:00.000Z"), \
+             patch('demo.demo_time_utils.to_ms') as mock_to_ms:
 
             mock_to_ms.return_value = 1672574400000
 
@@ -249,9 +249,9 @@ class TestDemoTimeUtils:
 
     def test_demo_time_utilities_edge_case_logging(self, mock_logger):
         """Test edge case logging specifically."""
-        with patch('demo_time_utils.now_ms', return_value=1672574400000), \
-             patch('demo_time_utils.to_iso', return_value="2023-01-01T12:00:00.000Z"), \
-             patch('demo_time_utils.to_ms') as mock_to_ms:
+        with patch('demo.demo_time_utils.now_ms', return_value=1672574400000), \
+             patch('demo.demo_time_utils.to_iso', return_value="2023-01-01T12:00:00.000Z"), \
+             patch('demo.demo_time_utils.to_ms') as mock_to_ms:
 
             # Mock to_ms for edge cases
             mock_to_ms.side_effect = lambda x: None if x in [None, "invalid", [1, 2, 3]] else 1672574400000
@@ -266,9 +266,9 @@ class TestDemoTimeUtils:
 
     def test_demo_time_utilities_iso_examples(self, mock_logger):
         """Test ISO conversion examples specifically."""
-        with patch('demo_time_utils.now_ms', return_value=1672574400000), \
-             patch('demo_time_utils.to_ms', return_value=1672574400000), \
-             patch('demo_time_utils.to_iso', return_value="2023-01-01T12:00:00.000Z") as mock_to_iso:
+        with patch('demo.demo_time_utils.now_ms', return_value=1672574400000), \
+             patch('demo.demo_time_utils.to_ms', return_value=1672574400000), \
+             patch('demo.demo_time_utils.to_iso', return_value="2023-01-01T12:00:00.000Z") as mock_to_iso:
 
             demo_time_utilities()
 
