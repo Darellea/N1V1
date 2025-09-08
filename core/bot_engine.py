@@ -1,19 +1,15 @@
 """
 core/bot_engine.py
 
-The central engine that orchestrates all trading operations.
-Handles the main event loop, mode switching, and module coordination.
+Facade for the trading bot engine that maintains backward compatibility
+while internally using decomposed components for better architecture.
 """
 
 import asyncio
 import logging
-import time
-from utils.time import now_ms, to_ms, to_iso
 from typing import Dict, Optional, List, Any
 from dataclasses import dataclass
 from core.types import TradingMode
-
-import numpy as np
 
 from utils.logger import setup_logging
 from utils.config_loader import ConfigLoader
@@ -26,6 +22,14 @@ from notifier.discord_bot import DiscordNotifier
 from core.task_manager import TaskManager
 from core.timeframe_manager import TimeframeManager
 from strategy_selector import get_strategy_selector, update_strategy_performance
+
+# Import decomposed components
+from core.trading_coordinator import TradingCoordinator
+from core.data_manager import DataManager
+from core.signal_processor import SignalProcessor
+from core.performance_tracker import PerformanceTracker
+from core.order_executor import OrderExecutor
+from core.state_manager import StateManager
 
 logger = logging.getLogger(__name__)
 

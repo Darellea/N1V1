@@ -33,6 +33,7 @@ from utils.time import now_ms, to_ms, to_iso
 from colorama import Fore, Back, Style, init as colorama_init
 
 from utils.adapter import signal_to_dict
+from utils.security import SecurityFormatter
 from core.signal_router.events import BaseEvent, EventType
 from core.signal_router.event_bus import get_default_enhanced_event_bus
 
@@ -101,7 +102,7 @@ class TradeLogger(logging.Logger):
             # Default console handler; real setup likely done in setup_logging
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setFormatter(
-                ColorFormatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+                SecurityFormatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
             )
             self.addHandler(console_handler)
 
@@ -556,7 +557,7 @@ def setup_logging(config: Optional[Dict[str, Any]] = None) -> TradeLogger:
     if cfg.get("console", True):
         console_handler = logging.StreamHandler(sys.stdout)
         console_fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        console_handler.setFormatter(ColorFormatter(console_fmt))
+        console_handler.setFormatter(SecurityFormatter(console_fmt))
         console_handler.setLevel(level)
         trade_logger.addHandler(console_handler)
 
@@ -574,7 +575,7 @@ def setup_logging(config: Optional[Dict[str, Any]] = None) -> TradeLogger:
             encoding="utf-8",
         )
         file_fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        file_handler.setFormatter(logging.Formatter(file_fmt))
+        file_handler.setFormatter(SecurityFormatter(file_fmt))
         file_handler.setLevel(level)
         trade_logger.addHandler(file_handler)
 
