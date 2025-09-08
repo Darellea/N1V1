@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from risk.risk_manager import RiskManager
 from core.contracts import TradingSignal, SignalType, SignalStrength
 from core.types import OrderType
-from market_regime import MarketRegime
+from strategies.regime.market_regime import MarketRegime
 
 
 class TestAdaptiveRiskManagement:

@@ -493,8 +493,8 @@ async def detect_latency_anomalies(diagnostics: DiagnosticsManager) -> List[Anom
         metrics = diagnostics.state.performance_metrics[component]
         metrics.append(result.latency_ms)
 
-        # Keep only recent measurements
-        if len(metrics) > diagnostics.latency_window_size:
+        # Keep only recent measurements (rolling window)
+        while len(metrics) > diagnostics.latency_window_size:
             metrics.pop(0)
 
         # Need minimum samples for anomaly detection
@@ -505,18 +505,27 @@ async def detect_latency_anomalies(diagnostics: DiagnosticsManager) -> List[Anom
             mean_latency = statistics.mean(metrics[:-1])  # Exclude current measurement
             std_dev = statistics.stdev(metrics[:-1]) if len(metrics) > 2 else 0
 
+            # Add tolerance buffer to avoid false positives
+            tolerance_factor = 1.3  # Require 30% above threshold to trigger anomaly
             threshold = mean_latency + (std_dev * diagnostics.anomaly_std_dev_threshold)
+            anomaly_threshold = threshold * tolerance_factor
 
-            if result.latency_ms > threshold:
-                severity = AlertSeverity.WARNING if result.latency_ms > mean_latency * 2 else AlertSeverity.INFO
+            if result.latency_ms > anomaly_threshold:
+                # Determine severity based on magnitude of spike
+                if result.latency_ms > mean_latency * 10:  # Severe spike (10x baseline)
+                    severity = AlertSeverity.CRITICAL
+                elif result.latency_ms > mean_latency * 3:  # Moderate spike (3x baseline)
+                    severity = AlertSeverity.WARNING
+                else:  # Mild spike
+                    severity = AlertSeverity.INFO
 
                 anomaly = AnomalyDetection(
                     component=component,
                     metric="latency_ms",
                     value=result.latency_ms,
-                    threshold=threshold,
+                    threshold=anomaly_threshold,
                     severity=severity,
-                    description=f"Latency spike detected: {result.latency_ms:.1f}ms (threshold: {threshold:.1f}ms)"
+                    description=f"Latency spike detected: {result.latency_ms:.1f}ms (threshold: {anomaly_threshold:.1f}ms)"
                 )
                 anomalies.append(anomaly)
 

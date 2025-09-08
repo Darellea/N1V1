@@ -5,6 +5,7 @@ Simple test script to verify anomaly detector integration.
 
 import pandas as pd
 from risk.anomaly_detector import AnomalyDetector, AnomalyResponse
+from core.contracts import TradingSignal, SignalType, SignalStrength
 
 def test_basic_anomaly_detection():
     """Test basic anomaly detection functionality."""
@@ -32,16 +33,26 @@ def test_basic_anomaly_detection():
         print(f"  Anomaly: {anomaly.anomaly_type.value} ({anomaly.severity.value})")
 
 def test_risk_manager_integration():
-    """Test integration with risk manager."""
+    """
+    Test integration with risk manager.
+
+    This test verifies that the risk manager properly handles trading signals
+    from the anomaly detector. The TradingSignal must include all required
+    parameters per the updated contract:
+    - strategy_id: Unique identifier for the signal-generating strategy
+    - signal_strength: Confidence level of the signal (STRONG/MODERATE/WEAK)
+    - signal_type: Must use SignalType enum (not string)
+    """
     print("\nTesting risk manager integration...")
 
     from risk.risk_manager import RiskManager
-    from core.contracts import TradingSignal
 
-    # Create test signal
+    # Create test signal with required parameters per TradingSignal contract
     signal = TradingSignal(
+        strategy_id='test_strategy_001',  # Required: ID of strategy generating signal
         symbol='TEST',
-        signal_type='LONG',
+        signal_type=SignalType.ENTRY_LONG,  # Required: Use proper enum value (not 'LONG')
+        signal_strength=SignalStrength.STRONG,  # Required: Signal confidence level
         order_type='MARKET',
         amount=1000,
         current_price=100.0

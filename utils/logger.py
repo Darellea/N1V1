@@ -34,8 +34,11 @@ from colorama import Fore, Back, Style, init as colorama_init
 
 from utils.adapter import signal_to_dict
 from utils.security import SecurityFormatter
-from core.signal_router.events import BaseEvent, EventType
-from core.signal_router.event_bus import get_default_enhanced_event_bus
+
+# Lazy import to avoid circular dependency
+def _get_default_enhanced_event_bus():
+    from core.signal_router.event_bus import get_default_enhanced_event_bus
+    return get_default_enhanced_event_bus
 
 # Module-level logger for internal library errors (avoid using TradeLogger for internal errors)
 logger = logging.getLogger(__name__)
@@ -329,13 +332,16 @@ class TradeLogger(logging.Logger):
 
     # ===== EVENT-DRIVEN ARCHITECTURE METHODS =====
 
-    async def handle_event(self, event: BaseEvent) -> None:
+    async def handle_event(self, event) -> None:
         """
         Handle incoming events from the event bus.
 
         Args:
             event: The event to handle
         """
+        # Lazy import to avoid circular dependency
+        from core.signal_router.events import BaseEvent, EventType
+
         try:
             if event.event_type == EventType.TRADE_EXECUTED:
                 await self._handle_trade_executed_event(event)
@@ -358,7 +364,7 @@ class TradeLogger(logging.Logger):
         except Exception as e:
             logger.exception(f"Error handling event {event.event_type.value}: {e}")
 
-    async def _handle_trade_executed_event(self, event: BaseEvent) -> None:
+    async def _handle_trade_executed_event(self, event) -> None:
         """Handle trade executed events."""
         payload = event.payload
         trade_data = {
@@ -380,7 +386,7 @@ class TradeLogger(logging.Logger):
             "correlation_id": generate_correlation_id()
         })
 
-    async def _handle_strategy_switch_event(self, event: BaseEvent) -> None:
+    async def _handle_strategy_switch_event(self, event) -> None:
         """Handle strategy switch events."""
         payload = event.payload
         strategy_data = {
@@ -396,7 +402,7 @@ class TradeLogger(logging.Logger):
             "correlation_id": generate_correlation_id()
         })
 
-    async def _handle_risk_limit_triggered_event(self, event: BaseEvent) -> None:
+    async def _handle_risk_limit_triggered_event(self, event) -> None:
         """Handle risk limit triggered events."""
         payload = event.payload
         risk_data = {
@@ -415,7 +421,7 @@ class TradeLogger(logging.Logger):
             "risk_data": risk_data
         })
 
-    async def _handle_diagnostic_alert_event(self, event: BaseEvent) -> None:
+    async def _handle_diagnostic_alert_event(self, event) -> None:
         """Handle diagnostic alert events."""
         payload = event.payload
         alert_type = payload.get("alert_type", "info")
@@ -441,7 +447,7 @@ class TradeLogger(logging.Logger):
                 "alert_details": payload.get("details")
             })
 
-    async def _handle_knowledge_entry_created_event(self, event: BaseEvent) -> None:
+    async def _handle_knowledge_entry_created_event(self, event) -> None:
         """Handle knowledge entry created events."""
         payload = event.payload
         knowledge_data = {
@@ -459,7 +465,7 @@ class TradeLogger(logging.Logger):
             "knowledge_data": knowledge_data
         })
 
-    async def _handle_regime_change_event(self, event: BaseEvent) -> None:
+    async def _handle_regime_change_event(self, event) -> None:
         """Handle regime change events."""
         payload = event.payload
         regime_data = {
@@ -474,7 +480,7 @@ class TradeLogger(logging.Logger):
             "regime_data": regime_data
         })
 
-    async def _handle_system_status_update_event(self, event: BaseEvent) -> None:
+    async def _handle_system_status_update_event(self, event) -> None:
         """Handle system status update events."""
         payload = event.payload
         status_data = {
@@ -584,7 +590,11 @@ def setup_logging(config: Optional[Dict[str, Any]] = None) -> TradeLogger:
 
     # Subscribe to event bus for event-driven logging
     try:
-        event_bus = get_default_enhanced_event_bus()
+        event_bus_func = _get_default_enhanced_event_bus()
+        event_bus = event_bus_func()
+
+        # Lazy import to avoid circular dependency
+        from core.signal_router.events import EventType
 
         # Subscribe to all event types for logging
         for event_type in EventType:
@@ -605,6 +615,11 @@ def get_trade_logger() -> TradeLogger:
     if _GLOBAL_TRADE_LOGGER is None:
         setup_logging()
     return _GLOBAL_TRADE_LOGGER
+
+
+def get_logger(name: str) -> logging.Logger:
+    """Return a standard logger with the given name."""
+    return logging.getLogger(name)
 
 
 def generate_correlation_id() -> str:

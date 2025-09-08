@@ -245,6 +245,69 @@ def calculate_obv(data: pd.DataFrame) -> pd.Series:
     return obv
 
 
+def calculate_stochastic(data: pd.DataFrame, k_period: int = 14, d_period: int = 3) -> Tuple[pd.Series, pd.Series]:
+    """
+    Calculate Stochastic Oscillator (%K and %D).
+
+    Args:
+        data: DataFrame with OHLCV data (must contain 'high', 'low', 'close')
+        k_period: Period for %K calculation
+        d_period: Period for %D calculation (SMA of %K)
+
+    Returns:
+        Tuple of (%K, %D) Series
+    """
+    required_cols = ['high', 'low', 'close']
+    for col in required_cols:
+        if col not in data.columns:
+            raise ValueError(f"Column '{col}' not found in data")
+
+    if len(data) < k_period:
+        logger.warning(f"Insufficient data for Stochastic calculation: {len(data)} < {k_period}")
+        nan_series = pd.Series([np.nan] * len(data), index=data.index)
+        return nan_series, nan_series
+
+    # Calculate %K
+    lowest_low = data['low'].rolling(window=k_period).min()
+    highest_high = data['high'].rolling(window=k_period).max()
+
+    k_percent = 100 * (data['close'] - lowest_low) / (highest_high - lowest_low)
+
+    # Calculate %D (SMA of %K)
+    d_percent = k_percent.rolling(window=d_period).mean()
+
+    return k_percent, d_percent
+
+
+def calculate_vwap(data: pd.DataFrame) -> pd.Series:
+    """
+    Calculate Volume Weighted Average Price (VWAP).
+
+    Args:
+        data: DataFrame with OHLCV data (must contain 'high', 'low', 'close', 'volume')
+
+    Returns:
+        Series with VWAP values
+    """
+    required_cols = ['high', 'low', 'close', 'volume']
+    for col in required_cols:
+        if col not in data.columns:
+            raise ValueError(f"Column '{col}' not found in data")
+
+    if len(data) < 1:
+        logger.warning("Insufficient data for VWAP calculation")
+        return pd.Series([np.nan] * len(data), index=data.index)
+
+    # VWAP = (Cumulative (High + Low + Close)/3 * Volume) / Cumulative Volume
+    typical_price = (data['high'] + data['low'] + data['close']) / 3
+    cumulative_tp_volume = (typical_price * data['volume']).cumsum()
+    cumulative_volume = data['volume'].cumsum()
+
+    vwap = cumulative_tp_volume / cumulative_volume
+
+    return vwap
+
+
 def calculate_all_indicators(data: pd.DataFrame, config: Optional[Dict[str, Union[int, float]]] = None) -> pd.DataFrame:
     """
     Calculate all supported technical indicators.

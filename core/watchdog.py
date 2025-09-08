@@ -38,9 +38,9 @@ import aiohttp
 from core.diagnostics import get_diagnostics_manager, HealthStatus, HealthCheckResult
 from core.signal_router.events import (
     create_diagnostic_alert_event,
-    EventType,
-    get_default_enhanced_event_bus
+    EventType
 )
+from core.signal_router.event_bus import get_default_enhanced_event_bus
 from utils.logger import get_logger
 
 logger = get_logger(__name__)

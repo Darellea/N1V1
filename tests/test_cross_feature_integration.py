@@ -21,7 +21,7 @@ import tempfile
 import os
 from pathlib import Path
 
-from core.circuit_breaker import CircuitBreaker, CircuitBreakerState, CircuitBreakerConfig
+from core.circuit_breaker import CircuitBreaker, CircuitBreakerState
 from core.metrics_collector import MetricsCollector, get_metrics_collector
 from core.metrics_endpoint import MetricsEndpoint
 from core.performance_profiler import PerformanceProfiler, get_profiler, profile_function
@@ -29,7 +29,7 @@ from core.performance_monitor import RealTimePerformanceMonitor, PerformanceAler
 from core.performance_reports import PerformanceReportGenerator, get_performance_report_generator
 from core.order_manager import OrderManager
 from core.signal_router import SignalRouter
-from core.risk.risk_manager import RiskManager
+from risk.risk_manager import RiskManager
 from utils.logger import get_logger
 
 logger = get_logger(__name__)

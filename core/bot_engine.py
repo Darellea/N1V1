@@ -21,7 +21,7 @@ from core.signal_router import SignalRouter
 from notifier.discord_bot import DiscordNotifier
 from core.task_manager import TaskManager
 from core.timeframe_manager import TimeframeManager
-from strategy_selector import get_strategy_selector, update_strategy_performance
+from strategies.regime.strategy_selector import get_strategy_selector, update_strategy_performance
 
 # Import decomposed components
 from core.trading_coordinator import TradingCoordinator

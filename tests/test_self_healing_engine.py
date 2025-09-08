@@ -31,7 +31,7 @@ from core.watchdog import (
     FailureSeverity, FailureType, HeartbeatMessage
 )
 from core.diagnostics import HealthStatus
-from core.signal_router.events import get_default_enhanced_event_bus
+from core.signal_router.event_bus import get_default_enhanced_event_bus
 
 
 class TestComponentRegistry:

@@ -15,7 +15,10 @@ from enum import Enum
 from functools import wraps
 import sys
 
-from utils.security import sanitize_error_message
+# Lazy import to avoid circular dependency
+def _get_sanitize_error_message():
+    from utils.security import sanitize_error_message
+    return sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -242,7 +245,8 @@ class ErrorHandler:
         context.parameters["exception_message"] = str(exception)
 
         # Sanitize error message for security
-        sanitized_message = sanitize_error_message(str(exception))
+        sanitize_func = _get_sanitize_error_message()
+        sanitized_message = sanitize_func(str(exception))
 
         # Log error with structured context
         await self._log_error(exception, context, sanitized_message)

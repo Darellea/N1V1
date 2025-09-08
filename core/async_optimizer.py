@@ -9,6 +9,8 @@ import asyncio
 import logging
 import time
 import threading
+import psutil
+import gc
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from typing import Dict, Any, Optional, List, Callable, Awaitable
 import aiofiles
@@ -37,7 +39,7 @@ class AsyncOptimizer:
 
         # Thread pools for different types of operations
         self._thread_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="AsyncOpt")
-        self._process_pool = ProcessPoolExecutor(max_workers=max_workers // 2, max_tasks_per_child=50)
+        self._process_pool = ProcessPoolExecutor(max_workers=max_workers // 2)
 
         # Performance monitoring
         self._operation_stats: Dict[str, List[float]] = {}
@@ -49,6 +51,16 @@ class AsyncOptimizer:
             "blocking_detected": 0,
             "avg_response_time": 0.0
         }
+
+        # Memory monitoring
+        self._memory_stats: Dict[str, List[float]] = {}
+        self._memory_thresholds = {
+            "warning_mb": 500,  # Warn at 500MB
+            "critical_mb": 1000,  # Critical at 1GB
+            "cleanup_interval": 300  # Cleanup every 5 minutes
+        }
+        self._last_cleanup = time.time()
+        self._gc_threshold = gc.get_threshold()
 
         # Known blocking operations to monitor
         self._blocking_patterns = [
@@ -312,6 +324,154 @@ class AsyncOptimizer:
         if total_count > 0:
             self._performance_metrics["avg_response_time"] = total_time / total_count
 
+        # Check memory usage and trigger cleanup if needed
+        self._check_memory_usage()
+
+    def _check_memory_usage(self):
+        """Check current memory usage and trigger cleanup if thresholds exceeded."""
+        try:
+            process = psutil.Process()
+            memory_mb = process.memory_info().rss / 1024 / 1024
+
+            # Record memory usage
+            if "memory_usage" not in self._memory_stats:
+                self._memory_stats["memory_usage"] = []
+            self._memory_stats["memory_usage"].append(memory_mb)
+
+            # Keep only last 100 measurements
+            if len(self._memory_stats["memory_usage"]) > 100:
+                self._memory_stats["memory_usage"] = self._memory_stats["memory_usage"][-100:]
+
+            # Check thresholds
+            warning_threshold = self._memory_thresholds["warning_mb"]
+            critical_threshold = self._memory_thresholds["critical_mb"]
+
+            if memory_mb > critical_threshold:
+                logger.warning(f"Critical memory usage: {memory_mb:.1f}MB (threshold: {critical_threshold}MB)")
+                self._perform_memory_cleanup()
+            elif memory_mb > warning_threshold:
+                logger.info(f"High memory usage: {memory_mb:.1f}MB (threshold: {warning_threshold}MB)")
+
+            # Periodic cleanup
+            current_time = time.time()
+            if current_time - self._last_cleanup > self._memory_thresholds["cleanup_interval"]:
+                self._perform_periodic_cleanup()
+                self._last_cleanup = current_time
+
+        except Exception as e:
+            logger.debug(f"Memory monitoring failed: {e}")
+
+    def _perform_memory_cleanup(self):
+        """Perform aggressive memory cleanup."""
+        try:
+            # Force garbage collection
+            collected = gc.collect()
+            logger.info(f"Garbage collection collected {collected} objects")
+
+            # Clear operation stats if too large
+            for op_type in list(self._operation_stats.keys()):
+                if len(self._operation_stats[op_type]) > 500:
+                    # Keep only recent measurements
+                    self._operation_stats[op_type] = self._operation_stats[op_type][-250:]
+
+            # Clear blocking operations if too many
+            if len(self._blocking_operations) > 100:
+                self._blocking_operations = self._blocking_operations[-50:]
+
+            logger.info("Memory cleanup completed")
+
+        except Exception as e:
+            logger.error(f"Memory cleanup failed: {e}")
+
+    def _perform_periodic_cleanup(self):
+        """Perform periodic maintenance cleanup."""
+        try:
+            # Light garbage collection
+            collected = gc.collect(0)  # Only collect generation 0
+            if collected > 0:
+                logger.debug(f"Periodic GC collected {collected} objects")
+
+            # Clean up old memory stats
+            cutoff_time = time.time() - 3600  # 1 hour ago
+            for stat_type in list(self._memory_stats.keys()):
+                # Remove old entries (assuming timestamps, but we don't have them)
+                if len(self._memory_stats[stat_type]) > 50:
+                    self._memory_stats[stat_type] = self._memory_stats[stat_type][-25:]
+
+        except Exception as e:
+            logger.debug(f"Periodic cleanup failed: {e}")
+
+    def get_memory_report(self) -> Dict[str, Any]:
+        """Get comprehensive memory usage report.
+
+        Returns:
+            Memory usage statistics and recommendations
+        """
+        try:
+            process = psutil.Process()
+            memory_info = process.memory_info()
+
+            report = {
+                "current_memory_mb": memory_info.rss / 1024 / 1024,
+                "virtual_memory_mb": memory_info.vms / 1024 / 1024,
+                "memory_percent": process.memory_percent(),
+                "warning_threshold_mb": self._memory_thresholds["warning_mb"],
+                "critical_threshold_mb": self._memory_thresholds["critical_mb"],
+                "cleanup_interval_seconds": self._memory_thresholds["cleanup_interval"],
+                "last_cleanup_seconds_ago": time.time() - self._last_cleanup
+            }
+
+            # Add memory statistics
+            if self._memory_stats.get("memory_usage"):
+                memory_usage = self._memory_stats["memory_usage"]
+                report["memory_stats"] = {
+                    "avg_memory_mb": sum(memory_usage) / len(memory_usage),
+                    "max_memory_mb": max(memory_usage),
+                    "min_memory_mb": min(memory_usage),
+                    "samples": len(memory_usage)
+                }
+
+            # Add GC statistics
+            gc_stats = {}
+            for i, count in enumerate(gc.get_count()):
+                gc_stats[f"generation_{i}_collections"] = count
+            report["gc_stats"] = gc_stats
+
+            # Add recommendations
+            current_mb = report["current_memory_mb"]
+            if current_mb > self._memory_thresholds["critical_mb"]:
+                report["recommendations"] = ["Immediate memory cleanup required", "Consider reducing concurrent operations"]
+            elif current_mb > self._memory_thresholds["warning_mb"]:
+                report["recommendations"] = ["Monitor memory usage closely", "Consider periodic cleanup"]
+            else:
+                report["recommendations"] = ["Memory usage normal"]
+
+            return report
+
+        except Exception as e:
+            logger.error(f"Failed to generate memory report: {e}")
+            return {"error": str(e)}
+
+    def set_memory_thresholds(self, warning_mb: int = None, critical_mb: int = None,
+                            cleanup_interval: int = None):
+        """Set memory monitoring thresholds.
+
+        Args:
+            warning_mb: Warning threshold in MB
+            critical_mb: Critical threshold in MB
+            cleanup_interval: Cleanup interval in seconds
+        """
+        if warning_mb is not None:
+            self._memory_thresholds["warning_mb"] = warning_mb
+        if critical_mb is not None:
+            self._memory_thresholds["critical_mb"] = critical_mb
+        if cleanup_interval is not None:
+            self._memory_thresholds["cleanup_interval"] = cleanup_interval
+
+        logger.info(f"Memory thresholds updated: warning={self._memory_thresholds['warning_mb']}MB, "
+                   f"critical={self._memory_thresholds['critical_mb']}MB, "
+                   f"cleanup_interval={self._memory_thresholds['cleanup_interval']}s")
+
     async def batch_async_operations(self, operations: List[Callable]) -> List[Any]:
         """Execute multiple async operations in batch.
 
@@ -443,9 +603,31 @@ class AsyncOptimizer:
         """Shutdown the async optimizer and cleanup resources."""
         logger.info("Shutting down AsyncOptimizer")
 
-        # Shutdown thread pools
+        # Cancel any pending tasks in the event loop
+        current_task = asyncio.current_task()
+        if current_task:
+            # Get all tasks and cancel those related to this optimizer
+            all_tasks = asyncio.all_tasks()
+            optimizer_tasks = [task for task in all_tasks
+                             if hasattr(task, 'get_coro') and
+                             'AsyncOpt' in str(task.get_coro())]
+
+            for task in optimizer_tasks:
+                if not task.done() and task != current_task:
+                    task.cancel()
+
+            # Wait for tasks to cancel
+            if optimizer_tasks:
+                await asyncio.gather(*optimizer_tasks, return_exceptions=True)
+
+        # Shutdown thread pools with proper cleanup
         self._thread_pool.shutdown(wait=True)
         self._process_pool.shutdown(wait=True)
+
+        # Clear references to help GC
+        self._operation_stats.clear()
+        self._blocking_operations.clear()
+        self._performance_metrics.clear()
 
         logger.info("AsyncOptimizer shutdown complete")
 

@@ -25,7 +25,7 @@ import tempfile
 import os
 from pathlib import Path
 
-from core.config_loader import ConfigLoader
+from utils.config_loader import ConfigLoader
 from data.data_fetcher import DataFetcher
 from strategies.base_strategy import BaseStrategy
 from core.bot_engine import BotEngine

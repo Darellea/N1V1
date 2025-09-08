@@ -107,31 +107,57 @@ class FinalCodeAuditor:
 
         start_time = time.time()
 
+        # Execute audit phases
+        self._execute_audit_phases()
+
+        # Generate and finalize results
+        audit_results = self._finalize_audit_results(start_time)
+
+        logger.info(f"Comprehensive audit completed in {audit_results['audit_duration']:.2f} seconds")
+        logger.info(f"Found {len(self.issues)} issues and {len(self.duplicates)} duplicate groups")
+
+        return audit_results
+
+    def _execute_audit_phases(self):
+        """Execute all audit phases in sequence."""
         # Phase 1: Post-Refactoring Validation
+        self._execute_validation_phase()
+
+        # Phase 2: Advanced Duplication Detection
+        self._execute_duplication_phase()
+
+        # Phase 3: Final Bug Hunt
+        self._execute_analysis_phase()
+
+        # Phase 4: Generate Final Report
+        # This is handled in the main method
+
+    def _execute_validation_phase(self):
+        """Execute post-refactoring validation phase."""
         self._validate_previous_fixes()
         self._perform_deep_static_analysis()
         self._assess_quality_metrics()
 
-        # Phase 2: Advanced Duplication Detection
+    def _execute_duplication_phase(self):
+        """Execute advanced duplication detection phase."""
         self._detect_code_duplication()
         self._analyze_duplication_patterns()
         self._identify_root_causes()
 
-        # Phase 3: Final Bug Hunt
+    def _execute_analysis_phase(self):
+        """Execute final bug hunt and analysis phase."""
         self._execute_advanced_static_analysis()
         self._perform_dynamic_analysis()
         self._validate_edge_cases()
 
-        # Phase 4: Generate Final Report
+    def _finalize_audit_results(self, start_time: float) -> Dict[str, Any]:
+        """Generate final audit results with timing information."""
         audit_results = self._generate_audit_report()
 
         audit_results["audit_duration"] = time.time() - start_time
         audit_results["files_analyzed"] = len(self.files_analyzed)
         audit_results["total_issues"] = len(self.issues)
         audit_results["total_duplicates"] = len(self.duplicates)
-
-        logger.info(f"Comprehensive audit completed in {audit_results['audit_duration']:.2f} seconds")
-        logger.info(f"Found {len(self.issues)} issues and {len(self.duplicates)} duplicate groups")
 
         return audit_results
 

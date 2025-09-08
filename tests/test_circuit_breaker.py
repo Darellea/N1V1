@@ -21,13 +21,12 @@ import os
 from pathlib import Path
 
 from core.circuit_breaker import (
-    CircuitBreaker, CircuitBreakerState, CircuitBreakerConfig,
-    CircuitBreakerTrigger, CircuitBreakerEvent, get_circuit_breaker
+    CircuitBreaker, CircuitBreakerState, get_circuit_breaker
 )
 from core.order_manager import OrderManager
 from core.signal_router import SignalRouter
-from core.risk.risk_manager import RiskManager
-from core.anomaly_detector import AnomalyDetector
+from risk.risk_manager import RiskManager
+from risk.anomaly_detector import AnomalyDetector
 from utils.logger import get_logger
 
 logger = get_logger(__name__)

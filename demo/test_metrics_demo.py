@@ -73,29 +73,29 @@ async def demo_metrics_engine():
 
         print("\n🎯 Calculated Metrics:")
         print("-" * 20)
-        print(".2%")
-        print(".2f")
-        print(".2%")
-        print(".1%")
-        print(".2f")
-        print(".2%")
-        print(".2%")
-        print(".2%")
-        print(".2%")
-        print(".2%")
+        print(f"Total Return: {result.total_return:.2%}")
+        print(f"Annualized Return: {result.annualized_return:.2f}")
+        print(f"Volatility: {result.volatility:.2%}")
+        print(f"Sharpe Ratio: {result.sharpe_ratio:.1%}")
+        print(f"Sortino Ratio: {result.sortino_ratio:.2f}")
+        print(f"Calmar Ratio: {result.calmar_ratio:.2%}")
+        print(f"Max Drawdown: {result.max_drawdown:.2%}")
+        print(f"VaR 95%: {result.value_at_risk_95:.2%}")
+        print(f"Expected Shortfall 95%: {result.expected_shortfall_95:.2%}")
+        print(f"Profit Factor: {result.profit_factor:.2%}")
         print(f"Total Trades: {result.total_trades}")
         print(f"Win Rate: {result.win_rate:.1%}")
-        print(".2f")
-        print(".2f")
-        print(".2f")
-        print(".2f")
+        print(f"Avg Win: ${result.avg_win:.2f}")
+        print(f"Avg Loss: ${result.avg_loss:.2f}")
+        print(f"Largest Win: ${result.largest_win:.2f}")
+        print(f"Largest Loss: ${result.largest_loss:.2f}")
 
         # Save to files
         json_path = engine.save_to_json(result)
         csv_path = engine.save_to_csv(result)
 
-        print("
-💾 Files Saved:"        print(f"  JSON: {json_path}")
+        print("\n💾 Files Saved:")
+        print(f"  JSON: {json_path}")
         print(f"  CSV: {csv_path}")
 
         # Test loading from JSON
@@ -295,7 +295,9 @@ async def demo_comprehensive_workflow():
             trade_log=trade_log
         )
 
-        print("   ✅ Performance metrics calculated"        print("   ✅ Risk metrics calculated"        print("   ✅ Trade statistics calculated"
+        print("   ✅ Performance metrics calculated")
+        print("   ✅ Risk metrics calculated")
+        print("   ✅ Trade statistics calculated")
 
         # 3. Save results
         print("\n💾 Step 3: Saving results...")
@@ -321,10 +323,10 @@ async def demo_comprehensive_workflow():
         print("\n🎉 Step 5: Workflow Summary")
         print("-" * 25)
         print(f"Strategy: {result.strategy_id}")
-        print(".2%")
-        print(".2f")
-        print(".2%")
-        print(".1%")
+        print(f"Total Return: {result.total_return:.2%}")
+        print(f"Annualized Return: {result.annualized_return:.2f}")
+        print(f"Volatility: {result.volatility:.2%}")
+        print(f"Win Rate: {result.win_rate:.1%}")
         print(f"Total Trades: {result.total_trades}")
         print(f"Files Generated: JSON, CSV, Dashboard data")
 
