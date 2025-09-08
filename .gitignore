@@ -90,4 +90,4 @@ secrets.json
 *.rar
 *.tar
 *.gz
-ENSEMBLE_README.models
+ENSEMBLE_README.md
