@@ -67,6 +67,7 @@ tools/
 error.txt
 test_logs/
 scripts/
+README/
 
 
 # --- Machine Learning models ---
@@ -89,4 +90,4 @@ secrets.json
 *.rar
 *.tar
 *.gz
-*.md
+ENSEMBLE_README.models

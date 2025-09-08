@@ -1,0 +1,164 @@
+{
+  "timestamp": "2025-09-08T08:52:47.697475",
+  "summary": {
+    "total_files": 297,
+    "total_lines": 178923,
+    "code_lines": 129859,
+    "comment_lines": 19912,
+    "comment_ratio_percent": 15.33,
+    "avg_lines_per_file": 602.43
+  },
+  "by_type": {
+    "other": {
+      "files": 51,
+      "total_lines": 72585,
+      "code_lines": 56520,
+      "comment_lines": 6451
+    },
+    "config": {
+      "files": 22,
+      "total_lines": 3186,
+      "code_lines": 3018,
+      "comment_lines": 68
+    },
+    "docs": {
+      "files": 15,
+      "total_lines": 6782,
+      "code_lines": 4295,
+      "comment_lines": 1113
+    },
+    "code": {
+      "files": 209,
+      "total_lines": 96370,
+      "code_lines": 66026,
+      "comment_lines": 12280
+    }
+  },
+  "by_language": {
+    "Other": {
+      "files": 51,
+      "lines": 72585
+    },
+    "JSON": {
+      "files": 17,
+      "lines": 2478
+    },
+    "Markdown": {
+      "files": 10,
+      "lines": 6238
+    },
+    "Text": {
+      "files": 4,
+      "lines": 238
+    },
+    "Python": {
+      "files": 209,
+      "lines": 96370
+    },
+    "TOML": {
+      "files": 1,
+      "lines": 23
+    },
+    "INI": {
+      "files": 1,
+      "lines": 8
+    },
+    "YAML": {
+      "files": 3,
+      "lines": 677
+    },
+    "HTML": {
+      "files": 1,
+      "lines": 306
+    }
+  },
+  "by_component": {
+    "other": {
+      "files": 283,
+      "total_lines": 172103,
+      "code_lines": 125496,
+      "comment_lines": 18806
+    },
+    "config": {
+      "files": 4,
+      "total_lines": 582,
+      "code_lines": 533,
+      "comment_lines": 17
+    },
+    "docs": {
+      "files": 10,
+      "total_lines": 6238,
+      "code_lines": 3830,
+      "comment_lines": 1089
+    }
+  },
+  "largest_files": [
+    {
+      "path": ".ruff_cache\\content\\7020655576297244954",
+      "lines": 27269,
+      "extension": ""
+    },
+    {
+      "path": "logs\\crypto_bot.log",
+      "lines": 19519,
+      "extension": ".log"
+    },
+    {
+      "path": "htmlcov\\function_index.html",
+      "lines": 19091,
+      "extension": ".html"
+    },
+    {
+      "path": ".ruff_cache\\content\\1879841978194122611",
+      "lines": 7586,
+      "extension": ""
+    },
+    {
+      "path": ".ruff_cache\\content\\4471166355422738127",
+      "lines": 3920,
+      "extension": ""
+    },
+    {
+      "path": "htmlcov\\class_index.html",
+      "lines": 3659,
+      "extension": ".html"
+    },
+    {
+      "path": ".ruff_cache\\content\\17941625260945127573",
+      "lines": 2363,
+      "extension": ""
+    },
+    {
+      "path": "htmlcov\\z_a44f0ac069e85531_test_signal_router_py.html",
+      "lines": 2112,
+      "extension": ".html"
+    },
+    {
+      "path": "tests\\test_signal_router.py",
+      "lines": 2016,
+      "extension": ".py"
+    },
+    {
+      "path": ".ruff_cache\\content\\9025242937876286884",
+      "lines": 1979,
+      "extension": ""
+    }
+  ],
+  "quality_metrics": {
+    "test_to_production_ratio": 0.0,
+    "component_distribution": {
+      "other": {
+        "lines": 125496,
+        "percentage": 190.07
+      },
+      "config": {
+        "lines": 533,
+        "percentage": 0.81
+      },
+      "docs": {
+        "lines": 3830,
+        "percentage": 5.8
+      }
+    }
+  }
+}

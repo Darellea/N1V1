@@ -1,0 +1,359 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "N1V1 System Health",
+    "tags": ["system", "health", "n1v1"],
+    "timezone": "UTC",
+    "panels": [
+      {
+        "id": 1,
+        "title": "System Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "up{job=\"n1v1-trading-framework\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {
+                "options": {
+                  "0": {
+                    "text": "DOWN",
+                    "color": "red"
+                  },
+                  "1": {
+                    "text": "UP",
+                    "color": "green"
+                  }
+                },
+                "type": "value"
+              }
+            ]
+          }
+        },
+        "gridPos": {
+          "h": 4,
+          "w": 6,
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": 2,
+        "title": "CPU Usage",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "system_cpu_usage_percent",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                },
+                {
+                  "color": "orange",
+                  "value": 70
+                },
+                {
+                  "color": "red",
+                  "value": 90
+                }
+              ]
+            },
+            "unit": "percent"
+          }
+        },
+        "gridPos": {
+          "h": 4,
+          "w": 6,
+          "x": 6,
+          "y": 0
+        }
+      },
+      {
+        "id": 3,
+        "title": "Memory Usage",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "system_memory_usage_bytes",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                },
+                {
+                  "color": "orange",
+                  "value": 8000000000
+                },
+                {
+                  "color": "red",
+                  "value": 12000000000
+                }
+              ]
+            },
+            "unit": "bytes"
+          }
+        },
+        "gridPos": {
+          "h": 4,
+          "w": 6,
+          "x": 12,
+          "y": 0
+        }
+      },
+      {
+        "id": 4,
+        "title": "Process CPU",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "process_cpu_usage_percent",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent"
+          }
+        },
+        "gridPos": {
+          "h": 4,
+          "w": 6,
+          "x": 18,
+          "y": 0
+        }
+      },
+      {
+        "id": 5,
+        "title": "CPU Usage Over Time",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "system_cpu_usage_percent",
+            "refId": "A",
+            "legendFormat": "System CPU"
+          },
+          {
+            "expr": "process_cpu_usage_percent",
+            "refId": "B",
+            "legendFormat": "Process CPU"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent"
+          }
+        },
+        "gridPos": {
+          "h": 10,
+          "w": 12,
+          "x": 0,
+          "y": 4
+        }
+      },
+      {
+        "id": 6,
+        "title": "Memory Usage Over Time",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "system_memory_usage_bytes",
+            "refId": "A",
+            "legendFormat": "System Memory"
+          },
+          {
+            "expr": "process_memory_usage_bytes",
+            "refId": "B",
+            "legendFormat": "Process Memory"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "bytes"
+          }
+        },
+        "gridPos": {
+          "h": 10,
+          "w": 12,
+          "x": 12,
+          "y": 4
+        }
+      },
+      {
+        "id": 7,
+        "title": "Disk I/O",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(system_disk_read_bytes_total[5m])",
+            "refId": "A",
+            "legendFormat": "Read Rate"
+          },
+          {
+            "expr": "rate(system_disk_write_bytes_total[5m])",
+            "refId": "B",
+            "legendFormat": "Write Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "Bps"
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 14
+        }
+      },
+      {
+        "id": 8,
+        "title": "Network I/O",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(system_network_receive_bytes_total[5m])",
+            "refId": "A",
+            "legendFormat": "Receive Rate"
+          },
+          {
+            "expr": "rate(system_network_transmit_bytes_total[5m])",
+            "refId": "B",
+            "legendFormat": "Transmit Rate"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "Bps"
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 14
+        }
+      },
+      {
+        "id": 9,
+        "title": "Process Threads",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "process_threads_count",
+            "refId": "A",
+            "legendFormat": "Thread Count"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 0,
+          "y": 22
+        }
+      },
+      {
+        "id": 10,
+        "title": "Metrics Collection Performance",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "metrics_collection_duration_seconds",
+            "refId": "A",
+            "legendFormat": "Collection Time"
+          },
+          {
+            "expr": "rate(metrics_endpoint_requests_total[5m])",
+            "refId": "B",
+            "legendFormat": "Requests/sec"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "seconds"
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 8,
+          "y": 22
+        }
+      },
+      {
+        "id": 11,
+        "title": "System Load Average",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "node_load1",
+            "refId": "A",
+            "legendFormat": "Load 1min"
+          },
+          {
+            "expr": "node_load5",
+            "refId": "B",
+            "legendFormat": "Load 5min"
+          },
+          {
+            "expr": "node_load15",
+            "refId": "C",
+            "legendFormat": "Load 15min"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 16,
+          "y": 22
+        }
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "timepicker": {},
+    "templating": {
+      "list": []
+    },
+    "annotations": {
+      "list": [
+        {
+          "builtIn": 1,
+          "datasource": "-- Grafana --",
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "type": "dashboard"
+        }
+      ]
+    },
+    "refresh": "30s",
+    "schemaVersion": 27,
+    "version": 0,
+    "links": []
+  }
+}

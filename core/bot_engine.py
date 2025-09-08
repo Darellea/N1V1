@@ -24,6 +24,7 @@ from core.order_manager import OrderManager
 from core.signal_router import SignalRouter
 from notifier.discord_bot import DiscordNotifier
 from core.task_manager import TaskManager
+from core.timeframe_manager import TimeframeManager
 from strategy_selector import get_strategy_selector, update_strategy_performance
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,7 @@ class BotEngine:
 
         # Core modules
         self.data_fetcher: Optional[DataFetcher] = None
+        self.timeframe_manager: Optional[TimeframeManager] = None
         self.strategies: List[BaseStrategy] = []
         self.risk_manager: Optional[RiskManager] = None
         self.order_manager: Optional[OrderManager] = None
@@ -152,6 +154,24 @@ class BotEngine:
         # register shutdown hook for data_fetcher
         if hasattr(self.data_fetcher, "shutdown"):
             self._shutdown_hooks.append(self.data_fetcher.shutdown)
+
+        # Initialize timeframe manager for multi-timeframe analysis
+        tf_config = self.config.get("multi_timeframe", {})
+        self.timeframe_manager = TimeframeManager(self.data_fetcher, tf_config)
+        await self.timeframe_manager.initialize()
+        # register shutdown hook for timeframe_manager
+        if hasattr(self.timeframe_manager, "shutdown"):
+            self._shutdown_hooks.append(self.timeframe_manager.shutdown)
+
+        # Register symbols with timeframe manager for multi-timeframe analysis
+        if self.pairs:
+            for symbol in self.pairs:
+                # Default timeframes for multi-timeframe validation
+                default_timeframes = ["15m", "1h", "4h"]
+                if self.timeframe_manager.add_symbol(symbol, default_timeframes):
+                    logger.info(f"Registered {symbol} with timeframes: {default_timeframes}")
+                else:
+                    logger.warning(f"Failed to register {symbol} with timeframe manager")
 
         self.risk_manager = RiskManager(self.config["risk_management"])
         # Pass full config to OrderManager to ensure it can access paper/backtest settings
@@ -273,14 +293,17 @@ class BotEngine:
         await self._update_state()
 
     async def _fetch_market_data(self) -> Dict[str, Any]:
-        """Fetch market data with caching to reduce API calls."""
+        """Fetch market data with caching and multi-timeframe support."""
         current_time = time.time()
         if self.market_data_cache and (current_time - self.cache_timestamp) < self.cache_ttl:
             logger.debug("Using cached market data")
             return self.market_data_cache
 
         market_data = {}
+        multi_timeframe_data = {}
+
         try:
+            # Fetch single-timeframe data (backward compatibility)
             if self.portfolio_mode and hasattr(self.data_fetcher, "get_realtime_data"):
                 market_data = await self.data_fetcher.get_realtime_data(self.pairs)
             elif not self.portfolio_mode and hasattr(self.data_fetcher, "get_historical_data"):
@@ -296,14 +319,47 @@ class BotEngine:
                 if hasattr(self.data_fetcher, "get_multiple_historical_data"):
                     market_data = await self.data_fetcher.get_multiple_historical_data(self.pairs)
 
+            # Fetch multi-timeframe data if timeframe manager is available
+            if self.timeframe_manager and self.pairs:
+                for symbol in self.pairs:
+                    try:
+                        synced_data = await self.timeframe_manager.fetch_multi_timeframe_data(symbol)
+                        if synced_data:
+                            multi_timeframe_data[symbol] = synced_data
+                            logger.debug(f"Fetched multi-timeframe data for {symbol}")
+                        else:
+                            logger.warning(f"Failed to fetch multi-timeframe data for {symbol}")
+                    except Exception as e:
+                        logger.warning(f"Error fetching multi-timeframe data for {symbol}: {e}")
+
+            # Combine single-timeframe and multi-timeframe data
+            combined_data = market_data.copy()
+            for symbol, synced_data in multi_timeframe_data.items():
+                if symbol in combined_data:
+                    # Add multi-timeframe data to existing symbol data
+                    combined_data[symbol] = {
+                        'single_timeframe': combined_data[symbol],
+                        'multi_timeframe': synced_data
+                    }
+                else:
+                    # Only multi-timeframe data available
+                    combined_data[symbol] = {
+                        'multi_timeframe': synced_data
+                    }
+
             # Cache the fetched data
-            self.market_data_cache = market_data
+            self.market_data_cache = combined_data
             self.cache_timestamp = current_time
-            logger.debug("Fetched and cached new market data")
+            logger.debug("Fetched and cached market data (including multi-timeframe)")
+
         except Exception:
             logger.exception("Failed to fetch market data")
+            # Return cached data if available, otherwise empty dict
+            if self.market_data_cache:
+                logger.warning("Using stale cached data due to fetch failure")
+                return self.market_data_cache
 
-        return market_data
+        return self.market_data_cache if self.market_data_cache else market_data
 
     async def _check_safe_mode_conditions(self) -> bool:
         """Check various safe mode conditions and return True if trading should be skipped."""
@@ -340,7 +396,7 @@ class BotEngine:
         return False
 
     async def _generate_signals(self, market_data: Dict[str, Any]) -> List[Any]:
-        """Generate trading signals from all active strategies."""
+        """Generate trading signals from all active strategies with multi-timeframe support."""
         signals = []
         strategy_selector = get_strategy_selector()
 
@@ -357,7 +413,7 @@ class BotEngine:
 
                     if selected_strategy:
                         logger.info(f"Strategy selector chose: {selected_strategy_class.__name__}")
-                        strategy_signals = await selected_strategy.generate_signals(market_data)
+                        strategy_signals = await selected_strategy.generate_signals(market_data, self._extract_multi_tf_data(market_data, primary_symbol))
                         signals.extend(strategy_signals)
                     else:
                         logger.warning(f"Selected strategy {selected_strategy_class.__name__} not found in active strategies")
@@ -376,7 +432,10 @@ class BotEngine:
         """Generate signals from all strategies when strategy selector is disabled or fails."""
         signals = []
         for strategy in self.strategies:
-            strategy_signals = await strategy.generate_signals(market_data)
+            # Extract multi-timeframe data for the strategy's primary symbol
+            primary_symbol = list(market_data.keys())[0] if market_data else None
+            multi_tf_data = self._extract_multi_tf_data(market_data, primary_symbol) if primary_symbol else None
+            strategy_signals = await strategy.generate_signals(market_data, multi_tf_data)
             signals.extend(strategy_signals)
         return signals
 
@@ -773,3 +832,34 @@ class BotEngine:
                 logger.exception("Failed to cancel orders during emergency shutdown")
 
         await self.shutdown()
+
+    def _extract_multi_tf_data(self, market_data: Dict[str, Any], symbol: str) -> Optional[Dict[str, Any]]:
+        """
+        Extract multi-timeframe data for a specific symbol from market data.
+
+        Args:
+            market_data: Combined market data dictionary
+            symbol: Symbol to extract data for
+
+        Returns:
+            Multi-timeframe data or None if not available
+        """
+        try:
+            if not market_data or symbol not in market_data:
+                return None
+
+            symbol_data = market_data[symbol]
+
+            # Check if symbol_data is a dict with multi_timeframe key
+            if isinstance(symbol_data, dict) and 'multi_timeframe' in symbol_data:
+                return symbol_data['multi_timeframe']
+
+            # Check if symbol_data is a SyncedData object directly
+            if hasattr(symbol_data, 'data') and hasattr(symbol_data, 'timestamp'):
+                return symbol_data
+
+            return None
+
+        except Exception as e:
+            logger.warning(f"Failed to extract multi-timeframe data for {symbol}: {e}")
+            return None

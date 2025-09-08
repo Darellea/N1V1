@@ -42,6 +42,7 @@ from core.contracts import TradingSignal, SignalType, SignalStrength
 from utils.config_loader import get_config
 from strategies.regime.market_regime import get_market_regime_detector, MarketRegime, get_recommended_strategies, detect_enhanced_market_regime, EnhancedRegimeResult
 from backtest.backtester import compute_regime_aware_metrics, export_regime_aware_report
+from strategies.regime.regime_forecaster import get_regime_forecaster, ForecastingResult
 
 # Knowledge base imports
 try:
@@ -820,6 +821,396 @@ class StrategySelector:
         self.current_strategy_instance = None
         logger.info("Strategy selector reset")
 
+    def validate_multi_timeframe(self, signal: Any, multi_tf_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Validate a trading signal across multiple timeframes.
+
+        Args:
+            signal: Trading signal to validate
+            multi_tf_data: Multi-timeframe data from TimeframeManager
+
+        Returns:
+            Validation result with confidence score and details
+        """
+        try:
+            validation_result = {
+                'is_valid': False,
+                'confidence_score': 0.0,
+                'signal_origin_timeframe': None,
+                'confirming_timeframes': [],
+                'conflicting_timeframes': [],
+                'validation_details': {},
+                'recommendation': 'REJECT'
+            }
+
+            if not signal or not multi_tf_data:
+                validation_result['validation_details']['reason'] = 'Missing signal or multi-timeframe data'
+                return validation_result
+
+            # Extract signal information
+            signal_type = getattr(signal, 'signal_type', None)
+            if signal_type:
+                signal_type = signal_type.value if hasattr(signal_type, 'value') else str(signal_type)
+            else:
+                signal_type = getattr(signal, 'type', 'UNKNOWN')
+
+            symbol = getattr(signal, 'symbol', 'UNKNOWN')
+            signal_timeframe = getattr(signal, 'metadata', {}).get('timeframe', '15m')
+
+            validation_result['signal_origin_timeframe'] = signal_timeframe
+
+            # Define timeframe hierarchy for validation
+            timeframe_hierarchy = {
+                '15m': ['1h', '4h'],
+                '1h': ['4h', '1d'],
+                '4h': ['1d'],
+                '1d': []
+            }
+
+            # Get timeframes to validate against
+            timeframes_to_check = timeframe_hierarchy.get(signal_timeframe, [])
+
+            if not timeframes_to_check:
+                validation_result['validation_details']['reason'] = f'No higher timeframes configured for {signal_timeframe}'
+                validation_result['is_valid'] = True  # Accept if no higher timeframes to check
+                validation_result['recommendation'] = 'ACCEPT'
+                return validation_result
+
+            # Perform multi-timeframe validation
+            confirming_count = 0
+            total_checked = 0
+
+            for tf in timeframes_to_check:
+                if tf not in multi_tf_data.get('data', {}):
+                    validation_result['conflicting_timeframes'].append(f'{tf} (missing data)')
+                    continue
+
+                tf_data = multi_tf_data['data'][tf]
+                if tf_data.empty:
+                    validation_result['conflicting_timeframes'].append(f'{tf} (empty data)')
+                    continue
+
+                total_checked += 1
+
+                # Analyze trend on higher timeframe
+                trend = self._analyze_timeframe_trend(tf_data, tf)
+
+                # Check if trend aligns with signal
+                if self._does_trend_confirm_signal(trend, signal_type):
+                    confirming_count += 1
+                    validation_result['confirming_timeframes'].append(tf)
+                    validation_result['validation_details'][tf] = f'CONFIRMS ({trend})'
+                else:
+                    validation_result['conflicting_timeframes'].append(tf)
+                    validation_result['validation_details'][tf] = f'CONFLICTS ({trend})'
+
+            # Calculate confidence score
+            if total_checked > 0:
+                validation_result['confidence_score'] = confirming_count / total_checked
+
+                # Determine if signal is valid based on confidence threshold
+                min_confidence = 0.6  # 60% of higher timeframes must confirm
+                validation_result['is_valid'] = validation_result['confidence_score'] >= min_confidence
+
+                if validation_result['is_valid']:
+                    validation_result['recommendation'] = 'ACCEPT'
+                else:
+                    validation_result['recommendation'] = 'REJECT'
+
+            # Log validation outcome
+            logger.info(
+                f"MULTI-TF VALIDATION: {symbol} {signal_type} on {signal_timeframe} - "
+                f"Confidence: {validation_result['confidence_score']:.2f}, "
+                f"Confirming: {validation_result['confirming_timeframes']}, "
+                f"Conflicting: {validation_result['conflicting_timeframes']}, "
+                f"Recommendation: {validation_result['recommendation']}"
+            )
+
+            return validation_result
+
+        except Exception as e:
+            logger.error(f"Failed to validate signal across timeframes: {e}")
+            validation_result['validation_details']['error'] = str(e)
+            return validation_result
+
+    def _analyze_timeframe_trend(self, tf_data: pd.DataFrame, timeframe: str) -> str:
+        """
+        Analyze trend direction for a specific timeframe.
+
+        Args:
+            tf_data: Timeframe data
+            timeframe: Timeframe string
+
+        Returns:
+            Trend direction: 'bullish', 'bearish', or 'sideways'
+        """
+        try:
+            if tf_data.empty or len(tf_data) < 20:
+                return 'unknown'
+
+            # Use simple moving average crossover for trend determination
+            sma_short_period = 10
+            sma_long_period = 20
+
+            if len(tf_data) < sma_long_period:
+                return 'unknown'
+
+            sma_short = tf_data['close'].rolling(sma_short_period).mean()
+            sma_long = tf_data['close'].rolling(sma_long_period).mean()
+
+            if len(sma_short) < 2 or len(sma_long) < 2:
+                return 'unknown'
+
+            # Check recent trend
+            recent_short = sma_short.iloc[-1]
+            recent_long = sma_long.iloc[-1]
+            prev_short = sma_short.iloc[-2]
+            prev_long = sma_long.iloc[-2]
+
+            if recent_short > recent_long and prev_short > prev_long:
+                return 'bullish'
+            elif recent_short < recent_long and prev_short < prev_long:
+                return 'bearish'
+            else:
+                return 'sideways'
+
+        except Exception as e:
+            logger.warning(f"Failed to analyze trend for {timeframe}: {e}")
+            return 'unknown'
+
+    def _does_trend_confirm_signal(self, trend: str, signal_type: str) -> bool:
+        """
+        Check if a trend confirms a signal type.
+
+        Args:
+            trend: Trend direction ('bullish', 'bearish', 'sideways')
+            signal_type: Signal type ('BUY', 'SELL', etc.)
+
+        Returns:
+            True if trend confirms signal, False otherwise
+        """
+        if trend == 'unknown':
+            return False
+
+        buy_signals = ['BUY', 'LONG']
+        sell_signals = ['SELL', 'SHORT']
+
+        if signal_type in buy_signals:
+            return trend == 'bullish'
+        elif signal_type in sell_signals:
+            return trend == 'bearish'
+        else:
+            return False
+
+    def incorporate_regime_forecast(self, strategy_weights: Dict[str, float],
+                                  forecast_result: ForecastingResult) -> Dict[str, float]:
+        """
+        Incorporate regime forecast into strategy weighting.
+
+        Args:
+            strategy_weights: Current strategy weights
+            forecast_result: Forecasting result from RegimeForecaster
+
+        Returns:
+            Updated strategy weights incorporating forecast
+        """
+        try:
+            if not forecast_result or not forecast_result.predictions:
+                logger.warning("No forecast data available for strategy weighting")
+                return strategy_weights
+
+            updated_weights = strategy_weights.copy()
+
+            # Get the most confident forecast (shortest horizon with highest confidence)
+            best_horizon = None
+            best_confidence = 0.0
+            best_predictions = None
+
+            for horizon, confidence in forecast_result.confidence_scores.items():
+                if confidence > best_confidence and confidence > 0.6:  # Minimum confidence threshold
+                    best_horizon = horizon
+                    best_confidence = confidence
+                    best_predictions = forecast_result.predictions.get(horizon, {})
+
+            if not best_predictions:
+                logger.info("No sufficiently confident forecast available")
+                return strategy_weights
+
+            # Map forecasted regime to recommended strategies
+            forecasted_regime = max(best_predictions.items(), key=lambda x: x[1])[0]
+            recommended_strategies = get_recommended_strategies_from_forecast(forecasted_regime)
+
+            logger.info(f"Incorporating forecast: {forecasted_regime} (confidence: {best_confidence:.2f})")
+            logger.info(f"Recommended strategies for forecast: {recommended_strategies}")
+
+            # Adjust weights based on forecast
+            forecast_boost = min(best_confidence * 0.5, 0.3)  # Max 30% boost
+
+            for strategy_name in recommended_strategies:
+                if strategy_name in updated_weights:
+                    # Boost recommended strategies
+                    updated_weights[strategy_name] *= (1 + forecast_boost)
+                else:
+                    # Add new strategies with base weight
+                    updated_weights[strategy_name] = 0.1
+
+            # Normalize weights
+            total_weight = sum(updated_weights.values())
+            if total_weight > 0:
+                updated_weights = {k: v/total_weight for k, v in updated_weights.items()}
+
+            logger.info(f"Updated strategy weights with forecast: {updated_weights}")
+            return updated_weights
+
+        except Exception as e:
+            logger.error(f"Failed to incorporate regime forecast: {e}")
+            return strategy_weights
+
+    def select_strategy_with_forecast(self, market_data: pd.DataFrame,
+                                    forecast_result: Optional[ForecastingResult] = None,
+                                    available_strategies: Optional[List[type]] = None) -> Optional[type]:
+        """
+        Select strategy incorporating regime forecast information.
+
+        Args:
+            market_data: Current market data
+            forecast_result: Optional forecasting result
+            available_strategies: Optional list of available strategies
+
+        Returns:
+            Selected strategy class
+        """
+        strategies = available_strategies or self.available_strategies
+
+        if not self.enabled or not strategies:
+            return strategies[0] if strategies else None
+
+        # Get base selection
+        base_selection = self.select_strategy(market_data, strategies)
+
+        # If no forecast available, return base selection
+        if not forecast_result or not forecast_result.predictions:
+            return base_selection
+
+        try:
+            # Get strategy weights
+            strategy_weights = {s.__name__: 1.0 for s in strategies}
+
+            # Incorporate forecast
+            updated_weights = self.incorporate_regime_forecast(strategy_weights, forecast_result)
+
+            # Select strategy based on updated weights
+            strategy_names = list(updated_weights.keys())
+            weights = list(updated_weights.values())
+
+            # Normalize weights
+            total_weight = sum(weights)
+            if total_weight > 0:
+                weights = [w / total_weight for w in weights]
+
+            # Select strategy probabilistically
+            selected_idx = np.random.choice(len(strategy_names), p=weights)
+            selected_name = strategy_names[selected_idx]
+
+            # Find corresponding strategy class
+            for strategy_class in strategies:
+                if strategy_class.__name__ == selected_name:
+                    if strategy_class != base_selection:
+                        logger.info(f"Forecast-influenced selection: {strategy_class.__name__} "
+                                  f"(base: {base_selection.__name__ if base_selection else 'None'})")
+                    return strategy_class
+
+            # Fallback to base selection
+            return base_selection
+
+        except Exception as e:
+            logger.error(f"Error in forecast-influenced selection: {e}")
+            return base_selection
+
+    def get_forecast_impact_analysis(self, forecast_result: ForecastingResult) -> Dict[str, Any]:
+        """
+        Analyze the potential impact of regime forecast on strategy selection.
+
+        Args:
+            forecast_result: Forecasting result to analyze
+
+        Returns:
+            Analysis of forecast impact
+        """
+        try:
+            analysis = {
+                'forecast_available': False,
+                'recommended_regime': None,
+                'recommended_strategies': [],
+                'confidence_level': 0.0,
+                'strategy_changes': [],
+                'risk_implications': {}
+            }
+
+            if not forecast_result or not forecast_result.predictions:
+                return analysis
+
+            analysis['forecast_available'] = True
+
+            # Find best forecast
+            best_horizon = None
+            best_confidence = 0.0
+            best_predictions = None
+
+            for horizon, confidence in forecast_result.confidence_scores.items():
+                if confidence > best_confidence:
+                    best_horizon = horizon
+                    best_confidence = confidence
+                    best_predictions = forecast_result.predictions.get(horizon, {})
+
+            if not best_predictions:
+                return analysis
+
+            # Get recommended regime and strategies
+            forecasted_regime_name = max(best_predictions.items(), key=lambda x: x[1])[0]
+            analysis['recommended_regime'] = forecasted_regime_name
+            analysis['confidence_level'] = best_confidence
+
+            # Map regime name to enum for strategy recommendations
+            regime_mapping = {
+                'trend_up': MarketRegime.TREND_UP,
+                'trend_down': MarketRegime.TREND_DOWN,
+                'range_tight': MarketRegime.RANGE_TIGHT,
+                'range_wide': MarketRegime.RANGE_WIDE,
+                'volatile_spike': MarketRegime.VOLATILE_SPIKE,
+                'trending': MarketRegime.TRENDING,
+                'sideways': MarketRegime.SIDEWAYS,
+                'volatile': MarketRegime.VOLATILE
+            }
+
+            forecasted_regime = regime_mapping.get(forecasted_regime_name, MarketRegime.UNKNOWN)
+            analysis['recommended_strategies'] = get_recommended_strategies(forecasted_regime)
+
+            # Analyze potential strategy changes
+            current_regime = forecast_result.current_regime
+            if current_regime and current_regime != forecasted_regime_name:
+                analysis['strategy_changes'] = [
+                    f"Potential shift from {current_regime} to {forecasted_regime_name}",
+                    f"Strategy adaptation may be beneficial"
+                ]
+
+            # Risk implications
+            if best_confidence > 0.8:
+                analysis['risk_implications']['confidence'] = "High confidence - strong signal"
+                analysis['risk_implications']['action'] = "Consider adjusting strategy weights"
+            elif best_confidence > 0.6:
+                analysis['risk_implications']['confidence'] = "Medium confidence - moderate signal"
+                analysis['risk_implications']['action'] = "Monitor and consider gradual adjustment"
+            else:
+                analysis['risk_implications']['confidence'] = "Low confidence - weak signal"
+                analysis['risk_implications']['action'] = "Maintain current strategy selection"
+
+            return analysis
+
+        except Exception as e:
+            logger.error(f"Error analyzing forecast impact: {e}")
+            return {'error': str(e)}
+
     def generate_regime_aware_backtest_report(self, equity_progression: List[Dict[str, Any]],
                                              regime_data: List[Dict[str, Any]],
                                              output_path: str = "results/regime_aware_backtest_report.json"):
@@ -888,3 +1279,29 @@ def update_strategy_performance(strategy_name: str, pnl: float, returns: float, 
     """
     selector = get_strategy_selector()
     selector.update_performance(strategy_name, pnl, returns, is_win)
+
+
+def get_recommended_strategies_from_forecast(forecasted_regime: str) -> List[str]:
+    """
+    Get recommended strategies based on forecasted regime.
+
+    Args:
+        forecasted_regime: Forecasted regime name (string)
+
+    Returns:
+        List of recommended strategy names
+    """
+    # Map forecasted regime strings to MarketRegime enums
+    regime_mapping = {
+        'trend_up': MarketRegime.TREND_UP,
+        'trend_down': MarketRegime.TREND_DOWN,
+        'range_tight': MarketRegime.RANGE_TIGHT,
+        'range_wide': MarketRegime.RANGE_WIDE,
+        'volatile_spike': MarketRegime.VOLATILE_SPIKE,
+        'trending': MarketRegime.TRENDING,
+        'sideways': MarketRegime.SIDEWAYS,
+        'volatile': MarketRegime.VOLATILE
+    }
+
+    regime = regime_mapping.get(forecasted_regime, MarketRegime.UNKNOWN)
+    return get_recommended_strategies(regime)

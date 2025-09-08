@@ -1,0 +1,282 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "N1V1 Trading Overview",
+    "tags": ["trading", "n1v1", "overview"],
+    "timezone": "UTC",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Real-time P&L",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "trading_total_pnl_usd{account=\"$account\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red",
+                  "value": null
+                },
+                {
+                  "color": "orange",
+                  "value": -1000
+                },
+                {
+                  "color": "green",
+                  "value": 0
+                }
+              ]
+            },
+            "unit": "currencyUSD"
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "id": 2,
+        "title": "Win Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "trading_win_rate_ratio{account=\"$account\"} * 100",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red",
+                  "value": null
+                },
+                {
+                  "color": "orange",
+                  "value": 50
+                },
+                {
+                  "color": "green",
+                  "value": 60
+                }
+              ]
+            },
+            "unit": "percent"
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 8,
+          "y": 0
+        }
+      },
+      {
+        "id": 3,
+        "title": "Sharpe Ratio",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "trading_sharpe_ratio{account=\"$account\"}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "red",
+                  "value": null
+                },
+                {
+                  "color": "orange",
+                  "value": 0
+                },
+                {
+                  "color": "green",
+                  "value": 1
+                }
+              ]
+            }
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 16,
+          "y": 0
+        }
+      },
+      {
+        "id": 4,
+        "title": "P&L Over Time",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "trading_total_pnl_usd{account=\"$account\"}",
+            "refId": "A",
+            "legendFormat": "Total P&L"
+          }
+        ],
+        "gridPos": {
+          "h": 12,
+          "w": 24,
+          "x": 0,
+          "y": 8
+        }
+      },
+      {
+        "id": 5,
+        "title": "Order Latency",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "trading_order_latency_seconds{account=\"$account\"}",
+            "refId": "A",
+            "legendFormat": "{{exchange}} Latency"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "seconds"
+          }
+        },
+        "gridPos": {
+          "h": 12,
+          "w": 12,
+          "x": 0,
+          "y": 20
+        }
+      },
+      {
+        "id": 6,
+        "title": "Orders per Minute",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(trading_orders_total{account=\"$account\"}[5m]) * 60",
+            "refId": "A",
+            "legendFormat": "Orders/min"
+          }
+        ],
+        "gridPos": {
+          "h": 12,
+          "w": 12,
+          "x": 12,
+          "y": 20
+        }
+      },
+      {
+        "id": 7,
+        "title": "Exchange Connectivity",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "exchange_connectivity_status",
+            "refId": "A",
+            "legendFormat": "{{exchange}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {
+                "options": {
+                  "0": {
+                    "text": "DOWN",
+                    "color": "red"
+                  },
+                  "1": {
+                    "text": "UP",
+                    "color": "green"
+                  }
+                },
+                "type": "value"
+              }
+            ]
+          }
+        },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 32
+        }
+      },
+      {
+        "id": 8,
+        "title": "Active Strategies",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "strategy_win_rate_ratio",
+            "refId": "A"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 32
+        }
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "timepicker": {},
+    "templating": {
+      "list": [
+        {
+          "name": "account",
+          "type": "custom",
+          "options": [
+            {
+              "text": "main",
+              "value": "main"
+            }
+          ],
+          "current": {
+            "text": "main",
+            "value": "main"
+          }
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "builtIn": 1,
+          "datasource": "-- Grafana --",
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "type": "dashboard"
+        }
+      ]
+    },
+    "refresh": "30s",
+    "schemaVersion": 27,
+    "version": 0,
+    "links": []
+  }
+}

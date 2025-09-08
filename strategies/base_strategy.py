@@ -141,12 +141,13 @@ class BaseStrategy(ABC):
         pass
 
     @abstractmethod
-    async def generate_signals(self, data: pd.DataFrame) -> List[TradingSignal]:
+    async def generate_signals(self, data: pd.DataFrame, multi_tf_data: Optional[Dict[str, Any]] = None) -> List[TradingSignal]:
         """
         Generate trading signals based on calculated indicators.
 
         Args:
             data: DataFrame containing OHLCV and indicator data
+            multi_tf_data: Optional multi-timeframe data from TimeframeManager
 
         Returns:
             List of TradingSignal objects
@@ -301,6 +302,193 @@ class BaseStrategy(ABC):
             "symbols": self.config.symbols,
             "timeframe": self.config.timeframe,
         }
+
+    # Multi-Timeframe Analysis Helper Methods
+
+    def get_higher_timeframe_trend(self, multi_tf_data: Dict[str, Any],
+                                  current_tf: str, higher_tf: str) -> Optional[str]:
+        """
+        Analyze trend direction on a higher timeframe.
+
+        Args:
+            multi_tf_data: Multi-timeframe data from TimeframeManager
+            current_tf: Current timeframe (e.g., '15m')
+            higher_tf: Higher timeframe to analyze (e.g., '1h', '4h')
+
+        Returns:
+            Trend direction: 'bullish', 'bearish', or 'sideways'
+        """
+        try:
+            if not multi_tf_data or higher_tf not in multi_tf_data.get('data', {}):
+                return None
+
+            higher_data = multi_tf_data['data'][higher_tf]
+            if higher_data.empty or len(higher_data) < 20:
+                return None
+
+            # Calculate trend using moving averages
+            sma_short = higher_data['close'].rolling(10).mean()
+            sma_long = higher_data['close'].rolling(20).mean()
+
+            if len(sma_short) < 2 or len(sma_long) < 2:
+                return 'sideways'
+
+            # Check recent trend
+            recent_short = sma_short.iloc[-1]
+            recent_long = sma_long.iloc[-1]
+            prev_short = sma_short.iloc[-2]
+            prev_long = sma_long.iloc[-2]
+
+            if recent_short > recent_long and prev_short > prev_long:
+                return 'bullish'
+            elif recent_short < recent_long and prev_short < prev_long:
+                return 'bearish'
+            else:
+                return 'sideways'
+
+        except Exception as e:
+            self.logger.warning(f"Failed to analyze higher timeframe trend: {e}")
+            return None
+
+    def validate_across_timeframes(self, signal: TradingSignal,
+                                 multi_tf_data: Dict[str, Any],
+                                 required_timeframes: List[str]) -> Dict[str, Any]:
+        """
+        Validate a signal across multiple timeframes.
+
+        Args:
+            signal: Trading signal to validate
+            multi_tf_data: Multi-timeframe data from TimeframeManager
+            required_timeframes: List of timeframes that must confirm the signal
+
+        Returns:
+            Validation result with confidence score and details
+        """
+        try:
+            validation_result = {
+                'is_valid': False,
+                'confidence_score': 0.0,
+                'confirming_timeframes': [],
+                'conflicting_timeframes': [],
+                'details': {}
+            }
+
+            if not multi_tf_data or not required_timeframes:
+                return validation_result
+
+            signal_type = signal.signal_type.value
+            confirming_count = 0
+
+            for tf in required_timeframes:
+                if tf not in multi_tf_data.get('data', {}):
+                    validation_result['conflicting_timeframes'].append(tf)
+                    continue
+
+                tf_data = multi_tf_data['data'][tf]
+                trend = self.get_higher_timeframe_trend(multi_tf_data, signal.metadata.get('timeframe', '15m'), tf)
+
+                if trend:
+                    if signal_type in ['BUY', 'LONG'] and trend == 'bullish':
+                        confirming_count += 1
+                        validation_result['confirming_timeframes'].append(tf)
+                    elif signal_type in ['SELL', 'SHORT'] and trend == 'bearish':
+                        confirming_count += 1
+                        validation_result['confirming_timeframes'].append(tf)
+                    else:
+                        validation_result['conflicting_timeframes'].append(tf)
+
+            # Calculate confidence score
+            if required_timeframes:
+                validation_result['confidence_score'] = confirming_count / len(required_timeframes)
+                validation_result['is_valid'] = validation_result['confidence_score'] >= 0.7  # 70% threshold
+
+            return validation_result
+
+        except Exception as e:
+            self.logger.error(f"Failed to validate signal across timeframes: {e}")
+            return validation_result
+
+    def calculate_multi_tf_indicators(self, multi_tf_data: Dict[str, Any],
+                                    indicator_name: str, **kwargs) -> Dict[str, float]:
+        """
+        Calculate indicators across multiple timeframes.
+
+        Args:
+            multi_tf_data: Multi-timeframe data from TimeframeManager
+            indicator_name: Name of indicator to calculate
+            **kwargs: Additional parameters for indicator calculation
+
+        Returns:
+            Dictionary of timeframe -> indicator value
+        """
+        try:
+            results = {}
+
+            if not multi_tf_data or 'data' not in multi_tf_data:
+                return results
+
+            for tf, tf_data in multi_tf_data['data'].items():
+                if tf_data.empty:
+                    continue
+
+                try:
+                    if indicator_name == 'trend_strength':
+                        period = kwargs.get('period', 14)
+                        strength = self.calculate_trend_strength(tf_data['close'], period)
+                        results[tf] = strength
+                    elif indicator_name == 'volatility':
+                        period = kwargs.get('period', 20)
+                        vol = self.calculate_volatility(tf_data['close'], period)
+                        results[tf] = vol
+                    elif indicator_name == 'atr':
+                        period = kwargs.get('period', 14)
+                        atr = self.calculate_atr(tf_data, period)
+                        results[tf] = atr
+                    # Add more indicators as needed
+
+                except Exception as e:
+                    self.logger.warning(f"Failed to calculate {indicator_name} for {tf}: {e}")
+
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Failed to calculate multi-timeframe indicators: {e}")
+            return {}
+
+    def get_multi_tf_consensus_score(self, multi_tf_data: Dict[str, Any],
+                                   signal_type: str, timeframes: List[str]) -> float:
+        """
+        Calculate consensus score across multiple timeframes for a signal type.
+
+        Args:
+            multi_tf_data: Multi-timeframe data from TimeframeManager
+            signal_type: Type of signal ('BUY', 'SELL', etc.)
+            timeframes: List of timeframes to analyze
+
+        Returns:
+            Consensus score (0-1, higher is better consensus)
+        """
+        try:
+            if not multi_tf_data or not timeframes:
+                return 0.0
+
+            consensus_count = 0
+            total_timeframes = len(timeframes)
+
+            for tf in timeframes:
+                trend = self.get_higher_timeframe_trend(multi_tf_data,
+                                                       self.config.timeframe, tf)
+                if trend:
+                    if signal_type in ['BUY', 'LONG'] and trend == 'bullish':
+                        consensus_count += 1
+                    elif signal_type in ['SELL', 'SHORT'] and trend == 'bearish':
+                        consensus_count += 1
+
+            return consensus_count / total_timeframes if total_timeframes > 0 else 0.0
+
+        except Exception as e:
+            self.logger.error(f"Failed to calculate consensus score: {e}")
+            return 0.0
 
 
 class TrendAnalysisMixin:

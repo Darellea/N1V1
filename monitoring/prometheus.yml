@@ -1,0 +1,225 @@
+"""
+Prometheus Configuration for N1V1 Trading Framework
+
+This configuration file sets up Prometheus to scrape metrics from the
+N1V1 trading framework with optimized settings for high-frequency trading.
+
+Key Features:
+- Optimized scraping intervals for different metric types
+- Service discovery for dynamic environments
+- Alerting rules for trading system monitoring
+- Storage optimization and retention policies
+- Remote write configuration for centralized storage
+"""
+
+global:
+  scrape_interval: 15s        # Default scrape interval
+  evaluation_interval: 15s    # Rule evaluation interval
+  scrape_timeout: 10s         # Scrape timeout
+
+  # External labels for multi-instance deployments
+  external_labels:
+    region: 'us-east-1'
+    environment: 'production'
+    service: 'n1v1-trading'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Load rules once and periodically evaluate them according to the global 'evaluation_interval'
+rule_files:
+  - "alert_rules.yml"
+  - "recording_rules.yml"
+
+# Scrape configurations
+scrape_configs:
+  # N1V1 Trading Framework metrics
+  - job_name: 'n1v1-trading-framework'
+    scrape_interval: 15s
+    scrape_timeout: 5s
+
+    # Static configuration for development
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          instance: 'n1v1-main'
+          service: 'trading-framework'
+
+    # HTTP configuration
+    http_config:
+      follow_redirects: true
+      enable_http2: true
+
+    # Metric relabeling for optimization
+    metric_relabel_configs:
+      # Drop high-cardinality metrics that aren't needed
+      - source_labels: [__name__]
+        regex: 'go_.*'  # Drop Go runtime metrics
+        action: drop
+
+      - source_labels: [__name__]
+        regex: 'process_.*'  # Keep process metrics but relabel
+        target_label: 'component'
+        replacement: 'trading_framework'
+
+      # Add environment labels
+      - target_label: 'environment'
+        replacement: 'production'
+
+      # Optimize label names
+      - regex: 'exported_instance'
+        action: labeldrop
+
+    # Relabeling for service discovery
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: '__param_target'
+      - source_labels: [__param_target]
+        target_label: 'instance'
+      - target_label: '__address__'
+        replacement: 'localhost:9090'
+
+  # System metrics (node exporter)
+  - job_name: 'n1v1-system-metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+    static_configs:
+      - targets: ['localhost:9100']
+        labels:
+          instance: 'n1v1-host'
+          service: 'system'
+
+    metric_relabel_configs:
+      # Keep only relevant system metrics
+      - source_labels: [__name__]
+        regex: '(node_cpu|node_memory|node_disk|node_network|node_load).*'
+        action: keep
+
+      - source_labels: [__name__]
+        regex: 'node_cpu.*'
+        target_label: 'component'
+        replacement: 'system_cpu'
+
+      - source_labels: [__name__]
+        regex: 'node_memory.*'
+        target_label: 'component'
+        replacement: 'system_memory'
+
+  # Redis metrics (if using Redis for caching)
+  - job_name: 'n1v1-redis'
+    scrape_interval: 30s
+
+    static_configs:
+      - targets: ['localhost:9121']
+        labels:
+          instance: 'n1v1-redis'
+          service: 'cache'
+
+  # PostgreSQL metrics (if using PostgreSQL)
+  - job_name: 'n1v1-postgresql'
+    scrape_interval: 30s
+
+    static_configs:
+      - targets: ['localhost:9187']
+        labels:
+          instance: 'n1v1-db'
+          service: 'database'
+
+# Remote write configuration for centralized storage
+remote_write:
+  - url: "http://victoriametrics:8428/api/v1/write"
+    remote_timeout: 30s
+    queue_config:
+      capacity: 10000
+      max_shards: 30
+      min_shards: 1
+      max_samples_per_send: 1000
+      batch_send_deadline: 5s
+      min_backoff: 30ms
+      max_backoff: 5s
+
+# Remote read configuration
+remote_read:
+  - url: "http://victoriametrics:8428/api/v1/read"
+    remote_timeout: 30s
+    read_recent: true
+
+# Storage configuration
+storage:
+  tsdb:
+    # Retention settings
+    retention:
+      time: 30d    # Keep 30 days of data
+      size: 50GB   # Maximum storage size
+
+    # WAL settings
+    wal_compression: true
+
+    # Head chunks settings
+    head_chunks:
+      chunk_size: 2MB
+      chunk_end_time_variance: 0.1
+      min_block_duration: 2h
+      max_block_duration: 2h
+
+    # Memory settings
+    memory_snapshot_on_shutdown: true
+
+  # TSDB block settings
+  tsdb_blocks:
+    max_block_chunk_segment_size: 512MB
+    max_block_duration: 2h
+    min_block_duration: 2h
+
+# Tracing configuration (if using distributed tracing)
+tracing:
+  endpoint: "tempo:14268/api/traces"
+  client_type: "grpc"
+  insecure: true
+  headers:
+    service: "prometheus"
+
+# Additional configuration for high-performance trading
+scrape_configs:
+  # High-frequency trading metrics (faster scraping)
+  - job_name: 'n1v1-high-frequency'
+    scrape_interval: 5s    # Faster scraping for HFT metrics
+    scrape_timeout: 2s
+
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          instance: 'n1v1-hft'
+          service: 'trading-framework'
+          frequency: 'high'
+
+    # Only scrape high-frequency metrics
+    params:
+      match[]:
+        - '{__name__=~"trading_.*"}'
+        - '{__name__=~"order_.*"}'
+        - '{__name__=~"exchange_.*"}'
+
+  # Low-frequency system metrics
+  - job_name: 'n1v1-low-frequency'
+    scrape_interval: 60s   # Slower scraping for system metrics
+
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          instance: 'n1v1-system'
+          service: 'trading-framework'
+          frequency: 'low'
+
+    # Only scrape system and low-frequency metrics
+    params:
+      match[]:
+        - '{__name__=~"system_.*"}'
+        - '{__name__=~"process_.*"}'
+        - '{__name__=~"strategy_.*"}'
+        - '{__name__=~"risk_.*"}'

@@ -1,0 +1,367 @@
+"""
+Prometheus Alerting Rules for N1V1 Trading Framework
+
+This file defines alerting rules for monitoring the N1V1 trading framework.
+Alerts are categorized by severity and include appropriate thresholds for
+trading system monitoring.
+
+Alert Categories:
+- Critical: Immediate action required (trading stopped, data loss)
+- Warning: Action needed within business hours (performance degradation)
+- Info: Monitoring alerts (trend analysis, capacity planning)
+"""
+
+groups:
+  # Critical Trading Alerts - Immediate Response Required
+  - name: n1v1_trading_critical
+    rules:
+      # Trading System Down
+      - alert: TradingSystemDown
+        expr: up{job="n1v1-trading-framework"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Trading system is down"
+          description: "N1V1 trading framework has been down for more than 30 seconds"
+          runbook_url: "https://docs.n1v1.com/runbooks/trading-system-down"
+
+      # Circuit Breaker Triggered
+      - alert: CircuitBreakerTriggered
+        expr: risk_circuit_breaker_status{account="main"} == 1
+        for: 10s
+        labels:
+          severity: critical
+          category: risk
+        annotations:
+          summary: "Circuit breaker activated"
+          description: "Risk management circuit breaker has been triggered. Trading suspended."
+          runbook_url: "https://docs.n1v1.com/runbooks/circuit-breaker"
+
+      # High Drawdown Alert
+      - alert: ExcessiveDrawdown
+        expr: trading_max_drawdown_percent{account="main"} > 15
+        for: 60s
+        labels:
+          severity: critical
+          category: risk
+        annotations:
+          summary: "Excessive portfolio drawdown"
+          description: "Portfolio drawdown has exceeded 15% threshold"
+          runbook_url: "https://docs.n1v1.com/runbooks/excessive-drawdown"
+
+      # Exchange Connectivity Lost
+      - alert: ExchangeConnectivityLost
+        expr: exchange_connectivity_status == 0
+        for: 30s
+        labels:
+          severity: critical
+          category: connectivity
+        annotations:
+          summary: "Exchange connectivity lost"
+          description: "Lost connectivity to {{ $labels.exchange }} exchange"
+          runbook_url: "https://docs.n1v1.com/runbooks/exchange-connectivity"
+
+      # Data Feed Disruption
+      - alert: DataFeedDisruption
+        expr: increase(trading_order_latency_seconds{exchange=~".+"}[5m]) > 10
+        for: 60s
+        labels:
+          severity: critical
+          category: data
+        annotations:
+          summary: "Data feed disruption detected"
+          description: "Order latency has increased significantly on {{ $labels.exchange }}"
+          runbook_url: "https://docs.n1v1.com/runbooks/data-feed-disruption"
+
+  # High Priority Trading Alerts - Action Within 15 Minutes
+  - name: n1v1_trading_high
+    rules:
+      # Performance Degradation
+      - alert: TradingPerformanceDegraded
+        expr: trading_order_latency_seconds{account="main"} > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Trading performance degraded"
+          description: "Average order latency has exceeded 500ms for 5 minutes"
+          runbook_url: "https://docs.n1v1.com/runbooks/performance-degradation"
+
+      # Risk Limits Approaching
+      - alert: RiskLimitsApproaching
+        expr: risk_portfolio_exposure_usd{account="main"} > 20000
+        for: 2m
+        labels:
+          severity: warning
+          category: risk
+        annotations:
+          summary: "Risk limits approaching"
+          description: "Portfolio exposure has exceeded $20,000 threshold"
+          runbook_url: "https://docs.n1v1.com/runbooks/risk-limits"
+
+      # Strategy Performance Decline
+      - alert: StrategyPerformanceDecline
+        expr: strategy_win_rate_ratio < 0.5
+        for: 10m
+        labels:
+          severity: warning
+          category: strategy
+        annotations:
+          summary: "Strategy performance declining"
+          description: "Strategy {{ $labels.strategy }} win rate below 50%"
+          runbook_url: "https://docs.n1v1.com/runbooks/strategy-performance"
+
+      # Memory Usage High
+      - alert: HighMemoryUsage
+        expr: (1 - system_memory_usage_bytes / system_memory_total_bytes) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "High memory usage"
+          description: "System memory usage above 85%"
+          runbook_url: "https://docs.n1v1.com/runbooks/high-memory-usage"
+
+      # CPU Usage High
+      - alert: HighCpuUsage
+        expr: system_cpu_usage_percent > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "High CPU usage"
+          description: "System CPU usage above 80%"
+          runbook_url: "https://docs.n1v1.com/runbooks/high-cpu-usage"
+
+  # Medium Priority Trading Alerts - Action Within Business Hours
+  - name: n1v1_trading_medium
+    rules:
+      # Sharpe Ratio Decline
+      - alert: SharpeRatioDecline
+        expr: trading_sharpe_ratio{account="main"} < 0.5
+        for: 1h
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Sharpe ratio declining"
+          description: "Portfolio Sharpe ratio has fallen below 0.5"
+          runbook_url: "https://docs.n1v1.com/runbooks/sharpe-ratio-decline"
+
+      # Win Rate Decline
+      - alert: WinRateDecline
+        expr: trading_win_rate_ratio{account="main"} < 0.55
+        for: 30m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Win rate declining"
+          description: "Trading win rate has fallen below 55%"
+          runbook_url: "https://docs.n1v1.com/runbooks/win-rate-decline"
+
+      # Exchange Rate Limit Approaching
+      - alert: ExchangeRateLimitApproaching
+        expr: exchange_rate_limit_usage_ratio > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: exchange
+        annotations:
+          summary: "Exchange rate limit approaching"
+          description: "Rate limit usage on {{ $labels.exchange }} above 80%"
+          runbook_url: "https://docs.n1v1.com/runbooks/rate-limit-approaching"
+
+      # Strategy Signal Quality Decline
+      - alert: StrategySignalQualityDecline
+        expr: strategy_signal_quality_ratio < 0.7
+        for: 15m
+        labels:
+          severity: info
+          category: strategy
+        annotations:
+          summary: "Strategy signal quality declining"
+          description: "Signal quality for {{ $labels.strategy }} below 70%"
+          runbook_url: "https://docs.n1v1.com/runbooks/signal-quality"
+
+      # Disk Space Low
+      - alert: DiskSpaceLow
+        expr: (1 - node_filesystem_avail_bytes / node_filesystem_size_bytes) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          category: system
+        annotations:
+          summary: "Disk space running low"
+          description: "Disk space usage above 80% on {{ $labels.mountpoint }}"
+          runbook_url: "https://docs.n1v1.com/runbooks/disk-space-low"
+
+  # Low Priority / Informational Alerts
+  - name: n1v1_trading_info
+    rules:
+      # Daily Performance Summary
+      - alert: DailyPerformanceSummary
+        expr: increase(trading_total_pnl_usd[24h]) < -1000
+        for: 0s  # Immediate alert
+        labels:
+          severity: info
+          category: performance
+        annotations:
+          summary: "Daily loss threshold exceeded"
+          description: "Daily P&L has decreased by more than $1000"
+          runbook_url: "https://docs.n1v1.com/runbooks/daily-performance"
+
+      # Unusual Trading Volume
+      - alert: UnusualTradingVolume
+        expr: increase(trading_orders_total[1h]) > 1000
+        for: 0s
+        labels:
+          severity: info
+          category: volume
+        annotations:
+          summary: "Unusual trading volume detected"
+          description: "Order volume has exceeded 1000 orders per hour"
+          runbook_url: "https://docs.n1v1.com/runbooks/unusual-volume"
+
+      # New Strategy Performance
+      - alert: NewStrategyHighPerformance
+        expr: strategy_win_rate_ratio > 0.75
+        for: 1h
+        labels:
+          severity: info
+          category: strategy
+        annotations:
+          summary: "New strategy showing high performance"
+          description: "Strategy {{ $labels.strategy }} has win rate above 75%"
+          runbook_url: "https://docs.n1v1.com/runbooks/new-strategy-performance"
+
+      # System Resource Trends
+      - alert: MemoryUsageTrend
+        expr: predict_linear(system_memory_usage_bytes[1h], 3600) > system_memory_total_bytes * 0.9
+        for: 0s
+        labels:
+          severity: info
+          category: capacity
+        annotations:
+          summary: "Memory usage trending high"
+          description: "Memory usage projected to exceed 90% in 1 hour"
+          runbook_url: "https://docs.n1v1.com/runbooks/memory-trend"
+
+      # Network Latency Increase
+      - alert: NetworkLatencyIncrease
+        expr: increase(exchange_latency_seconds[10m]) > 0.1
+        for: 5m
+        labels:
+          severity: info
+          category: network
+        annotations:
+          summary: "Network latency increasing"
+          description: "Network latency to {{ $labels.exchange }} has increased by 100ms"
+          runbook_url: "https://docs.n1v1.com/runbooks/network-latency"
+
+  # Recovery Alerts
+  - name: n1v1_trading_recovery
+    rules:
+      # System Recovery
+      - alert: TradingSystemRecovered
+        expr: up{job="n1v1-trading-framework"} == 1
+        for: 30s
+        labels:
+          severity: info
+          category: recovery
+        annotations:
+          summary: "Trading system recovered"
+          description: "N1V1 trading framework has recovered and is running"
+          runbook_url: "https://docs.n1v1.com/runbooks/system-recovery"
+
+      # Circuit Breaker Reset
+      - alert: CircuitBreakerReset
+        expr: risk_circuit_breaker_status{account="main"} == 0
+        for: 10s
+        labels:
+          severity: info
+          category: recovery
+        annotations:
+          summary: "Circuit breaker reset"
+          description: "Risk management circuit breaker has been reset"
+          runbook_url: "https://docs.n1v1.com/runbooks/circuit-breaker-reset"
+
+      # Exchange Connectivity Restored
+      - alert: ExchangeConnectivityRestored
+        expr: exchange_connectivity_status == 1
+        for: 30s
+        labels:
+          severity: info
+          category: recovery
+        annotations:
+          summary: "Exchange connectivity restored"
+          description: "Connectivity to {{ $labels.exchange }} exchange has been restored"
+          runbook_url: "https://docs.n1v1.com/runbooks/exchange-connectivity-restored"
+
+      # Performance Recovered
+      - alert: TradingPerformanceRecovered
+        expr: trading_order_latency_seconds{account="main"} < 0.2
+        for: 2m
+        labels:
+          severity: info
+          category: recovery
+        annotations:
+          summary: "Trading performance recovered"
+          description: "Order latency has returned to normal levels (< 200ms)"
+          runbook_url: "https://docs.n1v1.com/runbooks/performance-recovery"
+
+  # Capacity Planning Alerts
+  - name: n1v1_capacity_planning
+    rules:
+      # Database Connection Pool Usage
+      - alert: DatabaseConnectionPoolHigh
+        expr: rate(postgresql_active_connections[5m]) / postgresql_max_connections > 0.8
+        for: 10m
+        labels:
+          severity: info
+          category: capacity
+        annotations:
+          summary: "Database connection pool usage high"
+          description: "Database connection pool usage above 80%"
+          runbook_url: "https://docs.n1v1.com/runbooks/db-connection-pool"
+
+      # Redis Memory Usage
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.8
+        for: 10m
+        labels:
+          severity: info
+          category: capacity
+        annotations:
+          summary: "Redis memory usage high"
+          description: "Redis memory usage above 80%"
+          runbook_url: "https://docs.n1v1.com/runbooks/redis-memory"
+
+      # Queue Backlog
+      - alert: OrderQueueBacklog
+        expr: trading_order_queue_length > 100
+        for: 5m
+        labels:
+          severity: info
+          category: capacity
+        annotations:
+          summary: "Order queue backlog detected"
+          description: "Order queue length has exceeded 100 orders"
+          runbook_url: "https://docs.n1v1.com/runbooks/queue-backlog"
+
+      # API Rate Limit Trends
+      - alert: ApiRateLimitTrend
+        expr: predict_linear(exchange_rate_limit_usage_ratio[1h], 3600) > 0.95
+        for: 0s
+        labels:
+          severity: info
+          category: capacity
+        annotations:
+          summary: "API rate limit trending to limit"
+          description: "API rate limit usage projected to reach 95% in 1 hour"
+          runbook_url: "https://docs.n1v1.com/runbooks/api-rate-limit-trend"
