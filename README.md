@@ -3,7 +3,7 @@
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-95%2B%25%20Coverage-success)](tests/)
-[![Lines of Code](https://img.shields.io/badge/LOC-45,000+-orange)](scripts/count_loc.py)
+[![Lines of Code](https://img.shields.io/badge/LOC-96,000+-orange)](scripts/count_loc.py)
 [![Framework Grade](https://img.shields.io/badge/Grade-A--8.5/10-brightgreen)](#framework-readiness-assessment)
 
 > **Enterprise-Grade Automated Trading Framework** - A comprehensive, production-ready cryptocurrency trading system with advanced risk management, real-time monitoring, and AI-powered optimization.
