@@ -94,7 +94,7 @@ class ExecutionValidator:
                     return False
 
             # Exchange-specific validation
-            if not self._validate_exchange_constraints(signal):
+            if not self._validate_exchange_constraints(signal, context):
                 return False
 
             self.logger.debug(f"Signal validation passed for {signal.symbol}")
@@ -163,7 +163,15 @@ class ExecutionValidator:
             return False
 
         # Check lot size (must be multiple of lot size)
-        if amount % self.lot_size != 0:
+        # Use Decimal remainder calculation for precision
+        # Handle the case where lot_size is 0 to avoid division by zero
+        if self.lot_size == Decimal('0'):
+            self._log_validation_error(signal, "invalid_lot_size_config", "Lot size cannot be zero")
+            return False
+            
+        remainder = amount % self.lot_size
+        # Use tolerance for floating point precision issues with Decimal
+        if abs(remainder) > Decimal('1e-12') and abs(remainder - self.lot_size) > Decimal('1e-12'):
             self._log_validation_error(signal, "invalid_lot_size",
                                      f"Order size {amount} not multiple of lot size {self.lot_size}")
             return False
@@ -220,17 +228,26 @@ class ExecutionValidator:
         # Get current balance (would be fetched from exchange/portfolio manager)
         balance = context.get('account_balance', Decimal('10000'))  # Default mock balance
 
-        # Calculate required amount
-        price = signal.price or signal.current_price or context.get('market_price', Decimal('100'))
-        required_amount = signal.amount * price
+        # signal.amount is the quantity of the asset, not quote currency
+        market_price = context.get('market_price')
+        if market_price is None:
+            market_price = signal.current_price
+        if market_price is None or market_price <= Decimal('0'):
+            self._log_validation_error(signal, "invalid_market_price", "Market price is missing or invalid")
+            return False
+
+        slippage_pct = context.get('expected_slippage_pct', Decimal('0.001'))
+        
+        # Calculate total cost: quantity * market_price * (1 + slippage)
+        total_cost = signal.amount * market_price * (1 + slippage_pct)
 
         # Add buffer for fees (estimated 0.1%)
-        fee_buffer = required_amount * Decimal('0.001')
-        total_required = required_amount + fee_buffer
+        fee_buffer = total_cost * Decimal('0.001')
+        total_required = total_cost + fee_buffer
 
         if balance < total_required:
             self._log_validation_error(signal, "insufficient_balance",
-                                     f"Required: {total_required}, Available: {balance}")
+                                     f"Required: {total_required:.2f}, Available: {balance:.2f}")
             return False
 
         return True
@@ -255,12 +272,13 @@ class ExecutionValidator:
 
         return True
 
-    def _validate_exchange_constraints(self, signal: TradingSignal) -> bool:
+    def _validate_exchange_constraints(self, signal: TradingSignal, context: Optional[Dict[str, Any]] = None) -> bool:
         """
         Validate exchange-specific constraints.
 
         Args:
             signal: Trading signal
+            context: Market context
 
         Returns:
             True if exchange constraints are satisfied
@@ -276,7 +294,7 @@ class ExecutionValidator:
             return False
 
         # Check trading hours (simplified example)
-        current_hour = context.get('current_hour', 12)  # Default midday
+        current_hour = (context or {}).get('current_hour', 12)  # Default midday
         if not (9 <= current_hour <= 16):  # Example trading hours
             self._log_validation_error(signal, "outside_trading_hours",
                                      f"Current hour {current_hour} outside trading hours 9-16")

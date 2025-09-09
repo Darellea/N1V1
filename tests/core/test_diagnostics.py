@@ -7,6 +7,7 @@ Tests cover health checks, anomaly detection, alerting, and system monitoring.
 import asyncio
 import pytest
 import pytest_asyncio
+import aiohttp
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 from typing import Dict, Any
@@ -276,57 +277,54 @@ class TestBuiltInHealthChecks:
     @pytest.mark.asyncio
     async def test_check_api_connectivity_success(self):
         """Test successful API connectivity check."""
-        # Mock the entire function to return expected result
-        expected_result = HealthCheckResult(
-            component="api_connectivity",
-            status=HealthStatus.HEALTHY,
-            latency_ms=150.0,
-            message="API responsive (150.0ms)",
-            details={"status_code": 200, "url": "https://api.example.com"}
-        )
+        # Mock the aiohttp client session and response
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_response.__aexit__ = AsyncMock(return_value=None)
 
-        with patch('tests.core.test_diagnostics.check_api_connectivity', return_value=expected_result) as mock_check:
+        mock_session = MagicMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session.get.return_value = mock_response
+
+        with patch('aiohttp.ClientSession', return_value=mock_session):
             result = await check_api_connectivity("https://api.example.com", 5000)
 
             assert result.component == "api_connectivity"
             assert result.status == HealthStatus.HEALTHY
             assert "API responsive" in result.message
-            assert result.latency_ms == 150.0
+            assert result.latency_ms >= 0
             assert result.details["status_code"] == 200
 
     @pytest.mark.asyncio
     async def test_check_api_connectivity_timeout(self):
         """Test API connectivity check with timeout."""
-        # Mock the entire function to return timeout result
-        expected_result = HealthCheckResult(
-            component="api_connectivity",
-            status=HealthStatus.CRITICAL,
-            latency_ms=1000.0,
-            message="API timeout after 1000.0ms",
-            details={"error": "timeout", "url": "https://api.example.com"}
-        )
+        # Mock the aiohttp client to raise a timeout error
+        mock_session = MagicMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session.get.side_effect = asyncio.TimeoutError()
 
-        with patch('tests.core.test_diagnostics.check_api_connectivity', return_value=expected_result) as mock_check:
+        with patch('aiohttp.ClientSession', return_value=mock_session):
             result = await check_api_connectivity("https://api.example.com", 1000)
 
             assert result.component == "api_connectivity"
             assert result.status == HealthStatus.CRITICAL
             assert "API timeout" in result.message
+            assert result.latency_ms >= 0
             assert result.details["error"] == "timeout"
 
     @pytest.mark.asyncio
     async def test_check_api_connectivity_failure(self):
         """Test API connectivity check with connection failure."""
-        # Mock the entire function to return failure result
-        expected_result = HealthCheckResult(
-            component="api_connectivity",
-            status=HealthStatus.CRITICAL,
-            latency_ms=500.0,
-            message="API connection failed: Connection failed",
-            details={"error": "Connection failed", "url": "https://api.example.com"}
-        )
+        # Mock the aiohttp client to raise a connection error
+        mock_session = MagicMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session.get.side_effect = aiohttp.ClientConnectionError("Connection failed")
 
-        with patch('tests.core.test_diagnostics.check_api_connectivity', return_value=expected_result) as mock_check:
+        with patch('aiohttp.ClientSession', return_value=mock_session):
             result = await check_api_connectivity("https://api.example.com", 5000)
 
             assert result.component == "api_connectivity"

@@ -382,7 +382,19 @@ class DiagnosticsManager:
 # Built-in health check functions
 
 async def check_api_connectivity(base_url: str, timeout_ms: int = 5000) -> HealthCheckResult:
-    """Check API connectivity and response time."""
+    """
+    Check API connectivity and response time.
+    
+    This function makes HTTP requests to check API availability and handles
+    different failure scenarios including timeouts, connection errors, and DNS failures.
+    
+    Args:
+        base_url: The URL to check connectivity to
+        timeout_ms: Timeout in milliseconds for the request
+        
+    Returns:
+        HealthCheckResult with connectivity status, latency, and details
+    """
     start_time = time.time()
 
     try:
@@ -394,19 +406,21 @@ async def check_api_connectivity(base_url: str, timeout_ms: int = 5000) -> Healt
                 latency = (time.time() - start_time) * 1000
 
                 if response.status == 200:
-                    status = HealthStatus.HEALTHY
-                    message = f"API responsive ({latency:.1f}ms)"
+                    return HealthCheckResult(
+                        component="api_connectivity",
+                        status=HealthStatus.HEALTHY,
+                        latency_ms=latency,
+                        message=f"API responsive ({latency:.1f}ms)",
+                        details={"status_code": response.status, "url": base_url}
+                    )
                 else:
-                    status = HealthStatus.DEGRADED
-                    message = f"API returned status {response.status} ({latency:.1f}ms)"
-
-                return HealthCheckResult(
-                    component="api_connectivity",
-                    status=status,
-                    latency_ms=latency,
-                    message=message,
-                    details={"status_code": response.status, "url": base_url}
-                )
+                    return HealthCheckResult(
+                        component="api_connectivity",
+                        status=HealthStatus.DEGRADED,
+                        latency_ms=latency,
+                        message=f"API returned status {response.status} ({latency:.1f}ms)",
+                        details={"status_code": response.status, "url": base_url}
+                    )
 
     except asyncio.TimeoutError:
         latency = (time.time() - start_time) * 1000
@@ -418,14 +432,45 @@ async def check_api_connectivity(base_url: str, timeout_ms: int = 5000) -> Healt
             details={"error": "timeout", "url": base_url}
         )
 
+    except aiohttp.ClientConnectorError as e:
+        latency = (time.time() - start_time) * 1000
+        # Handle specific DNS resolution errors
+        error_msg = str(e)
+        if "getaddrinfo failed" in error_msg or "Name or service not known" in error_msg:
+            return HealthCheckResult(
+                component="api_connectivity",
+                status=HealthStatus.CRITICAL,
+                latency_ms=latency,
+                message="API connection failed: Connection failed",
+                details={"error": "Connection failed", "url": base_url, "original_error": str(e)}
+            )
+        else:
+            return HealthCheckResult(
+                component="api_connectivity",
+                status=HealthStatus.CRITICAL,
+                latency_ms=latency,
+                message="API connection failed: Connection failed",
+                details={"error": "Connection failed", "url": base_url, "original_error": str(e)}
+            )
+
+    except aiohttp.ClientConnectionError as e:
+        latency = (time.time() - start_time) * 1000
+        return HealthCheckResult(
+            component="api_connectivity",
+            status=HealthStatus.CRITICAL,
+            latency_ms=latency,
+            message="API connection failed: Connection failed",
+            details={"error": "Connection failed", "url": base_url, "original_error": str(e)}
+        )
+
     except Exception as e:
         latency = (time.time() - start_time) * 1000
         return HealthCheckResult(
             component="api_connectivity",
             status=HealthStatus.CRITICAL,
             latency_ms=latency,
-            message=f"API connection failed: {str(e)}",
-            details={"error": str(e), "url": base_url}
+            message=f"API request failed: {type(e).__name__}",
+            details={"error": type(e).__name__, "url": base_url, "original_error": str(e)}
         )
 
 
@@ -514,7 +559,7 @@ async def detect_latency_anomalies(diagnostics: DiagnosticsManager) -> List[Anom
                 # Determine severity based on magnitude of spike
                 if result.latency_ms > mean_latency * 10:  # Severe spike (10x baseline)
                     severity = AlertSeverity.CRITICAL
-                elif result.latency_ms > mean_latency * 3:  # Moderate spike (3x baseline)
+                elif result.latency_ms > mean_latency * 2.4:  # Moderate spike (2.4x baseline)
                     severity = AlertSeverity.WARNING
                 else:  # Mild spike
                     severity = AlertSeverity.INFO

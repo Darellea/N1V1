@@ -91,3 +91,4 @@ secrets.json
 *.tar
 *.gz
 ENSEMBLE_README.md
+listerror.txt
