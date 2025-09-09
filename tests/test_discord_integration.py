@@ -28,10 +28,14 @@ or .env file.
 
 
 @pytest.fixture
-def discord_webhook_notifier(discord_webhook_config):
+async def discord_webhook_notifier(discord_webhook_config):
     """Fixture to create DiscordNotifier instances for webhook tests."""
     notifier = DiscordNotifier(discord_webhook_config)
+    # Initialize the notifier to create the session
+    await notifier.initialize()
     yield notifier
+    # Cleanup: properly close the session
+    await notifier.shutdown()
 
 
 @pytest.fixture
@@ -241,9 +245,11 @@ class TestDiscordIntegration:
 
         try:
             notifier = DiscordNotifier(discord_webhook_config)
+            await notifier.initialize()
             result = await notifier.send_notification("Error recovery test")
             # Should handle the error gracefully
             assert result is False
+            await notifier.shutdown()
         finally:
             # Restore original method
             aiohttp.ClientSession.post = original_post

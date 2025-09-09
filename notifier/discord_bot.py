@@ -308,6 +308,16 @@ class DiscordNotifier:
         if not self.alerts_enabled:
             return False
 
+        # Handle empty content gracefully
+        if not message or not message.strip():
+            if embed_data:
+                # If we have embed data, send with a placeholder message
+                message = "📊 Update"
+            else:
+                # No content and no embed - skip sending but return success
+                logger.debug("Skipping Discord notification: empty content and no embed data")
+                return True
+
         # Ensure HTTP session exists
         if not self.session:
             self.session = aiohttp.ClientSession()

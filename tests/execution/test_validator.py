@@ -186,7 +186,7 @@ class TestExecutionValidator:
             signal_type=SignalType.ENTRY_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
-            amount=Decimal("1.5"),  # Not multiple of 0.1
+            amount=Decimal("1.55"),  # Not multiple of 0.1
             timestamp=datetime.now()
         )
 
@@ -195,6 +195,45 @@ class TestExecutionValidator:
             assert result is False
             mock_log.assert_called_once()
             assert "invalid_lot_size" in mock_log.call_args[0]
+
+    def test_validate_order_size_valid_lot_size(self, validator):
+        """Test validation of order size with valid lot size."""
+        # Set lot size to 0.1
+        validator.lot_size = Decimal("0.1")
+
+        valid_lot_signal = TradingSignal(
+            strategy_id="test",
+            symbol="BTC/USDT",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type=OrderType.MARKET,
+            amount=Decimal("1.5"),  # Multiple of 0.1
+            timestamp=datetime.now()
+        )
+
+        result = validator._validate_order_size(valid_lot_signal)
+        assert result is True
+
+    def test_validate_order_size_zero_lot_size(self, validator):
+        """Test validation of order size with zero lot size."""
+        # Set lot size to 0
+        validator.lot_size = Decimal("0")
+
+        signal = TradingSignal(
+            strategy_id="test",
+            symbol="BTC/USDT",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type=OrderType.MARKET,
+            amount=Decimal("1.5"),
+            timestamp=datetime.now()
+        )
+
+        with patch.object(validator, '_log_validation_error') as mock_log:
+            result = validator._validate_order_size(signal)
+            assert result is False
+            mock_log.assert_called_once()
+            assert "invalid_lot_size_config" in mock_log.call_args[0]
 
     def test_validate_price_limit_without_price(self, validator):
         """Test validation of limit order without price."""

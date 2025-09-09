@@ -31,7 +31,14 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
     # Dataclass support
     try:
         if dataclasses.is_dataclass(signal):
-            return dataclasses.asdict(signal)
+            result = dataclasses.asdict(signal)
+            # Convert enums to their values/names for JSON serialization
+            for key, value in result.items():
+                if hasattr(value, "value"):
+                    result[key] = value.value
+                elif hasattr(value, "name"):
+                    result[key] = value.name.lower()
+            return result
     except (AttributeError, TypeError, ValueError):
         # If dataclass conversion fails for known reasons, fall back to other methods.
         pass

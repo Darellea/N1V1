@@ -334,9 +334,15 @@ class TestMainFunction:
         # Setup mocks
         mock_args = MagicMock()
         mock_args.api = True
+        mock_args.status = False  # Explicitly set status to False
         mock_parse_args.return_value = mock_args
 
-        with patch('sys.exit') as mock_exit, \
+        mock_getenv.return_value = "false"  # Ensure USE_FASTAPI env var is false
+
+        def raise_system_exit(code):
+            raise SystemExit(code)
+
+        with patch('sys.exit', side_effect=raise_system_exit) as mock_exit, \
              patch('main.logging.getLogger') as mock_logger:
 
             mock_logger.return_value = MagicMock()
@@ -344,9 +350,14 @@ class TestMainFunction:
             # Mock uvicorn.run to avoid the actual call
             with patch('main.uvicorn') as mock_uvicorn:
                 mock_uvicorn.run = MagicMock()
-                await main()
 
-            # Verify exit was called with error
+                with pytest.raises(SystemExit) as exc_info:
+                    await main()
+
+                # Verify the exit code is 1
+                assert exc_info.value.code == 1
+
+            # Verify exit was called with error code 1
             mock_exit.assert_called_once_with(1)
 
     @patch('main.parse_arguments')

@@ -151,26 +151,30 @@ class AdaptivePricer:
             Price adjustment amount
         """
         # Get ATR (Average True Range) as volatility measure
-        atr = context.get('atr', context.get('volatility', 0))
-        if atr <= 0:
+        atr_value = context.get('atr', context.get('volatility', 0))
+        if atr_value <= 0:
             return Decimal(0)
+
+        # Convert to Decimal if necessary
+        atr = Decimal(str(atr_value)) if not isinstance(atr_value, Decimal) else atr_value
 
         # Get current price for percentage calculation
         current_price = signal.current_price or signal.price or Decimal(100)
         atr_pct = atr / current_price
 
         # Determine volatility level
-        if atr_pct < 0.005:  # < 0.5%
+        if atr_pct < Decimal('0.005'):  # < 0.5%
             factor = self.volatility_factors['low']
-        elif atr_pct < 0.02:  # < 2%
+        elif atr_pct < Decimal('0.02'):  # < 2%
             factor = self.volatility_factors['medium']
-        elif atr_pct < 0.05:  # < 5%
+        elif atr_pct < Decimal('0.05'):  # < 5%
             factor = self.volatility_factors['high']
         else:
             factor = self.volatility_factors['extreme']
 
-        # Calculate adjustment
-        base_adjustment = atr * self.price_adjustment_multiplier * Decimal(str(factor))
+        # Calculate adjustment - convert factor to Decimal
+        decimal_factor = Decimal(str(factor))
+        base_adjustment = atr * self.price_adjustment_multiplier * decimal_factor
 
         # Direction depends on signal type and order side
         if signal.signal_type and signal.signal_type.value == 'ENTRY_LONG':

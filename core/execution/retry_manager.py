@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 
-from .smart_layer import ExecutionPolicy, ExecutionStatus
+from .execution_types import ExecutionPolicy, ExecutionStatus
 from utils.logger import get_trade_logger
 
 logger = logging.getLogger(__name__)
@@ -317,9 +317,10 @@ class RetryManager:
         if attempt >= self.max_retries:
             return False
 
-        # Check if this error type should trigger retries
+        # Check if the full error type or its category is in retry_on_errors
         error_category = error_type.value.split('_')[0]  # Get first part of error type
-        return error_category in self.retry_on_errors
+        return (error_type.value in self.retry_on_errors or 
+                error_category in self.retry_on_errors)
 
     def _calculate_delay(self, attempt: int) -> float:
         """

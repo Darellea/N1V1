@@ -182,27 +182,27 @@ async def main():
             logger.error("FastAPI mode requested but FastAPI dependencies are not installed")
             logger.error("Install with: pip install fastapi uvicorn")
             sys.exit(1)
+        else:
+            logger = logging.getLogger(__name__)
+            logger.info("Starting in FastAPI mode")
 
-        logger = logging.getLogger(__name__)
-        logger.info("Starting in FastAPI mode")
+            # Initialize bot
+            bot = CryptoTradingBot()
+            await bot.initialize()
 
-        # Initialize bot
-        bot = CryptoTradingBot()
-        await bot.initialize()
+            # Start FastAPI server
+            logger.info("Starting FastAPI server on http://localhost:8000")
+            logger.info("API documentation available at http://localhost:8000/docs")
 
-        # Start FastAPI server
-        logger.info("Starting FastAPI server on http://localhost:8000")
-        logger.info("API documentation available at http://localhost:8000/docs")
-
-        # Run uvicorn server (this will block)
-        uvicorn.run(
-            "api.app:app",
-            host="0.0.0.0",
-            port=8000,
-            reload=False,
-            log_level="info"
-        )
-        return
+            # Run uvicorn server (this will block)
+            uvicorn.run(
+                "api.app:app",
+                host="0.0.0.0",
+                port=8000,
+                reload=False,
+                log_level="info"
+            )
+            return
 
     # Handle CLI-only commands that should exit immediately
     if args.status:
