@@ -94,6 +94,7 @@ class TestExecutionValidator:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("1000"),
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -112,6 +113,7 @@ class TestExecutionValidator:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("-100"),  # Invalid amount
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -130,6 +132,7 @@ class TestExecutionValidator:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("1000"),
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -148,6 +151,7 @@ class TestExecutionValidator:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("0.0000001"),  # Below minimum
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -166,6 +170,7 @@ class TestExecutionValidator:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("2000000"),  # Above maximum
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -187,6 +192,7 @@ class TestExecutionValidator:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("1.55"),  # Not multiple of 0.1
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -208,6 +214,7 @@ class TestExecutionValidator:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("1.5"),  # Multiple of 0.1
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -226,6 +233,7 @@ class TestExecutionValidator:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("1.5"),
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -245,6 +253,7 @@ class TestExecutionValidator:
             order_type=OrderType.LIMIT,
             amount=Decimal("1000"),
             price=None,  # Missing price for limit order
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -267,6 +276,7 @@ class TestExecutionValidator:
             order_type=OrderType.LIMIT,
             amount=Decimal("1000"),
             price=Decimal("50000.005"),  # Not multiple of 0.01
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -286,6 +296,7 @@ class TestExecutionValidator:
             order_type=OrderType.LIMIT,
             amount=Decimal("1000"),
             price=Decimal("75000"),  # 50% above market
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -331,6 +342,7 @@ class TestExecutionValidator:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("1000"),
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -353,6 +365,7 @@ class TestExecutionValidator:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("1000"),
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -372,6 +385,7 @@ class TestExecutionValidator:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("1000"),
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -390,6 +404,7 @@ class TestExecutionValidator:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("1000"),
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -410,6 +425,7 @@ class TestExecutionValidator:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("1000"),
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -430,6 +446,7 @@ class TestExecutionValidator:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("1000"),
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -500,6 +517,7 @@ class TestExecutionValidator:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("1000"),
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -530,6 +548,7 @@ class TestValidationEdgeCases:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("0"),
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -547,6 +566,7 @@ class TestValidationEdgeCases:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("0.000001"),  # Exactly minimum
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -562,6 +582,7 @@ class TestValidationEdgeCases:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("1000000"),  # Exactly maximum
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -578,6 +599,7 @@ class TestValidationEdgeCases:
             order_type=OrderType.LIMIT,
             amount=Decimal("1000"),
             price=Decimal("50000"),
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -595,6 +617,7 @@ class TestValidationEdgeCases:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("1000"),
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
@@ -615,6 +638,7 @@ class TestValidationEdgeCases:
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("1000"),
+            current_price=Decimal("50000"),
             timestamp=datetime.now()
         )
 
