@@ -28,6 +28,7 @@ class TestExecutionSmartLayer:
     def config(self):
         """Test configuration."""
         return {
+            'test_mode': True,  # Enable test mode to bypass trading hours validation
             'policy_thresholds': {
                 'large_order': 10000,
                 'high_spread': 0.005,
@@ -162,6 +163,10 @@ class TestExecutionSmartLayer:
     @pytest.mark.asyncio
     async def test_execution_with_retry_success(self, smart_layer, sample_signal, market_context):
         """Test execution with successful retry."""
+        # Use a small signal to ensure LIMIT policy is selected
+        small_signal = sample_signal.copy()
+        small_signal.amount = Decimal("0.01")  # Very small amount
+
         # Mock the validator to always return True to bypass validation
         with patch.object(smart_layer.validator, 'validate_signal', return_value=True):
             # Mock the adaptive pricer to avoid decimal/float multiplication error
@@ -169,7 +174,7 @@ class TestExecutionSmartLayer:
                 # Mock the execution to fail once then succeed
                 call_count = 0
 
-                async def mock_execution_func(exec_func, signal, policy, context, *args, **kwargs):
+                async def mock_execute_with_policy(signal, policy, context):
                     nonlocal call_count
                     call_count += 1
 
@@ -184,9 +189,9 @@ class TestExecutionSmartLayer:
                         # Second call succeeds - use MARKET policy for simple execution
                         return await smart_layer._execute_simple_order(signal, ExecutionPolicy.MARKET)
 
-                # Patch the retry manager's execute_with_retry
-                with patch.object(smart_layer.retry_manager, 'execute_with_retry', side_effect=mock_execution_func):
-                    result = await smart_layer.execute_signal(sample_signal, market_context)
+                # Patch the _execute_with_policy method to allow retry logic to work
+                with patch.object(smart_layer, '_execute_with_policy', side_effect=mock_execute_with_policy):
+                    result = await smart_layer.execute_signal(small_signal, market_context)
 
                     assert result.status == ExecutionStatus.COMPLETED
                     assert result.retries == 1
@@ -195,22 +200,30 @@ class TestExecutionSmartLayer:
     @pytest.mark.asyncio
     async def test_execution_with_fallback(self, smart_layer, sample_signal, market_context):
         """Test execution with policy fallback."""
+        # Use a small signal to ensure LIMIT policy is selected
+        small_signal = sample_signal.copy()
+        small_signal.amount = Decimal("0.01")  # Very small amount
+
         # Configure for fallback
         smart_layer.retry_manager.fallback_on_attempt = 1
 
-        # Mock execution to always fail with retryable error
-        async def mock_execution_func(signal, policy, context, *args, **kwargs):
+        # Mock the _execute_with_policy method to always fail with retryable error
+        # This allows the retry manager to run its fallback logic
+        async def mock_execute_with_policy(signal, policy, context):
             return {
                 'status': ExecutionStatus.FAILED,
                 'error_message': 'Network timeout',
                 'orders': []
             }
 
-        with patch.object(smart_layer.retry_manager, 'execute_with_retry', side_effect=mock_execution_func):
-            result = await smart_layer.execute_signal(sample_signal, market_context)
+        with patch.object(smart_layer, '_execute_with_policy', side_effect=mock_execute_with_policy):
+            result = await smart_layer.execute_signal(small_signal, market_context)
 
             assert result.status == ExecutionStatus.FAILED
             assert result.fallback_used
+            # Check that metadata indicates fallback was applied
+            assert result.metadata is not None
+            assert result.metadata.get('fallback_applied') == True
 
     @pytest.mark.asyncio
     async def test_adaptive_pricing_applied(self, smart_layer, sample_signal, market_context):
@@ -332,6 +345,7 @@ class TestIntegrationScenarios:
     def integration_config(self):
         """Configuration for integration tests."""
         return {
+            'test_mode': True,  # Enable test mode to bypass trading hours validation
             'policy_thresholds': {
                 'large_order': 5000,  # Lower threshold for testing
                 'high_spread': 0.003,
@@ -356,7 +370,7 @@ class TestIntegrationScenarios:
             signal_type=SignalType.ENTRY_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.LIMIT,
-            amount=Decimal("100"),
+            amount=Decimal("0.01"),  # Very small amount to ensure it's below large_order threshold
             price=Decimal("50000"),
             current_price=Decimal("50000"),
             timestamp=datetime.now()

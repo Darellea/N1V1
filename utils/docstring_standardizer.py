@@ -56,6 +56,13 @@ class DocstringStandardizer:
     """
 
     def __init__(self):
+        """
+        Initialize the DocstringStandardizer.
+
+        Sets up internal state for tracking documentation issues, metrics,
+        and processed files. Configures regex patterns for detecting different
+        docstring formats and defines required sections for comprehensive documentation.
+        """
         self.issues: List[DocstringIssue] = []
         self.metrics = DocstringMetrics()
         self.processed_files: Set[str] = set()
@@ -102,7 +109,16 @@ class DocstringStandardizer:
         }
 
     def _analyze_file_documentation(self, file_path: Path):
-        """Analyze documentation in a single file."""
+        """
+        Analyze documentation in a single Python file.
+
+        Parses the file's AST to identify functions and classes, then analyzes
+        their docstrings for quality, completeness, and format compliance.
+        Updates internal metrics and issues lists based on findings.
+
+        Args:
+            file_path: Path to the Python file to analyze
+        """
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -435,16 +451,50 @@ class DocstringStandardizer:
 
     def _enhance_docstring(self, docstring: str, function_name: str,
                          args: List[str], returns: str, raises: List[str]) -> str:
-        """Enhance existing docstring with missing sections."""
-        lines = docstring.strip().split('\n')
+        """
+        Enhance existing docstring with missing sections and standardize format.
+
+        This method creates a standardized Google format docstring that always
+        includes the function name in the header, then adds any missing sections
+        (Args, Returns, Raises) while preserving existing content.
+
+        Formatting rules enforced:
+        - Function name always appears in header as "{function_name} function."
+        - Args section lists all parameters with descriptions
+        - Returns section describes return value
+        - Raises section lists exceptions with conditions
+
+        Args:
+            docstring: Original docstring content
+            function_name: Name of the function being documented
+            args: List of argument names
+            returns: Description of return value
+            raises: List of exception types that can be raised
+
+        Returns:
+            Enhanced docstring in standardized Google format
+        """
+        # Extract content from existing docstring (remove triple quotes)
+        content = docstring.strip()
+        if content.startswith('"""') and content.endswith('"""'):
+            content = content[3:-3]
+        elif content.startswith("'''") and content.endswith("'''"):
+            content = content[3:-3]
+
+        lines = content.strip().split('\n')
         enhanced_lines = []
 
-        # Add description if missing
-        if not lines or len(lines[0].strip()) < 10:
-            enhanced_lines.append(f"{function_name.capitalize()}.")
+        # Always start with function name in header
+        if function_name:
+            enhanced_lines.append(f"{function_name} function.")
             enhanced_lines.append("")
 
-        enhanced_lines.extend(lines)
+        # Add original content if it has meaningful description
+        if lines and len(lines[0].strip()) >= 10:
+            enhanced_lines.extend(lines)
+        elif lines and len(lines) > 1:
+            # Keep additional content if present
+            enhanced_lines.extend(lines[1:])
 
         # Add Args section if missing and we have args info
         if args and not any('Args:' in line or 'Arguments:' in line for line in enhanced_lines):
@@ -469,7 +519,13 @@ class DocstringStandardizer:
                 enhanced_lines.append(f"    {exc}: Description of when {exc} is raised")
             enhanced_lines.append("")
 
-        return '\n'.join(enhanced_lines)
+        # Wrap the result in triple quotes
+        if enhanced_lines:
+            result = '"""' + '\n'.join(enhanced_lines) + '\n"""'
+        else:
+            result = '""""""'
+
+        return result
 
     def validate_docstring_format(self, docstring: str) -> Dict[str, Any]:
         """

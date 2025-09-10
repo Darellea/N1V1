@@ -21,7 +21,7 @@ from aiohttp import web
 import ssl
 import json
 
-from core.metrics_collector import get_metrics_collector
+from core.metrics_collector import get_metrics_collector, MetricsCollector
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -33,26 +33,36 @@ class MetricsEndpoint:
 
     Provides a high-performance HTTP endpoint that serves metrics in
     Prometheus exposition format with minimal latency impact.
+
+    The constructor accepts either a configuration dictionary or a MetricsCollector instance.
+    If a MetricsCollector is provided, it will be used directly; otherwise, the global collector is used.
     """
 
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
+    def __init__(self, config_or_collector):
+        if isinstance(config_or_collector, MetricsCollector):
+            self.metrics_collector = config_or_collector
+            self.config = getattr(self.metrics_collector, 'config', {})  # Try to get config from collector
+        elif isinstance(config_or_collector, dict):
+            self.config = config_or_collector
+            self.metrics_collector = get_metrics_collector()
+        else:
+            raise TypeError("MetricsEndpoint expects a dict config or MetricsCollector instance")
 
         # Server configuration
-        self.host = config.get('host', '0.0.0.0')
-        self.port = config.get('port', 9090)
-        self.path = config.get('path', '/metrics')
+        self.host = self.config.get('host', '0.0.0.0')
+        self.port = self.config.get('port', 9090)
+        self.path = self.config.get('path', '/metrics')
 
         # Security configuration
-        self.enable_auth = config.get('enable_auth', False)
-        self.auth_token = config.get('auth_token', '')
-        self.enable_tls = config.get('enable_tls', False)
-        self.cert_file = config.get('cert_file', '')
-        self.key_file = config.get('key_file', '')
+        self.enable_auth = self.config.get('enable_auth', False)
+        self.auth_token = self.config.get('auth_token', '')
+        self.enable_tls = self.config.get('enable_tls', False)
+        self.cert_file = self.config.get('cert_file', '')
+        self.key_file = self.config.get('key_file', '')
 
         # Performance configuration
-        self.max_concurrent_requests = config.get('max_concurrent_requests', 10)
-        self.request_timeout = config.get('request_timeout', 5.0)
+        self.max_concurrent_requests = self.config.get('max_concurrent_requests', 10)
+        self.request_timeout = self.config.get('request_timeout', 5.0)
 
         # Server state
         self.app: Optional[web.Application] = None
@@ -60,15 +70,28 @@ class MetricsEndpoint:
         self.site: Optional[web.TCPSite] = None
         self._running = False
 
-        # Metrics collector
-        self.metrics_collector = get_metrics_collector()
-
         # Performance tracking
         self.request_count = 0
         self.error_count = 0
         self.avg_response_time = 0.0
 
         logger.info(f"MetricsEndpoint initialized on {self.host}:{self.port}{self.path}")
+
+    def create_app(self) -> web.Application:
+        """Create aiohttp application for the metrics endpoint."""
+        app = web.Application()
+
+        # Add middleware
+        app.middlewares.append(self._request_middleware)
+        if self.enable_auth:
+            app.middlewares.append(self._auth_middleware)
+
+        # Add routes
+        app.router.add_get(self.path, self._metrics_handler)
+        app.router.add_get('/health', self._health_handler)
+        app.router.add_get('/', self._root_handler)
+
+        return app
 
     async def start(self) -> None:
         """Start the metrics endpoint server."""
@@ -196,7 +219,8 @@ class MetricsEndpoint:
 
             return web.Response(
                 text=full_output,
-                content_type='text/plain; version=0.0.4; charset=utf-8',
+                content_type='text/plain; version=0.0.4',
+                charset='utf-8',
                 headers={
                     'Content-Encoding': 'identity',
                     'Cache-Control': 'no-cache, no-store, must-revalidate'

@@ -15,7 +15,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.00099945068359375,
+      "optimization_time": 0.0019991397857666016,
       "train_data_shape": [
         30,
         5
@@ -38,7 +38,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.00099945068359375,
+      "optimization_time": 0.0009987354278564453,
       "train_data_shape": [
         30,
         5
@@ -61,7 +61,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0010116100311279297,
+      "optimization_time": 0.000997781753540039,
       "train_data_shape": [
         30,
         5
@@ -84,7 +84,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0009984970092773438,
+      "optimization_time": 0.0009999275207519531,
       "train_data_shape": [
         30,
         5
@@ -107,7 +107,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0009984970092773438,
+      "optimization_time": 0.00099945068359375,
       "train_data_shape": [
         30,
         5
@@ -130,7 +130,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0009987354278564453,
+      "optimization_time": 0.0010008811950683594,
       "train_data_shape": [
         30,
         5
@@ -153,7 +153,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.000997781753540039,
+      "optimization_time": 0.00099945068359375,
       "train_data_shape": [
         30,
         5
@@ -176,7 +176,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0009996891021728516,
+      "optimization_time": 0.0019981861114501953,
       "train_data_shape": [
         30,
         5
@@ -199,7 +199,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0009942054748535156,
+      "optimization_time": 0.0009996891021728516,
       "train_data_shape": [
         30,
         5
@@ -232,6 +232,6 @@
     "fitness_metric": "sharpe_ratio",
     "convergence_info": null
   },
-  "timestamp": "2025-09-09T18:58:19.925487",
-  "total_time": 0.03098130226135254
+  "timestamp": "2025-09-10T12:55:10.515312",
+  "total_time": 0.02798295021057129
 }

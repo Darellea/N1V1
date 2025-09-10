@@ -19,11 +19,12 @@ from unittest.mock import Mock, AsyncMock, patch
 import asyncio
 import tempfile
 import os
+from pathlib import Path
 
 from strategies.regime.regime_forecaster import RegimeForecaster
 from strategies.regime.market_regime import MarketRegimeDetector
 from strategies.regime.strategy_selector import StrategySelector
-from core.diagnostics import HealthStatus
+from core.diagnostics import HealthStatus, HealthCheckResult
 
 
 class TestRegimeForecasterInitialization:
@@ -36,7 +37,8 @@ class TestRegimeForecasterInitialization:
 
         forecaster = RegimeForecaster(config)
 
-        assert forecaster.config == config
+        # Check that config values are properly set
+        assert forecaster.enabled == config.get("enabled", True)
         assert forecaster.model_path == temp_dir
         assert forecaster.forecast_horizon == config.get("forecast_horizon", 24)
         assert forecaster.confidence_threshold == config.get("confidence_threshold", 0.7)
@@ -623,24 +625,24 @@ class TestHealthMonitoring:
 
                 status = HealthStatus.HEALTHY if is_trained else HealthStatus.DEGRADED
 
-                return {
-                    'component': 'regime_forecaster',
-                    'status': status,
-                    'latency_ms': 10.0,
-                    'message': f'Forecaster healthy: trained={is_trained}, accuracy={last_accuracy:.2f}',
-                    'details': {
+                return HealthCheckResult(
+                    component='regime_forecaster',
+                    status=status,
+                    latency_ms=10.0,
+                    message=f'Forecaster healthy: trained={is_trained}, accuracy={last_accuracy:.2f}',
+                    details={
                         'is_trained': is_trained,
                         'model_age_hours': model_age,
                         'last_accuracy': last_accuracy
                     }
-                }
+                )
             except Exception as e:
-                return {
-                    'component': 'regime_forecaster',
-                    'status': HealthStatus.CRITICAL,
-                    'message': f'Health check failed: {str(e)}',
-                    'details': {'error': str(e)}
-                }
+                return HealthCheckResult(
+                    component='regime_forecaster',
+                    status=HealthStatus.CRITICAL,
+                    message=f'Health check failed: {str(e)}',
+                    details={'error': str(e)}
+                )
 
         diagnostics.register_health_check('regime_forecaster', check_regime_forecaster)
 

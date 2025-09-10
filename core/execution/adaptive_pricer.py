@@ -39,18 +39,18 @@ class AdaptivePricer:
 
         # Adjustment factors for different market conditions
         self.volatility_factors = self.config.get('volatility_factors', {
-            'low': 0.2,      # Small adjustment for low volatility
-            'medium': 0.5,   # Medium adjustment for normal volatility
-            'high': 0.8,     # Large adjustment for high volatility
-            'extreme': 1.0   # Maximum adjustment for extreme volatility
+            'low': Decimal('0.2'),      # Small adjustment for low volatility
+            'medium': Decimal('0.5'),   # Medium adjustment for normal volatility
+            'high': Decimal('0.8'),     # Large adjustment for high volatility
+            'extreme': Decimal('1.0')   # Maximum adjustment for extreme volatility
         })
 
         # Spread-based adjustments
         self.spread_factors = self.config.get('spread_factors', {
-            'tight': 0.1,    # Small spread
-            'normal': 0.3,   # Normal spread
-            'wide': 0.6,     # Wide spread
-            'very_wide': 1.0 # Very wide spread
+            'tight': Decimal('0.1'),    # Small spread
+            'normal': Decimal('0.3'),   # Normal spread
+            'wide': Decimal('0.6'),     # Wide spread
+            'very_wide': Decimal('1.0') # Very wide spread
         })
 
         self.logger.info("AdaptivePricer initialized")

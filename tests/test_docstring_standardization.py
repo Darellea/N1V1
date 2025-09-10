@@ -184,6 +184,10 @@ class TestDocstringStandardizer:
 class TestDocstringStandardizerIntegration:
     """Integration tests for the documentation standardizer."""
 
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.standardizer = DocstringStandardizer()
+
     def test_analyze_codebase_documentation(self):
         """Test full codebase documentation analysis."""
         results = self.standardizer.analyze_codebase_documentation()

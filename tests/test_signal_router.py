@@ -49,7 +49,8 @@ def sample_signal():
         signal_type=SignalType.ENTRY_LONG,
         signal_strength=SignalStrength.STRONG,
         order_type="market",
-        amount=Decimal("1.0"),
+        quantity=Decimal("1.0"),
+        side="buy",
         price=Decimal("50000"),
         current_price=Decimal("50000"),
         timestamp=1234567890,
@@ -87,7 +88,7 @@ async def test_process_signal_invalid_missing_symbol(signal_router):
         signal_type=SignalType.ENTRY_LONG,
         signal_strength=SignalStrength.STRONG,
         order_type="market",
-        amount=Decimal("1.0"),
+        quantity=Decimal("1.0"),
     )
 
     result = await signal_router.process_signal(invalid_signal)
@@ -104,7 +105,7 @@ async def test_process_signal_invalid_zero_amount(signal_router):
         signal_type=SignalType.ENTRY_LONG,
         signal_strength=SignalStrength.STRONG,
         order_type="market",
-        amount=Decimal("0"),  # Invalid
+        quantity=Decimal("0"),  # Invalid
     )
 
     result = await signal_router.process_signal(invalid_signal)
@@ -126,7 +127,7 @@ def test_validate_signal_invalid(signal_router):
         signal_type=SignalType.ENTRY_LONG,
         signal_strength=SignalStrength.STRONG,
         order_type="market",
-        amount=Decimal("1.0"),
+    quantity=Decimal("1.0"),
     )
     assert signal_router._validate_signal(invalid1) is False
 
@@ -137,7 +138,7 @@ def test_validate_signal_invalid(signal_router):
         signal_type=SignalType.ENTRY_LONG,
         signal_strength=SignalStrength.STRONG,
         order_type="market",
-        amount=Decimal("0"),
+    quantity=Decimal("0"),
     )
     assert signal_router._validate_signal(invalid2) is False
 
@@ -151,7 +152,7 @@ async def test_signal_conflicts_opposite_entry(signal_router):
         signal_type=SignalType.ENTRY_LONG,
         signal_strength=SignalStrength.STRONG,
         order_type="market",
-        amount=Decimal("1.0"),
+        quantity=Decimal("1.0"),
     )
 
     sig2 = TradingSignal(

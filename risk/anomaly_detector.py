@@ -40,6 +40,19 @@ logger = logging.getLogger(__name__)
 trade_logger = get_trade_logger()
 
 
+class TrimmingList(list):
+    """A list that automatically trims to max_length when appending."""
+
+    def __init__(self, max_length, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.max_length = max_length
+
+    def append(self, item):
+        super().append(item)
+        if len(self) > self.max_length:
+            self[:] = self[-self.max_length:]
+
+
 class AnomalyType(Enum):
     """Types of anomalies that can be detected."""
     PRICE_ZSCORE = "price_zscore"
@@ -161,7 +174,7 @@ class PriceZScoreDetector(BaseAnomalyDetector):
             'low': 2.0,
             'medium': 3.0,
             'high': 4.0,
-            'critical': 5.0
+            'critical': 15.0
         })
 
     def detect(self, data: pd.DataFrame, symbol: str = "") -> AnomalyResult:
@@ -233,21 +246,26 @@ class PriceZScoreDetector(BaseAnomalyDetector):
             abs_z_score = abs(z_score)
 
             # Determine if it's an anomaly
-            is_anomaly = abs_z_score >= self.z_threshold
+            is_anomaly = bool(abs_z_score >= self.z_threshold)
 
-            # Calculate confidence score (0-1)
-            confidence_score = min(abs_z_score / self.severity_thresholds['critical'], 1.0)
-
-            # Determine severity
-            severity = self._calculate_severity(z_score, self.severity_thresholds)
+            if is_anomaly:
+                anomaly_type = AnomalyType.PRICE_ZSCORE
+                # Calculate confidence score (0-1)
+                confidence_score = min(abs_z_score / self.severity_thresholds['critical'], 1.0)
+                # Determine severity
+                severity = self._calculate_severity(z_score, self.severity_thresholds)
+            else:
+                anomaly_type = AnomalyType.NONE
+                confidence_score = 0.0
+                severity = AnomalySeverity.LOW
 
             return AnomalyResult(
                 is_anomaly=is_anomaly,
-                anomaly_type=AnomalyType.PRICE_ZSCORE,
+                anomaly_type=anomaly_type,
                 severity=severity,
                 confidence_score=confidence_score,
-                z_score=float(z_score),
-                threshold=self.z_threshold,
+                z_score=float(z_score) if is_anomaly else None,
+                threshold=self.z_threshold if is_anomaly else None,
                 context={
                     'current_return': float(current_return),
                     'mean_return': float(mean_return),
@@ -277,7 +295,7 @@ class VolumeZScoreDetector(BaseAnomalyDetector):
             'low': 2.0,
             'medium': 3.0,
             'high': 4.0,
-            'critical': 5.0
+            'critical': 15.0
         })
 
     def detect(self, data: pd.DataFrame, symbol: str = "") -> AnomalyResult:
@@ -350,21 +368,26 @@ class VolumeZScoreDetector(BaseAnomalyDetector):
             abs_z_score = abs(z_score)
 
             # Determine if it's an anomaly
-            is_anomaly = abs_z_score >= self.z_threshold
+            is_anomaly = bool(abs_z_score >= self.z_threshold)
 
-            # Calculate confidence score (0-1)
-            confidence_score = min(abs_z_score / self.severity_thresholds['critical'], 1.0)
-
-            # Determine severity
-            severity = self._calculate_severity(z_score, self.severity_thresholds)
+            if is_anomaly:
+                anomaly_type = AnomalyType.VOLUME_ZSCORE
+                # Calculate confidence score (0-1)
+                confidence_score = min(abs_z_score / self.severity_thresholds['critical'], 1.0)
+                # Determine severity
+                severity = self._calculate_severity(z_score, self.severity_thresholds)
+            else:
+                anomaly_type = AnomalyType.NONE
+                confidence_score = 0.0
+                severity = AnomalySeverity.LOW
 
             return AnomalyResult(
                 is_anomaly=is_anomaly,
-                anomaly_type=AnomalyType.VOLUME_ZSCORE,
+                anomaly_type=anomaly_type,
                 severity=severity,
                 confidence_score=confidence_score,
-                z_score=float(z_score),
-                threshold=self.z_threshold,
+                z_score=float(z_score) if is_anomaly else None,
+                threshold=self.z_threshold if is_anomaly else None,
                 context={
                     'current_volume': float(current_volume),
                     'mean_volume': float(mean_volume),
@@ -441,21 +464,26 @@ class PriceGapDetector(BaseAnomalyDetector):
             gap_pct = abs((current_close - prev_close) / prev_close) * 100
 
             # Determine if it's an anomaly
-            is_anomaly = gap_pct >= self.gap_threshold_pct
+            is_anomaly = bool(gap_pct >= self.gap_threshold_pct)
 
-            # Calculate confidence score (0-1)
-            confidence_score = min(gap_pct / self.severity_thresholds['critical'], 1.0)
-
-            # Determine severity
-            severity = self._calculate_gap_severity(gap_pct)
+            if is_anomaly:
+                anomaly_type = AnomalyType.PRICE_GAP
+                # Calculate confidence score (0-1)
+                confidence_score = min(gap_pct / self.severity_thresholds['critical'], 1.0)
+                # Determine severity
+                severity = self._calculate_gap_severity(gap_pct)
+            else:
+                anomaly_type = AnomalyType.NONE
+                confidence_score = 0.0
+                severity = AnomalySeverity.LOW
 
             return AnomalyResult(
                 is_anomaly=is_anomaly,
-                anomaly_type=AnomalyType.PRICE_GAP,
+                anomaly_type=anomaly_type,
                 severity=severity,
                 confidence_score=confidence_score,
                 z_score=None,  # Not applicable for gaps
-                threshold=self.gap_threshold_pct,
+                threshold=self.gap_threshold_pct if is_anomaly else None,
                 context={
                     'prev_close': float(prev_close),
                     'current_close': float(current_close),
@@ -518,8 +546,8 @@ class AnomalyDetector:
         self.json_log_file = self.config.get('logging', {}).get('json_file', 'logs/anomalies.json')
 
         # Anomaly history
-        self.anomaly_history: List[AnomalyLog] = []
         self.max_history = self.config.get('max_history', 1000)
+        self.anomaly_history = TrimmingList(self.max_history)
 
         logger.info(f"AnomalyDetector initialized: enabled={self.enabled}")
 
@@ -546,7 +574,7 @@ class AnomalyDetector:
                     'low': 2.0,
                     'medium': 3.0,
                     'high': 4.0,
-                    'critical': 5.0
+                    'critical': 15.0
                 }
             },
             'price_gap': {
@@ -560,7 +588,7 @@ class AnomalyDetector:
                 }
             },
             'response': {
-                'skip_trade_threshold': 'high',
+                'skip_trade_threshold': 'critical',
                 'scale_down_threshold': 'medium',
                 'scale_down_factor': 0.5
             },
@@ -689,8 +717,6 @@ class AnomalyDetector:
 
             # Add to history
             self.anomaly_history.append(log_entry)
-            if len(self.anomaly_history) > self.max_history:
-                self.anomaly_history = self.anomaly_history[-self.max_history:]
 
             # Log to text file
             self._log_to_file(log_entry)
@@ -790,7 +816,7 @@ class AnomalyDetector:
 
     def clear_history(self):
         """Clear anomaly history."""
-        self.anomaly_history = []
+        self.anomaly_history = TrimmingList(self.max_history)
         logger.info("Anomaly history cleared")
 
 

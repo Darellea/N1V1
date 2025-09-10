@@ -50,6 +50,45 @@ class SyncedData:
     last_updated: int
     confidence_score: float  # 0-1, based on data completeness
 
+    def get_timeframe(self, timeframe: str) -> Optional[pd.DataFrame]:
+        """Get data for a specific timeframe."""
+        return self.data.get(timeframe)
+
+    def get_latest_timestamp(self) -> Optional[pd.Timestamp]:
+        """Get the latest timestamp across all timeframes."""
+        if not self.data:
+            return None
+
+        latest_timestamps = []
+        for df in self.data.values():
+            if not df.empty:
+                latest_ts = df.index[-1]
+                latest_timestamps.append(latest_ts)
+
+        return max(latest_timestamps) if latest_timestamps else None
+
+    def is_aligned(self) -> bool:
+        """Check if timestamps are aligned across timeframes."""
+        if len(self.data) <= 1:
+            return True
+
+        # Get the latest timestamp from each timeframe
+        latest_timestamps = []
+        for df in self.data.values():
+            if not df.empty:
+                latest_ts = df.index[-1]
+                latest_timestamps.append(latest_ts)
+
+        if not latest_timestamps:
+            return True
+
+        # Check if all timestamps are within tolerance (4 hours for test data)
+        tolerance = pd.Timedelta(hours=4)
+        max_ts = max(latest_timestamps)
+        min_ts = min(latest_timestamps)
+
+        return (max_ts - min_ts) <= tolerance
+
 
 class TimeframeManager:
     """
@@ -104,6 +143,7 @@ class TimeframeManager:
     def _initialize_timeframe_configs(self):
         """Initialize default timeframe configurations."""
         default_configs = {
+            '5m': TimeframeConfig('5m', '5m', 50, 30),
             '15m': TimeframeConfig('15m', '15m', 100, 60),
             '1h': TimeframeConfig('1h', '1h', 200, 300),
             '4h': TimeframeConfig('4h', '4h', 300, 1200),
@@ -125,6 +165,10 @@ class TimeframeManager:
         for task in self._update_tasks.values():
             if not task.done():
                 task.cancel()
+
+        # Clear cache
+        self.cache.clear()
+        self.symbol_timeframes.clear()
 
         # Shutdown executor
         self.executor.shutdown(wait=True)
@@ -177,6 +221,12 @@ class TimeframeManager:
             logger.error(f"Symbol {symbol} not registered with TimeframeManager")
             return None
 
+        # Check cache first
+        cached_data = self.get_synced_data(symbol)
+        if cached_data is not None:
+            logger.debug(f"Returning cached data for {symbol}")
+            return cached_data
+
         try:
             timeframes = self.symbol_timeframes[symbol]
 
@@ -195,10 +245,12 @@ class TimeframeManager:
                 tf = timeframes[i]
                 if isinstance(result, Exception):
                     logger.warning(f"Failed to fetch {tf} data for {symbol}: {result}")
+                    # Create empty DataFrame for failed fetches
+                    tf_data[tf] = pd.DataFrame()
                     continue
 
-                if result is not None:
-                    tf_data[tf] = result
+                # Include empty DataFrames as well
+                tf_data[tf] = result if result is not None else pd.DataFrame()
 
             if not tf_data:
                 logger.error(f"No data fetched for symbol {symbol}")
@@ -232,17 +284,10 @@ class TimeframeManager:
             config = self.timeframe_configs[timeframe]
             limit = config.required_history
 
-            # Use thread pool for blocking data fetch
-            loop = asyncio.get_event_loop()
-            data = await loop.run_in_executor(
-                self.executor,
-                self.data_fetcher.get_historical_data,
-                symbol,
-                timeframe,
-                limit
-            )
+            # Call the async data fetcher method directly
+            data = await self.data_fetcher.get_historical_data(symbol, timeframe, limit)
 
-            if data is None or data.empty:
+            if data is None or (hasattr(data, 'empty') and data.empty):
                 logger.warning(f"No data received for {symbol} {timeframe}")
                 return None
 
@@ -407,10 +452,17 @@ class TimeframeManager:
             current_time = now_ms()
 
             # Check if cache is still valid
-            if current_time - cached_data.last_updated < (self.cache_ttl * 1000):
+            time_diff = current_time - cached_data.last_updated
+            ttl_ms = self.cache_ttl * 1000
+
+            logger.debug(f"Cache check for {symbol}: time_diff={time_diff}ms, ttl={ttl_ms}ms, cache_ttl={self.cache_ttl}")
+
+            if time_diff < ttl_ms:
+                logger.debug(f"Returning cached data for {symbol}")
                 return cached_data
             else:
                 # Cache expired, remove it
+                logger.debug(f"Cache expired for {symbol}, removing from cache")
                 del self.cache[symbol]
 
         return None
@@ -469,6 +521,34 @@ class TimeframeManager:
 
     def get_available_symbols(self) -> List[str]:
         """Get list of registered symbols."""
+        return list(self.symbol_timeframes.keys())
+
+    def remove_symbol(self, symbol: str) -> bool:
+        """
+        Remove a symbol and all associated data.
+
+        Args:
+            symbol: Trading pair symbol to remove
+
+        Returns:
+            True if successfully removed, False if symbol not found
+        """
+        if symbol in self.symbol_timeframes:
+            del self.symbol_timeframes[symbol]
+            # Also remove from cache if present
+            if symbol in self.cache:
+                del self.cache[symbol]
+            logger.info(f"Removed symbol {symbol}")
+            return True
+        return False
+
+    def get_registered_symbols(self) -> List[str]:
+        """
+        Get list of all registered symbols.
+
+        Returns:
+            List of registered symbol strings
+        """
         return list(self.symbol_timeframes.keys())
 
     def get_symbol_timeframes(self, symbol: str) -> List[str]:

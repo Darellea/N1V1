@@ -1,59 +1,59 @@
 {
-  "timestamp": "2025-09-08T13:07:40.862074",
+  "timestamp": "2025-09-10T10:49:49.435725",
   "summary": {
-    "total_files": 319,
-    "total_lines": 190042,
-    "code_lines": 137453,
-    "comment_lines": 21342,
-    "comment_ratio_percent": 15.53,
-    "avg_lines_per_file": 595.74
+    "total_files": 374,
+    "total_lines": 208650,
+    "code_lines": 152630,
+    "comment_lines": 22631,
+    "comment_ratio_percent": 14.83,
+    "avg_lines_per_file": 557.89
   },
   "by_type": {
     "other": {
-      "files": 51,
-      "total_lines": 72586,
-      "code_lines": 56521,
-      "comment_lines": 6451
+      "files": 73,
+      "total_lines": 75206,
+      "code_lines": 59122,
+      "comment_lines": 6470
     },
     "config": {
-      "files": 22,
-      "total_lines": 3186,
-      "code_lines": 3018,
+      "files": 43,
+      "total_lines": 6418,
+      "code_lines": 6250,
       "comment_lines": 68
     },
-    "docs": {
-      "files": 16,
-      "total_lines": 7134,
-      "code_lines": 4533,
-      "comment_lines": 1163
-    },
     "code": {
-      "files": 230,
-      "total_lines": 107136,
-      "code_lines": 73381,
-      "comment_lines": 13660
+      "files": 240,
+      "total_lines": 111451,
+      "code_lines": 76200,
+      "comment_lines": 14342
+    },
+    "docs": {
+      "files": 18,
+      "total_lines": 15575,
+      "code_lines": 11058,
+      "comment_lines": 1751
     }
   },
   "by_language": {
     "Other": {
-      "files": 51,
-      "lines": 72586
+      "files": 73,
+      "lines": 75206
     },
     "JSON": {
-      "files": 17,
-      "lines": 2478
-    },
-    "Markdown": {
-      "files": 11,
-      "lines": 6590
-    },
-    "Text": {
-      "files": 4,
-      "lines": 238
+      "files": 38,
+      "lines": 5709
     },
     "Python": {
-      "files": 230,
-      "lines": 107136
+      "files": 240,
+      "lines": 111451
+    },
+    "Markdown": {
+      "files": 12,
+      "lines": 6947
+    },
+    "Text": {
+      "files": 5,
+      "lines": 8322
     },
     "TOML": {
       "files": 1,
@@ -61,7 +61,7 @@
     },
     "INI": {
       "files": 1,
-      "lines": 8
+      "lines": 9
     },
     "YAML": {
       "files": 3,
@@ -74,22 +74,22 @@
   },
   "by_component": {
     "other": {
-      "files": 304,
-      "total_lines": 182870,
-      "code_lines": 132852,
-      "comment_lines": 20186
+      "files": 358,
+      "total_lines": 201120,
+      "code_lines": 147830,
+      "comment_lines": 21390
     },
     "config": {
       "files": 4,
-      "total_lines": 582,
-      "code_lines": 533,
+      "total_lines": 583,
+      "code_lines": 534,
       "comment_lines": 17
     },
     "docs": {
-      "files": 11,
-      "total_lines": 6590,
-      "code_lines": 4068,
-      "comment_lines": 1139
+      "files": 12,
+      "total_lines": 6947,
+      "code_lines": 4266,
+      "comment_lines": 1224
     }
   },
   "largest_files": [
@@ -100,13 +100,18 @@
     },
     {
       "path": "logs\\crypto_bot.log",
-      "lines": 19519,
+      "lines": 21929,
       "extension": ".log"
     },
     {
       "path": "htmlcov\\function_index.html",
       "lines": 19091,
       "extension": ".html"
+    },
+    {
+      "path": "error.txt",
+      "lines": 8103,
+      "extension": ".txt"
     },
     {
       "path": ".ruff_cache\\content\\1879841978194122611",
@@ -124,6 +129,11 @@
       "extension": ".html"
     },
     {
+      "path": "logs\\anomalies.json",
+      "lines": 2974,
+      "extension": ".json"
+    },
+    {
       "path": ".ruff_cache\\content\\17941625260945127573",
       "lines": 2363,
       "extension": ""
@@ -132,32 +142,22 @@
       "path": "htmlcov\\z_a44f0ac069e85531_test_signal_router_py.html",
       "lines": 2112,
       "extension": ".html"
-    },
-    {
-      "path": "tests\\test_signal_router.py",
-      "lines": 2016,
-      "extension": ".py"
-    },
-    {
-      "path": ".ruff_cache\\content\\9025242937876286884",
-      "lines": 1979,
-      "extension": ""
     }
   ],
   "quality_metrics": {
     "test_to_production_ratio": 0.0,
     "component_distribution": {
       "other": {
-        "lines": 132852,
-        "percentage": 181.04
+        "lines": 147830,
+        "percentage": 194.0
       },
       "config": {
-        "lines": 533,
-        "percentage": 0.73
+        "lines": 534,
+        "percentage": 0.7
       },
       "docs": {
-        "lines": 4068,
-        "percentage": 5.54
+        "lines": 4266,
+        "percentage": 5.6
       }
     }
   }

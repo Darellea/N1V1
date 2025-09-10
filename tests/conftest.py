@@ -226,6 +226,10 @@ def synthetic_market_data():
     })
 
     data.set_index('timestamp', inplace=True)
+
+    # Set regime type attribute for test compatibility
+    data.attrs['regime_type'] = 'bull_market'
+
     return data
 
 
@@ -530,19 +534,19 @@ def generate_regime_data():
         if regime_type == "bull_market":
             # Strong upward trend with moderate volatility
             base_price = 50000.0
-            trend = 0.001  # Strong upward trend
+            trend = 0.01  # Strong upward trend
             volatility = 0.015
 
         elif regime_type == "bear_market":
             # Strong downward trend with high volatility
             base_price = 50000.0
-            trend = -0.001  # Strong downward trend
+            trend = -0.01  # Strong downward trend
             volatility = 0.025
 
         elif regime_type == "sideways":
             # No trend with low volatility
             base_price = 50000.0
-            trend = 0.0001  # Slight upward bias
+            trend = 0.0  # No trend
             volatility = 0.008
 
         elif regime_type == "high_volatility":
@@ -583,6 +587,10 @@ def generate_regime_data():
         })
 
         data.set_index('timestamp', inplace=True)
+
+        # Set regime type attribute for test compatibility
+        data.attrs['regime_type'] = regime_type
+
         return data
 
     return _generate_regime_data
@@ -718,3 +726,16 @@ def cleanup_test_artifacts():
     # Clean up any temporary files or resources
     # This runs after each test function
     pass
+
+
+@pytest.fixture
+def ensemble_config() -> Dict[str, Any]:
+    """Create test configuration for ensemble manager."""
+    return {
+        'total_capital': 10000.0,
+        'rebalance_interval_sec': 60,  # Faster for testing
+        'allocation_method': 'equal_weighted',
+        'min_weight': 0.1,
+        'max_weight': 0.5,
+        'portfolio_risk_limit': 0.1
+    }

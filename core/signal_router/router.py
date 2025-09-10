@@ -690,7 +690,7 @@ class SignalRouter:
 
     def _validate_signal(self, signal: TradingSignal) -> bool:
         """Validate a trading signal's basic properties."""
-        if not signal.symbol or not signal.amount or signal.amount <= 0:
+        if not signal.symbol or not signal.quantity or signal.quantity <= 0:
             return False
 
         # OrderType is flexible; require price for LIMIT orders if represented as string 'limit'

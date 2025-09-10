@@ -19,7 +19,7 @@ from unittest.mock import Mock, AsyncMock, patch
 import asyncio
 
 from core.timeframe_manager import TimeframeManager, SyncedData
-from core.diagnostics import HealthStatus
+from core.diagnostics import HealthStatus, HealthCheckResult
 
 
 class TestTimeframeManagerCore:
@@ -199,26 +199,42 @@ class TestDataSynchronization:
         assert mock_data_fetcher.get_historical_data.call_count == 1
 
     @pytest.mark.asyncio
-    async def test_cache_expiration(self, mock_data_fetcher, multi_timeframe_data):
+    async def test_cache_expiration(self, mock_data_fetcher):
         """Test cache expiration."""
-        manager = TimeframeManager(mock_data_fetcher, {"cache_ttl": 1})  # 1 second TTL
+        manager = TimeframeManager(mock_data_fetcher, {"cache_ttl_seconds": 0})  # 0 second TTL (immediate expiration)
         await manager.initialize()
 
-        mock_data_fetcher.get_historical_data = AsyncMock(return_value=multi_timeframe_data['1h'])
+        # Create fresh data with current timestamp
+        current_time = pd.Timestamp.now()
+        fresh_data = pd.DataFrame({
+            'open': [50000.0],
+            'high': [50100.0],
+            'low': [49900.0],
+            'close': [50050.0],
+            'volume': [100.0]
+        }, index=[current_time])
+
+        # Mock the data fetcher to return fresh data
+        mock_data_fetcher.get_historical_data = AsyncMock(return_value=fresh_data)
 
         manager.add_symbol("BTC/USDT", ["1h"])
 
         # First fetch
         result1 = await manager.fetch_multi_timeframe_data("BTC/USDT")
+        assert result1 is not None
 
-        # Wait for cache to expire
-        await asyncio.sleep(2)
+        # Verify first call was made
+        assert mock_data_fetcher.get_historical_data.call_count == 1
 
-        # Second fetch should bypass cache
+        # Clear the call count to check the second call
+        mock_data_fetcher.get_historical_data.reset_mock()
+
+        # Second fetch should bypass cache (TTL=0 means immediate expiration)
         result2 = await manager.fetch_multi_timeframe_data("BTC/USDT")
+        assert result2 is not None
 
-        # Data fetcher should be called twice
-        assert mock_data_fetcher.get_historical_data.call_count == 2
+        # Data fetcher should be called again since cache expired immediately
+        assert mock_data_fetcher.get_historical_data.call_count == 1
 
 
 class TestSyncedData:
@@ -226,22 +242,28 @@ class TestSyncedData:
 
     def test_synced_data_creation(self, multi_timeframe_data):
         """Test SyncedData object creation."""
+        from utils.time import now_ms
         synced = SyncedData(
             symbol="BTC/USDT",
             data=multi_timeframe_data,
-            timestamp=datetime.now()
+            timestamp=int(datetime.now().timestamp() * 1000),
+            last_updated=now_ms(),
+            confidence_score=1.0
         )
 
         assert synced.symbol == "BTC/USDT"
         assert len(synced.data) == 4
-        assert isinstance(synced.timestamp, datetime)
+        assert isinstance(synced.timestamp, int)
 
     def test_synced_data_get_timeframe(self, multi_timeframe_data):
         """Test getting specific timeframe data."""
+        from utils.time import now_ms
         synced = SyncedData(
             symbol="BTC/USDT",
             data=multi_timeframe_data,
-            timestamp=datetime.now()
+            timestamp=int(datetime.now().timestamp() * 1000),
+            last_updated=now_ms(),
+            confidence_score=1.0
         )
 
         h1_data = synced.get_timeframe('1h')
@@ -254,10 +276,13 @@ class TestSyncedData:
 
     def test_synced_data_get_latest_timestamp(self, multi_timeframe_data):
         """Test getting latest timestamp across timeframes."""
+        from utils.time import now_ms
         synced = SyncedData(
             symbol="BTC/USDT",
             data=multi_timeframe_data,
-            timestamp=datetime.now()
+            timestamp=int(datetime.now().timestamp() * 1000),
+            last_updated=now_ms(),
+            confidence_score=1.0
         )
 
         latest_ts = synced.get_latest_timestamp()
@@ -266,10 +291,13 @@ class TestSyncedData:
 
     def test_synced_data_is_aligned(self, multi_timeframe_data):
         """Test timestamp alignment checking."""
+        from utils.time import now_ms
         synced = SyncedData(
             symbol="BTC/USDT",
             data=multi_timeframe_data,
-            timestamp=datetime.now()
+            timestamp=int(datetime.now().timestamp() * 1000),
+            last_updated=now_ms(),
+            confidence_score=1.0
         )
 
         # Should be aligned by construction
@@ -536,23 +564,23 @@ class TestHealthMonitoring:
                 symbol_count = len(manager.get_registered_symbols())
                 cache_size = len(manager.cache)
 
-                return {
-                    'component': 'timeframe_manager',
-                    'status': HealthStatus.HEALTHY,
-                    'latency_ms': 10.0,
-                    'message': f'Healthy: {symbol_count} symbols, {cache_size} cached',
-                    'details': {
+                return HealthCheckResult(
+                    component='timeframe_manager',
+                    status=HealthStatus.HEALTHY,
+                    latency_ms=10.0,
+                    message=f'Healthy: {symbol_count} symbols, {cache_size} cached',
+                    details={
                         'registered_symbols': symbol_count,
                         'cache_entries': cache_size
                     }
-                }
+                )
             except Exception as e:
-                return {
-                    'component': 'timeframe_manager',
-                    'status': HealthStatus.CRITICAL,
-                    'message': f'Health check failed: {str(e)}',
-                    'details': {'error': str(e)}
-                }
+                return HealthCheckResult(
+                    component='timeframe_manager',
+                    status=HealthStatus.CRITICAL,
+                    message=f'Health check failed: {str(e)}',
+                    details={'error': str(e)}
+                )
 
         diagnostics.register_health_check('timeframe_manager', check_timeframe_manager)
 

@@ -38,6 +38,12 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
                     result[key] = value.value
                 elif hasattr(value, "name"):
                     result[key] = value.name.lower()
+            
+            # Special handling for TradingSignal dataclass - map quantity to amount
+            if hasattr(signal, '__class__') and signal.__class__.__name__ == 'TradingSignal':
+                if 'quantity' in result:
+                    result['amount'] = result.pop('quantity')
+            
             return result
     except (AttributeError, TypeError, ValueError):
         # If dataclass conversion fails for known reasons, fall back to other methods.

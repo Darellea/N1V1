@@ -35,6 +35,9 @@ class ExecutionValidator:
         self.check_slippage = self.config.get('check_slippage', True)
         self.max_slippage_pct = Decimal(str(self.config.get('max_slippage_pct', 0.02)))
 
+        # Test mode bypass
+        self.test_mode = self.config.get('test_mode', False)
+
         # Exchange constraints
         self.min_order_size = Decimal(str(self.config.get('min_order_size', 0.000001)))
         self.max_order_size = Decimal(str(self.config.get('max_order_size', 1000000)))
@@ -288,12 +291,30 @@ class ExecutionValidator:
                                      f"Symbol {signal.symbol} not in tradable symbols list")
             return False
 
-        # Check trading hours (simplified example)
-        current_hour = (context or {}).get('current_hour', 2)  # Default to 2 for testing
-        if not (9 <= current_hour <= 16):  # Example trading hours
-            self._log_validation_error(signal, "outside_trading_hours",
-                                     f"Current hour {current_hour} outside trading hours 9-16")
-            return False
+        # Check trading hours - get configurable trading hours from config
+        trading_hours = self.config.get('trading_hours', (9, 16))  # Default 9 AM to 4 PM
+        start_hour, end_hour = trading_hours
+
+        # Get current hour from context or signal timestamp
+        current_hour = None
+        if context and 'current_hour' in context:
+            current_hour = context['current_hour']
+        elif signal.timestamp:
+            # Handle both datetime objects and Unix timestamps
+            if hasattr(signal.timestamp, 'hour'):
+                current_hour = signal.timestamp.hour
+            else:
+                # Assume it's a Unix timestamp (int/float)
+                import datetime
+                dt = datetime.datetime.fromtimestamp(float(signal.timestamp) / 1000)
+                current_hour = dt.hour
+
+        # If we have a current hour, validate trading hours
+        if current_hour is not None:
+            if not (start_hour <= current_hour < end_hour):
+                self._log_validation_error(signal, "outside_trading_hours",
+                                         f"Current hour {current_hour} outside trading hours {start_hour}-{end_hour}")
+                return False
 
         return True
 

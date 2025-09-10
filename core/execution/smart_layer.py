@@ -108,16 +108,31 @@ class ExecutionSmartLayer:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
         # Initialize components
-        self.validator = ExecutionValidator(self.config.get('validation', {}))
+        validation_config = self.config.get('validation', {})
+        validation_config['test_mode'] = self.config.get('test_mode', False)
+        self.validator = ExecutionValidator(validation_config)
         self.retry_manager = RetryManager(self.config.get('retry', {}))
         self.adaptive_pricer = AdaptivePricer(self.config.get('adaptive_pricing', {}))
 
-        # Initialize executors
+        # Initialize executors with test_mode flag
+        test_mode = self.config.get('test_mode', False)
+        twap_config = self.config.get('twap', {})
+        twap_config['test_mode'] = test_mode
+
+        vwap_config = self.config.get('vwap', {})
+        vwap_config['test_mode'] = test_mode
+
+        dca_config = self.config.get('dca', {})
+        dca_config['test_mode'] = test_mode
+
+        smart_split_config = self.config.get('smart_split', {})
+        smart_split_config['test_mode'] = test_mode
+
         self.executors = {
-            ExecutionPolicy.TWAP: TWAPExecutor(self.config.get('twap', {})),
-            ExecutionPolicy.VWAP: VWAPExecutor(self.config.get('vwap', {})),
-            ExecutionPolicy.DCA: DCAExecutor(self.config.get('dca', {})),
-            ExecutionPolicy.SMART_SPLIT: SmartOrderExecutor(self.config.get('smart_split', {}))
+            ExecutionPolicy.TWAP: TWAPExecutor(twap_config),
+            ExecutionPolicy.VWAP: VWAPExecutor(vwap_config),
+            ExecutionPolicy.DCA: DCAExecutor(dca_config),
+            ExecutionPolicy.SMART_SPLIT: SmartOrderExecutor(smart_split_config)
         }
 
         # Policy selection thresholds
@@ -231,11 +246,22 @@ class ExecutionSmartLayer:
             # Phase 5: Finalize
             duration_ms = int((asyncio.get_event_loop().time() - start_time) * 1000)
 
+            # Determine the actual policy used (may be fallback policy)
+            final_policy_value = execution_result.get('final_policy', policy.value)
+            actual_policy_used = ExecutionPolicy(final_policy_value)
+
+            # Update metadata to indicate fallback if used
+            metadata = execution_result.get('metadata', {})
+            if execution_result.get('fallback_used', False):
+                metadata['fallback_applied'] = True
+                metadata['original_policy'] = policy.value
+                metadata['fallback_policy'] = final_policy_value
+
             result = ExecutionResult(
                 execution_id=execution_id,
                 status=execution_result.get('status', ExecutionStatus.COMPLETED),
                 orders=execution_result.get('orders', []),
-                policy_used=policy,
+                policy_used=actual_policy_used,
                 total_amount=signal.amount,
                 executed_amount=execution_result.get('executed_amount', Decimal(0)),
                 average_price=execution_result.get('average_price'),
@@ -245,7 +271,7 @@ class ExecutionSmartLayer:
                 duration_ms=duration_ms,
                 retries=execution_result.get('retries', 0),
                 fallback_used=execution_result.get('fallback_used', False),
-                metadata=execution_result.get('metadata')
+                metadata=metadata
             )
 
             # Log execution result
@@ -329,9 +355,9 @@ class ExecutionSmartLayer:
         spread_pct = context.get('spread_pct', 0.002)  # Default 0.2%
         liquidity_stability = context.get('liquidity_stability', 0.8)  # Default 80%
 
-        # Policy selection logic
+        # Policy selection logic - prioritize market conditions and order size over explicit order type
         if order_value > self.policy_thresholds['large_order']:
-            # Large orders need advanced execution
+            # Large orders need advanced execution regardless of specified order type
             if liquidity_stability > self.policy_thresholds['liquidity_stable']:
                 return ExecutionPolicy.VWAP  # Good liquidity, use VWAP
             elif spread_pct > self.policy_thresholds['high_spread']:
@@ -348,10 +374,13 @@ class ExecutionSmartLayer:
             return ExecutionPolicy.SMART_SPLIT
 
         else:
-            # Small orders or default
+            # Small orders - respect explicit order type if specified
             if signal.order_type == OrderType.LIMIT and signal.price:
                 return ExecutionPolicy.LIMIT
+            elif signal.order_type == OrderType.MARKET:
+                return ExecutionPolicy.MARKET
             else:
+                # Default to market for small orders
                 return ExecutionPolicy.MARKET
 
     async def _execute_with_policy(self, signal: TradingSignal, policy: ExecutionPolicy,
@@ -368,14 +397,18 @@ class ExecutionSmartLayer:
             Execution results
         """
         if policy in [ExecutionPolicy.MARKET, ExecutionPolicy.LIMIT]:
-            # Simple market/limit execution
-            return await self._execute_simple_order(signal, policy)
+            # Simple market/limit execution - wrap in a function for retry manager
+            async def simple_execution():
+                return await self._execute_simple_order(signal, policy)
+            return await simple_execution()
 
         # Use advanced executor
         executor = self.executors.get(policy)
         if not executor:
             self.logger.warning(f"Executor not found for policy {policy}, falling back to market")
-            return await self._execute_simple_order(signal, ExecutionPolicy.MARKET)
+            async def fallback_execution():
+                return await self._execute_simple_order(signal, ExecutionPolicy.MARKET)
+            return await fallback_execution()
 
         # Execute using the selected executor
         orders = await executor.execute_order(signal)

@@ -48,7 +48,8 @@ class TradingSignal:
         signal_type: Type of signal (entry/exit/etc.)
         signal_strength: Strength of the signal
         order_type: Type of order to execute
-        amount: Size of the position (in base currency)
+        quantity: Size of the position (in base currency)
+        side: Trading side ("buy" or "sell")
         price: Target price for limit orders
         current_price: Current market price when signal was generated
         timestamp: Time when signal was generated (ms)
@@ -63,7 +64,8 @@ class TradingSignal:
     signal_type: SignalType
     signal_strength: SignalStrength
     order_type: Any
-    amount: Decimal
+    quantity: Decimal
+    side: str
     price: Optional[Decimal] = None
     current_price: Optional[Decimal] = None
     timestamp: int = 0
@@ -87,11 +89,11 @@ class TradingSignal:
         # Normalize numeric fields to Decimal where appropriate so the rest of the
         # codebase can rely on Decimal-typed numeric members.
         try:
-            if self.amount is not None and not isinstance(self.amount, Decimal):
-                self.amount = Decimal(str(self.amount))
+            if self.quantity is not None and not isinstance(self.quantity, Decimal):
+                self.quantity = Decimal(str(self.quantity))
         except Exception:
             # If conversion fails, set a safe default (zero) to avoid crashes
-            self.amount = Decimal(0)
+            self.quantity = Decimal(0)
 
         for field_name in ("price", "current_price", "stop_loss", "take_profit"):
             try:
@@ -103,13 +105,13 @@ class TradingSignal:
 
     def normalize_amount(self, total_balance: Optional[Decimal] = None) -> None:
         """
-        Convert 'amount' from fraction -> notional when signaled in metadata.
+        Convert 'quantity' from fraction -> notional when signaled in metadata.
 
         Behavior:
-        - If signal.metadata contains {"amount_is_fraction": True} then `amount`
+        - If signal.metadata contains {"amount_is_fraction": True} then `quantity`
           is interpreted as a fractional value (0..1) and will be converted to a
           notional (base currency amount) by multiplying with provided
-          `total_balance`. The method mutates `self.amount` to the computed
+          `total_balance`. The method mutates `self.quantity` to the computed
           notional (Decimal) and clears metadata['amount_is_fraction'].
 
         - If metadata flag is absent or False, this method is a no-op.
@@ -130,7 +132,7 @@ class TradingSignal:
             raise ValueError("total_balance is required to convert fractional amount to notional")
 
         try:
-            frac = Decimal(str(self.amount))
+            frac = Decimal(str(self.quantity))
             # Clamp fraction to [0,1]
             if frac < 0:
                 frac = Decimal(0)
@@ -138,7 +140,7 @@ class TradingSignal:
                 frac = Decimal(1)
             notional = (Decimal(str(total_balance)) * frac)
             # Quantize to a sensible precision (8 decimal places) but keep Decimal type
-            self.amount = notional.quantize(Decimal("0.00000001"))
+            self.quantity = notional.quantize(Decimal("0.00000001"))
             # Clear the metadata flag to indicate amount is now absolute/notional
             self.metadata["amount_is_fraction"] = False
         except Exception as e:

@@ -44,9 +44,10 @@ class VWAPExecutor(BaseExecutor):
         self.lookback_minutes = config.get("lookback_minutes", 60)
         self.parts = config.get("parts", 10)
         self.fallback_mode = config.get("fallback_mode", "market")
+        self.test_mode = config.get("test_mode", False)
 
         self.logger.info(f"VWAPExecutor initialized: lookback={self.lookback_minutes}min, "
-                        f"parts={self.parts}")
+                        f"parts={self.parts}, test_mode={self.test_mode}")
 
     async def execute_order(self, signal: TradingSignal) -> List[Order]:
         """
@@ -418,3 +419,18 @@ class VWAPExecutor(BaseExecutor):
             "peak_volume": 120.0,
             "volume_distribution": "normal"
         }
+
+    async def _wait_delay(self, delay_seconds: float) -> None:
+        """
+        Wait for a specified delay, but skip in test mode.
+
+        Args:
+            delay_seconds: Delay in seconds
+        """
+        if self.test_mode:
+            # In test mode, skip delays to make tests run fast
+            self.logger.debug(f"Test mode: skipping {delay_seconds:.1f}s delay")
+            return
+
+        # In production mode, use the parent class delay
+        await super()._wait_delay(delay_seconds)

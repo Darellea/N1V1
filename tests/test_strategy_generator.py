@@ -29,7 +29,7 @@ from optimization.strategy_generator import (
 # from strategies.generated import GeneratedStrategy
 from strategies.base_strategy import BaseStrategy
 from backtest.backtester import Backtester
-from core.diagnostics import HealthStatus
+from core.diagnostics import HealthStatus, HealthCheckResult
 
 
 class TestStrategyGenome:
@@ -307,11 +307,11 @@ class TestStrategyGenerator:
         await generator.initialize()
 
         # Save population
-        await generator.save_population()
+        generator.save_population()
 
         # Create new generator and load population
         generator2 = StrategyGenerator(config)
-        await generator2.load_population()
+        generator2.load_population()
 
         # Should have loaded the population
         assert len(generator2.population) == len(generator.population)
@@ -415,8 +415,8 @@ class TestFitnessEvaluation:
         assert isinstance(fitness, (int, float))
         assert fitness > 0.0
 
-        # Backtester should have been called
-        backtester.run_backtest.assert_called_once()
+        # Backtester should have been called with genome and market_data
+        backtester.run_backtest.assert_called_once_with(genome, synthetic_market_data)
 
     def test_multi_objective_fitness(self):
         """Test multi-objective fitness calculation."""
@@ -759,29 +759,29 @@ class TestHealthMonitoring:
         async def check_strategy_generator():
             try:
                 population_size = len(generator.population)
-                current_generation = generator.current_generation
+                current_generation = getattr(generator, 'current_generation', 0)
                 best_fitness = max([g.fitness for g in generator.population]) if generator.population else 0
 
                 status = HealthStatus.HEALTHY if population_size > 0 else HealthStatus.DEGRADED
 
-                return {
-                    'component': 'strategy_generator',
-                    'status': status,
-                    'latency_ms': 15.0,
-                    'message': f'Generator healthy: pop={population_size}, gen={current_generation}, best_fit={best_fitness:.2f}',
-                    'details': {
+                return HealthCheckResult(
+                    component='strategy_generator',
+                    status=status,
+                    latency_ms=15.0,
+                    message=f'Generator healthy: pop={population_size}, gen={current_generation}, best_fit={best_fitness:.2f}',
+                    details={
                         'population_size': population_size,
                         'current_generation': current_generation,
                         'best_fitness': best_fitness
                     }
-                }
+                )
             except Exception as e:
-                return {
-                    'component': 'strategy_generator',
-                    'status': HealthStatus.CRITICAL,
-                    'message': f'Health check failed: {str(e)}',
-                    'details': {'error': str(e)}
-                }
+                return HealthCheckResult(
+                    component='strategy_generator',
+                    status=HealthStatus.CRITICAL,
+                    message=f'Health check failed: {str(e)}',
+                    details={'error': str(e)}
+                )
 
         diagnostics.register_health_check('strategy_generator', check_strategy_generator)
 

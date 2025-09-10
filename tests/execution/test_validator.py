@@ -396,10 +396,56 @@ class TestExecutionValidator:
         context = {'current_hour': 2}  # Outside trading hours
 
         with patch.object(validator, '_log_validation_error') as mock_log:
-            result = validator._validate_exchange_constraints(signal)
+            result = validator._validate_exchange_constraints(signal, context)
             assert result is False
             mock_log.assert_called_once()
             assert "outside_trading_hours" in mock_log.call_args[0]
+
+    def test_validate_exchange_constraints_trading_hours_within_range(self, validator):
+        """Test validation of trading hours within allowed range."""
+        signal = TradingSignal(
+            strategy_id="test",
+            symbol="BTC/USDT",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type=OrderType.MARKET,
+            amount=Decimal("1000"),
+            timestamp=datetime.now()
+        )
+
+        context = {'current_hour': 12}  # Within trading hours (9-16)
+
+        result = validator._validate_exchange_constraints(signal, context)
+        assert result is True
+
+    def test_validate_exchange_constraints_custom_trading_hours(self, validator):
+        """Test validation with custom trading hours configuration."""
+        # Set custom trading hours (8 AM to 6 PM)
+        validator.config['trading_hours'] = (8, 18)
+
+        signal = TradingSignal(
+            strategy_id="test",
+            symbol="BTC/USDT",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type=OrderType.MARKET,
+            amount=Decimal("1000"),
+            timestamp=datetime.now()
+        )
+
+        # Test hour within custom range
+        context_within = {'current_hour': 14}
+        result = validator._validate_exchange_constraints(signal, context_within)
+        assert result is True
+
+        # Test hour outside custom range
+        context_outside = {'current_hour': 7}
+        with patch.object(validator, '_log_validation_error') as mock_log:
+            result = validator._validate_exchange_constraints(signal, context_outside)
+            assert result is False
+            mock_log.assert_called_once()
+            assert "outside_trading_hours" in mock_log.call_args[0]
+            assert "8-18" in mock_log.call_args[0][2]  # Check that custom hours are in the message
 
     def test_get_validation_rules(self, validator):
         """Test getting validation rules."""

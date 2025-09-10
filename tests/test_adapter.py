@@ -70,7 +70,8 @@ def sample_trading_signal():
         signal_type=SignalType.ENTRY_LONG,
         signal_strength=SignalStrength.STRONG,
         order_type="market",
-        amount=Decimal("1.0"),
+        quantity=Decimal("1.0"),
+        side="buy",
         price=Decimal("50000"),
         current_price=Decimal("50000"),
         timestamp=1234567890,
@@ -104,8 +105,8 @@ def test_signal_to_dict_dataclass(sample_trading_signal):
     # Check that all dataclass fields are present
     assert result["strategy_id"] == "test_strategy"
     assert result["symbol"] == "BTC/USDT"
-    assert result["signal_type"] == SignalType.ENTRY_LONG
-    assert result["signal_strength"] == SignalStrength.STRONG
+    assert result["signal_type"] == 1  # SignalType.ENTRY_LONG.value
+    assert result["signal_strength"] == 3  # SignalStrength.STRONG.value
     assert result["order_type"] == "market"
     assert result["amount"] == Decimal("1.0")
     assert result["price"] == Decimal("50000")

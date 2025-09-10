@@ -139,6 +139,7 @@ class RetryManager:
         attempts: List[RetryAttempt] = []
         current_policy = policy
         total_delay = 0.0
+        fallback_used = False
 
         for attempt in range(self.max_retries + 1):  # +1 for initial attempt
             try:
@@ -153,8 +154,10 @@ class RetryManager:
                 # Check if execution was successful
                 if self._is_successful_execution(result):
                     self.logger.info(f"Execution succeeded on attempt {attempt + 1}")
+                    # Ensure status is COMPLETED for successful executions
+                    result['status'] = ExecutionStatus.COMPLETED
                     return self._enrich_result_with_retry_info(
-                        result, attempt, total_delay, attempts, False, current_policy
+                        result, attempt, total_delay, attempts, fallback_used, current_policy
                     )
 
                 # Execution failed, determine if we should retry
@@ -165,12 +168,13 @@ class RetryManager:
                     self.logger.warning(f"Execution failed on attempt {attempt + 1}, not retrying: {error_type.value}")
                     return self._create_failure_result(
                         attempt, total_delay, attempts, current_policy,
-                        f"Execution failed: {error_type.value}"
+                        f"Execution failed: {error_type.value}", fallback_used
                     )
 
                 # Check if we should fallback to different policy
-                if self.fallback_enabled and attempt + 1 >= self.fallback_on_attempt:
+                if self.fallback_enabled and attempt + 1 >= self.fallback_on_attempt and current_policy != self.fallback_policy:
                     current_policy = self.fallback_policy
+                    fallback_used = True
                     self.logger.info(f"Falling back to policy {current_policy.value} on attempt {attempt + 1}")
 
                 # Calculate delay for next attempt
@@ -214,7 +218,7 @@ class RetryManager:
 
                 if not should_retry:
                     return self._create_failure_result(
-                        attempt, total_delay, attempts, current_policy, str(e)
+                        attempt, total_delay, attempts, current_policy, str(e), fallback_used
                     )
 
                 # Record the attempt
@@ -237,7 +241,7 @@ class RetryManager:
         # All attempts exhausted
         return self._create_failure_result(
             self.max_retries, total_delay, attempts, current_policy,
-            f"All {self.max_retries + 1} attempts exhausted"
+            f"All {self.max_retries + 1} attempts exhausted", fallback_used
         )
 
     def _is_successful_execution(self, result: Dict[str, Any]) -> bool:
@@ -408,7 +412,8 @@ class RetryManager:
         total_delay: float,
         attempt_history: List[RetryAttempt],
         final_policy: ExecutionPolicy,
-        error_message: str
+        error_message: str,
+        fallback_used: bool = False
     ) -> Dict[str, Any]:
         """
         Create a failure result dictionary.
@@ -419,6 +424,7 @@ class RetryManager:
             attempt_history: History of retry attempts
             final_policy: Final policy used
             error_message: Error message
+            fallback_used: Whether fallback was used
 
         Returns:
             Failure result dictionary
@@ -434,7 +440,7 @@ class RetryManager:
             'retries': attempts,
             'total_delay': total_delay,
             'attempt_history': [attempt.__dict__ for attempt in attempt_history],
-            'fallback_used': final_policy != self.fallback_policy,
+            'fallback_used': fallback_used,
             'final_policy': final_policy.value,
             'error_message': error_message
         }

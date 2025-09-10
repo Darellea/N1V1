@@ -168,15 +168,18 @@ class StrategyEnsembleManager:
         )
         self.allocations[strategy_id] = allocation
 
+        # Normalize weights after adding strategy
+        await self._normalize_allocations()
+
         # Publish strategy addition event
         await self._publish_strategy_event(
             strategy_id=strategy_id,
             event_type="strategy_added",
-            weight=initial_weight,
+            weight=self.allocations[strategy_id].weight,  # Use normalized weight
             rationale=f"Strategy {strategy_id} added to ensemble"
         )
 
-        logger.info(f"Added strategy {strategy_id} with weight {initial_weight:.3f}")
+        logger.info(f"Added strategy {strategy_id} with normalized weight {self.allocations[strategy_id].weight:.3f}")
 
     async def remove_strategy(self, strategy_id: str) -> None:
         """
@@ -435,6 +438,27 @@ class StrategyEnsembleManager:
         equal_weight = 1.0 / len(self.strategies)
         return {strategy_id: equal_weight for strategy_id in self.strategies.keys()}
 
+    async def _normalize_allocations(self) -> None:
+        """Normalize strategy allocations to ensure they sum to 1.0."""
+        if not self.allocations:
+            return
+
+        # Apply min/max weight constraints first
+        constrained_weights = {}
+        for strategy_id, allocation in self.allocations.items():
+            constrained_weights[strategy_id] = max(self.min_weight, min(self.max_weight, allocation.weight))
+
+        # Renormalize to ensure sum equals 1.0
+        total_weight = sum(constrained_weights.values())
+        if total_weight > 0:
+            for strategy_id in constrained_weights:
+                normalized_weight = constrained_weights[strategy_id] / total_weight
+                self.allocations[strategy_id].weight = normalized_weight
+                self.allocations[strategy_id].capital_allocated = self.total_capital * Decimal(str(normalized_weight))
+                self.allocations[strategy_id].last_updated = datetime.now()
+
+        logger.debug(f"Normalized allocations for {len(self.allocations)} strategies")
+
     def _apply_weight_constraints(self, weights: Dict[str, float]) -> Dict[str, float]:
         """Apply min/max weight constraints."""
         constrained_weights = {}
@@ -456,25 +480,41 @@ class StrategyEnsembleManager:
             return 0.5  # Neutral score
 
         history = self.performance_history[strategy_id]
-        if len(history) < 5:  # Need minimum data
+        if len(history) < 2:  # Need minimum data
             return 0.5
 
         try:
-            # Extract returns
+            # Extract returns and PnL
             returns = [p.get('daily_return', 0.0) for p in history if 'daily_return' in p]
+            pnl_values = [p.get('pnl', 0.0) for p in history if 'pnl' in p]
 
-            if len(returns) < 5:
+            if len(returns) < 2:
                 return 0.5
 
+            # Calculate multiple performance metrics
+            avg_return = statistics.mean(returns)
+            total_pnl = sum(pnl_values) if pnl_values else 0.0
+
             # Calculate Sharpe ratio (simplified)
+            sharpe_score = 0.5  # Neutral
             if len(returns) > 1:
-                avg_return = statistics.mean(returns)
                 std_return = statistics.stdev(returns)
                 if std_return > 0:
                     sharpe = avg_return / std_return
-                    # Convert to 0-1 scale (assuming reasonable Sharpe range)
-                    score = max(0.1, min(0.9, 0.5 + sharpe * 0.1))
-                    return score
+                    # Convert Sharpe to 0-1 scale (assuming Sharpe range of -2 to +2)
+                    sharpe_score = max(0.1, min(0.9, 0.5 + sharpe * 0.2))
+
+            # Calculate PnL score (0-1 scale based on total PnL)
+            pnl_score = 0.5  # Neutral
+            if total_pnl != 0:
+                # Normalize PnL to a reasonable range (assuming |PnL| up to 1000)
+                pnl_normalized = max(-1000, min(1000, total_pnl))
+                pnl_score = max(0.1, min(0.9, 0.5 + (pnl_normalized / 1000) * 0.4))
+
+            # Combine scores with weights
+            combined_score = (sharpe_score * 0.6) + (pnl_score * 0.4)
+
+            return max(0.1, min(0.9, combined_score))
 
         except Exception as e:
             logger.warning(f"Error calculating performance score for {strategy_id}: {e}")
@@ -495,7 +535,7 @@ class StrategyEnsembleManager:
         allocated_quantity = base_quantity * Decimal(str(allocation.weight))
 
         # Apply risk scaling (simplified)
-        risk_factor = min(1.0, allocation.performance_score * 2.0)  # Better performance = higher risk tolerance
+        risk_factor = allocation.performance_score * 2.0  # Bettr performance = higher risk tolerance
         allocated_quantity = allocated_quantity * Decimal(str(risk_factor))
 
         return allocated_quantity

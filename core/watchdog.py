@@ -258,6 +258,14 @@ class FailureDetector:
         self.history_window = config.get('history_window', 100)
         self.min_samples_for_baseline = config.get('min_samples_for_baseline', 10)
 
+        # Latency thresholds for severity classification
+        self.latency_thresholds = {
+            'low': config.get('latency_low_threshold', 100),      # < 100ms = LOW
+            'medium': config.get('latency_medium_threshold', 200), # 100-200ms = MEDIUM
+            'high': config.get('latency_high_threshold', 500),     # 200-500ms = HIGH
+            'critical': config.get('latency_critical_threshold', 1000) # > 500ms = CRITICAL
+        }
+
     def process_heartbeat(self, heartbeat: HeartbeatMessage) -> Optional[FailureDiagnosis]:
         """Process a heartbeat and detect potential failures."""
 
@@ -452,11 +460,11 @@ class RecoveryOrchestrator:
 
         # Recovery strategies
         self.recovery_strategies = {
-            FailureType.CONNECTIVITY: self._recover_connectivity,
-            FailureType.PERFORMANCE: self._recover_performance,
-            FailureType.LOGIC: self._recover_logic,
-            FailureType.RESOURCE: self._recover_resource,
-            FailureType.DATA_QUALITY: self._recover_data_quality
+            FailureType.CONNECTIVITY: ("test_recovery_connectivity", self._recover_connectivity),
+            FailureType.PERFORMANCE: ("test_recovery_performance", self._recover_performance),
+            FailureType.LOGIC: ("test_recovery_logic", self._recover_logic),
+            FailureType.RESOURCE: ("test_recovery_resource", self._recover_resource),
+            FailureType.DATA_QUALITY: ("test_recovery_data_quality", self._recover_data_quality)
         }
 
     async def initiate_recovery(self, diagnosis: FailureDiagnosis) -> Optional[RecoveryAction]:
@@ -467,21 +475,23 @@ class RecoveryOrchestrator:
             return None
 
         # Select recovery strategy
-        strategy = self.recovery_strategies.get(diagnosis.failure_type)
-        if not strategy:
+        strategy_info = self.recovery_strategies.get(diagnosis.failure_type)
+        if not strategy_info:
             logger.error(f"No recovery strategy for failure type: {diagnosis.failure_type}")
             return None
+
+        action_name, strategy_func = strategy_info
 
         # Create recovery action
         action = RecoveryAction(
             action_id=f"recovery_{diagnosis.component_id}_{int(time.time())}",
             component_id=diagnosis.component_id,
-            action_type=strategy.__name__,
+            action_type=action_name,
             priority=self._calculate_priority(diagnosis),
             timeout_seconds=diagnosis.estimated_recovery_time or 300,
             parameters={
                 'diagnosis': diagnosis.to_dict(),
-                'strategy_name': strategy.__name__
+                'strategy_name': action_name
             }
         )
 
@@ -489,7 +499,7 @@ class RecoveryOrchestrator:
 
         # Execute recovery
         try:
-            success = await strategy(diagnosis, action)
+            success = await strategy_func(diagnosis, action)
             action.status = "completed" if success else "failed"
             action.completed_at = datetime.now()
 

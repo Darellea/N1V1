@@ -134,7 +134,7 @@ class StrategyGene:
 class StrategyGenome:
     """Complete genetic representation of a trading strategy."""
     genes: List[StrategyGene] = field(default_factory=list)
-    fitness: float = float('-inf')
+    fitness: float = 0.0
     age: int = 0
     generation: int = 0
     species_id: Optional[str] = None
@@ -174,7 +174,7 @@ class StrategyGenome:
             metadata=self.metadata.copy()
         )
 
-    def mutate(self, mutation_rate: float = 0.1) -> None:
+    def mutate(self, mutation_rate: float = 0.1) -> 'StrategyGenome':
         """Apply mutations to this genome."""
         for gene in self.genes:
             if random.random() < mutation_rate:
@@ -188,6 +188,7 @@ class StrategyGenome:
                 self._remove_random_gene()
 
         self._validate_genome()
+        return self
 
     def _mutate_gene(self, gene: StrategyGene) -> None:
         """Mutate a single gene."""
@@ -309,6 +310,31 @@ class StrategyGenome:
     def __str__(self) -> str:
         """String representation of the genome."""
         return f"Genome(gen={self.generation}, fitness={self.fitness:.4f}, genes={len(self.genes)})"
+
+    @staticmethod
+    def select_best(population: List['StrategyGenome'], num_to_select: int) -> List['StrategyGenome']:
+        """Select the best N genomes by fitness."""
+        if not population:
+            return []
+
+        # Sort by fitness in descending order
+        sorted_population = sorted(population, key=lambda g: g.fitness, reverse=True)
+        return sorted_population[:num_to_select]
+
+    @staticmethod
+    def tournament_selection(population: List['StrategyGenome'], tournament_size: int) -> 'StrategyGenome':
+        """Perform tournament selection to choose a parent."""
+        if not population:
+            raise ValueError("Population cannot be empty")
+
+        if tournament_size > len(population):
+            tournament_size = len(population)
+
+        # Select random candidates for tournament
+        tournament = random.sample(population, tournament_size)
+
+        # Return the best from the tournament
+        return max(tournament, key=lambda g: g.fitness)
 
 
 @dataclass
@@ -747,6 +773,28 @@ class DistributedEvaluator:
         data_summary = f"{len(data)}_{data.index[0] if not data.empty else 'empty'}"
         return f"{gene_summary}_{data_summary}"
 
+    def get_worker_status(self) -> Dict[str, Any]:
+        """Get status of workers in the distributed evaluator."""
+        status = {
+            'max_workers': self.max_workers,
+            'active_workers': 0,
+            'executor_type': 'ProcessPoolExecutor' if self.config.get('use_processes', False) else 'ThreadPoolExecutor',
+            'cache_size': len(self.evaluation_cache),
+            'is_initialized': self.executor is not None
+        }
+
+        if self.executor:
+            # Try to get active thread/process count
+            try:
+                if hasattr(self.executor, '_threads'):
+                    status['active_workers'] = len([t for t in self.executor._threads if t.is_alive()])
+                elif hasattr(self.executor, '_processes'):
+                    status['active_workers'] = len([p for p in self.executor._processes.values() if p.is_alive()])
+            except Exception:
+                status['active_workers'] = 0
+
+        return status
+
     async def shutdown(self) -> None:
         """Shutdown the distributed evaluator."""
         if self.executor:
@@ -800,6 +848,7 @@ class StrategyGenerator(BaseOptimizer):
         self.population: List[StrategyGenome] = []
         self.species: List[Species] = []
         self.best_genome: Optional[StrategyGenome] = None
+        self.current_generation: int = 0
 
         # Optimization components
         self.bayesian_optimizer = BayesianOptimizer(config) if self.bayesian_enabled else None
@@ -815,6 +864,9 @@ class StrategyGenerator(BaseOptimizer):
         """Initialize the strategy generator."""
         if self.distributed_evaluator:
             await self.distributed_evaluator.initialize()
+
+        # Initialize population
+        await self._initialize_population()
 
         logger.info("StrategyGenerator fully initialized")
 
@@ -1205,8 +1257,11 @@ class StrategyGenerator(BaseOptimizer):
             })
         return species_info
 
-    def save_population(self, path: str) -> None:
-        """Save current population to disk."""
+    def save_population(self) -> None:
+        """Save current population to disk using model_path."""
+        model_path = self.config.get('model_path', 'models/strategy_generator')
+        path = f"{model_path}/population.json"
+
         population_data = {
             'timestamp': datetime.now().isoformat(),
             'population': [genome.to_dict() for genome in self.population],
@@ -1221,8 +1276,12 @@ class StrategyGenerator(BaseOptimizer):
 
         logger.info(f"Population saved to {path}")
 
-    def load_population(self, path: str) -> None:
+    def load_population(self, path: Optional[str] = None) -> None:
         """Load population from disk."""
+        if path is None:
+            model_path = self.config.get('model_path', 'models/strategy_generator')
+            path = f"{model_path}/population.json"
+
         if not Path(path).exists():
             logger.warning(f"Population file not found: {path}")
             return
@@ -1237,6 +1296,144 @@ class StrategyGenerator(BaseOptimizer):
         self.generation_stats = data.get('generation_stats', [])
 
         logger.info(f"Population loaded from {path}")
+
+    async def generate_strategy(self, genome: StrategyGenome, name: str) -> Optional[type]:
+        """Generate a strategy class from a genome."""
+        try:
+            # Use the existing _genome_to_strategy method
+            strategy_instance = self._genome_to_strategy(genome)
+
+            if strategy_instance is None:
+                return None
+
+            # Create a class from the instance
+            strategy_class = type(name, (type(strategy_instance),), {
+                '__init__': lambda self, config: super(type(self), self).__init__(config),
+                'generate_signals': strategy_instance.generate_signals,
+                'genome': genome
+            })
+
+            return strategy_class
+
+        except Exception as e:
+            logger.error(f"Failed to generate strategy: {e}")
+            return None
+
+    async def evolve(self) -> None:
+        """Run one generation of evolution."""
+        if not self.population:
+            await self._initialize_population()
+
+        # Evaluate current population
+        # For now, use dummy data - in practice this would be passed in
+        dummy_data = pd.DataFrame({
+            'timestamp': pd.date_range('2023-01-01', periods=100, freq='1H'),
+            'open': np.random.uniform(100, 110, 100),
+            'high': np.random.uniform(105, 115, 100),
+            'low': np.random.uniform(95, 105, 100),
+            'close': np.random.uniform(100, 110, 100),
+            'volume': np.random.uniform(1000, 10000, 100)
+        })
+
+        await self._evaluate_population(dummy_data)
+        await self._create_next_generation()
+        self._update_best_genome()
+        self.current_generation += 1
+
+    @staticmethod
+    async def calculate_fitness(genome: StrategyGenome, market_data: pd.DataFrame) -> float:
+        """Calculate fitness for a genome using direct evaluation."""
+        try:
+            # Simple fitness based on genome complexity and market data
+            base_fitness = len(genome.genes) * 0.1
+
+            # Add some market-based variation
+            if not market_data.empty:
+                volatility = market_data['close'].pct_change().std()
+                base_fitness += volatility * 10  # Reward strategies in volatile markets
+
+            return base_fitness
+        except Exception:
+            return float('-inf')
+
+    @staticmethod
+    async def calculate_fitness_with_backtest(genome: StrategyGenome, market_data: pd.DataFrame, backtester) -> float:
+        """Calculate fitness using backtesting."""
+        try:
+            # Run actual backtest
+            results = await backtester.run_backtest(genome, market_data)
+
+            return StrategyGenerator.calculate_multi_objective_fitness(results)
+        except Exception:
+            return float('-inf')
+
+    @staticmethod
+    def calculate_multi_objective_fitness(results: Dict[str, Any]) -> float:
+        """Calculate multi-objective fitness from backtest results."""
+        if not results:
+            return float('-inf')
+
+        score = 0.0
+
+        # Sharpe ratio (primary metric)
+        sharpe = results.get('sharpe_ratio', 0)
+        score += sharpe * 1.0
+
+        # Total return
+        total_return = results.get('total_return', 0)
+        score += total_return * 0.5
+
+        # Win rate
+        win_rate = results.get('win_rate', 0)
+        score += win_rate * 0.3
+
+        # Penalize drawdown
+        max_drawdown = results.get('max_drawdown', 0)
+        score -= max_drawdown * 0.2
+
+        return score
+
+    @staticmethod
+    def calculate_risk_adjusted_fitness(results: Dict[str, Any]) -> float:
+        """Calculate risk-adjusted fitness."""
+        if not results:
+            return float('-inf')
+
+        sharpe = results.get('sharpe_ratio', 0)
+        total_return = results.get('total_return', 0)
+        max_drawdown = results.get('max_drawdown', 0)
+
+        # Risk-adjusted return
+        if max_drawdown > 0:
+            risk_adjusted_return = total_return / max_drawdown
+        else:
+            risk_adjusted_return = total_return
+
+        # Combine with Sharpe
+        return sharpe * 0.7 + risk_adjusted_return * 0.3
+
+    async def evaluate_population_fitness_parallel(self, population: List[StrategyGenome], fitness_func) -> List[float]:
+        """Evaluate population fitness in parallel."""
+        if not population:
+            return []
+
+        # Create tasks for parallel evaluation
+        tasks = []
+        for genome in population:
+            tasks.append(fitness_func(genome))
+
+        # Execute in parallel
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Process results
+        fitness_scores = []
+        for result in results:
+            if isinstance(result, Exception):
+                fitness_scores.append(float('-inf'))
+            else:
+                fitness_scores.append(result)
+
+        return fitness_scores
 
     async def shutdown(self) -> None:
         """Shutdown the strategy generator."""

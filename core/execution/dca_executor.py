@@ -44,12 +44,13 @@ class DCAExecutor(BaseExecutor):
         self.interval_minutes = config.get("interval_minutes", 60)
         self.parts = config.get("parts", 5)
         self.fallback_mode = config.get("fallback_mode", "market")
+        self.test_mode = config.get("test_mode", False)
 
         # Calculate timing
         self.interval_seconds = self.interval_minutes * 60
 
         self.logger.info(f"DCAExecutor initialized: interval={self.interval_minutes}min, "
-                        f"parts={self.parts}")
+                        f"parts={self.parts}, test_mode={self.test_mode}")
 
         # Track DCA sessions
         self.active_sessions: Dict[str, Dict[str, Any]] = {}
@@ -83,7 +84,7 @@ class DCAExecutor(BaseExecutor):
             signal: Trading signal to execute
 
         Returns:
-            List containing the first order
+            List containing the executed orders (all parts in test mode, first part otherwise)
         """
         session_id = str(uuid.uuid4())
 
@@ -118,8 +119,17 @@ class DCAExecutor(BaseExecutor):
 
         self.active_sessions[session_id] = session
 
-        # Execute first part immediately
-        return await self._execute_dca_part(session_id, 0)
+        # In test mode, execute all parts immediately
+        if self.test_mode:
+            self.logger.debug(f"Test mode: executing all {self.parts} DCA parts immediately")
+            all_orders = []
+            for part_index in range(self.parts):
+                orders = await self._execute_dca_part(session_id, part_index)
+                all_orders.extend(orders)
+            return all_orders
+        else:
+            # Execute first part immediately
+            return await self._execute_dca_part(session_id, 0)
 
     async def _continue_dca_session(self, session_id: str, signal: TradingSignal) -> List[Order]:
         """

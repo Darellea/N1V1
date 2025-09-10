@@ -44,13 +44,14 @@ class TWAPExecutor(BaseExecutor):
         self.duration_minutes = config.get("duration_minutes", 30)
         self.parts = config.get("parts", 10)
         self.fallback_mode = config.get("fallback_mode", "market")
+        self.test_mode = config.get("test_mode", False)
 
         # Calculate timing
         self.total_duration_seconds = self.duration_minutes * 60
         self.interval_seconds = self.total_duration_seconds / self.parts
 
         self.logger.info(f"TWAPExecutor initialized: duration={self.duration_minutes}min, "
-                        f"parts={self.parts}, interval={self.interval_seconds:.1f}s")
+                        f"parts={self.parts}, interval={self.interval_seconds:.1f}s, test_mode={self.test_mode}")
 
     async def execute_order(self, signal: TradingSignal) -> List[Order]:
         """
@@ -300,3 +301,18 @@ class TWAPExecutor(BaseExecutor):
             })
 
         return schedule
+
+    async def _wait_delay(self, delay_seconds: float) -> None:
+        """
+        Wait for a specified delay, but skip in test mode.
+
+        Args:
+            delay_seconds: Delay in seconds
+        """
+        if self.test_mode:
+            # In test mode, skip delays to make tests run fast
+            self.logger.debug(f"Test mode: skipping {delay_seconds:.1f}s delay")
+            return
+
+        # In production mode, use the parent class delay
+        await super()._wait_delay(delay_seconds)

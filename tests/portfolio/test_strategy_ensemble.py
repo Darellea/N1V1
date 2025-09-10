@@ -18,7 +18,7 @@ from portfolio.strategy_ensemble import (
     EnsembleSignal,
     create_ensemble_manager
 )
-from core.contracts import TradingSignal
+from core.contracts import TradingSignal, SignalType, SignalStrength
 from core.signal_router.events import EventType
 
 
@@ -32,12 +32,15 @@ class MockStrategy:
     async def generate_signal(self, market_data: Dict[str, Any]) -> TradingSignal:
         """Generate a mock trading signal."""
         signal = TradingSignal(
+            strategy_id=self.strategy_id,
             symbol="BTC/USDT",
-            side="buy",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type="limit",
             quantity=1.0,
+            side="buy",
             price=50000.0,
-            timestamp=datetime.now(),
-            strategy_id=self.strategy_id
+            timestamp=datetime.now()
         )
         self.signals_generated.append(signal)
         return signal
@@ -45,18 +48,6 @@ class MockStrategy:
 
 class TestStrategyEnsembleManager:
     """Test the main strategy ensemble manager."""
-
-    @pytest.fixture
-    def ensemble_config(self) -> Dict[str, Any]:
-        """Create test configuration for ensemble manager."""
-        return {
-            'total_capital': 10000.0,
-            'rebalance_interval_sec': 60,  # Faster for testing
-            'allocation_method': 'equal_weighted',
-            'min_weight': 0.1,
-            'max_weight': 0.5,
-            'portfolio_risk_limit': 0.1
-        }
 
     @pytest.fixture
     def ensemble_manager(self, ensemble_config: Dict[str, Any]) -> StrategyEnsembleManager:
@@ -124,12 +115,15 @@ class TestStrategyEnsembleManager:
         await ensemble_manager.add_strategy("test_strategy", strategy)
 
         signal = TradingSignal(
+            strategy_id="test_strategy",
             symbol="BTC/USDT",
-            side="buy",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type="limit",
             quantity=1.0,
+            side="buy",
             price=50000.0,
-            timestamp=datetime.now(),
-            strategy_id="test_strategy"
+            timestamp=datetime.now()
         )
 
         ensemble_signal = await ensemble_manager.route_signal(signal, "test_strategy")
@@ -144,12 +138,15 @@ class TestStrategyEnsembleManager:
     async def test_route_signal_unknown_strategy(self, ensemble_manager: StrategyEnsembleManager):
         """Test routing signal from unknown strategy."""
         signal = TradingSignal(
+            strategy_id="unknown",
             symbol="BTC/USDT",
-            side="buy",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type="limit",
             quantity=1.0,
+            side="buy",
             price=50000.0,
-            timestamp=datetime.now(),
-            strategy_id="unknown"
+            timestamp=datetime.now()
         )
 
         ensemble_signal = await ensemble_manager.route_signal(signal, "unknown")
@@ -164,12 +161,15 @@ class TestStrategyEnsembleManager:
 
         # Create a very large signal that exceeds risk limits
         signal = TradingSignal(
+            strategy_id="test_strategy",
             symbol="BTC/USDT",
-            side="buy",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type="limit",
             quantity=1000.0,  # Very large quantity
+            side="buy",
             price=50000.0,
-            timestamp=datetime.now(),
-            strategy_id="test_strategy"
+            timestamp=datetime.now()
         )
 
         ensemble_signal = await ensemble_manager.route_signal(signal, "test_strategy")
@@ -268,12 +268,15 @@ class TestEnsembleSignal:
     def test_ensemble_signal_creation(self):
         """Test creating an ensemble signal."""
         original_signal = TradingSignal(
+            strategy_id="test_strategy",
             symbol="BTC/USDT",
-            side="buy",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type="limit",
             quantity=1.0,
+            side="buy",
             price=50000.0,
-            timestamp=datetime.now(),
-            strategy_id="test_strategy"
+            timestamp=datetime.now()
         )
 
         ensemble_signal = EnsembleSignal(
@@ -366,12 +369,15 @@ class TestIntegrationScenarios:
 
         # Route signals
         signal1 = TradingSignal(
+            strategy_id="rsi_strategy",
             symbol="BTC/USDT",
-            side="buy",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type="limit",
             quantity=1.0,
+            side="buy",
             price=50000.0,
-            timestamp=datetime.now(),
-            strategy_id="rsi_strategy"
+            timestamp=datetime.now()
         )
 
         ensemble_signal = await manager.route_signal(signal1, "rsi_strategy")
