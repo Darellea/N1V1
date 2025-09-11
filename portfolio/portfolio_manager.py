@@ -194,32 +194,12 @@ class PortfolioManager:
         total_value = self.get_portfolio_value()
         total_pnl = total_value - self.initial_balance
         total_return = float((total_value - self.initial_balance) / self.initial_balance)
-
-        # Calculate Sharpe ratio (simplified)
-        if len(self.portfolio_history) > 1:
-            returns = [m.total_return for m in self.portfolio_history[-30:]]  # Last 30 periods
-            if len(returns) > 1 and np.std(returns) > 0:
-                sharpe_ratio = np.mean(returns) / np.std(returns) * np.sqrt(252)
-            else:
-                sharpe_ratio = 0.0
-        else:
-            sharpe_ratio = 0.0
-
-        # Calculate max drawdown (simplified)
-        if self.portfolio_history:
-            values = [m.total_value for m in self.portfolio_history]
-            peak = max(values)
-            if peak > 0:
-                max_drawdown = (peak - min(values)) / peak
-            else:
-                max_drawdown = 0.0
-        else:
-            max_drawdown = 0.0
-
-        # Calculate win rate
-        winning_positions = sum(1 for pos in self.positions.values() if pos.total_pnl > 0)
-        total_positions = len(self.positions)
-        win_rate = winning_positions / total_positions if total_positions > 0 else 0.0
+        
+        sharpe_ratio = self._calculate_sharpe_ratio()
+        max_drawdown = self._calculate_max_drawdown()
+        win_rate = self._calculate_win_rate()
+        num_positions = len(self.positions)
+        num_assets = len(set(pos.symbol for pos in self.positions.values()))
 
         metrics = PortfolioMetrics(
             total_value=total_value,
@@ -228,8 +208,8 @@ class PortfolioManager:
             sharpe_ratio=sharpe_ratio,
             max_drawdown=max_drawdown,
             win_rate=win_rate,
-            num_positions=total_positions,
-            num_assets=len(set(pos.symbol for pos in self.positions.values())),
+            num_positions=num_positions,
+            num_assets=num_assets,
             allocation_history=self.allocation_history[-10:],  # Last 10 allocations
             timestamp=datetime.now()
         )
@@ -238,6 +218,46 @@ class PortfolioManager:
         self.portfolio_history.append(metrics)
 
         return metrics
+
+    def _calculate_sharpe_ratio(self) -> float:
+        """
+        Calculate Sharpe ratio based on historical returns.
+        
+        Returns:
+            Sharpe ratio value
+        """
+        if len(self.portfolio_history) > 1:
+            returns = [m.total_return for m in self.portfolio_history[-30:]]  # Last 30 periods
+            if len(returns) > 1 and np.std(returns) > 0:
+                return np.mean(returns) / np.std(returns) * np.sqrt(252)
+        return 0.0
+
+    def _calculate_max_drawdown(self) -> float:
+        """
+        Calculate maximum drawdown from portfolio history.
+        
+        Returns:
+            Maximum drawdown value
+        """
+        if not self.portfolio_history:
+            return 0.0
+            
+        values = [m.total_value for m in self.portfolio_history]
+        peak = max(values)
+        if peak > 0:
+            return (peak - min(values)) / peak
+        return 0.0
+
+    def _calculate_win_rate(self) -> float:
+        """
+        Calculate win rate based on profitable positions.
+        
+        Returns:
+            Win rate as a percentage
+        """
+        winning_positions = sum(1 for pos in self.positions.values() if pos.total_pnl > 0)
+        total_positions = len(self.positions)
+        return winning_positions / total_positions if total_positions > 0 else 0.0
 
     def rotate_assets(self, strategy_signals: Dict[str, Any],
                      market_data: Optional[pd.DataFrame] = None) -> List[str]:
@@ -359,38 +379,18 @@ class PortfolioManager:
         Returns:
             Dictionary with rebalancing results
         """
-        total_value = self.get_portfolio_value()
-        rebalance_config = self.config.get('rebalancing', {})
-        mode = rebalance_config.get('mode', 'threshold')
-        threshold = rebalance_config.get('threshold', 0.05)
-
         # Check if rebalancing is needed
-        if mode == 'threshold':
-            if not self._should_rebalance_threshold(target_allocations, threshold):
-                self.logger.info("Rebalancing not needed - allocations within threshold")
-                return {'rebalanced': False, 'reason': 'within_threshold'}
+        rebalance_check = self._check_rebalance_needed()
+        if not rebalance_check['should_rebalance']:
+            return rebalance_check
 
-        elif mode == 'periodic':
-            period_days = rebalance_config.get('period_days', 7)
-            if not self._should_rebalance_periodic(period_days):
-                self.logger.info("Rebalancing not needed - within periodic interval")
-                return {'rebalanced': False, 'reason': 'within_period'}
-
-        # Calculate required trades
+        # Calculate and execute trades
+        total_value = self.get_portfolio_value()
         trades = self._calculate_rebalance_trades(target_allocations, total_value, current_prices)
-
-        # Execute trades (in real implementation, this would interface with exchange)
         executed_trades = self._execute_trades(trades)
 
-        # Update allocation history
-        allocation_record = {
-            'timestamp': datetime.now(),
-            'target_allocations': target_allocations,
-            'current_allocations': self._get_current_allocations(),
-            'trades': executed_trades
-        }
-        self.allocation_history.append(allocation_record)
-
+        # Update allocation history and timestamp
+        self._update_allocation_history(target_allocations, executed_trades)
         self.last_rebalance_time = datetime.now()
         self.logger.info(f"Portfolio rebalanced. Executed {len(executed_trades)} trades")
 
@@ -400,6 +400,53 @@ class PortfolioManager:
             'target_allocations': target_allocations,
             'total_value': float(total_value)
         }
+
+    def _check_rebalance_needed(self) -> Dict[str, Any]:
+        """
+        Check if rebalancing is needed based on configuration.
+
+        Returns:
+            Dictionary with rebalance decision
+        """
+        rebalance_config = self.config.get('rebalancing', {})
+        mode = rebalance_config.get('mode', 'threshold')
+        threshold = rebalance_config.get('threshold', 0.05)
+
+        if mode == 'threshold':
+            # Get target allocations for threshold check
+            # In a real implementation, this would come from the allocator
+            target_allocations = {}
+            if hasattr(self, 'allocator') and self.allocator:
+                target_allocations = getattr(self.allocator, 'get_target_allocations', lambda: {})()
+            
+            if not self._should_rebalance_threshold(target_allocations, threshold):
+                self.logger.info("Rebalancing not needed - allocations within threshold")
+                return {'should_rebalance': False, 'reason': 'within_threshold'}
+
+        elif mode == 'periodic':
+            period_days = rebalance_config.get('period_days', 7)
+            if not self._should_rebalance_periodic(period_days):
+                self.logger.info("Rebalancing not needed - within periodic interval")
+                return {'should_rebalance': False, 'reason': 'within_period'}
+
+        return {'should_rebalance': True}
+
+    def _update_allocation_history(self, target_allocations: Dict[str, float],
+                                  executed_trades: List[Dict[str, Any]]) -> None:
+        """
+        Update allocation history with rebalancing record.
+
+        Args:
+            target_allocations: Target allocation percentages
+            executed_trades: List of executed trades
+        """
+        allocation_record = {
+            'timestamp': datetime.now(),
+            'target_allocations': target_allocations,
+            'current_allocations': self._get_current_allocations(),
+            'trades': executed_trades
+        }
+        self.allocation_history.append(allocation_record)
 
     def _should_rebalance_threshold(self, target_allocations: Dict[str, float],
                                    threshold: float) -> bool:

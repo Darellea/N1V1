@@ -23,6 +23,7 @@ from notifier.discord_bot import DiscordNotifier
 from core.task_manager import TaskManager
 from core.timeframe_manager import TimeframeManager
 from strategies.regime.strategy_selector import get_strategy_selector, update_strategy_performance
+from core.cache import initialize_cache, get_cache, close_cache
 
 # Import decomposed components
 from core.trading_coordinator import TradingCoordinator
@@ -127,17 +128,37 @@ class BotEngine:
     async def initialize(self) -> None:
         """Initialize all components of the trading bot."""
         logger.info("Initializing BotEngine")
+        
+        # Step 1: Determine trading pairs
+        self._determine_trading_pairs()
+        
+        # Step 2: Initialize cache if configured
+        await self._initialize_cache()
+        
+        # Step 3: Initialize core modules
+        await self._initialize_core_modules()
+        
+        # Step 4: Initialize strategies
+        await self._initialize_strategies()
+        
+        # Step 5: Initialize notification system
+        await self._initialize_notifications()
+        
+        # Step 6: Initialize UI if enabled
+        self._initialize_display()
+        
+        logger.info("BotEngine initialization complete")
 
-        # Load configuration
+    def _determine_trading_pairs(self) -> None:
+        """Determine trading pairs based on configuration and portfolio mode."""
         exchange_config = self.config["exchange"]
         trading_config = self.config["trading"]
 
-        # Determine trading pairs based on portfolio_mode while keeping backward compatibility.
-        # If portfolio_mode is enabled, use the exchange 'markets' list from config.
         if self.portfolio_mode:
             markets = exchange_config.get("markets", []) or []
             self.pairs = [m for m in markets if isinstance(m, str)]
-            # Fallback: if markets is empty, try trading.symbol or single entry in 'markets'
+            
+            # Fallback if markets is empty
             if not self.pairs:
                 configured_symbol = trading_config.get("symbol") or None
                 if configured_symbol:
@@ -145,7 +166,7 @@ class BotEngine:
                 elif markets and isinstance(markets, list) and markets:
                     self.pairs = [markets[0]]
         else:
-            # Single-pair mode (legacy) - prefer trading.symbol then first exchange market
+            # Single-pair mode (legacy)
             configured_symbol = trading_config.get("symbol") or None
             if configured_symbol:
                 self.pairs = [configured_symbol]
@@ -153,75 +174,87 @@ class BotEngine:
                 markets = exchange_config.get("markets", []) or []
                 self.pairs = [markets[0]] if markets and isinstance(markets, list) and markets else []
 
-        # Initialize modules
+    async def _initialize_cache(self) -> None:
+        """Initialize Redis cache if configured."""
+        cache_config = self.config.get("cache", {})
+        if cache_config.get("enabled", False):
+            logger.info("Initializing Redis cache...")
+            if initialize_cache(cache_config):
+                logger.info("Redis cache initialized successfully")
+                # Register cache shutdown hook
+                self._shutdown_hooks.append(close_cache)
+            else:
+                logger.warning("Failed to initialize Redis cache, continuing without cache")
+        else:
+            logger.info("Redis cache disabled in configuration")
+
+    async def _initialize_core_modules(self) -> None:
+        """Initialize core trading modules."""
+        exchange_config = self.config["exchange"]
+        
+        # Initialize data fetcher
         self.data_fetcher = DataFetcher(exchange_config)
         await self.data_fetcher.initialize()
-        # register shutdown hook for data_fetcher
         if hasattr(self.data_fetcher, "shutdown"):
             self._shutdown_hooks.append(self.data_fetcher.shutdown)
 
-        # Initialize timeframe manager for multi-timeframe analysis
+        # Initialize timeframe manager
         tf_config = self.config.get("multi_timeframe", {})
         self.timeframe_manager = TimeframeManager(self.data_fetcher, tf_config)
         await self.timeframe_manager.initialize()
-        # register shutdown hook for timeframe_manager
         if hasattr(self.timeframe_manager, "shutdown"):
             self._shutdown_hooks.append(self.timeframe_manager.shutdown)
 
-        # Register symbols with timeframe manager for multi-timeframe analysis
+        # Register symbols with timeframe manager
         if self.pairs:
             for symbol in self.pairs:
-                # Default timeframes for multi-timeframe validation
                 default_timeframes = ["15m", "1h", "4h"]
                 if self.timeframe_manager.add_symbol(symbol, default_timeframes):
                     logger.info(f"Registered {symbol} with timeframes: {default_timeframes}")
                 else:
                     logger.warning(f"Failed to register {symbol} with timeframe manager")
 
+        # Initialize risk manager
         self.risk_manager = RiskManager(self.config["risk_management"])
-        # Pass full config to OrderManager to ensure it can access paper/backtest settings
+
+        # Initialize order manager
         self.order_manager = OrderManager(self.config, self.mode)
-        # register shutdown hook for order_manager
         if hasattr(self.order_manager, "shutdown"):
             self._shutdown_hooks.append(self.order_manager.shutdown)
-        # Configure OrderManager with portfolio/pairs info when available (backwards-compatible)
+        
+        # Configure order manager
+        await self._configure_order_manager()
+
+        # Initialize signal router
+        self.signal_router = SignalRouter(self.risk_manager, task_manager=self.task_manager)
+
+    async def _configure_order_manager(self) -> None:
+        """Configure order manager with portfolio and pairs information."""
         try:
-            # attach pairs and portfolio flag for per-symbol tracking
             self.order_manager.pairs = self.pairs
             self.order_manager.portfolio_mode = self.portfolio_mode
-            # If OrderManager exposes an initialization hook, call it (some tests/mock setups may not implement it)
+            
             if hasattr(self.order_manager, "initialize_portfolio"):
                 allocation = self.config.get("trading", {}).get("pair_allocation", None)
-                # allocation may be None or dict mapping symbol->fraction
                 await self.order_manager.initialize_portfolio(self.pairs, self.portfolio_mode, allocation)
         except Exception:
             logger.debug("OrderManager portfolio initialization skipped or failed", exc_info=True)
 
-        # Record starting balance from config for cumulative return calculations
+        # Set starting balance
         try:
             self.starting_balance = float(
                 self.config.get("trading", {}).get("initial_balance", 1000.0)
             )
         except Exception:
             self.starting_balance = 1000.0
-        self.signal_router = SignalRouter(self.risk_manager, task_manager=self.task_manager)
 
-        # Initialize strategies
-        await self._initialize_strategies()
-
-        # Initialize notification system if enabled
+    async def _initialize_notifications(self) -> None:
+        """Initialize notification system if enabled."""
         if self.config["notifications"]["discord"]["enabled"]:
             self.notifier = DiscordNotifier(self.config["notifications"]["discord"], task_manager=self.task_manager)
             await self.notifier.initialize()
-            # register notifier shutdown hook
             if hasattr(self.notifier, "shutdown"):
                 self._shutdown_hooks.append(self.notifier.shutdown)
-
-        # Initialize UI if enabled
-        if self.config["monitoring"]["terminal_display"]:
-            self._initialize_display()
-
-        logger.info("BotEngine initialization complete")
 
     async def _initialize_strategies(self) -> None:
         """Load and initialize all active trading strategies."""
@@ -298,65 +331,31 @@ class BotEngine:
         await self._update_state()
 
     async def _fetch_market_data(self) -> Dict[str, Any]:
-        """Fetch market data with caching and multi-timeframe support."""
+        """Fetch market data with Redis caching and multi-timeframe support."""
         current_time = time.time()
-        if self.market_data_cache and (current_time - self.cache_timestamp) < self.cache_ttl:
-            logger.debug("Using cached market data")
+        cache = get_cache()
+        
+        # Check if we should use internal cache (fallback)
+        use_internal_cache = not cache or not cache._connected
+        if use_internal_cache and self.market_data_cache and (current_time - self.cache_timestamp) < self.cache_ttl:
+            logger.debug("Using internal cached market data")
             return self.market_data_cache
 
-        market_data = {}
-        multi_timeframe_data = {}
-
         try:
-            # Fetch single-timeframe data (backward compatibility)
-            if self.portfolio_mode and hasattr(self.data_fetcher, "get_realtime_data"):
-                market_data = await self.data_fetcher.get_realtime_data(self.pairs)
-            elif not self.portfolio_mode and hasattr(self.data_fetcher, "get_historical_data"):
-                symbol = self.pairs[0] if self.pairs else None
-                if symbol:
-                    df = await self.data_fetcher.get_historical_data(
-                        symbol=symbol,
-                        timeframe=self.config.get("backtesting", {}).get("timeframe", "1h"),
-                        limit=100,
-                    )
-                    market_data = {symbol: df}
-            else:
-                if hasattr(self.data_fetcher, "get_multiple_historical_data"):
-                    market_data = await self.data_fetcher.get_multiple_historical_data(self.pairs)
-
-            # Fetch multi-timeframe data if timeframe manager is available
-            if self.timeframe_manager and self.pairs:
-                for symbol in self.pairs:
-                    try:
-                        synced_data = await self.timeframe_manager.fetch_multi_timeframe_data(symbol)
-                        if synced_data:
-                            multi_timeframe_data[symbol] = synced_data
-                            logger.debug(f"Fetched multi-timeframe data for {symbol}")
-                        else:
-                            logger.warning(f"Failed to fetch multi-timeframe data for {symbol}")
-                    except Exception as e:
-                        logger.warning(f"Error fetching multi-timeframe data for {symbol}: {e}")
-
-            # Combine single-timeframe and multi-timeframe data
-            combined_data = market_data.copy()
-            for symbol, synced_data in multi_timeframe_data.items():
-                if symbol in combined_data:
-                    # Add multi-timeframe data to existing symbol data
-                    combined_data[symbol] = {
-                        'single_timeframe': combined_data[symbol],
-                        'multi_timeframe': synced_data
-                    }
-                else:
-                    # Only multi-timeframe data available
-                    combined_data[symbol] = {
-                        'multi_timeframe': synced_data
-                    }
-
+            # Fetch single-timeframe data
+            market_data = await self._fetch_single_timeframe_data(cache)
+            
+            # Fetch multi-timeframe data
+            multi_timeframe_data = await self._fetch_multi_timeframe_data()
+            
+            # Combine data
+            combined_data = self._combine_market_data(market_data, multi_timeframe_data)
+            
             # Cache the fetched data
-            self.market_data_cache = combined_data
-            self.cache_timestamp = current_time
-            logger.debug("Fetched and cached market data (including multi-timeframe)")
-
+            self._cache_market_data(combined_data, current_time)
+            
+            return combined_data
+            
         except Exception:
             logger.exception("Failed to fetch market data")
             # Return cached data if available, otherwise empty dict
@@ -364,7 +363,153 @@ class BotEngine:
                 logger.warning("Using stale cached data due to fetch failure")
                 return self.market_data_cache
 
-        return self.market_data_cache if self.market_data_cache else market_data
+            return {}
+
+    async def _fetch_single_timeframe_data(self, cache: Any) -> Dict[str, Any]:
+        """Fetch single-timeframe market data with caching support."""
+        market_data = {}
+        
+        if self.portfolio_mode and hasattr(self.data_fetcher, "get_realtime_data"):
+            market_data = await self._fetch_portfolio_realtime_data(cache)
+        elif not self.portfolio_mode and hasattr(self.data_fetcher, "get_historical_data"):
+            market_data = await self._fetch_single_historical_data(cache)
+        elif hasattr(self.data_fetcher, "get_multiple_historical_data"):
+            market_data = await self._fetch_multiple_historical_data(cache)
+            
+        return market_data
+
+    async def _fetch_portfolio_realtime_data(self, cache: Any) -> Dict[str, Any]:
+        """Fetch portfolio realtime data with Redis caching."""
+        if cache and cache._connected:
+            # Try to get cached ticker data for all pairs
+            cached_tickers = {}
+            for symbol in self.pairs:
+                ticker_data = await cache.get_market_ticker(symbol)
+                if ticker_data:
+                    cached_tickers[symbol] = ticker_data
+            
+            if cached_tickers:
+                logger.debug(f"Using cached ticker data for {len(cached_tickers)} symbols")
+            
+            # Fetch fresh data if needed
+            if len(cached_tickers) < len(self.pairs):
+                fresh_data = await self.data_fetcher.get_realtime_data(self.pairs)
+                # Update cache with fresh data
+                for symbol, ticker in fresh_data.items():
+                    await cache.set_market_ticker(symbol, ticker)
+                # Merge cached and fresh data
+                cached_tickers.update(fresh_data)
+            
+            return cached_tickers
+        else:
+            # No Redis cache, fetch directly
+            return await self.data_fetcher.get_realtime_data(self.pairs)
+
+    async def _fetch_single_historical_data(self, cache: Any) -> Dict[str, Any]:
+        """Fetch single historical data with Redis caching."""
+        symbol = self.pairs[0] if self.pairs else None
+        if not symbol:
+            return {}
+            
+        timeframe = self.config.get("backtesting", {}).get("timeframe", "1h")
+        
+        if cache and cache._connected:
+            # Try to get cached OHLCV data
+            cached_ohlcv = await cache.get_ohlcv(symbol, timeframe)
+            if cached_ohlcv:
+                logger.debug(f"Using cached OHLCV data for {symbol}")
+                return {symbol: cached_ohlcv}
+            else:
+                # Fetch and cache fresh data
+                df = await self.data_fetcher.get_historical_data(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    limit=100,
+                )
+                await cache.set_ohlcv(symbol, timeframe, df)
+                return {symbol: df}
+        else:
+            # No Redis cache, fetch directly
+            df = await self.data_fetcher.get_historical_data(
+                symbol=symbol,
+                timeframe=timeframe,
+                limit=100,
+            )
+            return {symbol: df}
+
+    async def _fetch_multiple_historical_data(self, cache: Any) -> Dict[str, Any]:
+        """Fetch multiple historical data with Redis caching."""
+        if not self.pairs:
+            return {}
+            
+        if cache and cache._connected:
+            # Try to get cached OHLCV data for all pairs
+            cached_data = await cache.get_multiple_ohlcv(self.pairs)
+            
+            # Determine which symbols need fresh data
+            symbols_to_fetch = [s for s in self.pairs if not cached_data.get(s)]
+            
+            if symbols_to_fetch:
+                # Fetch fresh data for missing symbols
+                fresh_data = await self.data_fetcher.get_multiple_historical_data(symbols_to_fetch)
+                
+                # Update cache with fresh data
+                await cache.set_multiple_ohlcv(fresh_data, "1h")  # Default timeframe
+                
+                # Merge cached and fresh data
+                for symbol, data in fresh_data.items():
+                    cached_data[symbol] = data
+            
+            logger.debug(f"Using cached OHLCV data for {len([d for d in cached_data.values() if d])} symbols")
+            return cached_data
+        else:
+            # No Redis cache, fetch directly
+            return await self.data_fetcher.get_multiple_historical_data(self.pairs)
+
+    async def _fetch_multi_timeframe_data(self) -> Dict[str, Any]:
+        """Fetch multi-timeframe data for all symbols."""
+        multi_timeframe_data = {}
+        
+        if not self.timeframe_manager or not self.pairs:
+            return multi_timeframe_data
+            
+        for symbol in self.pairs:
+            try:
+                synced_data = await self.timeframe_manager.fetch_multi_timeframe_data(symbol)
+                if synced_data:
+                    multi_timeframe_data[symbol] = synced_data
+                    logger.debug(f"Fetched multi-timeframe data for {symbol}")
+                else:
+                    logger.warning(f"Failed to fetch multi-timeframe data for {symbol}")
+            except Exception as e:
+                logger.warning(f"Error fetching multi-timeframe data for {symbol}: {e}")
+                
+        return multi_timeframe_data
+
+    def _combine_market_data(self, market_data: Dict[str, Any], multi_timeframe_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Combine single-timeframe and multi-timeframe market data."""
+        combined_data = market_data.copy()
+        
+        for symbol, synced_data in multi_timeframe_data.items():
+            if symbol in combined_data:
+                # Add multi-timeframe data to existing symbol data
+                combined_data[symbol] = {
+                    'single_timeframe': combined_data[symbol],
+                    'multi_timeframe': synced_data
+                }
+            else:
+                # Only multi-timeframe data available
+                combined_data[symbol] = {
+                    'multi_timeframe': synced_data
+                }
+                
+        return combined_data
+
+    def _cache_market_data(self, combined_data: Dict[str, Any], current_time: float) -> None:
+        """Cache the fetched market data."""
+        self.market_data_cache = combined_data
+        self.cache_timestamp = current_time
+        logger.debug("Fetched and cached market data (including multi-timeframe)")
 
     async def _check_safe_mode_conditions(self) -> bool:
         """Check various safe mode conditions and return True if trading should be skipped."""
@@ -499,71 +644,85 @@ class BotEngine:
     def _update_performance_metrics(self, pnl: float) -> None:
         """Update performance tracking metrics."""
         try:
-            # Guard initialization
-            if "total_pnl" not in self.performance_stats:
-                self.performance_stats.setdefault("total_pnl", 0.0)
-            if "equity_history" not in self.performance_stats:
-                self.performance_stats.setdefault("equity_history", [])
-            if "returns_history" not in self.performance_stats:
-                self.performance_stats.setdefault("returns_history", [])
-            if "wins" not in self.performance_stats:
-                self.performance_stats.setdefault("wins", 0)
-            if "losses" not in self.performance_stats:
-                self.performance_stats.setdefault("losses", 0)
-            if "equity_progression" not in self.performance_stats:
-                self.performance_stats.setdefault("equity_progression", [])
-
-            # Update totals
-            self.performance_stats["total_pnl"] += float(pnl)
-
-            # Track returns for Sharpe ratio calculation
-            current_equity = float(self.state.equity or 0.0)
-            equity_history = self.performance_stats["equity_history"]
-            returns_history = self.performance_stats["returns_history"]
-
-            if equity_history:
-                prev_equity = equity_history[-1]
-                if prev_equity > 0:
-                    daily_return = (current_equity - prev_equity) / prev_equity
-                    returns_history.append(daily_return)
-
-            equity_history.append(current_equity)
-
-            # Calculate win/loss counts
-            if pnl > 0:
-                self.performance_stats["wins"] += 1
-            elif pnl < 0:
-                self.performance_stats["losses"] += 1
-
-            total_trades = (
-                self.performance_stats["wins"] + self.performance_stats["losses"]
-            )
-            if total_trades > 0:
-                self.performance_stats["win_rate"] = (
-                    self.performance_stats["wins"] / total_trades
-                )
-
-            # Calculate max drawdown
-            if len(equity_history) > 1:
-                peak = max(equity_history)
-                trough = min(equity_history)
-                if peak > 0:
-                    max_dd = (peak - trough) / peak
-                    self.performance_stats["max_drawdown"] = max(
-                        max_dd, float(self.performance_stats.get("max_drawdown", 0.0))
-                    )
-
-            # Calculate Sharpe ratio (annualized)
-            if len(returns_history) > 1 and np.std(returns_history) > 0:
-                returns = np.array(returns_history)
-                risk_free_rate = 0.0  # Can be configured
-                excess_returns = returns - risk_free_rate
-                sharpe = float(np.mean(excess_returns) / np.std(excess_returns))
-                self.performance_stats["sharpe_ratio"] = sharpe * np.sqrt(
-                    252
-                )  # Annualize
+            self._initialize_performance_stats()
+            self._update_pnl(pnl)
+            self._update_equity_history()
+            self._update_win_loss_counts(pnl)
+            self._calculate_win_rate()
+            self._calculate_max_drawdown()
+            self._calculate_sharpe_ratio()
         except Exception:
             logger.exception("Failed to update performance metrics")
+
+    def _initialize_performance_stats(self) -> None:
+        """Initialize performance statistics if not already present."""
+        if "total_pnl" not in self.performance_stats:
+            self.performance_stats.setdefault("total_pnl", 0.0)
+        if "equity_history" not in self.performance_stats:
+            self.performance_stats.setdefault("equity_history", [])
+        if "returns_history" not in self.performance_stats:
+            self.performance_stats.setdefault("returns_history", [])
+        if "wins" not in self.performance_stats:
+            self.performance_stats.setdefault("wins", 0)
+        if "losses" not in self.performance_stats:
+            self.performance_stats.setdefault("losses", 0)
+        if "equity_progression" not in self.performance_stats:
+            self.performance_stats.setdefault("equity_progression", [])
+
+    def _update_pnl(self, pnl: float) -> None:
+        """Update total PnL."""
+        self.performance_stats["total_pnl"] += float(pnl)
+
+    def _update_equity_history(self) -> None:
+        """Update equity history and returns for Sharpe ratio calculation."""
+        current_equity = float(self.state.equity or 0.0)
+        equity_history = self.performance_stats["equity_history"]
+        returns_history = self.performance_stats["returns_history"]
+
+        if equity_history:
+            prev_equity = equity_history[-1]
+            if prev_equity > 0:
+                daily_return = (current_equity - prev_equity) / prev_equity
+                returns_history.append(daily_return)
+
+        equity_history.append(current_equity)
+
+    def _update_win_loss_counts(self, pnl: float) -> None:
+        """Update win and loss counts based on PnL."""
+        if pnl > 0:
+            self.performance_stats["wins"] += 1
+        elif pnl < 0:
+            self.performance_stats["losses"] += 1
+
+    def _calculate_win_rate(self) -> None:
+        """Calculate win rate based on total trades."""
+        total_trades = self.performance_stats["wins"] + self.performance_stats["losses"]
+        if total_trades > 0:
+            self.performance_stats["win_rate"] = (
+                self.performance_stats["wins"] / total_trades
+            )
+
+    def _calculate_max_drawdown(self) -> None:
+        """Calculate maximum drawdown from equity history."""
+        equity_history = self.performance_stats["equity_history"]
+        if len(equity_history) > 1:
+            peak = max(equity_history)
+            trough = min(equity_history)
+            if peak > 0:
+                max_dd = (peak - trough) / peak
+                self.performance_stats["max_drawdown"] = max(
+                    max_dd, float(self.performance_stats.get("max_drawdown", 0.0))
+                )
+
+    def _calculate_sharpe_ratio(self) -> None:
+        """Calculate Sharpe ratio (annualized) from returns history."""
+        returns_history = self.performance_stats["returns_history"]
+        if len(returns_history) > 1 and np.std(returns_history) > 0:
+            returns = np.array(returns_history)
+            risk_free_rate = 0.0  # Can be configured
+            excess_returns = returns - risk_free_rate
+            sharpe = float(np.mean(excess_returns) / np.std(excess_returns))
+            self.performance_stats["sharpe_ratio"] = sharpe * np.sqrt(252)  # Annualize
 
     async def record_trade_equity(self, order_result: Dict[str, Any]) -> None:
         """
@@ -587,77 +746,47 @@ class BotEngine:
             if not order_result:
                 return
 
-            # Ensure equity_progression exists
-            equity_prog: list[Dict[str, Any]] = self.performance_stats.setdefault(
-                "equity_progression", []
-            )
-
-            # Get current equity from order manager (async)
-            try:
-                current_equity = await self.order_manager.get_equity()
-            except Exception:
-                # Fallback to state.equity if order_manager can't provide it
-                current_equity = self.state.equity or 0.0
-
-            # Normalize values
-            trade_id = order_result.get("id", f"trade_{now_ms()}")
-            timestamp = order_result.get("timestamp", now_ms())
-            pnl = order_result.get("pnl", None)
-            # coerce current_equity safely
-            try:
-                equity_val = (
-                    float(current_equity) if current_equity is not None else 0.0
-                )
-            except Exception:
-                equity_val = 0.0
-
-            # For backtest/paper modes the OrderManager may not track balance.
-            # In that case derive equity from starting_balance + total_pnl so progression is meaningful.
-            try:
-                if getattr(self, "mode", None) in (
-                    TradingMode.BACKTEST,
-                    TradingMode.PAPER,
-                ):
-                    # If order_manager returned 0 or not tracking, compute from starting balance + total_pnl
-                    if equity_val == 0.0:
-                        equity_val = float(
-                            getattr(self, "starting_balance", 0.0)
-                        ) + float(self.performance_stats.get("total_pnl", 0.0))
-            except Exception:
-                # Ignore and proceed with current equity_val
-                pass
-
-            # Calculate cumulative return relative to starting balance
-            try:
-                cumulative_return = 0.0
-                if (
-                    getattr(self, "starting_balance", None)
-                    and float(self.starting_balance) > 0
-                ):
-                    cumulative_return = (
-                        equity_val - float(self.starting_balance)
-                    ) / float(self.starting_balance)
-            except Exception:
-                cumulative_return = 0.0
-
-            # Normalize trade_id and timestamp.
-            # Preserve any explicit timestamp provided by the caller (do not coerce).
-            trade_id = order_result.get("id", f"trade_{now_ms()}")
-            ts_raw = order_result.get("timestamp", now_ms())
-
-            record: Dict[str, Any] = {
-                "trade_id": trade_id,
-                "timestamp": ts_raw,
-                "symbol": order_result.get("symbol") if isinstance(order_result, dict) else None,
-                "equity": equity_val,
-                "pnl": pnl,
-                "cumulative_return": cumulative_return,
-            }
-
-            equity_prog.append(record)
+            # Get current equity
+            equity_val = await self._get_current_equity()
+            
+            # Calculate cumulative return
+            cumulative_return = self._calculate_cumulative_return(equity_val)
+            
+            # Create and append record
+            record = self._create_equity_record(order_result, equity_val, cumulative_return)
+            self.performance_stats.setdefault("equity_progression", []).append(record)
 
         except Exception:
             logger.exception("Failed to record trade equity")
+
+    async def _get_current_equity(self) -> float:
+        """Get current equity from order manager or fallback to state."""
+        try:
+            current_equity = await self.order_manager.get_equity()
+            return float(current_equity) if current_equity is not None else 0.0
+        except Exception:
+            # Fallback to state.equity if order_manager can't provide it
+            return float(self.state.equity or 0.0)
+
+    def _calculate_cumulative_return(self, equity_val: float) -> float:
+        """Calculate cumulative return relative to starting balance."""
+        try:
+            if self.starting_balance and float(self.starting_balance) > 0:
+                return (equity_val - float(self.starting_balance)) / float(self.starting_balance)
+            return 0.0
+        except Exception:
+            return 0.0
+
+    def _create_equity_record(self, order_result: Dict[str, Any], equity_val: float, cumulative_return: float) -> Dict[str, Any]:
+        """Create equity progression record."""
+        return {
+            "trade_id": order_result.get("id", f"trade_{now_ms()}"),
+            "timestamp": order_result.get("timestamp", now_ms()),
+            "symbol": order_result.get("symbol") if isinstance(order_result, dict) else None,
+            "equity": equity_val,
+            "pnl": order_result.get("pnl"),
+            "cumulative_return": cumulative_return,
+        }
 
     async def _check_global_safe_mode(self) -> None:
         """

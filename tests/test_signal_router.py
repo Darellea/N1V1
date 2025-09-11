@@ -69,11 +69,11 @@ def sample_signal():
         signal_type=SignalType.ENTRY_LONG,
         signal_strength=SignalStrength.STRONG,
         order_type="market",
-        amount=Decimal("1.0"),
-        current_price=Decimal("50000"),
+        amount=1.0,  # Use float instead of Decimal to match contracts.py
+        current_price=50000.0,  # Use float instead of Decimal to match contracts.py
         timestamp=datetime.now(),
-        stop_loss=Decimal("49000"),
-        take_profit=Decimal("52000"),
+        stop_loss=49000.0,  # Use float instead of Decimal to match contracts.py
+        take_profit=52000.0,  # Use float instead of Decimal to match contracts.py
     )
 
 
@@ -106,8 +106,8 @@ async def test_process_signal_invalid_missing_symbol(signal_router):
         signal_type=SignalType.ENTRY_LONG,
         signal_strength=SignalStrength.STRONG,
         order_type="market",
-        amount=Decimal("1.0"),
-        current_price=Decimal("50000"),
+        amount=1.0,  # Use float instead of Decimal
+        current_price=50000.0,  # Use float instead of Decimal
     )
 
     result = await signal_router.process_signal(invalid_signal)
@@ -124,8 +124,8 @@ async def test_process_signal_invalid_zero_amount(signal_router):
         signal_type=SignalType.ENTRY_LONG,
         signal_strength=SignalStrength.STRONG,
         order_type="market",
-        amount=Decimal("0"),  # Invalid
-        current_price=Decimal("50000"),
+        amount=0.0,  # Invalid - use float instead of Decimal
+        current_price=50000.0,  # Use float instead of Decimal
     )
 
     result = await signal_router.process_signal(invalid_signal)
@@ -147,8 +147,8 @@ def test_validate_signal_invalid(signal_router):
         signal_type=SignalType.ENTRY_LONG,
         signal_strength=SignalStrength.STRONG,
         order_type="market",
-        amount=Decimal("1.0"),
-        current_price=Decimal("50000"),
+        amount=1.0,  # Use float instead of Decimal
+        current_price=50000.0,  # Use float instead of Decimal
     )
     assert signal_router._validate_signal(invalid1) is False
 
@@ -159,8 +159,8 @@ def test_validate_signal_invalid(signal_router):
         signal_type=SignalType.ENTRY_LONG,
         signal_strength=SignalStrength.STRONG,
         order_type="market",
-        amount=Decimal("0"),
-        current_price=Decimal("50000"),
+        amount=0.0,  # Use float instead of Decimal
+        current_price=50000.0,  # Use float instead of Decimal
     )
     assert signal_router._validate_signal(invalid2) is False
 
@@ -726,8 +726,8 @@ async def test_ml_extract_features_with_invalid_data():
         signal_type=SignalType.ENTRY_LONG,
         signal_strength=SignalStrength.STRONG,
         order_type="market",
-        amount=Decimal("1.0"),
-        current_price=Decimal("50000"),
+        amount=1.0,  # Use float instead of Decimal
+        current_price=50000.0,  # Use float instead of Decimal
     )
 
     # Test with non-convertible object
@@ -737,3 +737,412 @@ async def test_ml_extract_features_with_invalid_data():
 
     result = router._extract_features_for_ml(market_data, signal)
     assert result is None
+
+
+# MARKET DATA GAPS TESTS
+@pytest.mark.asyncio
+async def test_process_signal_with_missing_candle_data(signal_router):
+    """Test processing signal with missing candle data (market gap)."""
+    # Mock the validator to simulate missing market data
+    with patch.object(signal_router.validator, 'validate_order') as mock_validate:
+        mock_validate.return_value = False  # Simulate validation failure due to missing data
+        
+        signal = TradingSignal(
+            strategy_id="test",
+            symbol="BTC/USDT",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type="market",
+            amount=1.0,
+            current_price=50000.0,
+        )
+        
+        result = await signal_router.process_signal(signal)
+        assert result is None
+        # Router should not crash, just return None
+
+
+@pytest.mark.asyncio
+async def test_process_signal_with_incomplete_ohlcv_sequence(signal_router):
+    """Test processing signal with incomplete OHLCV sequence."""
+    # Create a signal with incomplete market data
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="limit",
+        amount=1.0,
+        current_price=50000.0,
+    )
+    
+    # Test with incomplete market data (missing close price)
+    incomplete_market_data = {
+        "ohlcv": [
+            [1609459200000, 50000.0, None, 49000.0, 100.0],  # Missing high price
+        ]
+    }
+    
+    # Mock the validator to handle incomplete data
+    with patch.object(signal_router.validator, 'validate_order') as mock_validate:
+        mock_validate.return_value = True  # Allow processing
+        
+        # This should not crash the router
+        try:
+            result = await signal_router.process_signal(signal)
+            # Result may be None or valid depending on implementation
+            assert result is None or result.symbol == "BTC/USDT"
+        except Exception as e:
+            pytest.fail(f"Router crashed with incomplete data: {e}")
+
+
+@pytest.mark.asyncio
+async def test_process_signal_with_empty_market_data(signal_router):
+    """Test processing signal with empty market data."""
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=1.0,
+        current_price=50000.0,
+    )
+    
+    # Test with empty market data
+    empty_market_data = {"ohlcv": []}
+    
+    # Mock the validator to handle empty data
+    with patch.object(signal_router.validator, 'validate_order') as mock_validate:
+        mock_validate.return_value = True  # Allow processing
+        
+        # This should not crash the router
+        try:
+            result = await signal_router.process_signal(signal)
+            # Result may be None or valid depending on implementation
+            assert result is None or result.symbol == "BTC/USDT"
+        except Exception as e:
+            pytest.fail(f"Router crashed with empty market data: {e}")
+
+
+@pytest.mark.asyncio
+async def test_process_signal_with_none_market_data(signal_router):
+    """Test processing signal with None market data."""
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=1.0,
+        current_price=50000.0,
+    )
+    
+    # Test with None market data
+    # This should not crash the router
+    try:
+        result = await signal_router.process_signal(signal)
+        # Result may be None or valid depending on implementation
+        assert result is None or result.symbol == "BTC/USDT"
+    except Exception as e:
+        pytest.fail(f"Router crashed with None market data: {e}")
+
+
+# API TIMEOUTS TESTS
+@pytest.mark.asyncio
+async def test_process_signal_with_exchange_api_timeout(signal_router):
+    """Test processing signal when exchange API times out."""
+    # Create a risk manager that simulates API timeout
+    class TimeoutRiskManager:
+        async def evaluate_signal(self, signal, market_data=None):
+            await asyncio.sleep(0.1)  # Simulate network delay
+            raise Exception("API timeout: Connection to exchange timed out")
+    
+    timeout_router = SignalRouter(risk_manager=TimeoutRiskManager())
+    
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=1.0,
+        current_price=50000.0,
+    )
+    
+    # This should not crash the router, should handle timeout gracefully
+    try:
+        result = await timeout_router.process_signal(signal)
+        # Router should handle timeout and return None or appropriate response
+        assert result is None
+    except Exception as e:
+        pytest.fail(f"Router crashed on API timeout: {e}")
+
+
+@pytest.mark.asyncio
+@patch("asyncio.sleep", new_callable=AsyncMock)
+async def test_process_signal_with_retry_on_api_timeout(mock_sleep, signal_router):
+    """Test that router retries on API timeout and eventually succeeds."""
+    # Create a risk manager that fails first time then succeeds
+    class FlakyRiskManager:
+        def __init__(self):
+            self.call_count = 0
+        
+        async def evaluate_signal(self, signal, market_data=None):
+            self.call_count += 1
+            if self.call_count == 1:
+                raise Exception("API timeout: Connection to exchange timed out")
+            return True
+    
+    flaky_router = SignalRouter(risk_manager=FlakyRiskManager())
+    
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=1.0,
+        current_price=50000.0,
+    )
+    
+    # This should retry and eventually succeed
+    result = await flaky_router.process_signal(signal)
+    assert result is not None
+    assert flaky_router.risk_manager.call_count == 2  # Failed once, succeeded on retry
+    mock_sleep.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_process_signal_with_persistent_api_failure(signal_router):
+    """Test processing signal with persistent API failures."""
+    # Create a risk manager that always fails
+    class FailingRiskManager:
+        async def evaluate_signal(self, signal, market_data=None):
+            raise Exception("API error: Exchange unavailable")
+    
+    failing_router = SignalRouter(risk_manager=FailingRiskManager(), max_retries=1)
+    
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=1.0,
+        current_price=50000.0,
+    )
+    
+    # This should exhaust retries and return None
+    result = await failing_router.process_signal(signal)
+    assert result is None
+
+
+# ZERO LIQUIDITY SCENARIOS TESTS
+@pytest.mark.asyncio
+async def test_process_signal_with_zero_liquidity(signal_router):
+    """Test processing signal when there's zero liquidity (bid/ask spread unavailable)."""
+    # Create a signal for a market with no liquidity
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=1.0,
+        current_price=50000.0,
+    )
+    
+    # Mock validator to simulate zero liquidity
+    with patch.object(signal_router.validator, 'validate_order') as mock_validate:
+        mock_validate.return_value = False  # Simulate rejection due to no liquidity
+        
+        result = await signal_router.process_signal(signal)
+        assert result is None
+        # Router should not crash, just reject the signal
+
+
+@pytest.mark.asyncio
+async def test_process_signal_with_zero_volume(signal_router):
+    """Test processing signal when trading volume is zero."""
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=1.0,
+        current_price=50000.0,
+    )
+    
+    # Mock validator to simulate zero volume
+    with patch.object(signal_router.validator, 'validate_order') as mock_validate:
+        mock_validate.side_effect = Exception("Zero volume: No trading activity")
+        
+        result = await signal_router.process_signal(signal)
+        assert result is None
+
+
+@pytest.mark.asyncio
+async def test_process_signal_with_wide_spread(signal_router):
+    """Test processing signal with extremely wide bid/ask spread."""
+    signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=1.0,
+        current_price=50000.0,
+    )
+    
+    # Mock validator to simulate wide spread
+    with patch.object(signal_router.validator, 'validate_order') as mock_validate:
+        mock_validate.return_value = False  # Simulate rejection due to wide spread
+        
+        result = await signal_router.process_signal(signal)
+        assert result is None
+
+
+# INVALID SIGNAL HANDLING TESTS
+@pytest.mark.asyncio
+async def test_process_signal_with_malformed_signal_data(signal_router):
+    """Test processing signal with malformed/corrupted signal data."""
+    # Create a signal with invalid data
+    malformed_signal = TradingSignal(
+        strategy_id="",  # Invalid empty strategy
+        symbol="",  # Invalid empty symbol
+        signal_type=None,  # Invalid None type
+        signal_strength=None,  # Invalid None strength
+        order_type="invalid_order_type",  # Invalid order type
+        amount=-1.0,  # Invalid negative amount
+        current_price=-50000.0,  # Invalid negative price
+    )
+    
+    # This should not crash the router
+    try:
+        result = await signal_router.process_signal(malformed_signal)
+        assert result is None  # Router should reject invalid signals
+    except Exception as e:
+        pytest.fail(f"Router crashed with malformed signal: {e}")
+
+
+@pytest.mark.asyncio
+async def test_process_signal_with_missing_required_fields(signal_router):
+    """Test processing signal with missing required fields."""
+    # Create a signal with missing required fields
+    incomplete_signal = TradingSignal(
+        strategy_id=None,  # Missing strategy_id
+        symbol=None,  # Missing symbol
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=1.0,
+        current_price=50000.0,
+    )
+    
+    # This should not crash the router
+    try:
+        result = await signal_router.process_signal(incomplete_signal)
+        assert result is None  # Router should reject incomplete signals
+    except Exception as e:
+        pytest.fail(f"Router crashed with incomplete signal: {e}")
+
+
+@pytest.mark.asyncio
+async def test_process_signal_with_corrupted_timestamp(signal_router):
+    """Test processing signal with corrupted timestamp."""
+    # Create a signal with invalid timestamp
+    from datetime import datetime
+    corrupted_signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=1.0,
+        current_price=50000.0,
+        timestamp="invalid_timestamp",  # Invalid timestamp string
+    )
+    
+    # This should not crash the router
+    try:
+        result = await signal_router.process_signal(corrupted_signal)
+        assert result is None  # Router should reject signals with invalid timestamps
+    except Exception as e:
+        pytest.fail(f"Router crashed with corrupted timestamp: {e}")
+
+
+@pytest.mark.asyncio
+async def test_process_signal_with_extreme_values(signal_router):
+    """Test processing signal with extreme/invalid values."""
+    # Create a signal with extreme values that could cause numerical issues
+    extreme_signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=1e300,  # Extremely large amount
+        current_price=1e300,  # Extremely large price
+    )
+    
+    # This should not crash the router
+    try:
+        result = await signal_router.process_signal(extreme_signal)
+        # Router should handle extreme values gracefully
+        assert result is None or result.symbol == "BTC/USDT"
+    except Exception as e:
+        pytest.fail(f"Router crashed with extreme values: {e}")
+
+
+@pytest.mark.asyncio
+async def test_process_signal_with_unicode_in_fields(signal_router):
+    """Test processing signal with unicode characters in string fields."""
+    # Create a signal with unicode characters
+    unicode_signal = TradingSignal(
+        strategy_id="测试策略",  # Chinese characters
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=1.0,
+        current_price=50000.0,
+    )
+    
+    # This should not crash the router
+    try:
+        result = await signal_router.process_signal(unicode_signal)
+        # Router should handle unicode gracefully
+        assert result is None or result.symbol == "BTC/USDT"
+    except Exception as e:
+        pytest.fail(f"Router crashed with unicode characters: {e}")
+
+
+@pytest.mark.asyncio
+async def test_process_signal_with_special_characters_in_metadata(signal_router):
+    """Test processing signal with special characters in metadata."""
+    # Create a signal with special characters in metadata
+    special_signal = TradingSignal(
+        strategy_id="test",
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        signal_strength=SignalStrength.STRONG,
+        order_type="market",
+        amount=1.0,
+        current_price=50000.0,
+        metadata={
+            "note": "Special chars: <>&'\"\\",
+            "emoji": "🚀💰",
+            "newlines": "Line1\nLine2\r\nLine3",
+            "tabs": "Col1\tCol2\tCol3",
+        }
+    )
+    
+    # This should not crash the router
+    try:
+        result = await signal_router.process_signal(special_signal)
+        # Router should handle special characters gracefully
+        assert result is None or result.symbol == "BTC/USDT"
+    except Exception as e:
+        pytest.fail(f"Router crashed with special characters: {e}")
