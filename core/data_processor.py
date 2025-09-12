@@ -347,6 +347,49 @@ class DataProcessor:
 
         return results
 
+    def add_binary_labels_batch(self, data_dict: Dict[str, pd.DataFrame],
+                               horizon: int = 5, profit_threshold: float = 0.005,
+                               include_fees: bool = True, fee_rate: float = 0.001) -> Dict[str, pd.DataFrame]:
+        """
+        Add binary labels to multiple datasets in batch.
+
+        Args:
+            data_dict: Dictionary of symbol to DataFrame
+            horizon: Number of periods ahead to look for forward return
+            profit_threshold: Minimum profit threshold after fees (fractional)
+            include_fees: Whether to account for trading fees
+            fee_rate: Trading fee rate (fractional)
+
+        Returns:
+            Dictionary with binary labels added
+        """
+        from ml.trainer import create_binary_labels
+
+        results = {}
+
+        for symbol, data in data_dict.items():
+            if data.empty:
+                results[symbol] = data.copy()
+                continue
+
+            try:
+                # Add binary labels
+                labeled_data = create_binary_labels(
+                    df=data,
+                    horizon=horizon,
+                    profit_threshold=profit_threshold,
+                    include_fees=include_fees,
+                    fee_rate=fee_rate
+                )
+                results[symbol] = labeled_data
+                logger.info(f"Added binary labels to {symbol} dataset")
+
+            except Exception as e:
+                logger.error(f"Failed to add binary labels to {symbol}: {e}")
+                results[symbol] = data.copy()
+
+        return results
+
     def batch_process_signals(self, data_dict: Dict[str, pd.DataFrame],
                             signal_functions: List[callable]) -> Dict[str, List[Any]]:
         """Process signals for multiple symbols in batch."""

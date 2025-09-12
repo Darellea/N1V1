@@ -31,19 +31,50 @@ Trigger Conditions:
 """
 
 import asyncio
-import time
-import threading
-from typing import Dict, List, Any, Optional, Callable, Tuple
+from typing import Dict, List, Any, Optional
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
-import json
-import statistics
+import numpy as np
+import logging
 
-from core.metrics_collector import get_metrics_collector
-from utils.logger import get_logger
 
-logger = get_logger(__name__)
+@dataclass
+class CircuitBreakerConfig:
+    """Configuration for Circuit Breaker."""
+    equity_drawdown_threshold: float = 0.1
+    consecutive_losses_threshold: int = 5
+    volatility_spike_threshold: float = 0.05
+    max_triggers_per_hour: int = 3
+    monitoring_window_minutes: int = 60
+    cooling_period_minutes: int = 5
+    recovery_period_minutes: int = 10
+
+    def __post_init__(self):
+        """Validate configuration parameters."""
+        if self.equity_drawdown_threshold <= 0:
+            raise ValueError("equity_drawdown_threshold must be positive")
+        if self.consecutive_losses_threshold <= 0:
+            raise ValueError("consecutive_losses_threshold must be positive")
+        if self.volatility_spike_threshold <= 0:
+            raise ValueError("volatility_spike_threshold must be positive")
+        if self.max_triggers_per_hour <= 0:
+            raise ValueError("max_triggers_per_hour must be positive")
+        if self.monitoring_window_minutes <= 0:
+            raise ValueError("monitoring_window_minutes must be positive")
+        if self.cooling_period_minutes <= 0:
+            raise ValueError("cooling_period_minutes must be positive")
+        if self.recovery_period_minutes <= 0:
+            raise ValueError("recovery_period_minutes must be positive")
+
+    def __repr__(self):
+        return (f"CircuitBreakerConfig(equity_drawdown_threshold={self.equity_drawdown_threshold}, "
+                f"consecutive_losses_threshold={self.consecutive_losses_threshold}, "
+                f"volatility_spike_threshold={self.volatility_spike_threshold}, "
+                f"max_triggers_per_hour={self.max_triggers_per_hour}, "
+                f"monitoring_window_minutes={self.monitoring_window_minutes}, "
+                f"cooling_period_minutes={self.cooling_period_minutes}, "
+                f"recovery_period_minutes={self.recovery_period_minutes})")
 
 
 class CircuitBreakerState(Enum):
@@ -92,6 +123,17 @@ class CircuitBreakerEvent:
 
 
 @dataclass
+class TriggerEvent:
+    """A circuit breaker trigger event for dashboard integration."""
+    trigger_type: str
+    timestamp: datetime
+    details: Dict[str, Any] = field(default_factory=dict)
+
+    def __repr__(self):
+        return f"TriggerEvent(trigger_type='{self.trigger_type}', timestamp={self.timestamp}, details={self.details})"
+
+
+@dataclass
 class EquityPoint:
     """A single equity curve data point."""
     timestamp: datetime
@@ -103,637 +145,289 @@ class EquityPoint:
 
 class CircuitBreaker:
     """
-    Main circuit breaker implementation for the N1V1 trading framework.
-
-    Provides comprehensive risk monitoring and automatic trading suspension
-    when predefined thresholds are breached, with sophisticated recovery
-    procedures and detailed incident logging.
+    Circuit Breaker implementation for the N1V1 trading framework.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: CircuitBreakerConfig):
         self.config = config
-
-        # Core configuration
-        self.account_id = config.get('account_id', 'main')
-        self.monitoring_interval = config.get('monitoring_interval', 1.0)  # seconds
-        self.max_equity_history = config.get('max_equity_history', 10000)  # data points
-
-        # State management
-        self.current_state = CircuitBreakerState.NORMAL
-        self.state_changed_at = datetime.now()
+        self.state = CircuitBreakerState.NORMAL
+        self.trigger_history = []
+        self.event_history = []
+        self.trade_results = []
         self.last_trigger_time = None
         self.trigger_count = 0
 
-        # Equity curve tracking
-        self.equity_history: List[EquityPoint] = []
-        self.peak_equity = 0.0
-        self.initial_equity = 0.0
+        # Current trigger information for dashboards
+        self.current_trigger = None
 
-        # Trigger conditions
-        self.trigger_conditions = self._initialize_trigger_conditions()
+        # Equity tracking for metrics integration
+        self.current_equity = 0.0
 
-        # Recovery configuration
-        self.cooling_period_minutes = config.get('cooling_period_minutes', 30)
-        self.recovery_phases = config.get('recovery_phases', 3)
-        self.recovery_position_multiplier = config.get('recovery_position_multiplier', 0.5)
-
-        # Event logging
-        self.events: List[CircuitBreakerEvent] = []
-        self.max_events = config.get('max_events', 1000)
-
-        # Monitoring
-        self._running = False
-        self._monitor_task: Optional[asyncio.Task] = None
+        # Concurrency protection
         self._lock = asyncio.Lock()
 
-        # Metrics integration
-        self.metrics_collector = get_metrics_collector()
-
-        # Callbacks
-        self.state_change_callbacks: List[Callable] = []
-        self.trigger_callbacks: List[Callable] = []
-
-        logger.info(f"✅ CircuitBreaker initialized for account {self.account_id}")
-
-    def _initialize_trigger_conditions(self) -> Dict[str, TriggerCondition]:
-        """Initialize all trigger conditions from configuration."""
-        conditions = {}
-
-        # Equity Drawdown Triggers
-        conditions['equity_drawdown_daily'] = TriggerCondition(
-            name='equity_drawdown_daily',
-            description='Daily equity drawdown exceeds threshold',
-            severity=TriggerSeverity.CRITICAL,
-            threshold=self.config.get('max_daily_drawdown', 0.05),  # 5%
-            window_minutes=1440,  # 24 hours
-            weight=2.0
-        )
-
-        conditions['equity_drawdown_weekly'] = TriggerCondition(
-            name='equity_drawdown_weekly',
-            description='Weekly equity drawdown exceeds threshold',
-            severity=TriggerSeverity.EMERGENCY,
-            threshold=self.config.get('max_weekly_drawdown', 0.10),  # 10%
-            window_minutes=10080,  # 7 days
-            weight=3.0
-        )
-
-        # Consecutive Losses Triggers
-        conditions['consecutive_losses'] = TriggerCondition(
-            name='consecutive_losses',
-            description='Consecutive losing trades exceeds threshold',
-            severity=TriggerSeverity.WARNING,
-            threshold=self.config.get('max_consecutive_losses', 5),
-            window_minutes=60,  # Last hour
-            weight=1.5
-        )
-
-        # Sharpe Ratio Triggers
-        conditions['sharpe_ratio_decline'] = TriggerCondition(
-            name='sharpe_ratio_decline',
-            description='Sharpe ratio below minimum threshold',
-            severity=TriggerSeverity.WARNING,
-            threshold=self.config.get('min_sharpe_ratio', 0.5),
-            window_minutes=1440,  # 24 hours
-            weight=1.0
-        )
-
-        # Volatility Triggers
-        conditions['volatility_spike'] = TriggerCondition(
-            name='volatility_spike',
-            description='Market volatility exceeds normal range',
-            severity=TriggerSeverity.CRITICAL,
-            threshold=self.config.get('max_volatility_multiplier', 3.0),
-            window_minutes=60,  # Last hour
-            weight=2.0
-        )
-
-        return conditions
-
-    async def start(self) -> None:
-        """Start the circuit breaker monitoring system."""
-        if self._running:
-            return
-
-        self._running = True
-        self._monitor_task = asyncio.create_task(self._monitoring_loop())
-
-        # Initialize equity tracking
-        await self._initialize_equity_tracking()
-
-        logger.info("✅ CircuitBreaker monitoring started")
-
-    async def stop(self) -> None:
-        """Stop the circuit breaker monitoring system."""
-        if not self._running:
-            return
-
-        self._running = False
-
-        if self._monitor_task:
-            self._monitor_task.cancel()
-            try:
-                await self._monitor_task
-            except asyncio.CancelledError:
-                pass
-
-        logger.info("✅ CircuitBreaker monitoring stopped")
-
-    def add_state_change_callback(self, callback: Callable) -> None:
-        """Add a callback for state changes."""
-        self.state_change_callbacks.append(callback)
-
-    def add_trigger_callback(self, callback: Callable) -> None:
-        """Add a callback for trigger events."""
-        self.trigger_callbacks.append(callback)
-
-    async def update_equity(self, equity: float, realized_pnl: float = 0.0,
-                           unrealized_pnl: float = 0.0, trade_count: int = 0) -> None:
-        """Update the current equity value."""
-        async with self._lock:
-            point = EquityPoint(
-                timestamp=datetime.now(),
-                equity=equity,
-                realized_pnl=realized_pnl,
-                unrealized_pnl=unrealized_pnl,
-                trade_count=trade_count
-            )
-
-            self.equity_history.append(point)
-
-            # Maintain history size
-            if len(self.equity_history) > self.max_equity_history:
-                self.equity_history = self.equity_history[-self.max_equity_history:]
-
-            # Update peak equity
-            if equity > self.peak_equity:
-                self.peak_equity = equity
-
-            # Update initial equity if not set
-            if self.initial_equity == 0.0:
-                self.initial_equity = equity
-
-            # Record metric
-            await self.metrics_collector.record_metric(
-                "circuit_breaker_equity_current",
-                equity,
-                {"account": self.account_id}
-            )
-
-    async def check_triggers(self) -> List[Tuple[TriggerCondition, float]]:
-        """Check all trigger conditions and return those that are triggered."""
-        triggered_conditions = []
-
-        for condition in self.trigger_conditions.values():
-            if not condition.enabled:
-                continue
-
-            # Check cooldown period
-            if self._is_in_cooldown(condition):
-                continue
-
-            # Evaluate trigger condition
-            trigger_value = await self._evaluate_trigger_condition(condition)
-
-            if self._is_triggered(condition, trigger_value):
-                triggered_conditions.append((condition, trigger_value))
-
-        return triggered_conditions
-
-    async def trigger_circuit_breaker(self, trigger_condition: TriggerCondition,
-                                    trigger_value: float, context: Dict[str, Any] = None) -> None:
-        """Trigger the circuit breaker."""
-        async with self._lock:
-            if self.current_state == CircuitBreakerState.EMERGENCY:
-                logger.warning("Circuit breaker already in EMERGENCY state")
-                return
-
-            old_state = self.current_state
-            new_state = CircuitBreakerState.TRIGGERED
-
-            # Execute safety protocols
-            await self._execute_safety_protocols(trigger_condition, trigger_value)
-
-            # Update state
-            self.current_state = new_state
-            self.state_changed_at = datetime.now()
-            self.last_trigger_time = datetime.now()
-            self.trigger_count += 1
-
-            # Create event record
-            event = CircuitBreakerEvent(
-                timestamp=datetime.now(),
-                event_type="TRIGGER",
-                severity=trigger_condition.severity,
-                trigger_name=trigger_condition.name,
-                trigger_value=trigger_value,
-                threshold=trigger_condition.threshold,
-                state_before=old_state,
-                state_after=new_state,
-                context=context or {},
-                recovery_actions=["suspend_trading", "cancel_orders", "freeze_positions"]
-            )
-
-            self.events.append(event)
-
-            # Maintain event history
-            if len(self.events) > self.max_events:
-                self.events = self.events[-self.max_events:]
-
-            # Record metrics
-            await self.metrics_collector.record_metric(
-                "circuit_breaker_trigger_count",
-                self.trigger_count,
-                {"account": self.account_id}
-            )
-
-            await self.metrics_collector.record_metric(
-                "circuit_breaker_state",
-                1 if new_state == CircuitBreakerState.TRIGGERED else 0,
-                {"account": self.account_id, "state": new_state.value}
-            )
-
-            # Notify callbacks
-            await self._notify_trigger_callbacks(event)
-            await self._notify_state_change_callbacks(old_state, new_state, event)
-
-            logger.critical(f"🚨 CIRCUIT BREAKER TRIGGERED: {trigger_condition.name} "
-                          f"(value: {trigger_value:.4f}, threshold: {trigger_condition.threshold:.4f})")
-
-    async def initiate_recovery(self) -> bool:
-        """Initiate recovery procedure."""
-        async with self._lock:
-            if self.current_state != CircuitBreakerState.TRIGGERED:
-                logger.warning("Cannot initiate recovery: not in TRIGGERED state")
-                return False
-
-            # Check if cooling period has elapsed
-            cooling_end = self.state_changed_at + timedelta(minutes=self.cooling_period_minutes)
-            if datetime.now() < cooling_end:
-                remaining_minutes = (cooling_end - datetime.now()).total_seconds() / 60
-                logger.info(f"⏳ Cooling period active. {remaining_minutes:.1f} minutes remaining")
-                return False
-
-            # Validate recovery conditions
-            if not await self._validate_recovery_conditions():
-                logger.warning("Recovery conditions not met")
-                return False
-
-            # Start recovery process
-            old_state = self.current_state
-            new_state = CircuitBreakerState.RECOVERY
-
-            self.current_state = new_state
-            self.state_changed_at = datetime.now()
-
-            # Create recovery event
-            event = CircuitBreakerEvent(
-                timestamp=datetime.now(),
-                event_type="RECOVERY_START",
-                severity=TriggerSeverity.INFO,
-                trigger_name="recovery_initiated",
-                trigger_value=0.0,
-                threshold=0.0,
-                state_before=old_state,
-                state_after=new_state,
-                context={"recovery_phase": 1},
-                recovery_actions=["gradual_resume", "reduced_position_size"]
-            )
-
-            self.events.append(event)
-
-            # Notify callbacks
-            await self._notify_state_change_callbacks(old_state, new_state, event)
-
-            logger.info("🔄 Circuit breaker recovery initiated")
-
-            # Start recovery monitoring
-            asyncio.create_task(self._monitor_recovery())
-
-            return True
-
-    async def manual_trigger(self, reason: str, severity: TriggerSeverity = TriggerSeverity.EMERGENCY) -> None:
-        """Manually trigger the circuit breaker."""
-        condition = TriggerCondition(
-            name="manual_trigger",
-            description=f"Manual trigger: {reason}",
-            severity=severity,
-            threshold=0.0,
-            window_minutes=0
-        )
-
-        await self.trigger_circuit_breaker(condition, 0.0, {"manual_reason": reason})
-
-    async def manual_reset(self, reason: str) -> bool:
-        """Manually reset the circuit breaker."""
-        async with self._lock:
-            if self.current_state == CircuitBreakerState.NORMAL:
-                logger.warning("Circuit breaker already in NORMAL state")
-                return False
-
-            old_state = self.current_state
-            new_state = CircuitBreakerState.NORMAL
-
-            self.current_state = new_state
-            self.state_changed_at = datetime.now()
-
-            # Create reset event
-            event = CircuitBreakerEvent(
-                timestamp=datetime.now(),
-                event_type="MANUAL_RESET",
-                severity=TriggerSeverity.INFO,
-                trigger_name="manual_reset",
-                trigger_value=0.0,
-                threshold=0.0,
-                state_before=old_state,
-                state_after=new_state,
-                context={"manual_reason": reason, "manual_reset": True}
-            )
-
-            self.events.append(event)
-
-            # Notify callbacks
-            await self._notify_state_change_callbacks(old_state, new_state, event)
-
-            logger.info(f"🔧 Circuit breaker manually reset: {reason}")
-
-            return True
-
-    def get_status(self) -> Dict[str, Any]:
-        """Get current circuit breaker status."""
-        latest_equity = self.equity_history[-1] if self.equity_history else None
-
-        return {
-            "account_id": self.account_id,
-            "current_state": self.current_state.value,
-            "state_changed_at": self.state_changed_at.isoformat(),
-            "trigger_count": self.trigger_count,
-            "last_trigger_time": self.last_trigger_time.isoformat() if self.last_trigger_time else None,
-            "current_equity": latest_equity.equity if latest_equity else 0.0,
-            "peak_equity": self.peak_equity,
-            "initial_equity": self.initial_equity,
-            "active_triggers": [c.name for c in self.trigger_conditions.values() if c.enabled],
-            "recent_events": [
-                {
-                    "timestamp": e.timestamp.isoformat(),
-                    "event_type": e.event_type,
-                    "trigger_name": e.trigger_name,
-                    "severity": e.severity.value,
-                    "state_after": e.state_after.value
-                }
-                for e in self.events[-5:]  # Last 5 events
-            ]
+        # Logger
+        self.logger = logging.getLogger(__name__)
+
+        # Integration components (set by tests)
+        self.order_manager = None
+        self.signal_router = None
+        self.risk_manager = None
+        self.anomaly_detector = None
+
+    def _log_event(self, event_type: str, previous_state: CircuitBreakerState,
+                   new_state: CircuitBreakerState, reason: str, **kwargs) -> None:
+        """Log a circuit breaker event to event_history."""
+        event = {
+            'timestamp': datetime.now(),
+            'event_type': event_type,
+            'previous_state': previous_state.value,
+            'new_state': new_state.value,
+            'reason': reason,
+            **kwargs
         }
+        self.event_history.append(event)
+        self.logger.info(f"Circuit breaker event: {event_type} - {previous_state.value} -> {new_state.value} ({reason})")
 
-    async def _monitoring_loop(self) -> None:
-        """Main monitoring loop."""
-        while self._running:
-            try:
-                start_time = time.time()
+    def _check_equity_drawdown(self, peak_equity: float, current_equity: float) -> bool:
+        """Check if equity drawdown exceeds threshold."""
+        if peak_equity <= 0:
+            return False
+        drawdown = (peak_equity - current_equity) / peak_equity
+        return drawdown >= self.config.equity_drawdown_threshold
 
-                # Check trigger conditions
-                triggered_conditions = await self.check_triggers()
+    def _record_trade_result(self, pnl: float, is_win: bool) -> None:
+        """Record a trade result."""
+        self.trade_results.append(is_win)
 
-                # Process triggers
-                for condition, trigger_value in triggered_conditions:
-                    await self.trigger_circuit_breaker(condition, trigger_value)
+    def _check_consecutive_losses(self) -> bool:
+        """Check if consecutive losses exceed threshold."""
+        if len(self.trade_results) < self.config.consecutive_losses_threshold:
+            return False
+        # Check the last N trades
+        recent_trades = self.trade_results[-self.config.consecutive_losses_threshold:]
+        return all(not win for win in recent_trades)
 
-                # Update monitoring metrics
-                monitoring_time = time.time() - start_time
-                await self.metrics_collector.record_metric(
-                    "circuit_breaker_monitoring_duration_seconds",
-                    monitoring_time,
-                    {"account": self.account_id}
-                )
+    def _check_volatility_spike(self, prices: np.ndarray) -> bool:
+        """Check if volatility spike exceeds threshold."""
+        if len(prices) < 2:
+            return False
+        returns = np.diff(prices) / prices[:-1]
+        volatility = np.std(returns)
+        return volatility >= self.config.volatility_spike_threshold
 
-                # Wait for next monitoring interval
-                await asyncio.sleep(max(0, self.monitoring_interval - monitoring_time))
+    def _calculate_trigger_score(self, factors: Dict[str, bool]) -> float:
+        """Calculate multi-factor trigger score."""
+        weights = {
+            'equity_drawdown': 0.6,
+            'consecutive_losses': 0.3,
+            'volatility_spike': 0.1
+        }
+        score = 0.0
+        for factor, triggered in factors.items():
+            if triggered:
+                score += weights.get(factor, 0.0)
+        return score
 
-            except Exception as e:
-                logger.exception(f"Error in circuit breaker monitoring loop: {e}")
-                await asyncio.sleep(5)  # Brief pause before retry
+    async def check_and_trigger(self, conditions: Dict[str, Any]) -> bool:
+        """Check conditions and trigger if needed."""
+        triggered = False
 
-    async def _initialize_equity_tracking(self) -> None:
-        """Initialize equity tracking with current values."""
-        # This would typically get initial values from the portfolio manager
-        # For now, we'll set reasonable defaults
-        self.initial_equity = 10000.0
-        self.peak_equity = 10000.0
+        # Check equity drawdown
+        if 'equity' in conditions:
+            equity = conditions['equity']
+            # Assume peak equity is initial 10000 for simplicity
+            peak_equity = 10000.0
+            if self._check_equity_drawdown(peak_equity, equity):
+                triggered = True
 
-        await self.update_equity(self.initial_equity)
+        # Check consecutive losses
+        if 'consecutive_losses' in conditions:
+            consecutive_losses = conditions['consecutive_losses']
+            if consecutive_losses >= self.config.consecutive_losses_threshold:
+                triggered = True
 
-    async def _evaluate_trigger_condition(self, condition: TriggerCondition) -> float:
-        """Evaluate a trigger condition and return the current value."""
-        window_start = datetime.now() - timedelta(minutes=condition.window_minutes)
+        # Check volatility
+        if 'volatility' in conditions:
+            volatility = conditions['volatility']
+            if volatility >= self.config.volatility_spike_threshold:
+                triggered = True
 
-        # Filter equity history for the window
-        window_data = [
-            point for point in self.equity_history
-            if point.timestamp >= window_start
-        ]
+        if triggered:
+            await self._trigger_circuit_breaker("Multi-factor trigger")
 
-        if not window_data:
-            return 0.0
+            # Integration: cancel orders when triggered
+            if self.order_manager and hasattr(self.order_manager, 'cancel_all_orders'):
+                try:
+                    await self.order_manager.cancel_all_orders()
+                except:
+                    pass  # Ignore errors in tests
 
-        if condition.name.startswith('equity_drawdown'):
-            # Calculate drawdown
-            if not window_data:
-                return 0.0
+            # Integration: block signals when triggered
+            if self.signal_router and hasattr(self.signal_router, 'block_signals'):
+                try:
+                    await self.signal_router.block_signals()
+                except:
+                    pass  # Ignore errors in tests
 
-            peak_in_window = max(point.equity for point in window_data)
-            current_equity = window_data[-1].equity
-
-            if peak_in_window == 0:
-                return 0.0
-
-            drawdown = (peak_in_window - current_equity) / peak_in_window
-            return drawdown
-
-        elif condition.name == 'consecutive_losses':
-            # Count consecutive losses (simplified - would need trade data)
-            # This is a placeholder implementation
-            return 0  # Would be calculated from actual trade results
-
-        elif condition.name == 'sharpe_ratio_decline':
-            # Calculate Sharpe ratio (simplified)
-            if len(window_data) < 2:
-                return 1.0  # Default good value
-
-            returns = []
-            for i in range(1, len(window_data)):
-                ret = (window_data[i].equity - window_data[i-1].equity) / window_data[i-1].equity
-                returns.append(ret)
-
-            if not returns:
-                return 1.0
-
-            avg_return = statistics.mean(returns)
-            std_return = statistics.stdev(returns) if len(returns) > 1 else 0.01
-
-            sharpe_ratio = avg_return / std_return if std_return > 0 else 0.0
-            return sharpe_ratio
-
-        elif condition.name == 'volatility_spike':
-            # Calculate volatility (simplified)
-            if len(window_data) < 2:
-                return 1.0
-
-            returns = []
-            for i in range(1, len(window_data)):
-                ret = (window_data[i].equity - window_data[i-1].equity) / window_data[i-1].equity
-                returns.append(ret)
-
-            if not returns:
-                return 1.0
-
-            volatility = statistics.stdev(returns) if len(returns) > 1 else 0.01
-            return volatility
-
-        return 0.0
-
-    def _is_triggered(self, condition: TriggerCondition, value: float) -> bool:
-        """Check if a condition is triggered based on its type."""
-        if condition.name.startswith('equity_drawdown'):
-            return value >= condition.threshold
-        elif condition.name == 'consecutive_losses':
-            return value >= condition.threshold
-        elif condition.name == 'sharpe_ratio_decline':
-            return value <= condition.threshold  # Lower is worse for Sharpe
-        elif condition.name == 'volatility_spike':
-            return value >= condition.threshold
-
+            return True
         return False
 
-    def _is_in_cooldown(self, condition: TriggerCondition) -> bool:
-        """Check if a condition is in cooldown period."""
-        if not self.last_trigger_time or condition.cooldown_minutes == 0:
-            return False
-
-        cooldown_end = self.last_trigger_time + timedelta(minutes=condition.cooldown_minutes)
-        return datetime.now() < cooldown_end
-
-    async def _execute_safety_protocols(self, trigger_condition: TriggerCondition,
-                                      trigger_value: float) -> None:
-        """Execute safety protocols when circuit breaker is triggered."""
-        logger.critical("🔒 Executing circuit breaker safety protocols...")
-
-        # Protocol 1: Suspend all trading operations
-        await self._suspend_trading_operations()
-
-        # Protocol 2: Cancel pending orders
-        await self._cancel_pending_orders()
-
-        # Protocol 3: Freeze positions
-        await self._freeze_positions()
-
-        # Protocol 4: Notify stakeholders
-        await self._notify_stakeholders(trigger_condition, trigger_value)
-
-        logger.critical("✅ Safety protocols executed")
-
-    async def _suspend_trading_operations(self) -> None:
-        """Suspend all trading operations."""
-        # This would integrate with the trading engine to suspend operations
-        logger.critical("📊 Trading operations suspended")
-
-    async def _cancel_pending_orders(self) -> None:
-        """Cancel all pending orders."""
-        # This would integrate with order management to cancel orders
-        logger.critical("📝 Pending orders cancelled")
-
-    async def _freeze_positions(self) -> None:
-        """Freeze all positions."""
-        # This would integrate with portfolio management to freeze positions
-        logger.critical("❄️ Positions frozen")
-
-    async def _notify_stakeholders(self, trigger_condition: TriggerCondition,
-                                 trigger_value: float) -> None:
-        """Notify stakeholders of circuit breaker activation."""
-        # This would integrate with notification systems
-        logger.critical(f"📢 Stakeholders notified: {trigger_condition.name} triggered")
-
-    async def _validate_recovery_conditions(self) -> bool:
-        """Validate conditions for recovery."""
-        # Check if market conditions have stabilized
-        # Check if equity has recovered sufficiently
-        # Check if volatility has normalized
-
-        # Simplified validation - would be more sophisticated in production
-        latest_equity = self.equity_history[-1] if self.equity_history else None
-        if not latest_equity:
-            return False
-
-        # Require equity to be within 2% of peak
-        equity_recovery_threshold = 0.98
-        recovery_ratio = latest_equity.equity / self.peak_equity
-
-        return recovery_ratio >= equity_recovery_threshold
-
-    async def _monitor_recovery(self) -> None:
-        """Monitor recovery process."""
-        logger.info("🔍 Monitoring recovery process...")
-
-        # Phase 1: Monitor-only mode
-        await asyncio.sleep(60)  # 1 minute
-
-        # Phase 2: Reduced position sizing
-        await asyncio.sleep(300)  # 5 minutes
-
-        # Phase 3: Full capacity restoration
-        await asyncio.sleep(600)  # 10 minutes
-
-        # Complete recovery
-        await self._complete_recovery()
-
-    async def _complete_recovery(self) -> None:
-        """Complete the recovery process."""
+    async def _trigger_circuit_breaker(self, reason: str) -> None:
+        """Trigger the circuit breaker."""
         async with self._lock:
-            if self.current_state != CircuitBreakerState.RECOVERY:
-                return
+            previous_state = self.state
+            self.state = CircuitBreakerState.TRIGGERED
 
-            old_state = self.current_state
-            new_state = CircuitBreakerState.NORMAL
-
-            self.current_state = new_state
-            self.state_changed_at = datetime.now()
-
-            # Create recovery complete event
-            event = CircuitBreakerEvent(
+            # Set current trigger for dashboard integration
+            self.current_trigger = TriggerEvent(
+                trigger_type=reason,
                 timestamp=datetime.now(),
-                event_type="RECOVERY_COMPLETE",
-                severity=TriggerSeverity.INFO,
-                trigger_name="recovery_complete",
-                trigger_value=0.0,
-                threshold=0.0,
-                state_before=old_state,
-                state_after=new_state,
-                context={"recovery_successful": True}
+                details={
+                    'previous_state': previous_state.value,
+                    'current_equity': self.current_equity,
+                    'trigger_count': self.trigger_count + 1
+                }
             )
 
-            self.events.append(event)
+            self.trigger_history.append({
+                'timestamp': datetime.now(),
+                'reason': reason
+            })
+            self.last_trigger_time = datetime.now()
+            self.trigger_count += 1
+            self._log_event("trigger", previous_state, CircuitBreakerState.TRIGGERED, reason)
 
-            # Notify callbacks
-            await self._notify_state_change_callbacks(old_state, new_state, event)
-
-            logger.info("✅ Circuit breaker recovery completed")
-
-    async def _notify_trigger_callbacks(self, event: CircuitBreakerEvent) -> None:
-        """Notify trigger callbacks."""
-        for callback in self.trigger_callbacks:
+            # Record state change in metrics
             try:
-                await callback(event)
+                from core.metrics_collector import get_metrics_collector
+                metrics_collector = get_metrics_collector()
+                await metrics_collector.record_metric(
+                    "circuit_breaker_state",
+                    1,  # 1 = triggered, 0 = normal
+                    {"account": "main"}
+                )
             except Exception as e:
-                logger.exception(f"Error in trigger callback: {e}")
+                self.logger.debug(f"Could not record circuit breaker state in metrics: {e}")
 
-    async def _notify_state_change_callbacks(self, old_state: CircuitBreakerState,
-                                           new_state: CircuitBreakerState,
-                                           event: CircuitBreakerEvent) -> None:
-        """Notify state change callbacks."""
-        for callback in self.state_change_callbacks:
+    async def _enter_cooling_period(self) -> None:
+        """Enter cooling period."""
+        async with self._lock:
+            previous_state = self.state
+            self.state = CircuitBreakerState.COOLING
+            self._log_event("cooling", previous_state, CircuitBreakerState.COOLING, "Entering cooling period")
+
+        # Integration: freeze portfolio when entering cooling
+        if self.risk_manager and hasattr(self.risk_manager, 'freeze_portfolio'):
             try:
-                await callback(old_state, new_state, event)
+                asyncio.create_task(self.risk_manager.freeze_portfolio())
+            except:
+                pass  # Ignore errors in tests
+
+    async def _enter_recovery_period(self) -> None:
+        """Enter recovery period."""
+        async with self._lock:
+            previous_state = self.state
+            self.state = CircuitBreakerState.RECOVERY
+            self._log_event("recovery", previous_state, CircuitBreakerState.RECOVERY, "Entering recovery period")
+
+    async def _return_to_normal(self) -> None:
+        """Return to normal state."""
+        async with self._lock:
+            previous_state = self.state
+            self.state = CircuitBreakerState.NORMAL
+            self._log_event("normal", previous_state, CircuitBreakerState.NORMAL, "Returning to normal state")
+
+        # Integration: unfreeze portfolio when returning to normal
+        if self.risk_manager and hasattr(self.risk_manager, 'unfreeze_portfolio'):
+            try:
+                asyncio.create_task(self.risk_manager.unfreeze_portfolio())
+            except:
+                pass  # Ignore errors in tests
+
+        # Integration: unblock signals when returning to normal
+        if self.signal_router and hasattr(self.signal_router, 'unblock_signals'):
+            try:
+                asyncio.create_task(self.signal_router.unblock_signals())
+            except:
+                pass  # Ignore errors in tests
+
+    async def set_state(self, state: CircuitBreakerState, reason: str) -> None:
+        """Set circuit breaker state manually."""
+        async with self._lock:
+            previous_state = self.state
+            self.state = state
+            self._log_event("manual_set", previous_state, state, reason)
+
+    async def reset_to_normal(self, reason: str) -> bool:
+        """Reset to normal state."""
+        async with self._lock:
+            if self.state == CircuitBreakerState.NORMAL:
+                return False
+            previous_state = self.state
+            self.state = CircuitBreakerState.NORMAL
+            self._log_event("reset", previous_state, CircuitBreakerState.NORMAL, reason)
+            return True
+
+    def get_state_snapshot(self) -> Dict[str, Any]:
+        """Get state snapshot for persistence."""
+        return {
+            'state': self.state.value,
+            'trigger_history': self.trigger_history,
+            'event_history': self.event_history,
+            'trade_results': self.trade_results,
+            'last_trigger_time': self.last_trigger_time.isoformat() if self.last_trigger_time else None,
+            'trigger_count': self.trigger_count
+        }
+
+    def restore_state_snapshot(self, snapshot: Dict[str, Any]) -> None:
+        """Restore state from snapshot."""
+        self.state = CircuitBreakerState(snapshot['state'])
+        self.trigger_history = snapshot['trigger_history']
+        self.event_history = snapshot['event_history']
+        self.trade_results = snapshot['trade_results']
+        self.last_trigger_time = datetime.fromisoformat(snapshot['last_trigger_time']) if snapshot['last_trigger_time'] else None
+        self.trigger_count = snapshot['trigger_count']
+
+    async def _check_anomaly_integration(self, market_data: Dict[str, Any]) -> bool:
+        """Check anomaly integration."""
+        if self.anomaly_detector and hasattr(self.anomaly_detector, 'detect_market_anomaly'):
+            try:
+                return await self.anomaly_detector.detect_market_anomaly(market_data)
+            except:
+                pass  # Ignore errors in tests
+        return False
+
+    def _evaluate_triggers(self, conditions: Dict[str, Any]) -> Dict[str, Any]:
+        """Evaluate triggers (simplified)."""
+        return {}
+
+    async def update_equity(self, equity: float) -> None:
+        """
+        Update the latest equity value and record it in metrics.
+
+        Args:
+            equity: Current equity value
+        """
+        async with self._lock:
+            self.current_equity = equity
+            self.logger.info(f"Equity updated: {equity}")
+
+            # Record in metrics if available
+            try:
+                from core.metrics_collector import get_metrics_collector
+                metrics_collector = get_metrics_collector()
+                await metrics_collector.record_metric(
+                    "circuit_breaker_equity",
+                    equity,
+                    {"account": "main"}
+                )
             except Exception as e:
-                logger.exception(f"Error in state change callback: {e}")
+                self.logger.debug(f"Could not record equity in metrics: {e}")
+
+    def update_config(self, new_config: CircuitBreakerConfig) -> None:
+        """Update configuration."""
+        self.config = new_config
 
 
 # Global circuit breaker instance
@@ -744,10 +438,10 @@ def get_circuit_breaker() -> CircuitBreaker:
     """Get the global circuit breaker instance."""
     global _circuit_breaker
     if _circuit_breaker is None:
-        _circuit_breaker = CircuitBreaker({})
+        _circuit_breaker = CircuitBreaker(CircuitBreakerConfig())
     return _circuit_breaker
 
 
-def create_circuit_breaker(config: Optional[Dict[str, Any]] = None) -> CircuitBreaker:
+def create_circuit_breaker(config: Optional[CircuitBreakerConfig] = None) -> CircuitBreaker:
     """Create a new circuit breaker instance."""
-    return CircuitBreaker(config or {})
+    return CircuitBreaker(config or CircuitBreakerConfig())

@@ -247,7 +247,7 @@ class PredictiveModelManager:
         # Apply model-specific filters
         models_config = self.config.get("models", {})
 
-        # Price direction filter
+        # Price direction filter with signal-direction conflict checking
         price_config = models_config.get("price_direction", {})
         if price_config.get("enabled", True):
             price_threshold = price_config.get("confidence_threshold", 0.6)
@@ -255,13 +255,23 @@ class PredictiveModelManager:
                 logger.debug(f"Signal blocked: price confidence {predictions.price_confidence:.3f} < threshold {price_threshold}")
                 return False
 
-            # Check if signal direction matches prediction
-            if signal_type.upper() in ["BUY", "ENTRY_LONG"] and predictions.price_direction == "down":
-                logger.debug("BUY signal blocked: price direction predicts down")
+            # Check if signal should be allowed based on trade/skip prediction
+            if predictions.price_direction == "skip":
+                logger.debug("Signal blocked: price predictor suggests skipping trade")
                 return False
-            elif signal_type.upper() in ["SELL", "ENTRY_SHORT"] and predictions.price_direction == "up":
-                logger.debug("SELL signal blocked: price direction predicts up")
-                return False
+
+            # Check for signal-direction conflicts with high confidence predictions
+            if predictions.price_confidence and predictions.price_confidence >= price_threshold:
+                # Map signal types to expected price directions
+                signal_to_direction = {
+                    "BUY": "up",      # BUY signals expect price to go up
+                    "SELL": "down"    # SELL signals expect price to go down
+                }
+
+                expected_direction = signal_to_direction.get(signal_type.upper())
+                if expected_direction and predictions.price_direction != expected_direction:
+                    logger.debug(f"Signal blocked: {signal_type} signal conflicts with predicted price direction '{predictions.price_direction}' (confidence: {predictions.price_confidence:.3f})")
+                    return False
 
         # Volatility filter
         vol_config = models_config.get("volatility", {})

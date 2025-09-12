@@ -21,7 +21,7 @@ import os
 from pathlib import Path
 
 from core.circuit_breaker import (
-    CircuitBreaker, CircuitBreakerState, get_circuit_breaker
+    CircuitBreaker, CircuitBreakerState, CircuitBreakerConfig, get_circuit_breaker
 )
 from core.order_manager import OrderManager
 from core.signal_router import SignalRouter
@@ -156,44 +156,48 @@ class TestCircuitBreakerStateManagement:
         )
         self.cb = CircuitBreaker(self.config)
 
-    def test_state_transitions(self):
+    @pytest.mark.asyncio
+    async def test_state_transitions(self):
         """Test all state transitions in the state machine."""
         # Start in NORMAL
         assert self.cb.state == CircuitBreakerState.NORMAL
 
         # Trigger circuit breaker
-        self.cb._trigger_circuit_breaker("Test trigger")
+        await self.cb._trigger_circuit_breaker("Test trigger")
         assert self.cb.state == CircuitBreakerState.TRIGGERED
 
         # Move to cooling
-        self.cb._enter_cooling_period()
+        await self.cb._enter_cooling_period()
         assert self.cb.state == CircuitBreakerState.COOLING
 
         # Move to recovery
-        self.cb._enter_recovery_period()
+        await self.cb._enter_recovery_period()
         assert self.cb.state == CircuitBreakerState.RECOVERY
 
         # Return to normal
-        self.cb._return_to_normal()
+        await self.cb._return_to_normal()
         assert self.cb.state == CircuitBreakerState.NORMAL
 
-    def test_manual_state_override(self):
+    @pytest.mark.asyncio
+    async def test_manual_state_override(self):
         """Test manual state override functionality."""
         # Start in normal
         assert self.cb.state == CircuitBreakerState.NORMAL
 
         # Manually set to triggered
-        self.cb.set_state(CircuitBreakerState.TRIGGERED, "Manual override")
+        await self.cb.set_state(CircuitBreakerState.TRIGGERED, "Manual override")
         assert self.cb.state == CircuitBreakerState.TRIGGERED
 
         # Manually reset to normal
-        self.cb.reset_to_normal("Manual reset")
+        result = await self.cb.reset_to_normal("Manual reset")
+        assert result
         assert self.cb.state == CircuitBreakerState.NORMAL
 
-    def test_state_persistence(self):
+    @pytest.mark.asyncio
+    async def test_state_persistence(self):
         """Test state persistence across restarts."""
         # Set up circuit breaker with some state
-        self.cb._trigger_circuit_breaker("Test trigger")
+        await self.cb._trigger_circuit_breaker("Test trigger")
         self.cb._record_trade_result(100, True)  # Add some history
 
         # Simulate save
@@ -214,9 +218,9 @@ class TestCircuitBreakerStateManagement:
             """Simulate concurrent operations."""
             for i in range(10):
                 if cb.state == CircuitBreakerState.NORMAL:
-                    cb._trigger_circuit_breaker(f"Trigger {operation_id}-{i}")
+                    await cb._trigger_circuit_breaker(f"Trigger {operation_id}-{i}")
                 elif cb.state == CircuitBreakerState.TRIGGERED:
-                    cb._enter_cooling_period()
+                    await cb._enter_cooling_period()
                 await asyncio.sleep(0.001)  # Small delay
 
         # Run multiple concurrent operations
@@ -274,7 +278,7 @@ class TestCircuitBreakerIntegration:
         self.signal_router.block_signals.assert_called_once()
 
         # Test unblocking after recovery
-        self.cb._return_to_normal()
+        await self.cb._return_to_normal()
         self.signal_router.unblock_signals.assert_called_once()
 
     @pytest.mark.asyncio
@@ -287,13 +291,13 @@ class TestCircuitBreakerIntegration:
 
         # Trigger and move to cooling
         await self.cb.check_and_trigger({'volatility': 0.1})
-        self.cb._enter_cooling_period()
+        await self.cb._enter_cooling_period()
 
         # Verify portfolio freeze was called
         self.risk_manager.freeze_portfolio.assert_called_once()
 
         # Test unfreezing after recovery
-        self.cb._return_to_normal()
+        await self.cb._return_to_normal()
         self.risk_manager.unfreeze_portfolio.assert_called_once()
 
     @pytest.mark.asyncio

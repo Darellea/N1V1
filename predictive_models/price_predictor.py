@@ -114,23 +114,34 @@ class PricePredictor:
 
         return df[self.feature_columns]
 
-    def _create_labels(self, df: pd.DataFrame, threshold: float = 0.001) -> pd.Series:
+    def _create_labels(self, df: pd.DataFrame, horizon: int = 5, profit_threshold: float = 0.005,
+                      include_fees: bool = True, fee_rate: float = 0.001) -> pd.Series:
         """
-        Create labels for price direction classification.
+        Create binary labels for trading decisions with strict prevention of look-ahead bias.
 
         Args:
             df: DataFrame with price data
-            threshold: Threshold for neutral classification
+            horizon: Number of periods ahead to look for forward return
+            profit_threshold: Minimum profit threshold after fees (fractional)
+            include_fees: Whether to account for trading fees
+            fee_rate: Trading fee rate (fractional)
 
         Returns:
-            Series with labels (0: down, 1: neutral, 2: up)
+            Series with binary labels (1 for trade, 0 for skip)
         """
-        future_returns = df['close'].shift(-1) / df['close'] - 1
+        # Calculate forward return over N bars
+        future_price = df['close'].shift(-horizon)
+        forward_return = (future_price - df['close']) / df['close']
 
-        labels = pd.Series(index=future_returns.index, dtype=int)
-        labels[future_returns > threshold] = 2  # up
-        labels[(future_returns >= -threshold) & (future_returns <= threshold)] = 1  # neutral
-        labels[future_returns < -threshold] = 0  # down
+        # Account for trading fees if requested
+        if include_fees:
+            # Assume round-trip fees (entry + exit)
+            total_fee_rate = 2 * fee_rate
+            # Adjust profit threshold to account for fees
+            effective_threshold = profit_threshold + total_fee_rate
+            labels = (forward_return > effective_threshold).astype(int)
+        else:
+            labels = (forward_return > profit_threshold).astype(int)
 
         return labels.dropna()
 
@@ -142,15 +153,13 @@ class PricePredictor:
             return RandomForestClassifier(n_estimators=100, random_state=42)
         elif self.model_type == "xgboost":
             return xgb.XGBClassifier(
-                objective='multi:softprob',
-                num_class=3,
+                objective='binary:logistic',
                 random_state=42,
                 n_estimators=100
             )
         elif self.model_type == "lightgbm":
             return lgb.LGBMClassifier(
-                objective='multiclass',
-                num_class=3,
+                objective='binary',
                 random_state=42,
                 n_estimators=100
             )
@@ -247,13 +256,13 @@ class PricePredictor:
 
     def predict(self, df: pd.DataFrame) -> Tuple[str, float]:
         """
-        Predict price direction for the next candle.
+        Predict trading decision for the next candle.
 
         Args:
             df: Recent market data
 
         Returns:
-            Tuple of (direction, confidence)
+            Tuple of (decision, confidence) where decision is "trade" or "skip"
         """
         if self.model is None:
             if not self.load_model():
@@ -263,7 +272,7 @@ class PricePredictor:
             # Create features from recent data
             features_df = self._create_features(df)
             if features_df.empty:
-                return "neutral", 0.5
+                return "skip", 0.5
 
             # Use most recent data point
             latest_features = features_df.iloc[-1:].values
@@ -272,22 +281,23 @@ class PricePredictor:
             # Get predictions
             if hasattr(self.model, 'predict_proba'):
                 probabilities = self.model.predict_proba(features_scaled)[0]
+                # For binary classification, probabilities[1] is probability of positive class (trade)
                 predicted_class = np.argmax(probabilities)
-                confidence = np.max(probabilities)
+                confidence = probabilities[1] if len(probabilities) > 1 else probabilities[0]
             else:
                 predicted_class = self.model.predict(features_scaled)[0]
                 confidence = 0.5  # Default confidence for models without predict_proba
 
-            # Map to direction
-            direction_map = {0: "down", 1: "neutral", 2: "up"}
-            direction = direction_map.get(predicted_class, "neutral")
+            # Map to decision
+            decision_map = {0: "skip", 1: "trade"}
+            decision = decision_map.get(predicted_class, "skip")
 
             # Apply confidence threshold
             if confidence < self.confidence_threshold:
-                direction = "neutral"
+                decision = "skip"
 
-            return direction, float(confidence)
+            return decision, float(confidence)
 
         except Exception as e:
             logger.error(f"Prediction failed: {e}")
-            return "neutral", 0.5
+            return "skip", 0.5

@@ -1,0 +1,172 @@
+{
+  "metadata": {
+    "model_type": "binary_classification",
+    "objective": "p_trade_probability",
+    "horizon": 5,
+    "profit_threshold": 0.008,
+    "include_fees": true,
+    "fee_rate": 0.001,
+    "feature_columns": [
+      "RSI",
+      "MACD",
+      "EMA_20",
+      "ATR",
+      "StochRSI",
+      "TrendStrength",
+      "Volatility"
+    ],
+    "n_splits": 5,
+    "class_weights": {
+      "1": 1.2375,
+      "0": 0.8389830508474576
+    },
+    "validation_method": "walk_forward",
+    "hyperparameter_tuning": false,
+    "feature_selection": false
+  },
+  "overall_metrics": {
+    "auc": 0.4870906168374522,
+    "f1": 0.46976744186046504,
+    "total_samples": 410,
+    "class_distribution": {
+      "1": 158,
+      "0": 252
+    },
+    "pnl": -0.56,
+    "sharpe": -3.403133383532216,
+    "max_drawdown": -0.6720000000000004,
+    "total_trades": 272,
+    "win_rate": 0.44390243902439025
+  },
+  "fold_metrics": [
+    {
+      "fold": 1,
+      "train_samples": 85,
+      "test_samples": 82,
+      "auc": 0.500299043062201,
+      "f1": 0.6333333333333334,
+      "precision": 0.4634146341463415,
+      "recall": 1.0,
+      "class_distribution": {
+        "train": {
+          "1": 42,
+          "0": 43
+        },
+        "test": {
+          "1": 38,
+          "0": 44
+        }
+      },
+      "pnl": -0.048,
+      "sharpe": -1.1646713399682935,
+      "max_drawdown": -0.15200000000000002,
+      "total_trades": 82,
+      "win_rate": 0.4634146341463415
+    },
+    {
+      "fold": 2,
+      "train_samples": 167,
+      "test_samples": 82,
+      "auc": 0.44655797101449274,
+      "f1": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "class_distribution": {
+        "train": {
+          "1": 80,
+          "0": 87
+        },
+        "test": {
+          "1": 36,
+          "0": 46
+        }
+      },
+      "pnl": 0.0,
+      "sharpe": 0.0,
+      "max_drawdown": 0.0,
+      "total_trades": 0,
+      "win_rate": 0.0
+    },
+    {
+      "fold": 3,
+      "train_samples": 249,
+      "test_samples": 82,
+      "auc": 0.7608825283243887,
+      "f1": 0.553846153846154,
+      "precision": 0.6923076923076923,
+      "recall": 0.46153846153846156,
+      "class_distribution": {
+        "train": {
+          "1": 116,
+          "0": 133
+        },
+        "test": {
+          "0": 43,
+          "1": 39
+        }
+      },
+      "pnl": 0.07999999999999999,
+      "sharpe": 3.521586972254073,
+      "max_drawdown": -0.04800000000000004,
+      "total_trades": 26,
+      "win_rate": 0.6463414634146342
+    },
+    {
+      "fold": 4,
+      "train_samples": 331,
+      "test_samples": 82,
+      "auc": 0.45706479313036696,
+      "f1": 0.4077669902912621,
+      "precision": 0.25609756097560976,
+      "recall": 1.0,
+      "class_distribution": {
+        "train": {
+          "1": 155,
+          "0": 176
+        },
+        "test": {
+          "1": 21,
+          "0": 61
+        }
+      },
+      "pnl": -0.32,
+      "sharpe": -8.870655251454876,
+      "max_drawdown": -0.35200000000000026,
+      "total_trades": 82,
+      "win_rate": 0.25609756097560976
+    },
+    {
+      "fold": 5,
+      "train_samples": 413,
+      "test_samples": 82,
+      "auc": 0.5944683908045976,
+      "f1": 0.45283018867924524,
+      "precision": 0.2926829268292683,
+      "recall": 1.0,
+      "class_distribution": {
+        "train": {
+          "1": 176,
+          "0": 237
+        },
+        "test": {
+          "0": 58,
+          "1": 24
+        }
+      },
+      "pnl": -0.272,
+      "sharpe": -7.233185018872488,
+      "max_drawdown": -0.2960000000000002,
+      "total_trades": 82,
+      "win_rate": 0.2926829268292683
+    }
+  ],
+  "feature_importance": {
+    "RSI": "152",
+    "MACD": "231",
+    "EMA_20": "320",
+    "ATR": "215",
+    "StochRSI": "162",
+    "TrendStrength": "160",
+    "Volatility": "197"
+  }
+}

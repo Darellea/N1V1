@@ -356,7 +356,8 @@ async def integrate_with_bot_engine(bot_engine) -> None:
         collect_trading_metrics,
         collect_risk_metrics,
         collect_strategy_metrics,
-        collect_exchange_metrics
+        collect_exchange_metrics,
+        collect_binary_model_metrics
     )
 
     collector = get_metrics_collector()
@@ -364,6 +365,7 @@ async def integrate_with_bot_engine(bot_engine) -> None:
     collector.add_custom_collector(collect_risk_metrics)
     collector.add_custom_collector(collect_strategy_metrics)
     collector.add_custom_collector(collect_exchange_metrics)
+    collector.add_custom_collector(collect_binary_model_metrics)
 
     # Start metrics collection
     await collector.start()

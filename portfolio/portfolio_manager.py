@@ -380,9 +380,16 @@ class PortfolioManager:
             Dictionary with rebalancing results
         """
         # Check if rebalancing is needed
-        rebalance_check = self._check_rebalance_needed()
+        rebalance_check = self._check_rebalance_needed(target_allocations)
         if not rebalance_check['should_rebalance']:
-            return rebalance_check
+            # Return consistent structure for no-rebalance case
+            return {
+                "rebalanced": False,
+                "actions": [],
+                "current_allocations": self._get_current_allocations(),
+                "target_allocations": target_allocations,
+                "reason": rebalance_check.get('reason', 'no_rebalance_needed')
+            }
 
         # Calculate and execute trades
         total_value = self.get_portfolio_value()
@@ -395,15 +402,20 @@ class PortfolioManager:
         self.logger.info(f"Portfolio rebalanced. Executed {len(executed_trades)} trades")
 
         return {
-            'rebalanced': True,
-            'trades': executed_trades,
-            'target_allocations': target_allocations,
-            'total_value': float(total_value)
+            "rebalanced": True,
+            "actions": executed_trades,
+            "trades": executed_trades,  # Keep both for compatibility
+            "current_allocations": self._get_current_allocations(),
+            "target_allocations": target_allocations,
+            "total_value": float(total_value)
         }
 
-    def _check_rebalance_needed(self) -> Dict[str, Any]:
+    def _check_rebalance_needed(self, target_allocations: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
         """
         Check if rebalancing is needed based on configuration.
+
+        Args:
+            target_allocations: Target allocation percentages (optional)
 
         Returns:
             Dictionary with rebalance decision
@@ -413,13 +425,16 @@ class PortfolioManager:
         threshold = rebalance_config.get('threshold', 0.05)
 
         if mode == 'threshold':
-            # Get target allocations for threshold check
-            # In a real implementation, this would come from the allocator
-            target_allocations = {}
-            if hasattr(self, 'allocator') and self.allocator:
-                target_allocations = getattr(self.allocator, 'get_target_allocations', lambda: {})()
-            
-            if not self._should_rebalance_threshold(target_allocations, threshold):
+            # Use provided target allocations or get from allocator
+            allocations_to_check = target_allocations or {}
+            if not allocations_to_check and hasattr(self, 'allocator') and self.allocator:
+                allocations_to_check = getattr(self.allocator, 'get_target_allocations', lambda: {})()
+
+            # If no target allocations available, assume rebalancing is needed
+            if not allocations_to_check:
+                return {'should_rebalance': True}
+
+            if not self._should_rebalance_threshold(allocations_to_check, threshold):
                 self.logger.info("Rebalancing not needed - allocations within threshold")
                 return {'should_rebalance': False, 'reason': 'within_threshold'}
 

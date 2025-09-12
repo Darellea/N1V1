@@ -297,6 +297,11 @@ class WalkForwardOptimizer(BaseOptimizer):
                 - output_dir: Directory for saving results
                 - save_intermediate: Whether to save results after each window
                 - parallel_execution: Whether to run windows in parallel
+                - train_window_days: Number of days for training window
+                - test_window_days: Number of days for testing window
+                - min_observations: Minimum observations required
+                - rolling: Whether to use rolling windows
+                - improvement_threshold: Threshold for improvement detection
         """
         super().__init__(config)
 
@@ -306,6 +311,13 @@ class WalkForwardOptimizer(BaseOptimizer):
         self.output_dir = config.get('output_dir', 'results/walk_forward')
         self.save_intermediate = config.get('save_intermediate', True)
         self.parallel_execution = config.get('parallel_execution', False)
+
+        # Extract attributes expected by tests
+        self.train_window_days = config.get('train_window_days', 90)
+        self.test_window_days = config.get('test_window_days', 30)
+        self.min_observations = config.get('min_observations', 1000)
+        self.rolling = config.get('rolling', True)
+        self.improvement_threshold = config.get('improvement_threshold', 0.05)
 
         # Initialize components
         self.data_splitter = WalkForwardDataSplitter(self.data_splitter_config)
@@ -322,6 +334,203 @@ class WalkForwardOptimizer(BaseOptimizer):
         os.makedirs(self.output_dir, exist_ok=True)
 
         self.logger.info("Walk-Forward Optimizer initialized")
+
+    def _generate_windows(self, data: pd.DataFrame) -> List[Tuple[pd.DataFrame, pd.DataFrame]]:
+        """
+        Generate rolling or expanding train/test splits based on configuration.
+
+        Args:
+            data: Input data to split
+
+        Returns:
+            List of (train_data, test_data) tuples where each is a DataFrame
+        """
+        if data.empty or len(data) < self.min_observations:
+            return []
+
+        windows = []
+        n_samples = len(data)
+
+        if self.rolling:
+            # Rolling windows
+            train_size = self.train_window_days
+            test_size = self.test_window_days
+            step_size = test_size  # Non-overlapping by default
+
+            for start_idx in range(0, n_samples - train_size - test_size + 1, step_size):
+                train_end = start_idx + train_size
+                test_end = train_end + test_size
+
+                train_data = data.iloc[start_idx:train_end]
+                test_data = data.iloc[train_end:test_end]
+
+                windows.append((train_data, test_data))
+        else:
+            # Expanding windows
+            for test_end in range(self.min_observations, n_samples + 1, self.test_window_days):
+                train_end = test_end - self.test_window_days
+                train_start = max(0, train_end - self.train_window_days)
+
+                train_data = data.iloc[train_start:train_end]
+                test_data = data.iloc[train_end:test_end]
+
+                if len(train_data) >= self.min_observations:
+                    windows.append((train_data, test_data))
+
+        return windows
+
+    def _generate_param_combinations(self) -> List[Dict[str, Any]]:
+        """
+        Generate combinations of hyperparameters for strategies.
+
+        Returns:
+            List of parameter dictionaries
+        """
+        import itertools
+
+        # Default parameter ranges for common strategy parameters
+        param_ranges = {
+            'rsi_period': [5, 10, 14, 21, 28],
+            'overbought': [65, 70, 75, 80],
+            'oversold': [20, 25, 30, 35],
+            'ema_period': [9, 12, 20, 26, 50],
+            'sma_period': [10, 20, 50, 100, 200]
+        }
+
+        # Generate all combinations
+        param_names = list(param_ranges.keys())
+        param_values = [param_ranges[name] for name in param_names]
+
+        combinations = []
+        for combo in itertools.product(*param_values):
+            param_dict = dict(zip(param_names, combo))
+            combinations.append(param_dict)
+
+        return combinations
+
+    def cross_pair_validation(self, strategy, data_dict: Dict[str, pd.DataFrame],
+                             train_pair: str, validation_pairs: List[str]) -> Dict[str, Any]:
+        """
+        Perform cross-pair validation by training on one pair and validating on others.
+
+        Args:
+            strategy: Strategy class to validate
+            data_dict: Dictionary mapping pair names to DataFrames
+            train_pair: Name of the pair to train on
+            validation_pairs: List of pairs to validate on
+
+        Returns:
+            Dictionary containing validation results
+        """
+        if train_pair not in data_dict:
+            self.logger.error(f"Train pair {train_pair} not found in data_dict")
+            return {}
+
+        # Train on the specified pair
+        train_data = data_dict[train_pair]
+        best_params = self.optimize(strategy, train_data)
+
+        # If optimization failed (insufficient data), return empty results
+        if not best_params:
+            return {}
+
+        results = {
+            'train_pair': train_pair,
+            'validation_pairs': validation_pairs,
+            'best_params': best_params,
+            'results': {}
+        }
+
+        # Validate on each validation pair
+        for pair in [train_pair] + validation_pairs:
+            if pair not in data_dict:
+                self.logger.warning(f"Validation pair {pair} not found in data_dict")
+                continue
+
+            val_data = data_dict[pair]
+
+            # Evaluate strategy with best parameters on this pair
+            try:
+                # Create strategy instance
+                strategy_config = {
+                    'name': f'cpv_{pair}_{datetime.now().strftime("%Y%m%d_%H%M%S")}',
+                    'symbols': [pair],
+                    'timeframe': '1h',
+                    'required_history': 100,
+                    'params': best_params
+                }
+
+                strategy_instance = strategy(strategy_config)
+
+                # Run backtest to get metrics
+                equity_progression = self._run_backtest(strategy_instance, val_data)
+                if equity_progression:
+                    metrics = compute_backtest_metrics(equity_progression)
+                else:
+                    metrics = {'error': 'No equity progression'}
+
+                results['results'][pair] = {
+                    'sharpe_ratio': metrics.get('sharpe_ratio', 0),
+                    'max_drawdown': metrics.get('max_drawdown', 0),
+                    'profit_factor': metrics.get('profit_factor', 1.0),
+                    'total_return': metrics.get('total_return', 0),
+                    'win_rate': metrics.get('win_rate', 0),
+                    'total_trades': metrics.get('total_trades', 0),
+                    'expectancy': metrics.get('expectancy', 0)
+                }
+
+            except Exception as e:
+                self.logger.error(f"Error validating on pair {pair}: {e}")
+                results['results'][pair] = {
+                    'error': str(e),
+                    'sharpe_ratio': 0,
+                    'max_drawdown': 0,
+                    'profit_factor': 1.0,
+                    'total_return': 0,
+                    'win_rate': 0,
+                    'total_trades': 0,
+                    'expectancy': 0
+                }
+
+        return results
+
+    def _save_cross_validation_results(self, results: Dict[str, Any]) -> None:
+        """
+        Save cross-validation results to JSON and CSV files.
+
+        Args:
+            results: Cross-validation results dictionary
+        """
+        # Ensure results directory exists
+        os.makedirs('results', exist_ok=True)
+
+        # Save JSON results
+        json_path = 'results/cross_pair_validation.json'
+        with open(json_path, 'w') as f:
+            json.dump(results, f, indent=2, default=str)
+
+        # Save CSV summary
+        csv_path = 'results/cross_pair_validation.csv'
+        rows = []
+
+        for pair, metrics in results.get('results', {}).items():
+            row = {
+                'pair': pair,
+                'sharpe_ratio': metrics.get('sharpe_ratio', 0),
+                'max_drawdown': metrics.get('max_drawdown', 0),
+                'profit_factor': metrics.get('profit_factor', 1.0),
+                'total_return': metrics.get('total_return', 0),
+                'win_rate': metrics.get('win_rate', 0),
+                'total_trades': metrics.get('total_trades', 0),
+                'expectancy': metrics.get('expectancy', 0)
+            }
+            rows.append(row)
+
+        if rows:
+            df = pd.DataFrame(rows)
+            df.to_csv(csv_path, index=False)
+
+        self.logger.info(f"Cross-validation results saved to {json_path} and {csv_path}")
 
     def optimize(self, strategy_class, data: pd.DataFrame) -> Dict[str, Any]:
         """

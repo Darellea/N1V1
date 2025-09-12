@@ -8,7 +8,8 @@ while internally using decomposed components for better architecture.
 import asyncio
 import logging
 import time
-from typing import Dict, Optional, List, Any
+import pandas as pd
+from typing import Dict, Optional, List, Any, Union
 from dataclasses import dataclass
 from core.types import TradingMode
 
@@ -32,11 +33,22 @@ from core.signal_processor import SignalProcessor
 from core.performance_tracker import PerformanceTracker
 from core.order_executor import OrderExecutor
 from core.state_manager import StateManager
+from core.binary_model_integration import get_binary_integration, BinaryModelIntegration
 
 logger = logging.getLogger(__name__)
 
 # Strategy mapping for tests to patch
 STRATEGY_MAP = {}
+
+
+def now_ms() -> int:
+    """
+    Get current timestamp in milliseconds since epoch.
+
+    Returns:
+        Current timestamp as integer milliseconds
+    """
+    return int(time.time() * 1000)
 
 
 
@@ -318,16 +330,23 @@ class BotEngine:
         if await self._check_safe_mode_conditions():
             return
 
-        # 3. Generate signals from strategies
-        signals = await self._generate_signals(market_data)
+        # 3. Process through binary model integration (if enabled)
+        integrated_decisions = await self._process_binary_integration(market_data)
 
-        # 4. Route signals through risk management
-        approved_signals = await self._evaluate_risk(signals, market_data)
+        # 4. Generate signals from strategies (legacy path or when binary integration fails)
+        if not integrated_decisions:
+            signals = await self._generate_signals(market_data)
 
-        # 5. Execute orders
-        await self._execute_orders(approved_signals)
+            # 5. Route signals through risk management
+            approved_signals = await self._evaluate_risk(signals, market_data)
 
-        # 6. Update bot state
+            # 6. Execute orders
+            await self._execute_orders(approved_signals)
+        else:
+            # Execute integrated decisions
+            await self._execute_integrated_decisions(integrated_decisions)
+
+        # 7. Update bot state
         await self._update_state()
 
     async def _fetch_market_data(self) -> Dict[str, Any]:
@@ -724,34 +743,41 @@ class BotEngine:
             sharpe = float(np.mean(excess_returns) / np.std(excess_returns))
             self.performance_stats["sharpe_ratio"] = sharpe * np.sqrt(252)  # Annualize
 
-    async def record_trade_equity(self, order_result: Dict[str, Any]) -> None:
+    async def record_trade_equity(self, order_result: Optional[Dict[str, Any]]) -> None:
         """
         Record equity progression after a trade execution.
 
         Args:
-            order_result: Dictionary returned from OrderManager.execute_order containing at least:
+            order_result: Dictionary returned from OrderManager.execute_order containing:
               - id (optional): trade identifier
               - timestamp (optional): epoch ms or ISO timestamp
               - pnl (optional): profit/loss for the trade
+              - symbol (optional): trading symbol
 
         Side effects:
             Appends a record to self.performance_stats['equity_progression'] with:
-              - trade_id
-              - timestamp
-              - equity
-              - pnl
-              - cumulative_return (relative to starting balance)
+              - trade_id: from order_result["id"] or generated fallback
+              - timestamp: from order_result["timestamp"] or current time in ms
+              - equity: current equity value
+              - pnl: from order_result["pnl"] or None if missing
+              - cumulative_return: relative to starting balance
         """
         try:
             if not order_result:
                 return
 
-            # Get current equity
+            # Get current equity (handle case where order_manager.get_equity() returns 0)
             equity_val = await self._get_current_equity()
-            
+
+            # If equity is 0, try to calculate it from starting balance + total pnl
+            if equity_val == 0.0 and hasattr(self, 'performance_stats'):
+                total_pnl = self.performance_stats.get("total_pnl", 0.0)
+                if self.starting_balance > 0:
+                    equity_val = float(self.starting_balance) + float(total_pnl)
+
             # Calculate cumulative return
             cumulative_return = self._calculate_cumulative_return(equity_val)
-            
+
             # Create and append record
             record = self._create_equity_record(order_result, equity_val, cumulative_return)
             self.performance_stats.setdefault("equity_progression", []).append(record)
@@ -777,14 +803,62 @@ class BotEngine:
         except Exception:
             return 0.0
 
-    def _create_equity_record(self, order_result: Dict[str, Any], equity_val: float, cumulative_return: float) -> Dict[str, Any]:
-        """Create equity progression record."""
+    def _create_equity_record(
+        self,
+        order_result: Dict[str, Any],
+        equity_val: float,
+        cumulative_return: float
+    ) -> Dict[str, Any]:
+        """
+        Create equity progression record from order execution result.
+
+        Args:
+            order_result: Dictionary containing order execution details
+            equity_val: Current equity value
+            cumulative_return: Cumulative return relative to starting balance
+
+        Returns:
+            Dictionary with equity progression record containing:
+            - trade_id: Trade identifier (from order_result or generated)
+            - timestamp: Timestamp in milliseconds (from order_result or current time)
+            - symbol: Trading symbol (if available)
+            - equity: Current equity value
+            - pnl: Profit/loss from the trade (if available)
+            - cumulative_return: Cumulative return relative to starting balance
+        """
+        # Generate trade_id if not provided
+        trade_id = order_result.get("id")
+        if not trade_id:
+            trade_id = f"trade_{now_ms()}"
+
+        # Get timestamp, convert to int if needed
+        timestamp_val = order_result.get("timestamp")
+        if timestamp_val is None:
+            timestamp_val = now_ms()
+        elif not isinstance(timestamp_val, int):
+            # Try to convert to int (handles string timestamps)
+            try:
+                timestamp_val = int(timestamp_val)
+            except (ValueError, TypeError):
+                timestamp_val = now_ms()
+
+        # Get symbol if available
+        symbol = order_result.get("symbol") if isinstance(order_result, dict) else None
+
+        # Get pnl, handle None values
+        pnl = order_result.get("pnl")
+        if pnl is not None:
+            try:
+                pnl = float(pnl)
+            except (ValueError, TypeError):
+                pnl = None
+
         return {
-            "trade_id": order_result.get("id", f"trade_{now_ms()}"),
-            "timestamp": order_result.get("timestamp", now_ms()),
-            "symbol": order_result.get("symbol") if isinstance(order_result, dict) else None,
+            "trade_id": trade_id,
+            "timestamp": timestamp_val,
+            "symbol": symbol,
             "equity": equity_val,
-            "pnl": order_result.get("pnl"),
+            "pnl": pnl,
             "cumulative_return": cumulative_return,
         }
 
@@ -966,6 +1040,164 @@ class BotEngine:
                 logger.exception("Failed to cancel orders during emergency shutdown")
 
         await self.shutdown()
+
+    async def _process_binary_integration(self, market_data: Dict[str, Any]) -> List[Any]:
+        """
+        Process market data through binary model integration.
+
+        Args:
+            market_data: Market data dictionary
+
+        Returns:
+            List of integrated trading decisions
+        """
+        try:
+            binary_integration = get_binary_integration()
+
+            if not binary_integration.enabled:
+                logger.debug("Binary integration disabled")
+                return []
+
+            integrated_decisions = []
+
+            # Process each symbol in the market data
+            for symbol, data in market_data.items():
+                try:
+                    # Extract DataFrame from market data
+                    if isinstance(data, dict):
+                        if 'single_timeframe' in data:
+                            df = data['single_timeframe']
+                        else:
+                            # Convert dict to DataFrame
+                            df = pd.DataFrame(data)
+                    else:
+                        df = data
+
+                    if df.empty or len(df) < 20:
+                        logger.debug(f"Insufficient data for {symbol}, skipping binary integration")
+                        continue
+
+                    # Process through binary integration
+                    decision = await binary_integration.process_market_data(df, symbol)
+
+                    if decision.should_trade:
+                        integrated_decisions.append({
+                            'symbol': symbol,
+                            'decision': decision,
+                            'market_data': df
+                        })
+                        logger.info(f"Binary integration approved trade for {symbol}: {decision.reasoning}")
+
+                except Exception as e:
+                    logger.error(f"Error processing binary integration for {symbol}: {e}")
+                    continue
+
+            return integrated_decisions
+
+        except Exception as e:
+            logger.error(f"Binary integration processing failed: {e}")
+            return []
+
+    async def _execute_integrated_decisions(self, integrated_decisions: List[Dict[str, Any]]) -> None:
+        """
+        Execute integrated trading decisions from binary model.
+
+        Args:
+            integrated_decisions: List of integrated trading decisions
+        """
+        for decision_data in integrated_decisions:
+            try:
+                symbol = decision_data['symbol']
+                decision = decision_data['decision']
+                market_data = decision_data['market_data']
+
+                # Create trading signal from integrated decision
+                signal = self._create_signal_from_decision(decision, symbol, market_data)
+
+                if signal:
+                    # Execute the order
+                    order_result = await self.order_manager.execute_order(signal)
+
+                    # Update performance metrics
+                    if order_result and "pnl" in order_result:
+                        self._update_performance_metrics(order_result["pnl"])
+
+                        # Update strategy selector performance if strategy was selected
+                        if decision.selected_strategy:
+                            strategy_selector = get_strategy_selector()
+                            if strategy_selector.enabled:
+                                pnl = order_result.get("pnl", 0.0)
+                                returns = pnl / self.starting_balance if self.starting_balance > 0 else 0.0
+                                is_win = pnl > 0
+                                update_strategy_performance(decision.selected_strategy.__name__, pnl, returns, is_win)
+
+                        # Record equity progression
+                        try:
+                            await self.record_trade_equity(order_result)
+                        except Exception:
+                            logger.exception("Failed to record trade equity in integrated decision")
+
+                    # Send notifications
+                    if self.notifier:
+                        await self.notifier.send_order_notification(order_result)
+
+                    logger.info(f"Executed integrated decision for {symbol}: {decision.reasoning}")
+
+            except Exception as e:
+                logger.error(f"Error executing integrated decision: {e}")
+                continue
+
+    def _create_signal_from_decision(self, decision: Any, symbol: str, market_data: pd.DataFrame) -> Optional[Any]:
+        """
+        Create a trading signal from integrated decision.
+
+        Args:
+            decision: Integrated trading decision
+            symbol: Trading symbol
+            market_data: Market data DataFrame
+
+        Returns:
+            Trading signal or None
+        """
+        try:
+            from core.contracts import TradingSignal, SignalType, SignalStrength
+
+            # Determine signal type based on direction
+            if decision.direction == "long":
+                signal_type = SignalType.BUY
+            elif decision.direction == "short":
+                signal_type = SignalType.SELL
+            else:
+                logger.warning(f"Unknown direction in decision: {decision.direction}")
+                return None
+
+            # Get current price
+            current_price = market_data['close'].iloc[-1] if not market_data.empty else 0.0
+
+            # Create signal
+            signal = TradingSignal(
+                symbol=symbol,
+                signal_type=signal_type,
+                strength=SignalStrength.MODERATE,
+                current_price=current_price,
+                amount=decision.position_size,
+                stop_loss=decision.stop_loss,
+                take_profit=decision.take_profit,
+                timestamp=decision.timestamp,
+                metadata={
+                    "strategy": decision.selected_strategy.__name__ if decision.selected_strategy else "binary_integration",
+                    "regime": decision.regime,
+                    "binary_probability": decision.binary_probability,
+                    "risk_score": decision.risk_score,
+                    "reasoning": decision.reasoning
+                }
+            )
+
+            return signal
+
+        except Exception as e:
+            logger.error(f"Error creating signal from decision: {e}")
+            return None
 
     def _extract_multi_tf_data(self, market_data: Dict[str, Any], symbol: str) -> Optional[Dict[str, Any]]:
         """

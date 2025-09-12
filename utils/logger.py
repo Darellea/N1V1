@@ -209,6 +209,97 @@ class TradeLogger(logging.Logger):
             logger.exception("Unexpected error while logging failed order")
             raise
 
+    def log_binary_prediction(self, symbol: str, probability: float, threshold: float,
+                             regime: str, features: Dict[str, float], extra: Optional[Dict[str, Any]] = None) -> None:
+        """Log binary model prediction with structured data."""
+        try:
+            prediction_data = {
+                "symbol": symbol,
+                "probability": probability,
+                "threshold": threshold,
+                "regime": regime,
+                "features": features,
+                "decision": "trade" if probability >= threshold else "skip",
+                "confidence": abs(probability - 0.5) * 2  # Scale to 0-1 confidence
+            }
+
+            combined_extra = extra or {}
+            combined_extra.update({"binary_prediction": prediction_data})
+
+            self.log(PERF_LEVEL, f"Binary prediction: {symbol} p={probability:.3f} ({regime})",
+                    extra=combined_extra)
+
+        except Exception as e:
+            logger.exception(f"Failed to log binary prediction for {symbol}: {e}")
+
+    def log_binary_decision(self, symbol: str, decision: str, outcome: str, pnl: float,
+                           regime: str, strategy: str, probability: float,
+                           extra: Optional[Dict[str, Any]] = None) -> None:
+        """Log binary model decision outcome with comprehensive details."""
+        try:
+            decision_data = {
+                "symbol": symbol,
+                "decision": decision,
+                "outcome": outcome,
+                "pnl": pnl,
+                "regime": regime,
+                "strategy": strategy,
+                "probability": probability,
+                "was_correct": (decision == "trade" and outcome == "profit") or
+                              (decision == "skip" and outcome != "profit"),
+                "timestamp": now_ms()
+            }
+
+            combined_extra = extra or {}
+            combined_extra.update({"binary_decision": decision_data})
+
+            outcome_emoji = "✅" if decision_data["was_correct"] else "❌"
+            self.log(TRADE_LEVEL, f"{outcome_emoji} Binary decision: {symbol} {decision} -> {outcome} (PnL: {pnl:.2f})",
+                    extra=combined_extra)
+
+        except Exception as e:
+            logger.exception(f"Failed to log binary decision for {symbol}: {e}")
+
+    def log_binary_model_health(self, metrics: Dict[str, Any], extra: Optional[Dict[str, Any]] = None) -> None:
+        """Log binary model health metrics."""
+        try:
+            health_data = {
+                "accuracy": metrics.get("accuracy", 0),
+                "precision": metrics.get("precision", 0),
+                "recall": metrics.get("recall", 0),
+                "calibration_error": metrics.get("calibration_error", 0),
+                "prediction_stability": metrics.get("prediction_stability", 0),
+                "trade_decision_ratio": metrics.get("trade_decision_ratio", 0),
+                "timestamp": now_ms()
+            }
+
+            self.log(PERF_LEVEL, f"Binary model health: acc={health_data['accuracy']:.3f}, calib_err={health_data['calibration_error']:.3f}",
+                    extra=extra or {}, **{"binary_health": health_data})
+
+        except Exception as e:
+            logger.exception(f"Failed to log binary model health: {e}")
+
+    def log_binary_drift_alert(self, alert_type: str, value: float, threshold: float,
+                              description: str, extra: Optional[Dict[str, Any]] = None) -> None:
+        """Log binary model drift detection alerts."""
+        try:
+            alert_data = {
+                "alert_type": alert_type,
+                "value": value,
+                "threshold": threshold,
+                "description": description,
+                "severity": "critical" if alert_type == "accuracy_drop" else "warning",
+                "timestamp": now_ms()
+            }
+
+            severity_emoji = "🚨" if alert_data["severity"] == "critical" else "⚠️"
+            self.log(logging.WARNING if alert_data["severity"] == "warning" else logging.CRITICAL,
+                    f"{severity_emoji} Binary model alert: {alert_type} - {description}",
+                    extra=extra or {}, **{"binary_alert": alert_data})
+
+        except Exception as e:
+            logger.exception(f"Failed to log binary drift alert: {e}")
+
     def _record_trade(self, trade_data: Dict[str, Any]) -> None:
         """Append trade to history, update lightweight stats, and persist trade to CSV.
 

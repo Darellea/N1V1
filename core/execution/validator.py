@@ -337,6 +337,44 @@ class ExecutionValidator:
             'signal_type': signal.signal_type.value if signal.signal_type else 'unknown'
         })
 
+    def validate_order(self, signal: TradingSignal) -> bool:
+        """
+        Synchronous validation for order execution.
+        Used by SignalRouter for basic validation checks.
+
+        Args:
+            signal: Trading signal to validate
+
+        Returns:
+            True if order passes validation
+        """
+        if not self.enabled:
+            return True
+
+        try:
+            # Basic signal validation
+            if not self._validate_basic_signal(signal):
+                return False
+
+            # Order size validation
+            if not self._validate_order_size(signal):
+                return False
+
+            # Price validation (without context)
+            if not self._validate_price(signal, {}):
+                return False
+
+            # Exchange constraints (without context)
+            if not self._validate_exchange_constraints(signal, {}):
+                return False
+
+            self.logger.debug(f"Order validation passed for {signal.symbol}")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error during order validation: {e}")
+            return False
+
     def get_validation_rules(self) -> Dict[str, Any]:
         """
         Get current validation rules and constraints.

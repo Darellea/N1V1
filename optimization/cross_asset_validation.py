@@ -872,35 +872,20 @@ class CrossAssetValidator(BaseOptimizer):
         """Save CSV summary of validation results."""
         csv_path = os.path.join(self.output_dir, 'cross_asset_validation_summary.csv')
 
-        rows = []
+        summary_records = []
         for asset_result in result.asset_results:
-            row = {
-                'asset_symbol': asset_result.asset.symbol,
-                'asset_name': asset_result.asset.name,
-                'validation_time': asset_result.validation_time,
-                'overall_pass': asset_result.overall_pass,
-                'error_message': asset_result.error_message or ''
-            }
+            summary_records.append({
+                "strategy_name": result.strategy_name,
+                "asset_symbol": asset_result.asset.symbol,
+                "asset_name": asset_result.asset.name,
+                "sharpe_ratio": asset_result.validation_metrics.get("sharpe_ratio"),
+                "win_rate": asset_result.validation_metrics.get("win_rate"),
+                "overall_pass": bool(asset_result.overall_pass),
+                "validation_time": asset_result.validation_time,
+            })
 
-            # Add pass criteria
-            for criterion, passed in asset_result.pass_criteria.items():
-                row[f'pass_{criterion}'] = passed
-
-            # Add primary metrics
-            for metric, value in asset_result.primary_metrics.items():
-                if isinstance(value, (int, float)):
-                    row[f'primary_{metric}'] = value
-
-            # Add validation metrics
-            for metric, value in asset_result.validation_metrics.items():
-                if isinstance(value, (int, float)):
-                    row[f'validation_{metric}'] = value
-
-            rows.append(row)
-
-        if rows:
-            df = pd.DataFrame(rows)
-            df.to_csv(csv_path, index=False)
+        df = pd.DataFrame(summary_records)
+        df.to_csv(csv_path, index=False)
 
     def _log_validation_results(self, result: CrossAssetValidationResult) -> None:
         """Log comprehensive validation results."""

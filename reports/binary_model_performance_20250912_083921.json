@@ -1,0 +1,59 @@
+{
+  "timestamp": "2025-09-12T08:39:21.685882",
+  "metrics_window_hours": 24,
+  "total_predictions": 100,
+  "total_decisions": 100,
+  "regime_performance": {
+    "range_wide": {
+      "total_decisions": 26,
+      "correct_decisions": 25,
+      "total_pnl": -122.71336929072876,
+      "winning_trades": 1,
+      "total_trades": 3
+    },
+    "trend_down": {
+      "total_decisions": 28,
+      "correct_decisions": 25,
+      "total_pnl": -314.0001414389133,
+      "winning_trades": 2,
+      "total_trades": 5
+    },
+    "volatile": {
+      "total_decisions": 26,
+      "correct_decisions": 23,
+      "total_pnl": -305.5474024166314,
+      "winning_trades": 3,
+      "total_trades": 6
+    },
+    "trend_up": {
+      "total_decisions": 20,
+      "correct_decisions": 20,
+      "total_pnl": 20.061178416795688,
+      "winning_trades": 1,
+      "total_trades": 1
+    }
+  },
+  "current_metrics": {
+    "average_ptrade": 0.4564756294903301,
+    "hit_rate_metrics": {
+      "accuracy": 0.93,
+      "precision": 0.5333333333333333,
+      "recall": 1.0,
+      "f1_score": 0.6956521739130436
+    },
+    "health_metrics": {
+      "prediction_stability": 0.4541022123445208,
+      "trade_decision_ratio": 0.27,
+      "feature_count": 4
+    },
+    "calibration_metrics": {
+      "calibration_error": 0.5070382882882883,
+      "calibration_slope": -0.11706473915776247,
+      "calibration_intercept": 0.14458280955373992
+    },
+    "drift_indicators": {
+      "trade_frequency_change": 0.5,
+      "prediction_distribution_drift": 0.10498863495474255
+    }
+  }
+}

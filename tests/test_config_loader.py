@@ -278,8 +278,15 @@ class TestConfigLoader:
             "exchange": {"name": "test", "sandbox": False}
         }
 
-        with pytest.raises(ValueError, match="Live mode requires exchange credentials"):
-            self.loader._enforce_live_secrets()
+        # Mock credential manager to return None (no credentials available)
+        with patch('utils.config_loader.get_credential_manager') as mock_get_cred_mgr:
+            mock_cred_mgr = MagicMock()
+            mock_cred_mgr.get_credential.return_value = None
+            mock_get_cred_mgr.return_value = mock_cred_mgr
+
+            from utils.security import SecurityException
+            with pytest.raises(SecurityException, match="Live mode requires exchange credentials"):
+                self.loader._enforce_live_secrets()
 
     def test_line_333_enforce_live_secrets_exchange_with_creds(self):
         """Test line 333: Live mode with exchange credentials provided."""
@@ -293,8 +300,14 @@ class TestConfigLoader:
             }
         }
 
-        # Should not raise exception
-        self.loader._enforce_live_secrets()
+        # Mock credential manager to return valid credentials
+        with patch('utils.config_loader.get_credential_manager') as mock_get_cred_mgr:
+            mock_cred_mgr = MagicMock()
+            mock_cred_mgr.get_credential.return_value = 'test_value'
+            mock_get_cred_mgr.return_value = mock_cred_mgr
+
+            # Should not raise exception
+            self.loader._enforce_live_secrets()
 
     @pytest.mark.asyncio
     async def test_lines_338_345_enforce_live_secrets_discord(self):
@@ -313,8 +326,20 @@ class TestConfigLoader:
             }
         }
 
-        with pytest.raises(ValueError, match="Discord notifications are enabled"):
-            self.loader._enforce_live_secrets()
+        # Mock credential manager to return None for Discord credentials
+        with patch('utils.config_loader.get_credential_manager') as mock_get_cred_mgr:
+            mock_cred_mgr = MagicMock()
+            # Return valid exchange credentials but None for Discord
+            def mock_get_credential(key):
+                if key in ['exchange_api_key', 'exchange_api_secret']:
+                    return 'test_value'
+                return None
+            mock_cred_mgr.get_credential.side_effect = mock_get_credential
+            mock_get_cred_mgr.return_value = mock_cred_mgr
+
+            from utils.security import SecurityException
+            with pytest.raises(SecurityException, match="Discord notifications are enabled"):
+                self.loader._enforce_live_secrets()
 
     def test_enforce_live_secrets_discord_with_webhook(self):
         """Test Discord validation with webhook URL."""
@@ -334,8 +359,14 @@ class TestConfigLoader:
             }
         }
 
-        # Should not raise exception
-        self.loader._enforce_live_secrets()
+        # Mock credential manager to return valid credentials
+        with patch('utils.config_loader.get_credential_manager') as mock_get_cred_mgr:
+            mock_cred_mgr = MagicMock()
+            mock_cred_mgr.get_credential.return_value = 'test_value'
+            mock_get_cred_mgr.return_value = mock_cred_mgr
+
+            # Should not raise exception
+            self.loader._enforce_live_secrets()
 
     def test_enforce_live_secrets_discord_with_bot_creds(self):
         """Test Discord validation with bot token and channel ID."""
@@ -356,8 +387,14 @@ class TestConfigLoader:
             }
         }
 
-        # Should not raise exception
-        self.loader._enforce_live_secrets()
+        # Mock credential manager to return valid credentials
+        with patch('utils.config_loader.get_credential_manager') as mock_get_cred_mgr:
+            mock_cred_mgr = MagicMock()
+            mock_cred_mgr.get_credential.return_value = 'test_value'
+            mock_get_cred_mgr.return_value = mock_cred_mgr
+
+            # Should not raise exception
+            self.loader._enforce_live_secrets()
 
     def test_enforce_live_secrets_paper_mode(self):
         """Test that secrets are not enforced in paper mode."""

@@ -1,0 +1,147 @@
+{
+  "environment": {
+    "mode": "live"
+  },
+  "trading": {
+    "portfolio_mode": false,
+    "symbol": "BTC/USDT",
+    "initial_balance": 10000.0,
+    "pair_allocation": null
+  },
+  "exchange": {
+    "name": "binance",
+    "base_currency": "USDT",
+    "markets": ["BTC/USDT"],
+    "api_key": "your_api_key",
+    "api_secret": "your_api_secret"
+  },
+  "binary_integration": {
+    "enabled": true,
+    "threshold": 0.65,
+    "min_confidence": 0.55,
+    "require_regime_confirmation": true,
+    "use_adaptive_position_sizing": true,
+    "model_path": "models/demo_calibrated_model.pkl",
+    "config_path": "models/demo_calibrated_model_config.json"
+  },
+  "strategies": {
+    "active_strategies": [
+      "EMACrossStrategy",
+      "RSIStrategy",
+      "MACDStrategy",
+      "BollingerReversionStrategy"
+    ],
+    "strategy_config": {
+      "EMACrossStrategy": {
+        "fast_period": 9,
+        "slow_period": 21
+      },
+      "RSIStrategy": {
+        "period": 14,
+        "overbought": 70,
+        "oversold": 30
+      },
+      "MACDStrategy": {
+        "fast_period": 12,
+        "slow_period": 26,
+        "signal_period": 9
+      },
+      "BollingerReversionStrategy": {
+        "period": 20,
+        "std_dev": 2.0
+      }
+    }
+  },
+  "strategy_selector": {
+    "enabled": true,
+    "mode": "rule_based",
+    "ensemble": false,
+    "rules": {
+      "adx_trend_threshold": 25,
+      "adx_sideways_threshold": 20
+    },
+    "ml_config": {
+      "learning_rate": 0.1,
+      "min_trades_for_learning": 10
+    }
+  },
+  "market_regime": {
+    "enabled": true,
+    "mode": "rule_based",
+    "adx_trend_threshold": 25,
+    "adx_sideways_threshold": 20,
+    "atr_volatility_factor": 1.5,
+    "stability_window": 3,
+    "slope_threshold": 0.05,
+    "trend_strength_threshold": 0.3,
+    "bb_width_tight_threshold": 0.02,
+    "bb_width_wide_threshold": 0.05,
+    "volume_spike_threshold": 2.0
+  },
+  "risk_management": {
+    "max_position_size": 0.1,
+    "max_daily_drawdown": 0.05,
+    "risk_per_trade": 0.02,
+    "risk_reward_ratio": 2.0,
+    "require_stop_loss": true,
+    "stop_loss_method": "atr",
+    "atr_sl_multiplier": 2.0,
+    "stop_loss_percentage": 0.02,
+    "enable_adaptive_tp": true,
+    "tp_base_multiplier": 2.0,
+    "enable_trailing_stop": true,
+    "trailing_stop_method": "percentage",
+    "trailing_distance": 0.02,
+    "enable_time_based_exit": true,
+    "max_holding_candles": 50,
+    "timeframe": "1h",
+    "enable_regime_based_exit": true,
+    "exit_on_regime_change": true,
+    "enhanced_trade_logging": true,
+    "track_exit_reasons": true,
+    "log_sl_tp_details": true,
+    "reliability": {
+      "max_retries": 2,
+      "backoff_base": 0.25,
+      "max_backoff": 5.0,
+      "safe_mode_threshold": 10,
+      "block_on_errors": false
+    }
+  },
+  "notifications": {
+    "discord": {
+      "enabled": true,
+      "webhook_url": "your_discord_webhook_url",
+      "username": "N1V1 Trading Bot",
+      "avatar_url": null
+    }
+  },
+  "monitoring": {
+    "update_interval": 60,
+    "performance_tracking": true,
+    "health_checks": true
+  },
+  "cache": {
+    "enabled": true,
+    "redis_url": "redis://localhost:6379",
+    "ttl": 300
+  },
+  "multi_timeframe": {
+    "enabled": true,
+    "timeframes": ["15m", "1h", "4h", "1d"],
+    "primary_timeframe": "1h"
+  },
+  "backtesting": {
+    "enabled": false,
+    "start_date": "2023-01-01",
+    "end_date": "2023-12-31",
+    "timeframe": "1h",
+    "initial_balance": 10000.0
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "logs/trading_bot.log",
+    "max_file_size": 10485760,
+    "backup_count": 5
+  }
+}

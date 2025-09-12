@@ -679,7 +679,7 @@ class TestAdaptiveRiskIntegration:
 
             # 4. Test time-based exit (should not exit immediately)
             should_exit, exit_reason = await full_risk_manager.should_exit_time_based(
-                signal.timestamp, signal.timestamp + (24 * 60 * 60 * 1000), "1h", 72
+                signal.timestamp, signal.timestamp + timedelta(hours=24), "1h", 72
             )
 
             assert should_exit is False

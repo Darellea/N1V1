@@ -66,8 +66,10 @@ class DiscordNotifier:
         self.commands_enabled = discord_config.get("commands", {}).get("enabled", False)
         self.bot = None
         self.session = None
+        self._session_lock = asyncio.Lock()  # Protect session creation/access
         self._bot_task = None
         self.task_manager = task_manager
+        self._shutdown_event = asyncio.Event()
 
         # Initialize based on configuration
         # Priority:
@@ -220,10 +222,32 @@ class DiscordNotifier:
                 self._bot_task = asyncio.create_task(self.bot.start(self.bot_token))
             logger.info("Discord bot started")
         elif self.alerts_enabled and (self.webhook_url or (self.bot_token and self.channel_id)):
-            # Create aiohttp session asynchronously
-            if not self.session:
-                self.session = aiohttp.ClientSession()
+            # Create aiohttp session asynchronously - only if not already created
+            await self._ensure_session()
             logger.info("Discord webhook notifications enabled")
+
+    async def _ensure_session(self) -> None:
+        """Ensure aiohttp session exists, creating it if necessary."""
+        async with self._session_lock:
+            if self.session is None or self.session.closed:
+                # Create new session with proper connector configuration
+                connector = aiohttp.TCPConnector(limit=10, limit_per_host=5, ttl_dns_cache=30)
+                self.session = aiohttp.ClientSession(connector=connector)
+                logger.debug("Created new aiohttp session for Discord notifier")
+
+    async def _close_session(self) -> None:
+        """Safely close the aiohttp session."""
+        async with self._session_lock:
+            if self.session and not self.session.closed:
+                try:
+                    await self.session.close()
+                    # Give time for underlying connections to close
+                    await asyncio.sleep(0.1)
+                    logger.debug("aiohttp session closed successfully")
+                except Exception as e:
+                    logger.warning(f"Error closing aiohttp session: {e}")
+                finally:
+                    self.session = None
 
     async def shutdown(self) -> None:
         """Cleanup Discord resources."""
@@ -274,22 +298,9 @@ class DiscordNotifier:
         except Exception:
             logger.exception("Failed while shutting down discord bot client")
 
-        # Close aiohttp session (if present). Use 'closed' attribute when available to avoid double-closing.
+        # Close aiohttp session using the new method
         try:
-            if self.session:
-                try:
-                    if not getattr(self.session, "closed", False):
-                        await asyncio.wait_for(self.session.close(), timeout=15.0)
-                        logger.info("aiohttp session closed successfully")
-                except asyncio.TimeoutError:
-                    logger.warning("Timeout reached while closing aiohttp session for discord notifier")
-                except Exception:
-                    # Best-effort: attempt a close even if attribute checks fail
-                    try:
-                        await asyncio.wait_for(self.session.close(), timeout=15.0)
-                        logger.info("aiohttp session closed successfully")
-                    except Exception:
-                        logger.exception("Failed to close aiohttp session for discord notifier")
+            await self._close_session()
         except Exception:
             logger.exception("Failed to close aiohttp session for discord notifier")
 
@@ -319,8 +330,7 @@ class DiscordNotifier:
                 return True
 
         # Ensure HTTP session exists
-        if not self.session:
-            self.session = aiohttp.ClientSession()
+        await self._ensure_session()
 
         # Prepare payload
         payload = {"content": message}
@@ -614,3 +624,36 @@ class DiscordNotifier:
         return await self.send_notification(
             message="Daily performance report generated", embed_data=embed
         )
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        await self.initialize()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.shutdown()
+
+    def __del__(self):
+        """Destructor - attempt cleanup if not already done."""
+        # This is a safeguard in case shutdown() wasn't called properly
+        # We can't use async operations in __del__, so we just warn
+        # But we need to be careful about logging after the event loop is closed
+        try:
+            import sys
+            if hasattr(self, 'session') and self.session and not self.session.closed:
+                # Try to log, but don't fail if logging is unavailable
+                try:
+                    logger.warning("DiscordNotifier session was not properly closed before destruction")
+                except (ValueError, RuntimeError):
+                    # Logging system is shut down, print to stderr as fallback
+                    print("WARNING: DiscordNotifier session was not properly closed before destruction", file=sys.stderr)
+            if hasattr(self, '_bot_task') and self._bot_task and not self._bot_task.done():
+                try:
+                    logger.warning("DiscordNotifier bot task was not properly cancelled before destruction")
+                except (ValueError, RuntimeError):
+                    # Logging system is shut down, print to stderr as fallback
+                    print("WARNING: DiscordNotifier bot task was not properly cancelled before destruction", file=sys.stderr)
+        except Exception:
+            # If anything goes wrong in __del__, just silently pass
+            pass

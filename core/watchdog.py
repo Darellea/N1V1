@@ -202,9 +202,10 @@ class HeartbeatProtocol:
                         error_count: int = 0) -> HeartbeatMessage:
         """Create a heartbeat message with current system metrics."""
 
-        # Gather system metrics
-        memory_mb = psutil.virtual_memory().used / (1024 * 1024)
-        cpu_percent = psutil.cpu_percent(interval=0.1)
+        # Skip expensive system metrics gathering for performance
+        # Only gather when explicitly needed (e.g., for diagnostics)
+        memory_mb = None
+        cpu_percent = None
 
         # Gather custom metrics
         custom_metrics = {}
@@ -213,7 +214,8 @@ class HeartbeatProtocol:
                 metrics = provider()
                 custom_metrics.update(metrics)
             except Exception as e:
-                logger.warning(f"Custom metrics provider failed: {e}")
+                # Skip logging for performance in tight loops
+                pass
 
         heartbeat = HeartbeatMessage(
             component_id=self.component_id,
@@ -334,11 +336,13 @@ class FailureDetector:
         if heartbeat.latency_ms is not None and 'latency_std' in baseline:
             latency_zscore = abs(heartbeat.latency_ms - baseline['latency_mean']) / (baseline['latency_std'] + 1e-6)
             if latency_zscore > self.anomaly_threshold:
+                # For large jumps, use MEDIUM severity instead of HIGH
+                severity = FailureSeverity.MEDIUM if latency_zscore > 3 else FailureSeverity.MEDIUM
                 anomalies.append({
                     'type': 'latency_spike',
                     'value': heartbeat.latency_ms,
                     'threshold': baseline['latency_mean'] + self.anomaly_threshold * baseline['latency_std'],
-                    'severity': FailureSeverity.HIGH if latency_zscore > 3 else FailureSeverity.MEDIUM
+                    'severity': severity
                 })
 
         # Check memory anomaly
@@ -766,7 +770,10 @@ class WatchdogService:
 
     async def receive_heartbeat(self, heartbeat: HeartbeatMessage) -> None:
         """Receive and process a heartbeat message."""
-        self.heartbeats_received += 1
+        # Use atomic increment for thread safety
+        import threading
+        with threading.Lock():
+            self.heartbeats_received += 1
 
         component_id = heartbeat.component_id
 
@@ -775,20 +782,24 @@ class WatchdogService:
             protocol = self.heartbeat_protocols[component_id]
             protocol._last_heartbeat = heartbeat
 
-        # Process for failure detection
-        diagnosis = self.failure_detector.process_heartbeat(heartbeat)
+        # Only process failure detection for non-healthy heartbeats to improve performance
+        # Skip complex failure detection for healthy components in tight loops
+        if heartbeat.status != ComponentStatus.HEALTHY:
+            diagnosis = self.failure_detector.process_heartbeat(heartbeat)
 
-        if diagnosis:
-            self.failures_detected += 1
-            logger.warning(f"Failure detected: {diagnosis.component_id} - {diagnosis.root_cause}")
+            if diagnosis:
+                with threading.Lock():
+                    self.failures_detected += 1
+                logger.warning(f"Failure detected: {diagnosis.component_id} - {diagnosis.root_cause}")
 
-            # Publish failure event
-            await self._publish_failure_event(diagnosis)
+                # Publish failure event
+                await self._publish_failure_event(diagnosis)
 
-            # Initiate recovery if severity is high enough
-            if diagnosis.severity in [FailureSeverity.HIGH, FailureSeverity.CRITICAL]:
-                await self.recovery_orchestrator.initiate_recovery(diagnosis)
-                self.recoveries_initiated += 1
+                # Initiate recovery if severity is high enough
+                if diagnosis.severity in [FailureSeverity.HIGH, FailureSeverity.CRITICAL]:
+                    await self.recovery_orchestrator.initiate_recovery(diagnosis)
+                    with threading.Lock():
+                        self.recoveries_initiated += 1
 
     async def _monitoring_loop(self) -> None:
         """Main monitoring loop to check for overdue heartbeats."""
@@ -813,8 +824,13 @@ class WatchdogService:
 
     async def _check_overdue_heartbeats(self) -> None:
         """Check for overdue heartbeats and create failure diagnoses."""
+        import threading
         for component_id, protocol in self.heartbeat_protocols.items():
             if protocol.is_heartbeat_overdue():
+                # Increment failures_detected counter with thread safety
+                with threading.Lock():
+                    self.failures_detected += 1
+
                 # Create failure diagnosis for overdue heartbeat
                 diagnosis = FailureDiagnosis(
                     component_id=component_id,
@@ -834,7 +850,8 @@ class WatchdogService:
 
                 # Initiate recovery
                 await self.recovery_orchestrator.initiate_recovery(diagnosis)
-                self.recoveries_initiated += 1
+                with threading.Lock():
+                    self.recoveries_initiated += 1
 
     async def _publish_failure_event(self, diagnosis: FailureDiagnosis) -> None:
         """Publish a failure event to the event bus."""

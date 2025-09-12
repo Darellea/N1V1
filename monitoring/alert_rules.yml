@@ -240,6 +240,54 @@ groups:
           description: "Strategy {{ $labels.strategy }} has win rate above 75%"
           runbook_url: "https://docs.n1v1.com/runbooks/new-strategy-performance"
 
+      # Binary Model Trade Frequency Drift
+      - alert: BinaryModelTradeFrequencyDrift
+        expr: binary_model_drift_trade_frequency_change > 0.5
+        for: 30m
+        labels:
+          severity: warning
+          category: model
+        annotations:
+          summary: "Binary model trade frequency drift detected"
+          description: "Trade frequency changed by {{ $value }}% from historical baseline"
+          runbook_url: "https://docs.n1v1.com/runbooks/binary-model-drift"
+
+      # Binary Model Accuracy Drop
+      - alert: BinaryModelAccuracyDrop
+        expr: binary_model_accuracy < 0.5
+        for: 1h
+        labels:
+          severity: critical
+          category: model
+        annotations:
+          summary: "Binary model accuracy critically low"
+          description: "Binary model accuracy dropped to {{ $value }}%"
+          runbook_url: "https://docs.n1v1.com/runbooks/binary-model-accuracy"
+
+      # Binary Model Calibration Error
+      - alert: BinaryModelCalibrationError
+        expr: binary_model_calibration_error > 0.2
+        for: 2h
+        labels:
+          severity: warning
+          category: model
+        annotations:
+          summary: "Binary model calibration error detected"
+          description: "Model calibration error: {{ $value }} (expected < 0.2)"
+          runbook_url: "https://docs.n1v1.com/runbooks/binary-model-calibration"
+
+      # Binary Model Prediction Stability
+      - alert: BinaryModelPredictionInstability
+        expr: binary_model_prediction_stability > 1.0
+        for: 1h
+        labels:
+          severity: warning
+          category: model
+        annotations:
+          summary: "Binary model prediction instability"
+          description: "Prediction stability coefficient: {{ $value }} (high variance detected)"
+          runbook_url: "https://docs.n1v1.com/runbooks/binary-model-stability"
+
       # System Resource Trends
       - alert: MemoryUsageTrend
         expr: predict_linear(system_memory_usage_bytes[1h], 3600) > system_memory_total_bytes * 0.9

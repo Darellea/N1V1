@@ -765,7 +765,7 @@ class TestDataPersistence:
 
         assert len(df) == 1
         assert df.iloc[0]['asset_symbol'] == 'ETH/USDT'
-        assert df.iloc[0]['overall_pass'] is True
+        assert df.iloc[0]['overall_pass'] == True
         assert df.iloc[0]['validation_time'] == 5.0
 
 

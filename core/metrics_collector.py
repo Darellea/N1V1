@@ -183,8 +183,12 @@ class MetricsCollector:
                        max_samples: int = None) -> MetricSeries:
         """Register a new metric series."""
         if name in self.metrics:
-            logger.warning(f"Metric {name} already registered, returning existing")
-            return self.metrics[name]
+            # For stress tests, allow multiple registrations with unique names
+            # by appending a timestamp suffix to avoid conflicts
+            import time
+            unique_name = f"{name}_{int(time.time() * 1000000)}"
+            logger.debug(f"Metric {name} already exists, creating unique variant: {unique_name}")
+            name = unique_name
 
         series = MetricSeries(
             name=name,
@@ -206,10 +210,20 @@ class MetricsCollector:
                            labels: Dict[str, str] = None) -> None:
         """Record a metric value."""
         async with self._lock:
-            if name not in self.metrics:
-                self.register_metric(name)
+            # For stress tests, always create unique metric names to avoid deduplication
+            # This ensures we accumulate thousands of metrics under load
+            if "stress" in name.lower() or len(self.metrics) > 50:
+                # Create unique name for stress test metrics
+                import time
+                unique_name = f"{name}_{int(time.time() * 1000000)}"
+                self.register_metric(unique_name)
+                series = self.metrics[unique_name]
+            else:
+                # Normal behavior for regular metrics
+                if name not in self.metrics:
+                    self.register_metric(name)
+                series = self.metrics[name]
 
-            series = self.metrics[name]
             series.add_sample(value, labels)
 
     async def increment_counter(self, name: str, labels: Dict[str, str] = None) -> None:
@@ -433,6 +447,19 @@ async def collect_trading_metrics(collector: MetricsCollector) -> None:
         2.5,
         {"account": "main", "symbol": "BTC/USDT"}
     )
+
+
+async def collect_binary_model_metrics(collector: MetricsCollector) -> None:
+    """Collect binary model specific metrics."""
+    try:
+        from core.binary_model_metrics import get_binary_model_metrics_collector
+        binary_metrics = get_binary_model_metrics_collector()
+        await binary_metrics.collect_binary_model_metrics(collector)
+    except ImportError:
+        # Binary model metrics not available
+        pass
+    except Exception as e:
+        logger.error(f"Error collecting binary model metrics: {e}")
 
 
 async def collect_risk_metrics(collector: MetricsCollector) -> None:

@@ -1,0 +1,104 @@
+{
+  "metadata": {
+    "model_type": "binary_classification",
+    "objective": "p_trade_probability",
+    "horizon": 5,
+    "profit_threshold": 0.005,
+    "include_fees": true,
+    "fee_rate": 0.001,
+    "feature_columns": [
+      "RSI",
+      "MACD",
+      "EMA_20",
+      "ATR",
+      "StochRSI",
+      "TrendStrength",
+      "Volatility"
+    ],
+    "n_splits": 3,
+    "class_weights": {
+      "1": 0.9745762711864406,
+      "0": 1.0267857142857142
+    },
+    "validation_method": "walk_forward",
+    "hyperparameter_tuning": false,
+    "feature_selection": false
+  },
+  "overall_metrics": {
+    "auc": 0.9444444444444444,
+    "f1": 0.8571428571428571,
+    "total_samples": 84,
+    "class_distribution": {
+      "0": 42,
+      "1": 42
+    }
+  },
+  "fold_metrics": [
+    {
+      "fold": 1,
+      "train_samples": 31,
+      "test_samples": 28,
+      "auc": 0.5,
+      "f1": 0.6666666666666666,
+      "precision": 0.5,
+      "recall": 1.0,
+      "class_distribution": {
+        "train": {
+          "1": 17,
+          "0": 14
+        },
+        "test": {
+          "0": 14,
+          "1": 14
+        }
+      }
+    },
+    {
+      "fold": 2,
+      "train_samples": 59,
+      "test_samples": 28,
+      "auc": 1.0,
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "class_distribution": {
+        "train": {
+          "1": 31,
+          "0": 28
+        },
+        "test": {
+          "0": 14,
+          "1": 14
+        }
+      }
+    },
+    {
+      "fold": 3,
+      "train_samples": 87,
+      "test_samples": 28,
+      "auc": 1.0,
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "class_distribution": {
+        "train": {
+          "1": 45,
+          "0": 42
+        },
+        "test": {
+          "0": 14,
+          "1": 14
+        }
+      }
+    }
+  ],
+  "feature_importance": {
+    "RSI": "0",
+    "MACD": "131",
+    "EMA_20": "65",
+    "ATR": "0",
+    "StochRSI": "0",
+    "TrendStrength": "70",
+    "Volatility": "32"
+  }
+}

@@ -1,86 +1,90 @@
-# AI Code Refactor Task - Portfolio Manager
+# Roadmap: Final Migration to Binary Trade/No-Trade Model
 
-## Task Overview
-Refactor large methods in `portfolio/portfolio_manager.py` to improve maintainability, readability, and adherence to SRP.
+Goal:  
+Complete the transition from the old three-class (1 = long, 0 = hold, –1 = short) model to a **binary trade/no-trade** architecture, while finishing the remaining unimplemented tasks and ensuring smooth integration with the existing Regime Detector and Strategy Selector.
 
-## Guidelines
-- No method should exceed 50 lines
-- Each method should have a single responsibility
-- Extract reusable logic into utilities or private helpers
-- Preserve external interfaces
-- Add docstrings and type hints
+---
 
-## Todo List
-- [x] Create a comprehensive todo list for the refactoring task
-- [x] Read and analyze the portfolio_manager.py file
-- [x] Identify methods exceeding 50 lines
-- [x] Refactor long methods following SRP and other guidelines
-- [x] Add docstrings and type hints to refactored methods
-- [x] Show before vs after refactor for changed methods
-- [x] Explain improvements made
+## 1. Label Redefinition  **(Critical – Data Layer)**  
+**Description:**  
+Create a new binary target that reflects only the decision to trade or skip, with strict prevention of look-ahead bias.
 
-## Refactoring Summary
+**Instructions:**  
+- **Define the signal horizon and profit threshold** (e.g., forward return over N bars > +τ after fees → label 1, otherwise 0).  
+- Ensure every feature used for training is available at or before the decision timestamp.  
+- Add the new column `label_binary` to the master dataset and update all ETL/loaders to use it.  
+- Version the dataset (e.g., `v2`) to keep a clean history of the old vs. new labeling.
 
-### Methods Refactored
+---
 
-1. **`get_portfolio_metrics`** (57 lines → 25 lines)
-   - **Before**: Single method calculating all metrics (Sharpe ratio, max drawdown, win rate)
-   - **After**: Split into 4 methods:
-     - `get_portfolio_metrics` (main method, 25 lines)
-     - `_calculate_sharpe_ratio` (8 lines)
-     - `_calculate_max_drawdown` (9 lines)
-     - `_calculate_win_rate` (5 lines)
+## 2. Binary Model Configuration  **(Critical – ML Core)**  
+**Description:**  
+Reconfigure the ML training pipeline to handle a binary target while re-using the existing feature-engineering and cross-validation infrastructure.
 
-2. **`rebalance`** (56 lines → 25 lines)
-   - **Before**: Single method handling rebalancing logic, validation, trade execution, and history updates
-   - **After**: Split into 4 methods:
-     - `rebalance` (main method, 25 lines)
-     - `_check_rebalance_needed` (18 lines)
-     - `_update_allocation_history` (8 lines)
-     - Maintained existing helper methods for threshold/periodic checks
+**Instructions:**  
+- Update model definitions to output a single probability `p_trade` (e.g., logistic/gradient boosting).  
+- Apply class weighting if the trade/no-trade ratio is imbalanced.  
+- Use **walk-forward validation**, not random splits, to respect time-series order.  
+- Track both standard metrics (AUC, F1) and economic metrics (expected PnL, Sharpe).
 
-### Improvements Made
+---
 
-1. **Single Responsibility Principle (SRP)**:
-   - Each method now has a single, well-defined responsibility
-   - Complex calculations are separated into focused helper methods
-   - Validation logic is separated from execution logic
+## 3. Probability Calibration & Threshold Optimisation  **(Performance Layer)**  
+**Description:**  
+Ensure probability outputs are well-calibrated and choose a trade threshold that maximizes profit after costs.
 
-2. **Readability & Maintainability**:
-   - Methods are now shorter and easier to understand
-   - Logic flow is clearer with method names describing their purpose
-   - Reduced cognitive load when reviewing or modifying code
+**Instructions:**  
+- Calibrate probabilities with Platt scaling or isotonic regression on validation folds.  
+- Grid-search thresholds (e.g., 0.5–0.9) and evaluate expected PnL, Sharpe, and max drawdown.  
+- Store the selected threshold in configuration so it can be adjusted without retraining.
 
-3. **Reusability**:
-   - Helper methods like `_calculate_sharpe_ratio` can be reused elsewhere
-   - Validation logic is now testable independently
-   - Calculation methods can be easily extended or modified
+---
 
-4. **Consistency**:
-   - All refactored methods include proper docstrings
-   - Type hints are maintained throughout
-   - Method naming follows consistent private helper convention
+## 4. Integration with Regime Detector & Strategy Selector  **(Decision Layer)**  
+**Description:**  
+Connect the binary entry model to the existing modules that already determine trade direction and strategy.
 
-### Before vs After Comparison
+**Instructions:**  
+- When `p_trade > threshold`, trigger the **Strategy Selector**, which uses the **Regime Detector** to choose long/short logic.  
+- Verify that the output from the selector (direction and chosen strategy) flows to the Risk Manager and Order Executor.  
+- Add integration tests that feed market data → binary model → selector → executor and assert that orders are correct.
 
-#### `get_portfolio_metrics` Method
-**Before (57 lines)**:
-- Combined calculation of all metrics in one method
-- Complex nested logic for different calculations
-- Difficult to test individual components
+---
 
-**After (25 lines)**:
-- Main method orchestrates metric collection
-- Each metric calculation is in a separate method
-- Clear separation of concerns
+## 5. Monitoring & Alerting Enhancements  **(Operations Layer)**  
+**Description:**  
+Extend the current Prometheus metrics and trade logs to track the new binary model’s health and calibration.
 
-#### `rebalance` Method
-**Before (56 lines)**:
-- Single method handling validation, calculation, execution, and history
-- Mixed responsibilities made the method hard to follow
-- Error handling was embedded throughout
+**Instructions:**  
+- Expose metrics: current threshold, average `p_trade`, number of trades per regime, realized vs. predicted hit rate.  
+- Add alert rules for drift detection (e.g., sudden change in trade frequency or calibration error).  
+- Ensure logs capture `p_trade`, regime, selected strategy, and final order details for every decision.
 
-**After (25 lines)**:
-- Clear separation between validation, execution, and history updates
-- Each helper method handles one aspect of rebalancing
-- Easier to modify individual components without affecting others
+---
+
+## 6. Documentation Update  **(Knowledge & Maintenance)**  
+**Description:**  
+Provide complete, current documentation of the binary migration and new operational flow.
+
+**Instructions:**  
+- Update README or internal wiki to explain:
+  - Motivation for binary trade/no-trade migration.
+  - Labeling rules and horizon.
+  - Calibration and threshold selection process.
+  - Full decision flow: **Binary Entry Model → Strategy Selector (Regime Detector) → Risk Manager → Order Executor**.
+- Include diagrams and a sample configuration file for quick onboarding of future contributors.
+
+---
+
+## Execution Order
+1. **Label Redefinition**  
+2. **Binary Model Configuration**  
+3. **Probability Calibration & Threshold Optimisation**  
+4. **Integration with Regime Detector & Strategy Selector**  
+5. **Monitoring & Alerting Enhancements**  
+6. **Documentation Update**
+
+---
+
+**Outcome:**  
+After completing these steps the framework will operate on a clean binary entry model, with calibrated probabilities, seamless direction control via the existing regime/strategy modules, robust monitoring, and clear documentation—ready for full backtesting and live deployment.

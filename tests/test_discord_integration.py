@@ -30,12 +30,8 @@ or .env file.
 @pytest.fixture
 async def discord_webhook_notifier(discord_webhook_config):
     """Fixture to create DiscordNotifier instances for webhook tests."""
-    notifier = DiscordNotifier(discord_webhook_config)
-    # Initialize the notifier to create the session
-    await notifier.initialize()
-    yield notifier
-    # Cleanup: properly close the session
-    await notifier.shutdown()
+    async with DiscordNotifier(discord_webhook_config) as notifier:
+        yield notifier
 
 
 @pytest.fixture
@@ -244,12 +240,10 @@ class TestDiscordIntegration:
         aiohttp.ClientSession.post = mock_post_error
 
         try:
-            notifier = DiscordNotifier(discord_webhook_config)
-            await notifier.initialize()
-            result = await notifier.send_notification("Error recovery test")
-            # Should handle the error gracefully
-            assert result is False
-            await notifier.shutdown()
+            async with DiscordNotifier(discord_webhook_config) as notifier:
+                result = await notifier.send_notification("Error recovery test")
+                # Should handle the error gracefully
+                assert result is False
         finally:
             # Restore original method
             aiohttp.ClientSession.post = original_post
@@ -294,11 +288,9 @@ class TestDiscordIntegration:
     async def test_webhook_integration_disabled_alerts(self, discord_webhook_config):
         """Test disabled alerts in webhook integration."""
         discord_webhook_config["alerts"]["enabled"] = False
-        notifier = DiscordNotifier(discord_webhook_config)
-
-        result = await notifier.send_notification("Disabled alerts test")
-
-        assert result is False
+        async with DiscordNotifier(discord_webhook_config) as notifier:
+            result = await notifier.send_notification("Disabled alerts test")
+            assert result is False
 
     @pytest.mark.asyncio
     @pytest.mark.discord_live
@@ -306,13 +298,12 @@ class TestDiscordIntegration:
         """Test actual Discord webhook integration when DISCORD_LIVE_TEST=true."""
         # This test will only run when DISCORD_LIVE_TEST=true is set
         # and will make real HTTP calls to Discord
-        notifier = DiscordNotifier(discord_webhook_config)
+        async with DiscordNotifier(discord_webhook_config) as notifier:
+            result = await notifier.send_notification("Live Discord Integration Test")
 
-        result = await notifier.send_notification("Live Discord Integration Test")
-
-        # In live mode, this should either succeed or fail based on actual Discord response
-        # We can't assert True here since it depends on valid credentials
-        assert isinstance(result, bool)
+            # In live mode, this should either succeed or fail based on actual Discord response
+            # We can't assert True here since it depends on valid credentials
+            assert isinstance(result, bool)
 
     @pytest.mark.asyncio
     async def test_bot_integration_initialization(self, discord_bot_integration_notifier):

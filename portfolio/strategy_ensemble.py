@@ -117,8 +117,8 @@ class StrategyEnsembleManager:
         self._running = True
         self._rebalance_task = asyncio.create_task(self._rebalance_loop())
 
-        # Initialize allocations if strategies exist
-        if self.strategies:
+        # Initialize allocations only if strategies exist but no allocations have been set
+        if self.strategies and not self.allocations:
             await self._initialize_allocations()
 
         logger.info("StrategyEnsembleManager started")
@@ -439,25 +439,45 @@ class StrategyEnsembleManager:
         return {strategy_id: equal_weight for strategy_id in self.strategies.keys()}
 
     async def _normalize_allocations(self) -> None:
-        """Normalize strategy allocations to ensure they sum to 1.0."""
+        """
+        Normalize strategy allocations.
+
+        Applies min/max weight constraints and normalizes if total weights exceed 1.0.
+        """
         if not self.allocations:
             return
 
-        # Apply min/max weight constraints first
+        # Apply min/max weight constraints to all allocations
         constrained_weights = {}
-        for strategy_id, allocation in self.allocations.items():
-            constrained_weights[strategy_id] = max(self.min_weight, min(self.max_weight, allocation.weight))
+        needs_renormalization = False
 
-        # Renormalize to ensure sum equals 1.0
+        for strategy_id, allocation in self.allocations.items():
+            original_weight = allocation.weight
+            constrained_weight = max(self.min_weight, min(self.max_weight, original_weight))
+            constrained_weights[strategy_id] = constrained_weight
+
+            if abs(constrained_weight - original_weight) > 0.001:  # Weight was constrained
+                needs_renormalization = True
+
+        # Check total weight after constraints
         total_weight = sum(constrained_weights.values())
-        if total_weight > 0:
+
+        if total_weight > 1.0 or needs_renormalization:
+            # Renormalize to ensure sum equals 1.0
+            if total_weight > 0:
+                for strategy_id in constrained_weights:
+                    final_weight = constrained_weights[strategy_id] / total_weight
+                    self.allocations[strategy_id].weight = final_weight
+                    self.allocations[strategy_id].capital_allocated = self.total_capital * Decimal(str(final_weight))
+                    self.allocations[strategy_id].last_updated = datetime.now()
+        else:
+            # No renormalization needed, use constrained weights as-is
             for strategy_id in constrained_weights:
-                normalized_weight = constrained_weights[strategy_id] / total_weight
-                self.allocations[strategy_id].weight = normalized_weight
-                self.allocations[strategy_id].capital_allocated = self.total_capital * Decimal(str(normalized_weight))
+                self.allocations[strategy_id].weight = constrained_weights[strategy_id]
+                self.allocations[strategy_id].capital_allocated = self.total_capital * Decimal(str(constrained_weights[strategy_id]))
                 self.allocations[strategy_id].last_updated = datetime.now()
 
-        logger.debug(f"Normalized allocations for {len(self.allocations)} strategies")
+        logger.debug(f"Normalized allocations for {len(self.allocations)} strategies (total_weight={total_weight:.3f})")
 
     def _apply_weight_constraints(self, weights: Dict[str, float]) -> Dict[str, float]:
         """Apply min/max weight constraints."""
@@ -475,12 +495,16 @@ class StrategyEnsembleManager:
         return constrained_weights
 
     def _calculate_performance_score(self, strategy_id: str) -> float:
-        """Calculate performance score for a strategy."""
+        """
+        Calculate performance score for a strategy.
+
+        Uses both return-based and PnL-based metrics to create a comprehensive score.
+        """
         if strategy_id not in self.performance_history:
             return 0.5  # Neutral score
 
         history = self.performance_history[strategy_id]
-        if len(history) < 2:  # Need minimum data
+        if not history:
             return 0.5
 
         try:
@@ -488,55 +512,72 @@ class StrategyEnsembleManager:
             returns = [p.get('daily_return', 0.0) for p in history if 'daily_return' in p]
             pnl_values = [p.get('pnl', 0.0) for p in history if 'pnl' in p]
 
-            if len(returns) < 2:
-                return 0.5
-
-            # Calculate multiple performance metrics
-            avg_return = statistics.mean(returns)
+            # Calculate metrics even with single data point
+            avg_return = statistics.mean(returns) if returns else 0.0
             total_pnl = sum(pnl_values) if pnl_values else 0.0
 
             # Calculate Sharpe ratio (simplified)
             sharpe_score = 0.5  # Neutral
             if len(returns) > 1:
-                std_return = statistics.stdev(returns)
-                if std_return > 0:
-                    sharpe = avg_return / std_return
-                    # Convert Sharpe to 0-1 scale (assuming Sharpe range of -2 to +2)
-                    sharpe_score = max(0.1, min(0.9, 0.5 + sharpe * 0.2))
+                try:
+                    std_return = statistics.stdev(returns)
+                    if std_return > 0:
+                        sharpe = avg_return / std_return
+                        # Convert Sharpe to 0-1 scale (assuming Sharpe range of -3 to +3)
+                        sharpe_score = max(0.1, min(0.9, 0.5 + sharpe * 0.1667))
+                except statistics.StatisticsError:
+                    # Handle case with insufficient data
+                    sharpe_score = 0.5
+            elif len(returns) == 1:
+                # For single return, use the return value directly
+                sharpe_score = max(0.1, min(0.9, 0.5 + avg_return * 2.0))
 
             # Calculate PnL score (0-1 scale based on total PnL)
             pnl_score = 0.5  # Neutral
             if total_pnl != 0:
-                # Normalize PnL to a reasonable range (assuming |PnL| up to 1000)
-                pnl_normalized = max(-1000, min(1000, total_pnl))
-                pnl_score = max(0.1, min(0.9, 0.5 + (pnl_normalized / 1000) * 0.4))
+                # Normalize PnL to a reasonable range (assuming |PnL| up to 2000 for better differentiation)
+                pnl_normalized = max(-2000, min(2000, total_pnl))
+                pnl_score = max(0.1, min(0.9, 0.5 + (pnl_normalized / 2000) * 0.4))
 
-            # Combine scores with weights
-            combined_score = (sharpe_score * 0.6) + (pnl_score * 0.4)
+            # Calculate return score
+            return_score = 0.5  # Neutral
+            if avg_return != 0:
+                # Normalize return to a reasonable range (assuming |return| up to 0.2 or 20%)
+                return_normalized = max(-0.2, min(0.2, avg_return))
+                return_score = max(0.1, min(0.9, 0.5 + (return_normalized / 0.2) * 0.4))
+
+            # Combine scores with weights: Sharpe (40%), PnL (35%), Return (25%)
+            combined_score = (sharpe_score * 0.4) + (pnl_score * 0.35) + (return_score * 0.25)
 
             return max(0.1, min(0.9, combined_score))
 
         except Exception as e:
             logger.warning(f"Error calculating performance score for {strategy_id}: {e}")
-
-        return 0.5  # Default neutral score
+            return 0.5  # Default neutral score
 
     def _calculate_allocated_quantity(self, signal: TradingSignal, allocation: StrategyAllocation) -> Decimal:
-        """Calculate quantity to allocate based on signal and strategy allocation."""
+        """
+        Calculate quantity to allocate based on signal and strategy allocation.
+
+        Uses the signal's amount field, falling back to quantity for backward compatibility.
+        """
         # This is a simplified calculation - in practice, this would consider:
         # - Current portfolio exposure
         # - Risk limits
         # - Position sizing rules
         # - Market conditions
 
-        base_quantity = Decimal(str(signal.quantity))
+        # Use amount field, fallback to quantity for backward compatibility
+        base_quantity = Decimal(str(signal.amount if signal.amount is not None else (signal.quantity or 0.0)))
 
         # Scale by allocation weight
         allocated_quantity = base_quantity * Decimal(str(allocation.weight))
 
-        # Apply risk scaling (simplified)
-        risk_factor = allocation.performance_score * 2.0  # Bettr performance = higher risk tolerance
-        allocated_quantity = allocated_quantity * Decimal(str(risk_factor))
+        # Apply risk scaling (simplified) - better performance = higher risk tolerance
+        # Only apply risk scaling if performance_score has been calculated (not 0.0) and is meaningfully different from neutral (0.5)
+        if allocation.performance_score != 0.0 and abs(allocation.performance_score - 0.5) > 0.1:  # Performance significantly different from neutral
+            risk_factor = max(0.5, min(1.8, allocation.performance_score * 2.0))
+            allocated_quantity = allocated_quantity * Decimal(str(risk_factor))
 
         return allocated_quantity
 
@@ -546,12 +587,22 @@ class StrategyEnsembleManager:
 
         # Calculate potential new exposure
         current_exposure = self._get_portfolio_exposure(symbol)
-        signal_value = quantity * Decimal(str(signal.price))
+        # Use current_price, fallback to price for backward compatibility
+        price = signal.current_price if signal.current_price is not None else (signal.price or 0.0)
+        signal_value = quantity * Decimal(str(price))
 
-        if signal.side.lower() == 'buy':
+        if signal.side and signal.side.lower() == 'buy':
             new_exposure = current_exposure + signal_value
-        else:  # sell
+        elif signal.side and signal.side.lower() == 'sell':
             new_exposure = current_exposure - signal_value
+        else:
+            # For signals without explicit side, check signal type
+            if signal.signal_type in [SignalType.ENTRY_LONG, SignalType.EXIT_SHORT]:
+                new_exposure = current_exposure + signal_value
+            elif signal.signal_type in [SignalType.ENTRY_SHORT, SignalType.EXIT_LONG]:
+                new_exposure = current_exposure - signal_value
+            else:
+                new_exposure = current_exposure
 
         # Check against portfolio risk limit
         max_allowed_exposure = self.total_capital * Decimal(str(self.portfolio_risk_limit))
@@ -568,7 +619,9 @@ class StrategyEnsembleManager:
     async def _update_position_tracking(self, strategy_id: str, signal: TradingSignal, quantity: Decimal) -> None:
         """Update position tracking for strategy and portfolio."""
         symbol = signal.symbol
-        signal_value = quantity * Decimal(str(signal.price))
+        # Use current_price, fallback to price for backward compatibility
+        price = signal.current_price if signal.current_price is not None else (signal.price or 0.0)
+        signal_value = quantity * Decimal(str(price))
 
         # Update strategy positions
         if strategy_id not in self.strategy_positions:
@@ -576,18 +629,30 @@ class StrategyEnsembleManager:
 
         current_position = self.strategy_positions[strategy_id].get(symbol, Decimal('0'))
 
-        if signal.side.lower() == 'buy':
+        if signal.side and signal.side.lower() == 'buy':
             self.strategy_positions[strategy_id][symbol] = current_position + quantity
-        else:  # sell
+        elif signal.side and signal.side.lower() == 'sell':
             self.strategy_positions[strategy_id][symbol] = current_position - quantity
+        else:
+            # For signals without explicit side, check signal type
+            if signal.signal_type in [SignalType.ENTRY_LONG, SignalType.EXIT_SHORT]:
+                self.strategy_positions[strategy_id][symbol] = current_position + quantity
+            elif signal.signal_type in [SignalType.ENTRY_SHORT, SignalType.EXIT_LONG]:
+                self.strategy_positions[strategy_id][symbol] = current_position - quantity
 
         # Update portfolio exposure
         current_exposure = self.portfolio_exposure.get(symbol, Decimal('0'))
 
-        if signal.side.lower() == 'buy':
+        if signal.side and signal.side.lower() == 'buy':
             self.portfolio_exposure[symbol] = current_exposure + signal_value
-        else:  # sell
+        elif signal.side and signal.side.lower() == 'sell':
             self.portfolio_exposure[symbol] = current_exposure - signal_value
+        else:
+            # For signals without explicit side, check signal type
+            if signal.signal_type in [SignalType.ENTRY_LONG, SignalType.EXIT_SHORT]:
+                self.portfolio_exposure[symbol] = current_exposure + signal_value
+            elif signal.signal_type in [SignalType.ENTRY_SHORT, SignalType.EXIT_LONG]:
+                self.portfolio_exposure[symbol] = current_exposure - signal_value
 
     async def _close_strategy_positions(self, strategy_id: str) -> None:
         """Close all positions for a strategy."""

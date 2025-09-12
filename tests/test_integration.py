@@ -17,6 +17,25 @@ class DummyRiskManager:
 
     async def evaluate_signal(self, signal, market_data=None):
         await asyncio.sleep(0)  # yield control to allow concurrency in tests
+
+        # Populate missing fields for test signals
+        if hasattr(signal, 'current_price') and signal.current_price:
+            current_price = signal.current_price
+
+            # Set stop loss if missing (5% below current price for longs, 5% above for shorts)
+            if not signal.stop_loss:
+                if signal.signal_type.name.endswith("LONG"):
+                    signal.stop_loss = current_price * Decimal("0.95")  # 5% stop loss
+                else:
+                    signal.stop_loss = current_price * Decimal("1.05")  # 5% stop loss
+
+            # Set take profit if missing (10% above current price for longs, 10% below for shorts)
+            if not signal.take_profit:
+                if signal.signal_type.name.endswith("LONG"):
+                    signal.take_profit = current_price * Decimal("1.10")  # 10% take profit
+                else:
+                    signal.take_profit = current_price * Decimal("0.90")  # 10% take profit
+
         return True
 
 

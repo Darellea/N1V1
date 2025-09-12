@@ -49,8 +49,8 @@ class TradingSignal:
         signal_type: Type of signal (entry/exit/etc.)
         signal_strength: Strength of the signal
         order_type: Type of order to execute
-        amount: Size of the position (in base currency)
-        current_price: Current market price when signal was generated
+        amount: Size of the position (in base currency) - optional, defaults to quantity if provided
+        current_price: Current market price when signal was generated - optional, defaults to price if provided
         timestamp: Time when signal was generated
         side: Trading side ("buy" or "sell") - deprecated, use signal_type instead
         price: Target price for limit orders - deprecated, use order_type and current_price
@@ -66,15 +66,15 @@ class TradingSignal:
     signal_type: SignalType
     signal_strength: SignalStrength
     order_type: str
-    amount: float
-    current_price: float
+    amount: Optional[float] = None
+    current_price: Optional[float] = None
     timestamp: datetime = field(default_factory=datetime.now)
-    
+
     # Deprecated fields - kept for backward compatibility
     side: Optional[str] = None
     price: Optional[float] = None
     quantity: Optional[float] = None
-    
+
     # Optional fields
     stop_loss: Optional[float] = None
     take_profit: Optional[float] = None
@@ -83,17 +83,26 @@ class TradingSignal:
 
     def __post_init__(self):
         """Set timestamp if not provided and normalize provided values."""
+        # Store original timestamp for validation purposes
+        self._original_timestamp = self.timestamp
+
         # Ensure timestamp is a datetime object
         if isinstance(self.timestamp, int):
             self.timestamp = datetime.fromtimestamp(self.timestamp / 1000)
         elif not isinstance(self.timestamp, datetime):
             self.timestamp = datetime.now()
 
-        # Handle deprecated fields
+        # Handle deprecated fields for backward compatibility
         if self.quantity is not None and self.amount is None:
             self.amount = self.quantity
         if self.price is not None and self.current_price is None:
             self.current_price = self.price
+
+        # Set defaults if still None
+        if self.amount is None:
+            self.amount = 0.0
+        if self.current_price is None:
+            self.current_price = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert the TradingSignal to a dictionary for JSON serialization."""

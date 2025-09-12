@@ -8,7 +8,7 @@ and portfolio-level risk constraints. Validates all trading signals against risk
 import logging
 import asyncio
 import random
-from typing import Dict, Optional, Tuple, List, Any, Callable
+from typing import Dict, Optional, Tuple, List, Any, Callable, Union
 from decimal import Decimal, getcontext, ROUND_HALF_UP
 import math
 import numpy as np
@@ -881,15 +881,18 @@ class RiskManager:
             return None
 
     async def should_exit_time_based(
-        self, entry_timestamp: int, current_timestamp: int,
+        self, entry_timestamp: Union[int, datetime], current_timestamp: Union[int, datetime],
         timeframe: str = "1h", max_candles: int = 72
     ) -> Tuple[bool, str]:
         """
         Check if position should be closed based on time criteria.
 
+        This method handles both integer timestamps (milliseconds) and datetime objects,
+        normalizing all timestamps to milliseconds for consistent arithmetic operations.
+
         Args:
-            entry_timestamp: Entry timestamp in milliseconds
-            current_timestamp: Current timestamp in milliseconds
+            entry_timestamp: Entry timestamp (int in milliseconds or datetime object)
+            current_timestamp: Current timestamp (int in milliseconds or datetime object)
             timeframe: Chart timeframe (e.g., '1h', '4h', '1d')
             max_candles: Maximum number of candles to hold position
 
@@ -897,8 +900,16 @@ class RiskManager:
             Tuple of (should_exit, exit_reason)
         """
         try:
+            # Normalize timestamps to milliseconds
+            entry_ms = self._normalize_timestamp_to_ms(entry_timestamp)
+            current_ms = self._normalize_timestamp_to_ms(current_timestamp)
+
+            if entry_ms is None or current_ms is None:
+                logger.warning("Invalid timestamp provided to should_exit_time_based")
+                return False, ""
+
             # Calculate time difference in milliseconds
-            time_diff_ms = current_timestamp - entry_timestamp
+            time_diff_ms = current_ms - entry_ms
 
             # Convert timeframe to milliseconds
             timeframe_ms = self._timeframe_to_ms(timeframe)
@@ -1101,6 +1112,30 @@ class RiskManager:
             return _safe_quantize(entry_price * (1 - sl_percentage))
         else:  # SHORT
             return _safe_quantize(entry_price * (1 + sl_percentage))
+
+    def _normalize_timestamp_to_ms(self, timestamp: Union[int, datetime]) -> Optional[int]:
+        """
+        Normalize a timestamp to milliseconds.
+
+        Args:
+            timestamp: Timestamp as int (milliseconds) or datetime object
+
+        Returns:
+            Timestamp in milliseconds as int, or None if invalid
+        """
+        try:
+            if isinstance(timestamp, int):
+                # Assume it's already in milliseconds
+                return timestamp
+            elif isinstance(timestamp, datetime):
+                # Convert datetime to milliseconds
+                return int(timestamp.timestamp() * 1000)
+            else:
+                # Try to convert using the utils.time.to_ms function
+                return to_ms(timestamp)
+        except Exception as e:
+            logger.warning(f"Failed to normalize timestamp {timestamp}: {e}")
+            return None
 
     def _timeframe_to_ms(self, timeframe: str) -> int:
         """Convert timeframe string to milliseconds."""

@@ -15,6 +15,7 @@ Key Features:
 - Interactive performance dashboards
 """
 
+import asyncio
 import time
 import json
 import csv
@@ -95,9 +96,9 @@ class PerformanceReportGenerator:
 
         logger.info("PerformanceReportGenerator initialized")
 
-    def generate_comprehensive_report(self, session_id: Optional[str] = None,
-                                    include_trends: bool = True,
-                                    include_comparisons: bool = True) -> PerformanceReport:
+    async def generate_comprehensive_report(self, session_id: Optional[str] = None,
+                                          include_trends: bool = True,
+                                          include_comparisons: bool = True) -> PerformanceReport:
         """
         Generate a comprehensive performance report.
 
@@ -114,7 +115,20 @@ class PerformanceReportGenerator:
 
         # Generate base report data
         profiler_report = self.profiler.generate_report(session_id)
-        monitor_status = asyncio.run(self.monitor.get_performance_status()) if self.monitor else {}
+
+        # Get monitor status, handling existing event loop
+        monitor_status = {}
+        if self.monitor:
+            try:
+                # Check if we're already in an event loop
+                loop = asyncio.get_running_loop()
+                # If we get here, there's already a running loop
+                # Use asyncio.create_task to run the coroutine
+                task = asyncio.create_task(self.monitor.get_performance_status())
+                monitor_status = await task
+            except RuntimeError:
+                # No running loop, safe to use asyncio.run
+                monitor_status = asyncio.run(self.monitor.get_performance_status())
 
         # Create report structure
         report = PerformanceReport(

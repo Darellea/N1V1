@@ -90,7 +90,7 @@ class PerformanceProfiler:
         self.max_history = max_history
 
         # Profiling state
-        self.is_profiling = False
+        self.is_profiling = True  # Always enabled for context manager usage
         self.current_session: Optional[ProfilingSession] = None
         self.sessions: Dict[str, ProfilingSession] = {}
 
@@ -257,7 +257,8 @@ class PerformanceProfiler:
 
             gc_collections = {}
             for gen in range(3):
-                gc_collections[gen] = end_gc[gen] - start_gc[gen]
+                # Ensure we don't get negative values
+                gc_collections[gen] = max(0, end_gc[gen] - start_gc[gen])
 
             # Create metrics object
             metrics = PerformanceMetrics(
@@ -472,6 +473,19 @@ class PerformanceProfiler:
 
             return hotspots[:top_n]
 
+    def _get_memory_usage(self) -> int:
+        """Get current memory usage in bytes."""
+        try:
+            process = psutil.Process()
+            return process.memory_info().rss
+        except Exception:
+            # Fallback to tracemalloc if psutil is not available
+            try:
+                current, _ = tracemalloc.get_traced_memory()
+                return current
+            except Exception:
+                return 0
+
     def enable_memory_tracking(self):
         """Enable detailed memory tracking."""
         self.memory_tracking = True
@@ -505,7 +519,7 @@ class PerformanceProfiler:
             ]
         }
 
-    async def async_profile_function(self, coro: Callable, function_name: str):
+    async def async_profile_function(self, coro, function_name: str):
         """
         Profile an async function.
 
@@ -514,11 +528,11 @@ class PerformanceProfiler:
             function_name: Name of the function
         """
         if not self.is_profiling:
-            return await coro()
+            return await coro
 
         start_time = time.time()
         with self.profile_function(function_name):
-            result = await coro()
+            result = await coro
         end_time = time.time()
 
         logger.debug(f"Async function {function_name} took {end_time - start_time:.4f}s")
