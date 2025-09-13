@@ -226,6 +226,9 @@ class DiscordNotifier:
             await self._ensure_session()
             logger.info("Discord webhook notifications enabled")
 
+        # Initialize shutdown flag
+        self._shutdown_complete = False
+
     async def _ensure_session(self) -> None:
         """Ensure aiohttp session exists, creating it if necessary."""
         async with self._session_lock:
@@ -251,60 +254,130 @@ class DiscordNotifier:
 
     async def shutdown(self) -> None:
         """Cleanup Discord resources."""
-        # Cancel/await background bot task if it was created with timeout protection
-        try:
-            if getattr(self, "_bot_task", None) and hasattr(self._bot_task, 'done'):
-                try:
-                    # Check if task is done, handling both real tasks and AsyncMock
-                    is_done = self._bot_task.done()
-                    if hasattr(is_done, '__bool__'):  # Real task returns bool
-                        is_done = bool(is_done)
-                    elif hasattr(is_done, '__call__'):  # AsyncMock returns Mock, check if it's falsy
-                        is_done = False  # Assume AsyncMock task is not done unless explicitly set
+        # Prevent multiple shutdown calls
+        if getattr(self, '_shutdown_complete', False):
+            return
 
-                    if not is_done:
+        try:
+            # Get current loop to check if it's still running
+            try:
+                loop = asyncio.get_running_loop()
+                loop_running = loop.is_running()
+            except RuntimeError:
+                # No running loop
+                loop_running = False
+                loop = None
+
+            # Cancel/await background bot task if it was created with timeout protection
+            if getattr(self, "_bot_task", None):
+                try:
+                    # Check if task is done - handle both real tasks and mocks
+                    if hasattr(self._bot_task, 'done'):
+                        try:
+                            is_done = self._bot_task.done()
+                            # Handle case where done() returns a Mock object (AsyncMock)
+                            if hasattr(is_done, '__bool__'):
+                                is_done = bool(is_done)
+                            elif hasattr(is_done, '__call__'):
+                                is_done = False  # Assume AsyncMock task is not done
+                            else:
+                                is_done = False
+                        except Exception:
+                            is_done = False
+                    else:
+                        is_done = True  # If no done method, assume it's not a task
+
+                    if not is_done and loop_running:
                         # For real tasks, cancel and await
                         if hasattr(self._bot_task, 'cancel'):
-                            self._bot_task.cancel()
-                        await asyncio.wait_for(self._bot_task, timeout=30.0)
-                except asyncio.TimeoutError:
-                    logger.warning("Timeout reached while awaiting discord bot task cancellation")
-                except asyncio.CancelledError:
-                    pass
-                except Exception:
-                    logger.exception("Error awaiting discord bot task during shutdown")
-        except Exception:
-            logger.exception("Failed to cancel/await bot task")
+                            try:
+                                self._bot_task.cancel()
+                            except Exception:
+                                pass  # Cancel may fail on mocks
 
-        # Attempt to explicitly logout and then close the bot client (if present).
-        # Some discord.py versions expose logout(); calling it first ensures the session/token is terminated
-        # on the Discord side prior to closing the client.
-        try:
-            if self.bot:
+                        # Only await if it's actually awaitable
+                        if hasattr(self._bot_task, '__await__') or asyncio.iscoroutine(self._bot_task):
+                            try:
+                                await asyncio.wait_for(self._bot_task, timeout=30.0)
+                            except asyncio.TimeoutError:
+                                try:
+                                    logger.warning("Timeout reached while awaiting discord bot task cancellation")
+                                except (ValueError, RuntimeError):
+                                    pass  # Logging may fail during shutdown
+                            except asyncio.CancelledError:
+                                pass
+                            except Exception:
+                                try:
+                                    logger.exception("Error awaiting discord bot task during shutdown")
+                                except (ValueError, RuntimeError):
+                                    pass  # Logging may fail during shutdown
+                except Exception:
+                    try:
+                        logger.exception("Failed to cancel/await bot task")
+                    except (ValueError, RuntimeError):
+                        pass  # Logging may fail during shutdown
+                finally:
+                    # Don't set to None to allow proper testing
+                    pass
+
+            # Attempt to explicitly logout and then close the bot client (if present).
+            # Some discord.py versions expose logout(); calling it first ensures the session/token is terminated
+            # on the Discord side prior to closing the client.
+            if self.bot and loop_running:
                 try:
                     if hasattr(self.bot, "logout"):
-                        await asyncio.wait_for(self.bot.logout(), timeout=15.0)
-                except asyncio.TimeoutError:
-                    logger.warning("Timeout reached while awaiting discord bot logout")
+                        try:
+                            await asyncio.wait_for(self.bot.logout(), timeout=15.0)
+                        except asyncio.TimeoutError:
+                            try:
+                                logger.warning("Timeout reached while awaiting discord bot logout")
+                            except (ValueError, RuntimeError):
+                                pass
+                        except Exception:
+                            # Not all library versions expose logout or it may fail; continue to close the client anyway.
+                            try:
+                                logger.debug("discord.Bot.logout() not available or failed; continuing to close the bot", exc_info=True)
+                            except (ValueError, RuntimeError):
+                                pass
+                    try:
+                        await asyncio.wait_for(self.bot.close(), timeout=15.0)
+                    except asyncio.TimeoutError:
+                        try:
+                            logger.warning("Timeout reached while awaiting discord bot close")
+                        except (ValueError, RuntimeError):
+                            pass
+                    except Exception:
+                        try:
+                            logger.exception("Failed to close discord bot client")
+                        except (ValueError, RuntimeError):
+                            pass
                 except Exception:
-                    # Not all library versions expose logout or it may fail; continue to close the client anyway.
-                    logger.debug("discord.Bot.logout() not available or failed; continuing to close the bot", exc_info=True)
+                    try:
+                        logger.exception("Failed while shutting down discord bot client")
+                    except (ValueError, RuntimeError):
+                        pass
+                finally:
+                    # Only set to None after all operations are complete
+                    pass
+
+            # Close aiohttp session using the new method
+            if loop_running:
                 try:
-                    await asyncio.wait_for(self.bot.close(), timeout=15.0)
-                except asyncio.TimeoutError:
-                    logger.warning("Timeout reached while awaiting discord bot close")
+                    await self._close_session()
                 except Exception:
-                    logger.exception("Failed to close discord bot client")
-        except Exception:
-            logger.exception("Failed while shutting down discord bot client")
+                    try:
+                        logger.exception("Failed to close aiohttp session for discord notifier")
+                    except (ValueError, RuntimeError):
+                        pass  # Logging may fail during shutdown
 
-        # Close aiohttp session using the new method
-        try:
-            await self._close_session()
-        except Exception:
-            logger.exception("Failed to close aiohttp session for discord notifier")
+            try:
+                logger.info("Discord notifier shutdown")
+            except (ValueError, RuntimeError):
+                pass  # Logging may fail during shutdown
 
-        logger.info("Discord notifier shutdown")
+        finally:
+            # Mark shutdown as complete
+            self._shutdown_complete = True
 
     async def send_notification(self, message: str, embed_data: Dict = None) -> bool:
         """
@@ -635,25 +708,14 @@ class DiscordNotifier:
         await self.shutdown()
 
     def __del__(self):
-        """Destructor - attempt cleanup if not already done."""
-        # This is a safeguard in case shutdown() wasn't called properly
-        # We can't use async operations in __del__, so we just warn
-        # But we need to be careful about logging after the event loop is closed
+        """Destructor - check for proper cleanup without risky operations."""
+        # Avoid any logging or async operations during interpreter shutdown
+        # Just silently check if shutdown was completed properly
         try:
-            import sys
-            if hasattr(self, 'session') and self.session and not self.session.closed:
-                # Try to log, but don't fail if logging is unavailable
-                try:
-                    logger.warning("DiscordNotifier session was not properly closed before destruction")
-                except (ValueError, RuntimeError):
-                    # Logging system is shut down, print to stderr as fallback
-                    print("WARNING: DiscordNotifier session was not properly closed before destruction", file=sys.stderr)
-            if hasattr(self, '_bot_task') and self._bot_task and not self._bot_task.done():
-                try:
-                    logger.warning("DiscordNotifier bot task was not properly cancelled before destruction")
-                except (ValueError, RuntimeError):
-                    # Logging system is shut down, print to stderr as fallback
-                    print("WARNING: DiscordNotifier bot task was not properly cancelled before destruction", file=sys.stderr)
+            if not getattr(self, '_shutdown_complete', False):
+                # Shutdown was not called - this is just a silent flag check
+                # No logging, no async operations, no exceptions
+                pass
         except Exception:
-            # If anything goes wrong in __del__, just silently pass
+            # Never raise exceptions in __del__
             pass

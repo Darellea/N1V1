@@ -468,11 +468,13 @@ class TestDiscordNotifier:
             # Ensure the mock has the closed attribute set to False to trigger close
             notifier.session.closed = False
             # Patch the close method to be an AsyncMock to track calls
-            notifier.session.close = AsyncMock()
+            close_mock = AsyncMock()
+            notifier.session.close = close_mock
 
             await notifier.shutdown()
 
-            notifier.session.close.assert_called_once()
+            # Verify close was called (session gets set to None after close)
+            close_mock.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_shutdown_with_bot(self):
@@ -1285,3 +1287,113 @@ class TestDiscordNotifier:
             assert "channels/123456/messages" in call_args[0][0]
             # Verify webhook URL was not used
             assert "webhooks" not in call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_initialize_sets_shutdown_complete_flag(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+        """Test that initialize() sets the _shutdown_complete flag to False."""
+        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+            notifier = DiscordNotifier(discord_config)
+
+            # Initially, _shutdown_complete should not be set
+            assert not hasattr(notifier, '_shutdown_complete') or not notifier._shutdown_complete
+
+            await notifier.initialize()
+
+            # After initialize, _shutdown_complete should be False
+            assert hasattr(notifier, '_shutdown_complete')
+            assert notifier._shutdown_complete is False
+
+    @pytest.mark.asyncio
+    async def test_shutdown_sets_complete_flag(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+        """Test that shutdown() sets the _shutdown_complete flag to True."""
+        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+            notifier = DiscordNotifier(discord_config)
+            await notifier.initialize()
+
+            # Before shutdown, flag should be False
+            assert notifier._shutdown_complete is False
+
+            await notifier.shutdown()
+
+            # After shutdown, flag should be True
+            assert notifier._shutdown_complete is True
+
+    @pytest.mark.asyncio
+    async def test_shutdown_idempotent(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+        """Test that calling shutdown() multiple times is safe."""
+        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+            notifier = DiscordNotifier(discord_config)
+            await notifier.initialize()
+
+            # First shutdown
+            await notifier.shutdown()
+            assert notifier._shutdown_complete is True
+
+            # Second shutdown should be a no-op
+            await notifier.shutdown()
+            assert notifier._shutdown_complete is True
+
+    @pytest.mark.asyncio
+    async def test_shutdown_with_closed_loop(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+        """Test shutdown behavior when event loop is closed."""
+        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session), \
+             patch('asyncio.get_running_loop') as mock_get_loop:
+
+            # Mock RuntimeError when getting running loop (simulating closed loop)
+            mock_get_loop.side_effect = RuntimeError("no running event loop")
+
+            notifier = DiscordNotifier(discord_config)
+            await notifier.initialize()
+
+            # Should not raise exception even with closed loop
+            await notifier.shutdown()
+
+            # Flag should still be set
+            assert notifier._shutdown_complete is True
+
+    @pytest.mark.asyncio
+    async def test_shutdown_with_logging_failures(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+        """Test shutdown handles logging failures gracefully."""
+        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+            notifier = DiscordNotifier(discord_config)
+            await notifier.initialize()
+
+            # Now patch the logger after initialization
+            with patch('notifier.discord_bot.logger') as mock_logger:
+                # Mock logger to raise exceptions
+                mock_logger.warning.side_effect = ValueError("I/O operation on closed file")
+                mock_logger.exception.side_effect = ValueError("I/O operation on closed file")
+                mock_logger.info.side_effect = ValueError("I/O operation on closed file")
+
+                # Should not raise exception despite logging failures
+                await notifier.shutdown()
+
+                # Flag should still be set
+                assert notifier._shutdown_complete is True
+
+    @pytest.mark.asyncio
+    async def test_destructor_safe_with_shutdown_complete(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+        """Test that __del__ is safe when shutdown was completed properly."""
+        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+            notifier = DiscordNotifier(discord_config)
+            await notifier.initialize()
+            await notifier.shutdown()
+
+            # __del__ should not raise any exceptions
+            try:
+                notifier.__del__()
+            except Exception:
+                pytest.fail("__del__ should not raise exceptions when shutdown was completed")
+
+    @pytest.mark.asyncio
+    async def test_destructor_safe_without_shutdown(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+        """Test that __del__ is safe even when shutdown was not called."""
+        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+            notifier = DiscordNotifier(discord_config)
+            await notifier.initialize()
+
+            # Don't call shutdown - __del__ should handle this gracefully
+            try:
+                notifier.__del__()
+            except Exception:
+                pytest.fail("__del__ should not raise exceptions even when shutdown was not called")

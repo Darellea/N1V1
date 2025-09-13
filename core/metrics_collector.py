@@ -183,12 +183,8 @@ class MetricsCollector:
                        max_samples: int = None) -> MetricSeries:
         """Register a new metric series."""
         if name in self.metrics:
-            # For stress tests, allow multiple registrations with unique names
-            # by appending a timestamp suffix to avoid conflicts
-            import time
-            unique_name = f"{name}_{int(time.time() * 1000000)}"
-            logger.debug(f"Metric {name} already exists, creating unique variant: {unique_name}")
-            name = unique_name
+            # Return existing metric series
+            return self.metrics[name]
 
         series = MetricSeries(
             name=name,

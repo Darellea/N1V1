@@ -247,24 +247,36 @@ class MarketStateAnalyzer:
 
 
 class RuleBasedSelector:
-    """Rule-based strategy selection using technical indicators."""
+    """
+    Rule-based strategy selection using technical indicators.
+
+    Rule Hierarchy:
+    1. Trending Market: Prefer EMACrossStrategy for trend-following
+    2. Ranging Market: Prefer RSIStrategy for mean-reversion
+    3. Fallback: First available strategy
+
+    Trending Detection:
+    - Price slope > 5% over recent period indicates trending
+    - Uses normalized slope: (end_price - start_price) / period / start_price
+    """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
+        # Keep old attributes for backward compatibility
         self.adx_trend_threshold = self.config.get('adx_trend_threshold', 25)
         self.adx_sideways_threshold = self.config.get('adx_sideways_threshold', 20)
-        self.market_analyzer = MarketStateAnalyzer()
-
-        # Strategy mappings
-        self.regime_to_strategy = {
-            MarketRegime.SIDEWAYS: ["RSIStrategy"],
-            MarketRegime.TRENDING: ["EMACrossStrategy"],
-        }
+        # New attributes for simple trending detection
+        self.trend_slope_threshold = self.config.get('trend_slope_threshold', 0.05)
+        self.lookback_period = self.config.get('lookback_period', 20)
 
     def select_strategy(self, market_data: pd.DataFrame,
                        available_strategies: List[type]) -> Optional[type]:
         """
         Select the best strategy based on current market conditions.
+
+        Uses simple trending detection:
+        - If normalized slope > threshold, select EMACrossStrategy (trending)
+        - Otherwise, select RSIStrategy (ranging)
 
         Args:
             market_data: Current market data
@@ -273,63 +285,38 @@ class RuleBasedSelector:
         Returns:
             Selected strategy class or None
         """
-        if market_data.empty:
-            return None
+        if market_data.empty or len(market_data) < self.lookback_period:
+            return available_strategies[0] if available_strategies else None
 
-        # Use enhanced market regime detector for sophisticated analysis
-        try:
-            enhanced_result = detect_enhanced_market_regime(market_data)
-            regime_name = enhanced_result.regime_name
-            confidence = enhanced_result.confidence_score
-            reasons = enhanced_result.reasons
+        # Simple trending detection - use full data for slope calculation
+        prices = market_data['close']
+        if len(prices) < 2:
+            return available_strategies[0] if available_strategies else None
 
-            # Log regime detection details
-            logger.info(f"Market Regime Detected: {regime_name} (confidence: {confidence:.3f})")
-            logger.info(f"Regime Reasons: {json.dumps(reasons, indent=2)}")
+        slope = (prices.iloc[-1] - prices.iloc[0]) / len(prices)
+        slope_normalized = slope / prices.iloc[0] if prices.iloc[0] != 0 else 0
 
-            # Map regime name to MarketRegime enum for strategy mapping
-            regime_mapping = {
-                "trend_up": MarketRegime.TREND_UP,
-                "trend_down": MarketRegime.TREND_DOWN,
-                "range_tight": MarketRegime.RANGE_TIGHT,
-                "range_wide": MarketRegime.RANGE_WIDE,
-                "volatile_spike": MarketRegime.VOLATILE_SPIKE,
-                "trending": MarketRegime.TRENDING,
-                "sideways": MarketRegime.SIDEWAYS,
-                "volatile": MarketRegime.VOLATILE,
-                "unknown": MarketRegime.UNKNOWN
-            }
-
-            regime = regime_mapping.get(regime_name, MarketRegime.UNKNOWN)
-
-        except Exception as e:
-            logger.warning(f"Enhanced regime detection failed, falling back to basic detection: {e}")
-            # Fallback to basic regime detection
-            regime_detector = get_market_regime_detector()
-            regime_result = regime_detector.detect_regime(market_data)
-            regime = regime_result.regime
-            confidence = regime_result.confidence
-
-            logger.info(f"Fallback Regime Detected: {regime.value} (confidence: {confidence:.3f})")
-
-        # Get recommended strategies for the detected regime
-        recommended_strategies = get_recommended_strategies(regime)
-        logger.info(f"Recommended strategies for {regime.value}: {recommended_strategies}")
-
-        # Find matching strategy from available strategies
-        for strat in available_strategies:
-            if strat.__name__ in recommended_strategies:
-                logger.info(f"Selected strategy: {strat.__name__} for regime {regime.value}")
-                return strat
-            # Extra matching to handle mocks
-            if any(key in strat.__name__ for key in recommended_strategies):
-                logger.info(f"Selected strategy (mock): {strat.__name__} for regime {regime.value}")
-                return strat
+        if slope_normalized > self.trend_slope_threshold:
+            # Trending market - prefer EMACrossStrategy
+            for strat in available_strategies:
+                if strat.__name__ == 'EMACrossStrategy':
+                    logger.info(f"Selected EMACrossStrategy for trending market (slope: {slope_normalized:.3f})")
+                    return strat
+            # If EMACrossStrategy not found, fallback
+            logger.warning("EMACrossStrategy not found in available strategies, using fallback")
+        else:
+            # Ranging market - prefer RSIStrategy
+            for strat in available_strategies:
+                if strat.__name__ == 'RSIStrategy':
+                    logger.info(f"Selected RSIStrategy for ranging market (slope: {slope_normalized:.3f})")
+                    return strat
+            # If RSIStrategy not found, fallback
+            logger.warning("RSIStrategy not found in available strategies, using fallback")
 
         # Fallback to first available strategy
         if available_strategies:
             fallback = available_strategies[0]
-            logger.warning(f"No matching strategy found for regime {regime.value}, using fallback {fallback.__name__}")
+            logger.warning(f"Preferred strategy not found, using fallback {fallback.__name__}")
             return fallback
 
         return None

@@ -7,6 +7,65 @@ into plain dictionaries for loggers, order manager, and notifier code paths.
 
 from typing import Any, Dict
 import dataclasses
+import logging
+from datetime import datetime
+
+
+def _normalize_timestamp(timestamp: Any) -> int:
+    """
+    Normalize timestamp to milliseconds since epoch (UTC).
+
+    Handles:
+    - int: assumed to be ms, returned as-is
+    - datetime: converted to ms with timezone handling
+    - str: parsed as ISO format and converted to ms
+
+    Raises ValueError for invalid formats.
+    """
+    from datetime import timezone
+
+    if isinstance(timestamp, int):
+        return timestamp
+    elif isinstance(timestamp, datetime):
+        try:
+            # Handle timezone-naive datetimes by assuming UTC
+            if timestamp.tzinfo is None:
+                # For naive datetimes, assume UTC to avoid local timezone issues
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            elif timestamp.tzinfo is not timezone.utc:
+                # Convert to UTC if it's not already
+                timestamp = timestamp.astimezone(timezone.utc)
+
+            # Convert to milliseconds, handling potential OSError for edge cases
+            return int(timestamp.timestamp() * 1000)
+        except (OSError, ValueError, OverflowError) as e:
+            # Handle edge cases like pre-1970 timestamps or invalid dates
+            logging.warning(f"Failed to convert datetime {timestamp} to timestamp: {e}. Using fallback.")
+            # Fallback: calculate manually for pre-1970 dates
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            elif timestamp.tzinfo is not timezone.utc:
+                timestamp = timestamp.astimezone(timezone.utc)
+
+            # Manual calculation: days since epoch * 86400000 + microseconds
+            epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+            delta = timestamp - epoch
+            return int(delta.total_seconds() * 1000)
+    elif isinstance(timestamp, str):
+        try:
+            # Try to parse as ISO format
+            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            # Ensure timezone info
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            elif dt.tzinfo is not timezone.utc:
+                dt = dt.astimezone(timezone.utc)
+            return int(dt.timestamp() * 1000)
+        except (ValueError, OSError) as e:
+            logging.error(f"Failed to parse timestamp string '{timestamp}': {e}")
+            raise ValueError(f"Invalid timestamp string format: {timestamp}")
+    else:
+        raise ValueError(f"Unsupported timestamp type: {type(timestamp)}")
 
 
 def signal_to_dict(signal: Any) -> Dict[str, Any]:
@@ -15,9 +74,15 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
 
     Supports:
     - dict -> shallow copy
-    - dataclass -> dataclasses.asdict
+    - dataclass -> dataclasses.asdict with enum and timestamp normalization
     - objects with to_dict() -> call it
     - generic objects -> probe common attributes and __dict__
+
+    Timestamp normalization rules:
+    - datetime objects are converted to milliseconds since epoch (UTC)
+    - int values are left unchanged (assumed to be milliseconds)
+    - str values are parsed as ISO format and converted to milliseconds
+    - Invalid timestamps raise ValueError in dataclass conversion, set to None in attribute probing
 
     Returns an empty dict for None input.
     """
@@ -43,7 +108,17 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
             if hasattr(signal, '__class__') and signal.__class__.__name__ == 'TradingSignal':
                 if 'quantity' in result:
                     result['amount'] = result.pop('quantity')
-            
+
+            # Normalize timestamp to milliseconds
+            if 'timestamp' in result:
+                original = result['timestamp']
+                try:
+                    result['timestamp'] = _normalize_timestamp(original)
+                    logging.debug(f"Normalized timestamp in dataclass from {type(original).__name__} ({original}) to int ({result['timestamp']})")
+                except ValueError as e:
+                    logging.error(f"Failed to normalize timestamp in dataclass: {e}")
+                    raise  # Re-raise to fail fast for invalid timestamps
+
             return result
     except (AttributeError, TypeError, ValueError):
         # If dataclass conversion fails for known reasons, fall back to other methods.
@@ -97,6 +172,15 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
         except AttributeError:
             # If enum-like object doesn't expose expected attributes, ignore and continue.
             pass
+
+        # Normalize timestamp to milliseconds
+        if a == 'timestamp':
+            try:
+                val = _normalize_timestamp(val)
+                logging.debug(f"Normalized timestamp in attribute probe from {type(val).__name__} to int ({val})")
+            except ValueError as e:
+                logging.error(f"Failed to normalize timestamp in attribute probe: {e}")
+                val = None  # Set to None for invalid timestamps
 
         out[a] = val
 

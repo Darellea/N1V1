@@ -86,11 +86,47 @@ class TradingSignal:
         # Store original timestamp for validation purposes
         self._original_timestamp = self.timestamp
 
-        # Ensure timestamp is a datetime object
+        # Ensure timestamp is a datetime object in UTC
         if isinstance(self.timestamp, int):
-            self.timestamp = datetime.fromtimestamp(self.timestamp / 1000)
-        elif not isinstance(self.timestamp, datetime):
-            self.timestamp = datetime.now()
+            # Handle milliseconds (large values > 1e12) vs seconds
+            if self.timestamp > 1e12:
+                # Convert milliseconds to seconds
+                ts_seconds = self.timestamp / 1000
+            else:
+                # Already in seconds
+                ts_seconds = self.timestamp
+
+            # Validate timestamp range
+            if ts_seconds < 0:
+                raise ValueError(f"Invalid timestamp: negative value {self.timestamp}")
+            if ts_seconds > 2147483647:  # Year 2038 problem upper bound
+                raise ValueError(f"Invalid timestamp: value too large {self.timestamp}")
+
+            # Always create datetime in UTC to avoid timezone issues
+            from datetime import timezone
+            self.timestamp = datetime.fromtimestamp(ts_seconds, tz=timezone.utc)
+        elif isinstance(self.timestamp, float):
+            # Handle float timestamps (assume seconds)
+            if self.timestamp < 0:
+                raise ValueError(f"Invalid timestamp: negative value {self.timestamp}")
+            if self.timestamp > 2147483647:
+                raise ValueError(f"Invalid timestamp: value too large {self.timestamp}")
+            # Always create datetime in UTC to avoid timezone issues
+            from datetime import timezone
+            self.timestamp = datetime.fromtimestamp(self.timestamp, tz=timezone.utc)
+        elif isinstance(self.timestamp, str):
+            # Allow string timestamps - they will be handled by the adapter later
+            pass
+        elif isinstance(self.timestamp, datetime):
+            # If it's already a datetime, ensure it's in UTC
+            if self.timestamp.tzinfo is None:
+                from datetime import timezone
+                self.timestamp = self.timestamp.replace(tzinfo=timezone.utc)
+            # If it has timezone info, convert to UTC
+            elif self.timestamp.tzinfo is not timezone.utc:
+                self.timestamp = self.timestamp.astimezone(timezone.utc)
+        else:
+            raise ValueError(f"Invalid timestamp type: {type(self.timestamp)}. Expected int, float, datetime, or str.")
 
         # Handle deprecated fields for backward compatibility
         if self.quantity is not None and self.amount is None:

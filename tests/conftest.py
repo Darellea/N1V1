@@ -701,6 +701,23 @@ def simulate_network_failure():
     return NetworkFailureSimulator()
 
 
+# Event loop fixture for isolated async testing
+@pytest.fixture(scope="function")
+def event_loop():
+    """Create an isolated event loop for each test."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    yield loop
+    # Clean up any pending tasks
+    pending_tasks = [task for task in asyncio.all_tasks(loop) if not task.done()]
+    for task in pending_tasks:
+        task.cancel()
+    # Run until all tasks are cancelled
+    if pending_tasks:
+        loop.run_until_complete(asyncio.gather(*pending_tasks, return_exceptions=True))
+    loop.close()
+
+
 # Logging configuration for tests
 @pytest.fixture(autouse=True)
 def configure_test_logging():
@@ -738,4 +755,16 @@ def ensemble_config() -> Dict[str, Any]:
         'min_weight': 0.1,
         'max_weight': 0.5,
         'portfolio_risk_limit': 0.1
+    }
+
+
+@pytest.fixture
+def allocation_config() -> Dict[str, Any]:
+    """Create test configuration for allocation engine."""
+    return {
+        'min_weight': 0.05,
+        'max_weight': 0.4,
+        'risk_free_rate': 0.02,
+        'performance_window_days': 30,
+        'rebalance_threshold': 0.05
     }
