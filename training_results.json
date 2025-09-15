@@ -13,168 +13,218 @@
       "ATR",
       "StochRSI",
       "TrendStrength",
-      "Volatility"
+      "Volatility",
+      "return_1",
+      "volatility_1",
+      "mean_return_1",
+      "skew_1",
+      "kurtosis_1",
+      "return_3",
+      "volatility_3",
+      "mean_return_3",
+      "skew_3",
+      "kurtosis_3",
+      "return_5",
+      "volatility_5",
+      "mean_return_5",
+      "skew_5",
+      "kurtosis_5",
+      "return_24",
+      "volatility_24",
+      "mean_return_24",
+      "skew_24",
+      "kurtosis_24",
+      "BB_middle",
+      "BB_upper",
+      "BB_lower",
+      "BB_width",
+      "BB_position",
+      "atr_normalized_return",
+      "volume_sma",
+      "volume_std",
+      "volume_zscore",
+      "ADX",
+      "momentum_volatility",
+      "trend_volume",
+      "rsi_macd",
+      "atr_trend"
     ],
     "n_splits": 5,
     "class_weights": {
-      "1": 1.0
+      "0": 0.9460431654676259,
+      "1": 1.060483870967742
     },
     "validation_method": "walk_forward",
     "hyperparameter_tuning": false,
     "feature_selection": false
   },
   "overall_metrics": {
-    "auc": NaN,
-    "f1": 0.0,
-    "total_samples": 35,
+    "auc": 0.5792210267705863,
+    "f1": 0.4176470588235294,
+    "total_samples": 435,
     "class_distribution": {
-      "1": 35
-    },
-    "pnl": 0.0,
-    "sharpe": 0.0,
-    "max_drawdown": 0.0,
-    "total_trades": 0,
-    "win_rate": 0.0
+      "1": 208,
+      "0": 227
+    }
   },
   "fold_metrics": [
     {
       "fold": 1,
-      "train_samples": 10,
-      "test_samples": 7,
-      "auc": NaN,
+      "train_samples": 91,
+      "test_samples": 87,
+      "auc": 0.3002148227712138,
       "f1": 0.0,
       "precision": 0.0,
       "recall": 0.0,
       "class_distribution": {
         "train": {
-          "1": 10
+          "0": 51,
+          "1": 40
         },
         "test": {
-          "1": 7
+          "1": 49,
+          "0": 38
         }
-      },
-      "pnl": 0.0,
-      "sharpe": 0.0,
-      "max_drawdown": 0.0,
-      "total_trades": 0,
-      "win_rate": 0.0
+      }
     },
     {
       "fold": 2,
-      "train_samples": 17,
-      "test_samples": 7,
-      "auc": NaN,
-      "f1": 0.0,
-      "precision": 0.0,
-      "recall": 0.0,
+      "train_samples": 178,
+      "test_samples": 87,
+      "auc": 0.5854054054054054,
+      "f1": 0.4,
+      "precision": 0.6111111111111112,
+      "recall": 0.2972972972972973,
       "class_distribution": {
         "train": {
-          "1": 17
+          "0": 89,
+          "1": 89
         },
         "test": {
-          "1": 7
+          "1": 37,
+          "0": 50
         }
-      },
-      "pnl": 0.0,
-      "sharpe": 0.0,
-      "max_drawdown": 0.0,
-      "total_trades": 0,
-      "win_rate": 0.0
+      }
     },
     {
       "fold": 3,
-      "train_samples": 24,
-      "test_samples": 7,
-      "auc": NaN,
-      "f1": 0.0,
-      "precision": 0.0,
-      "recall": 0.0,
+      "train_samples": 265,
+      "test_samples": 87,
+      "auc": 0.7730299667036626,
+      "f1": 0.6521739130434783,
+      "precision": 0.5172413793103449,
+      "recall": 0.8823529411764706,
       "class_distribution": {
         "train": {
-          "1": 24
+          "0": 139,
+          "1": 126
         },
         "test": {
-          "1": 7
+          "0": 53,
+          "1": 34
         }
-      },
-      "pnl": 0.0,
-      "sharpe": 0.0,
-      "max_drawdown": 0.0,
-      "total_trades": 0,
-      "win_rate": 0.0
+      }
     },
     {
       "fold": 4,
-      "train_samples": 31,
-      "test_samples": 7,
-      "auc": NaN,
-      "f1": 0.0,
-      "precision": 0.0,
-      "recall": 0.0,
+      "train_samples": 352,
+      "test_samples": 87,
+      "auc": 0.6380876068376068,
+      "f1": 0.6153846153846154,
+      "precision": 0.5384615384615384,
+      "recall": 0.717948717948718,
       "class_distribution": {
         "train": {
-          "1": 31
+          "0": 192,
+          "1": 160
         },
         "test": {
-          "1": 7
+          "0": 48,
+          "1": 39
         }
-      },
-      "pnl": 0.0,
-      "sharpe": 0.0,
-      "max_drawdown": 0.0,
-      "total_trades": 0,
-      "win_rate": 0.0
+      }
     },
     {
       "fold": 5,
-      "train_samples": 38,
-      "test_samples": 7,
-      "auc": NaN,
-      "f1": 0.0,
-      "precision": 0.0,
-      "recall": 0.0,
+      "train_samples": 439,
+      "test_samples": 87,
+      "auc": 0.6138560687432868,
+      "f1": 0.07547169811320754,
+      "precision": 0.5,
+      "recall": 0.04081632653061224,
       "class_distribution": {
         "train": {
-          "1": 38
+          "0": 240,
+          "1": 199
         },
         "test": {
-          "1": 7
+          "1": 49,
+          "0": 38
         }
-      },
-      "pnl": 0.0,
-      "sharpe": 0.0,
-      "max_drawdown": 0.0,
-      "total_trades": 0,
-      "win_rate": 0.0
+      }
     }
   ],
   "feature_importance": {
-    "RSI": "0",
-    "MACD": "0",
-    "EMA_20": "0",
-    "ATR": "0",
-    "StochRSI": "0",
-    "TrendStrength": "0",
-    "Volatility": "0"
+    "RSI": "52",
+    "MACD": "38",
+    "EMA_20": "26",
+    "ATR": "78",
+    "StochRSI": "35",
+    "TrendStrength": "46",
+    "Volatility": "55",
+    "return_1": "25",
+    "volatility_1": "0",
+    "mean_return_1": "2",
+    "skew_1": "0",
+    "kurtosis_1": "0",
+    "return_3": "33",
+    "volatility_3": "31",
+    "mean_return_3": "14",
+    "skew_3": "47",
+    "kurtosis_3": "0",
+    "return_5": "27",
+    "volatility_5": "31",
+    "mean_return_5": "15",
+    "skew_5": "56",
+    "kurtosis_5": "41",
+    "return_24": "30",
+    "volatility_24": "43",
+    "mean_return_24": "14",
+    "skew_24": "71",
+    "kurtosis_24": "39",
+    "BB_middle": "26",
+    "BB_upper": "38",
+    "BB_lower": "55",
+    "BB_width": "64",
+    "BB_position": "33",
+    "atr_normalized_return": "22",
+    "volume_sma": "66",
+    "volume_std": "99",
+    "volume_zscore": "44",
+    "ADX": "68",
+    "momentum_volatility": "24",
+    "trend_volume": "26",
+    "rsi_macd": "68",
+    "atr_trend": "29"
   },
   "confusion_matrix": {
     "matrix": [
       [
-        0,
-        0
+        166,
+        61
       ],
       [
-        35,
-        0
+        137,
+        71
       ]
     ],
     "labels": [
       "Skip (0)",
       "Trade (1)"
     ],
-    "total_samples": 35,
-    "accuracy": 0.0,
-    "precision_trade": 0.0,
-    "recall_trade": 0.0
+    "total_samples": 435,
+    "accuracy": 0.5448275862068965,
+    "precision_trade": 0.5378787878787878,
+    "recall_trade": 0.34134615384615385
   }
 }
