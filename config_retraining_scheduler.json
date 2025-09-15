@@ -1,0 +1,78 @@
+{
+  "jobs": [
+    {
+      "job_id": "weekly_binary_model_retraining",
+      "schedule_type": "weekly",
+      "target_model": "enhanced_binary_model",
+      "data_sources": ["historical_data"],
+      "performance_thresholds": {
+        "auc": 0.5,
+        "sharpe_ratio": 0.5,
+        "max_drawdown": -0.15
+      }
+    },
+    {
+      "job_id": "monthly_strategy_model_retraining",
+      "schedule_type": "monthly",
+      "target_model": "enhanced_model",
+      "data_sources": ["historical_data"],
+      "performance_thresholds": {
+        "auc": 0.55,
+        "sharpe_ratio": 1.0,
+        "max_drawdown": -0.12
+      }
+    }
+  ],
+  "registry_path": "models/registry",
+  "data_config": {
+    "data_sources": [
+      {
+        "type": "csv",
+        "directory": "historical_data",
+        "file_pattern": "*.csv"
+      }
+    ],
+    "target_pairs": [
+      "EUR/USD",
+      "GBP/USD",
+      "USD/JPY",
+      "AUD/USD",
+      "USD/CHF",
+      "NZD/USD",
+      "USD/CAD"
+    ],
+    "timeframes": [
+      "1H",
+      "4H",
+      "1D"
+    ],
+    "data_dir": "historical_data",
+    "min_samples_per_pair": 1000
+  },
+  "training_config": {
+    "n_trials": 10,
+    "eval_economic": true,
+    "feature_selection": "shap",
+    "validation_folds": 5,
+    "early_stopping_rounds": 50
+  },
+  "deployment_config": {
+    "canary_percentage": 0.1,
+    "canary_duration_hours": 24,
+    "rollback_enabled": true,
+    "backup_versions": 5
+  },
+  "notification_settings": {
+    "discord_webhook_url": "https://discord.com/api/webhooks/your-webhook-url",
+    "email_recipients": ["admin@n1v1.com"],
+    "alert_on_failure": true,
+    "alert_on_success": false,
+    "alert_on_deployment": true
+  },
+  "monitoring_config": {
+    "enable_performance_tracking": true,
+    "track_resource_usage": true,
+    "log_level": "INFO",
+    "metrics_retention_days": 90
+  }
+}

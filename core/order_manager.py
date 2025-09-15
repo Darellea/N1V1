@@ -244,7 +244,7 @@ class OrderManager:
 
     async def _rate_limit(self) -> None:
         """Simple rate limiter for KuCoin API calls."""
-        current_time = time.time()
+        current_time = time.monotonic()
         time_since_last = current_time - self._last_request_time
 
         # If this is the first call (_last_request_time is 0.0) or not enough time has passed,
@@ -253,7 +253,7 @@ class OrderManager:
             wait_time = self._request_interval if self._last_request_time == 0.0 else self._request_interval - time_since_last
             await asyncio.sleep(max(0, wait_time))
 
-        self._last_request_time = time.time()
+        self._last_request_time = time.monotonic()
 
     async def _get_cached_ticker(self, symbol: str) -> Dict[str, Any]:
         """Get ticker data with caching to reduce API calls."""

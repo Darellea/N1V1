@@ -1,0 +1,72 @@
+{
+  "model_file": "C:\\Users\\TU\\Desktop\\new project\\N1V1\\models\\compare_unbalance.pkl",
+  "feature_list": [
+    "ATR",
+    "volume_std",
+    "skew_24",
+    "ADX",
+    "rsi_macd",
+    "RSI",
+    "skew_3",
+    "BB_width",
+    "volume_sma",
+    "skew_5",
+    "BB_middle",
+    "atr_trend"
+  ],
+  "selected_features": [
+    "ATR",
+    "volume_std",
+    "skew_24",
+    "ADX",
+    "rsi_macd",
+    "RSI",
+    "skew_3",
+    "BB_width",
+    "volume_sma",
+    "skew_5",
+    "BB_middle",
+    "atr_trend"
+  ],
+  "training_metadata": {
+    "model_type": "binary_classification",
+    "objective": "p_trade_probability",
+    "horizon": 5,
+    "profit_threshold": 0.005,
+    "include_fees": true,
+    "fee_rate": 0.001,
+    "feature_columns": [
+      "ATR",
+      "volume_std",
+      "skew_24",
+      "ADX",
+      "rsi_macd",
+      "RSI",
+      "skew_3",
+      "BB_width",
+      "volume_sma",
+      "skew_5",
+      "BB_middle",
+      "atr_trend"
+    ],
+    "n_splits": 5,
+    "class_weights": {
+      "0": 0.9460431654676259,
+      "1": 1.060483870967742
+    },
+    "validation_method": "walk_forward",
+    "hyperparameter_tuning": false,
+    "feature_selection": false
+  },
+  "cv": {
+    "n_splits": 5,
+    "best_iterations": [],
+    "best_params": null
+  },
+  "training_window": {
+    "start": "32",
+    "end": "881"
+  },
+  "scaler": null,
+  "caveats": "This model was trained on historical OHLCV-based technical features for binary trade/no-trade decisions. Validate feature schema at inference time. Beware of data drift and difference between live and backtest data; re-train and validate periodically."
+}

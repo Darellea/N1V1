@@ -1,0 +1,30 @@
+{
+  "total_samples_collected": 32361,
+  "pairs_processed": [
+    "EUR/USD_1H",
+    "EUR/USD_4H",
+    "EUR/USD_1D",
+    "GBP/USD_1H",
+    "GBP/USD_4H",
+    "GBP/USD_1D",
+    "USD/JPY_1H",
+    "USD/JPY_4H",
+    "USD/JPY_1D",
+    "AUD/USD_1H",
+    "AUD/USD_4H",
+    "AUD/USD_1D",
+    "USD/CHF_1H",
+    "USD/CHF_4H",
+    "USD/CHF_1D",
+    "NZD/USD_1H",
+    "NZD/USD_4H",
+    "NZD/USD_1D",
+    "USD/CAD_1H",
+    "USD/CAD_4H",
+    "USD/CAD_1D"
+  ],
+  "timeframes_processed": [],
+  "collection_duration": 23.185978651046753,
+  "errors": [],
+  "timestamp": "2025-09-15T13:37:13.973369"
+}

@@ -13,7 +13,7 @@ from enum import Enum, auto
 from typing import Dict, Optional, Any
 from decimal import Decimal
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from utils.time import now_ms, to_ms
 
 
@@ -82,7 +82,16 @@ class TradingSignal:
     metadata: Optional[Dict] = field(default_factory=dict)
 
     def __post_init__(self):
-        """Set timestamp if not provided and normalize provided values."""
+        """
+        Normalize timestamp to UTC datetime and handle deprecated fields.
+
+        This method ensures consistent timestamp handling across all input types:
+        - int/float: Converted to UTC datetime using datetime.fromtimestamp()
+        - str: Left as-is for adapter processing
+        - datetime: Normalized to UTC timezone
+
+        All timestamps are converted to UTC to avoid timezone-related issues.
+        """
         # Store original timestamp for validation purposes
         self._original_timestamp = self.timestamp
 
@@ -103,7 +112,6 @@ class TradingSignal:
                 raise ValueError(f"Invalid timestamp: value too large {self.timestamp}")
 
             # Always create datetime in UTC to avoid timezone issues
-            from datetime import timezone
             self.timestamp = datetime.fromtimestamp(ts_seconds, tz=timezone.utc)
         elif isinstance(self.timestamp, float):
             # Handle float timestamps (assume seconds)
@@ -112,7 +120,6 @@ class TradingSignal:
             if self.timestamp > 2147483647:
                 raise ValueError(f"Invalid timestamp: value too large {self.timestamp}")
             # Always create datetime in UTC to avoid timezone issues
-            from datetime import timezone
             self.timestamp = datetime.fromtimestamp(self.timestamp, tz=timezone.utc)
         elif isinstance(self.timestamp, str):
             # Allow string timestamps - they will be handled by the adapter later
@@ -120,7 +127,6 @@ class TradingSignal:
         elif isinstance(self.timestamp, datetime):
             # If it's already a datetime, ensure it's in UTC
             if self.timestamp.tzinfo is None:
-                from datetime import timezone
                 self.timestamp = self.timestamp.replace(tzinfo=timezone.utc)
             # If it has timezone info, convert to UTC
             elif self.timestamp.tzinfo is not timezone.utc:

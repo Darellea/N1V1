@@ -12,84 +12,84 @@
     "all_results": [
       {
         "threshold": 0.5,
-        "pnl": 0.13999999999999999,
-        "sharpe": 7.0992957397195395,
+        "pnl": 0.095,
+        "sharpe": 4.786344211304794,
         "max_drawdown": -0.005,
-        "total_trades": 56,
-        "win_rate": 0.8333333333333334
+        "total_trades": 57,
+        "win_rate": 0.75
       },
       {
         "threshold": 0.55,
-        "pnl": 0.14,
-        "sharpe": 11.224972160321826,
+        "pnl": 0.095,
+        "sharpe": 9.16515138991168,
         "max_drawdown": 0.0,
-        "total_trades": 28,
-        "win_rate": 0.8333333333333334
+        "total_trades": 19,
+        "win_rate": 0.75
       },
       {
         "threshold": 0.6000000000000001,
-        "pnl": 0.14,
-        "sharpe": 11.224972160321826,
+        "pnl": 0.095,
+        "sharpe": 9.16515138991168,
         "max_drawdown": 0.0,
-        "total_trades": 28,
-        "win_rate": 0.8333333333333334
+        "total_trades": 19,
+        "win_rate": 0.75
       },
       {
         "threshold": 0.6500000000000001,
-        "pnl": 0.14,
-        "sharpe": 11.224972160321826,
+        "pnl": 0.095,
+        "sharpe": 9.16515138991168,
         "max_drawdown": 0.0,
-        "total_trades": 28,
-        "win_rate": 0.8333333333333334
+        "total_trades": 19,
+        "win_rate": 0.75
       },
       {
         "threshold": 0.7000000000000002,
-        "pnl": 0.07,
-        "sharpe": 7.09929573971954,
+        "pnl": 0.095,
+        "sharpe": 9.16515138991168,
         "max_drawdown": 0.0,
-        "total_trades": 14,
-        "win_rate": 0.6666666666666666
+        "total_trades": 19,
+        "win_rate": 0.75
       },
       {
         "threshold": 0.7500000000000002,
-        "pnl": 0.07,
-        "sharpe": 7.09929573971954,
+        "pnl": 0.095,
+        "sharpe": 9.16515138991168,
         "max_drawdown": 0.0,
-        "total_trades": 14,
-        "win_rate": 0.6666666666666666
+        "total_trades": 19,
+        "win_rate": 0.75
       },
       {
         "threshold": 0.8000000000000003,
-        "pnl": 0.07,
-        "sharpe": 7.09929573971954,
+        "pnl": 0.095,
+        "sharpe": 9.16515138991168,
         "max_drawdown": 0.0,
-        "total_trades": 14,
-        "win_rate": 0.6666666666666666
+        "total_trades": 19,
+        "win_rate": 0.75
       },
       {
         "threshold": 0.8500000000000003,
-        "pnl": 0.07,
-        "sharpe": 7.09929573971954,
+        "pnl": 0.095,
+        "sharpe": 9.16515138991168,
         "max_drawdown": 0.0,
-        "total_trades": 14,
-        "win_rate": 0.6666666666666666
+        "total_trades": 19,
+        "win_rate": 0.75
       },
       {
         "threshold": 0.9000000000000004,
-        "pnl": 0.07,
-        "sharpe": 7.09929573971954,
+        "pnl": 0.095,
+        "sharpe": 9.16515138991168,
         "max_drawdown": 0.0,
-        "total_trades": 14,
-        "win_rate": 0.6666666666666666
+        "total_trades": 19,
+        "win_rate": 0.75
       }
     ]
   },
   "expected_performance": {
     "threshold": 0.55,
-    "pnl": 0.14,
-    "sharpe": 11.224972160321826,
+    "pnl": 0.095,
+    "sharpe": 9.16515138991168,
     "max_drawdown": 0.0,
-    "total_trades": 28,
-    "win_rate": 0.8333333333333334
+    "total_trades": 19,
+    "win_rate": 0.75
   }
 }

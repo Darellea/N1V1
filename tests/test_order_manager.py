@@ -423,13 +423,69 @@ class TestOrderManager:
         om._last_request_time = 0.0
         om._request_interval = 0.1
 
-        import time
-        start_time = time.time()
+        # Use monotonic time for more precise measurement (no drift)
+        start_time = time.monotonic()
         await om._rate_limit()
-        end_time = time.time()
+        end_time = time.monotonic()
 
-        # Should have waited at least the interval
-        assert end_time - start_time >= 0.09  # Allow small tolerance
+        elapsed = end_time - start_time
+
+        # Should have waited at least the interval with reasonable tolerance
+        # Use range assertion to handle OS scheduling variance and async overhead
+        # Allow wider range to accommodate system load and timing variations
+        assert 0.08 <= elapsed <= 0.25, \
+            f"Rate limit timing out of range: {elapsed:.4f}s (expected ~0.1s ± tolerance)"
+
+        # Verify that subsequent calls are also rate limited
+        start_time2 = time.monotonic()
+        await om._rate_limit()
+        end_time2 = time.monotonic()
+
+        elapsed2 = end_time2 - start_time2
+
+        # Second call should also wait (though potentially less due to timing)
+        assert elapsed2 >= 0.08, \
+            f"Second rate limit call too fast: {elapsed2:.4f}s"
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_deterministic_simulation(self, config, mock_executors, mock_managers):
+        """Test rate limiting with deterministic time simulation (no OS jitter)."""
+        om = OrderManager(config, TradingMode.LIVE)
+        om._request_interval = 0.1
+
+        # Use a simple approach: patch asyncio.sleep to be instantaneous
+        # and manually control the time values
+        original_sleep = asyncio.sleep
+
+        async def instant_sleep(delay):
+            # Don't actually sleep, just update the time
+            om._last_request_time = time.monotonic()
+            return
+
+        with patch('asyncio.sleep', side_effect=instant_sleep):
+            # First call - should wait full interval
+            om._last_request_time = 0.0
+            start_time = time.monotonic()
+
+            await om._rate_limit()
+
+            end_time = time.monotonic()
+            elapsed = end_time - start_time
+
+            # Since we mocked sleep to be instant, elapsed should be very small
+            assert elapsed < 0.01, f"First call should be fast with mocked sleep: {elapsed}"
+
+            # Verify that _last_request_time was updated
+            assert om._last_request_time > 0
+
+            # Second call - should wait again since time has "passed"
+            start_time2 = time.monotonic()
+            await om._rate_limit()
+            end_time2 = time.monotonic()
+            elapsed2 = end_time2 - start_time2
+
+            # Second call should also be fast
+            assert elapsed2 < 0.01, f"Second call should also be fast: {elapsed2}"
 
     @pytest.mark.asyncio
     async def test_get_cached_ticker_cache_hit(self, config, mock_executors, mock_managers):

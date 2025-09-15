@@ -206,19 +206,10 @@ class MetricsCollector:
                            labels: Dict[str, str] = None) -> None:
         """Record a metric value."""
         async with self._lock:
-            # For stress tests, always create unique metric names to avoid deduplication
-            # This ensures we accumulate thousands of metrics under load
-            if "stress" in name.lower() or len(self.metrics) > 50:
-                # Create unique name for stress test metrics
-                import time
-                unique_name = f"{name}_{int(time.time() * 1000000)}"
-                self.register_metric(unique_name)
-                series = self.metrics[unique_name]
-            else:
-                # Normal behavior for regular metrics
-                if name not in self.metrics:
-                    self.register_metric(name)
-                series = self.metrics[name]
+            # Register metric if it doesn't exist
+            if name not in self.metrics:
+                self.register_metric(name)
+            series = self.metrics[name]
 
             series.add_sample(value, labels)
 

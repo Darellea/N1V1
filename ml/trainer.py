@@ -18,14 +18,31 @@ from sklearn.metrics import (
     recall_score,
     classification_report,
     confusion_matrix,
-    ConfusionMatrixDisplay,
 )
 from sklearn.calibration import CalibratedClassifierCV, calibration_curve
 from sklearn.isotonic import IsotonicRegression
+from sklearn.preprocessing import StandardScaler, RobustScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
 import joblib
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
+
+# Try to import optional dependencies
+try:
+    import optuna
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+    logging.warning("Optuna not available. Bayesian optimization will be skipped.")
+
+try:
+    import shap
+    SHAP_AVAILABLE = True
+except ImportError:
+    SHAP_AVAILABLE = False
+    logging.warning("SHAP not available. Feature importance analysis will be limited.")
 
 # Optional import for SMOTE
 try:
@@ -149,63 +166,427 @@ def generate_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def create_labels(df: pd.DataFrame, horizon: int = 5, up_thresh: float = 0.005, down_thresh: float = -0.005) -> pd.DataFrame:
+def generate_enhanced_features(df: pd.DataFrame, include_multi_horizon: bool = True,
+                              include_regime_features: bool = True,
+                              include_interaction_features: bool = True) -> pd.DataFrame:
     """
-    Create labels for the model based on future price movements.
+    Generate enhanced features following the retraining guide recommendations.
 
-    Parameters:
-    - horizon: number of periods ahead to look
-    - up_thresh: fractional threshold for labeling an upward move (default 0.005 = 0.5%)
-    - down_thresh: fractional threshold for labeling a downward move (default -0.005 = -0.5%)
+    Args:
+        df: DataFrame with OHLCV data
+        include_multi_horizon: Whether to include multi-horizon features
+        include_regime_features: Whether to include regime-aware features
+        include_interaction_features: Whether to include interaction features
+
+    Returns:
+        DataFrame with enhanced features
     """
     df = df.copy()
 
-    # Ensure horizon is an integer (handle MagicMock in tests)
-    try:
-        horizon = int(horizon)
-    except (TypeError, ValueError):
-        horizon = 5  # Default fallback
+    # Basic technical indicators
+    df['RSI'] = compute_rsi(df['Close'])
+    df['MACD'] = compute_macd(df['Close'])
+    df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
+    df['ATR'] = compute_atr(df)
+    df['StochRSI'] = compute_stochrsi(df['Close'])
+    df['TrendStrength'] = compute_trend_strength(df['Close'])
+    df['Volatility'] = df['Close'].rolling(window=20).std()
 
-    # Validate horizon against DataFrame length
-    if len(df) <= horizon:
-        raise ValueError(f"Insufficient data for horizon {horizon}. Need at least {horizon + 1} samples, got {len(df)}.")
+    # Multi-horizon features (returns 1, 3, 5, 24 bars)
+    if include_multi_horizon:
+        for horizon in [1, 3, 5, 24]:
+            if len(df) > horizon:
+                df[f'return_{horizon}'] = df['Close'].pct_change(horizon)
+                df[f'volatility_{horizon}'] = df['Close'].rolling(window=horizon).std()
+                df[f'mean_return_{horizon}'] = df['Close'].pct_change().rolling(window=horizon).mean()
+                df[f'skew_{horizon}'] = df['Close'].pct_change().rolling(window=horizon).skew()
+                df[f'kurtosis_{horizon}'] = df['Close'].pct_change().rolling(window=horizon).kurt()
 
-    # For very small datasets, use a simpler labeling approach
-    if len(df) <= 3:
-        # For datasets with 3 or fewer rows, create simple labels based on price direction
-        df['Label'] = 0  # Default to neutral
-        if len(df) >= 2:
-            # Compare first and last prices
-            if df['Close'].iloc[-1] > df['Close'].iloc[0] * (1 + up_thresh):
-                df['Label'] = 1
-            elif df['Close'].iloc[-1] < df['Close'].iloc[0] * (1 + down_thresh):
-                df['Label'] = -1
-        return df
+    # Regime-aware features
+    if include_regime_features:
+        # Bollinger Bands
+        bb_period = 20
+        df['BB_middle'] = df['Close'].rolling(window=bb_period).mean()
+        df['BB_upper'] = df['BB_middle'] + 2 * df['Close'].rolling(window=bb_period).std()
+        df['BB_lower'] = df['BB_middle'] - 2 * df['Close'].rolling(window=bb_period).std()
+        df['BB_width'] = (df['BB_upper'] - df['BB_lower']) / df['BB_middle']
+        df['BB_position'] = (df['Close'] - df['BB_lower']) / (df['BB_upper'] - df['BB_lower'])
 
-    df['Future Price'] = df['Close'].shift(-horizon)
-    df['Label'] = np.where(df['Future Price'] > df['Close'] * (1 + up_thresh), 1,
-                           np.where(df['Future Price'] < df['Close'] * (1 + down_thresh), -1, 0))
-    # Rows near the end will have NaN in 'Future Price'; keep only rows with a valid label
-    df = df.drop(columns=['Future Price'])
+        # ATR-normalized returns
+        df['return_1'] = df['Close'].pct_change()
+        df['atr_normalized_return'] = df['return_1'] / df['ATR']
 
-    # For small datasets, if all labels are NaN, create fallback labels
-    if df['Label'].isna().all() and len(df) > 0:
-        # Create simple trend-based labels for small datasets
-        if len(df) >= 2:
-            # Compare first half vs second half of the data
-            mid_point = len(df) // 2
-            first_half_avg = df['Close'].iloc[:mid_point].mean()
-            second_half_avg = df['Close'].iloc[mid_point:].mean()
-            if second_half_avg > first_half_avg * (1 + up_thresh):
-                df['Label'] = 1
-            elif second_half_avg < first_half_avg * (1 + down_thresh):
-                df['Label'] = -1
-            else:
-                df['Label'] = 0
-        else:
-            df['Label'] = 0  # Default to neutral for single-row data
+        # Volume z-score
+        df['volume_sma'] = df['Volume'].rolling(window=20).mean()
+        df['volume_std'] = df['Volume'].rolling(window=20).std()
+        df['volume_zscore'] = (df['Volume'] - df['volume_sma']) / df['volume_std']
+
+        # ADX (Average Directional Index) approximation
+        df['DM_plus'] = np.where(df['High'] - df['High'].shift(1) > df['Low'].shift(1) - df['Low'],
+                                np.maximum(df['High'] - df['High'].shift(1), 0), 0)
+        df['DM_minus'] = np.where(df['Low'].shift(1) - df['Low'] > df['High'] - df['High'].shift(1),
+                                 np.maximum(df['Low'].shift(1) - df['Low'], 0), 0)
+        df['ADX'] = compute_adx(df, period=14)
+
+    # Interaction features
+    if include_interaction_features:
+        df['momentum_volatility'] = df['return_1'] * df['Volatility']
+        df['trend_volume'] = df['TrendStrength'] * df['volume_zscore']
+        df['rsi_macd'] = df['RSI'] * df['MACD']
+        df['atr_trend'] = df['ATR'] * df['TrendStrength']
+
+    # Handle NaNs
+    df = df.bfill().ffill()
+
+    # Fill remaining NaNs with reasonable defaults
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    for col in numeric_cols:
+        if df[col].isna().any():
+            df[col] = df[col].fillna(df[col].median() if not df[col].isna().all() else 0)
 
     return df
+
+
+def compute_adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """Compute Average Directional Index (ADX)."""
+    df = df.copy()
+
+    # Calculate True Range
+    df['TR'] = np.maximum(
+        df['High'] - df['Low'],
+        np.maximum(
+            abs(df['High'] - df['Close'].shift(1)),
+            abs(df['Low'] - df['Close'].shift(1))
+        )
+    )
+
+    # Calculate Directional Movement
+    df['DM_plus'] = np.where(
+        df['High'] - df['High'].shift(1) > df['Low'].shift(1) - df['Low'],
+        np.maximum(df['High'] - df['High'].shift(1), 0),
+        0
+    )
+    df['DM_minus'] = np.where(
+        df['Low'].shift(1) - df['Low'] > df['High'] - df['High'].shift(1),
+        np.maximum(df['Low'].shift(1) - df['Low'], 0),
+        0
+    )
+
+    # Calculate Directional Indicators
+    df['DI_plus'] = 100 * (df['DM_plus'].ewm(span=period).mean() / df['TR'].ewm(span=period).mean())
+    df['DI_minus'] = 100 * (df['DM_minus'].ewm(span=period).mean() / df['TR'].ewm(span=period).mean())
+
+    # Calculate DX and ADX
+    df['DX'] = 100 * abs(df['DI_plus'] - df['DI_minus']) / (df['DI_plus'] + df['DI_minus'])
+    df['ADX'] = df['DX'].ewm(span=period).mean()
+
+    return df['ADX']
+
+
+def remove_outliers(df: pd.DataFrame, columns: list = None, method: str = 'iqr',
+                   multiplier: float = 1.5) -> pd.DataFrame:
+    """
+    Remove outliers from specified columns using various methods.
+
+    Args:
+        df: Input DataFrame
+        columns: Columns to check for outliers (default: all numeric)
+        method: Outlier detection method ('iqr', 'zscore', 'isolation_forest')
+        multiplier: Multiplier for IQR method
+
+    Returns:
+        DataFrame with outliers removed
+    """
+    df = df.copy()
+
+    if columns is None:
+        columns = df.select_dtypes(include=[np.number]).columns.tolist()
+
+    for col in columns:
+        if col not in df.columns:
+            continue
+
+        if method == 'iqr':
+            Q1 = df[col].quantile(0.25)
+            Q3 = df[col].quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - multiplier * IQR
+            upper_bound = Q3 + multiplier * IQR
+            df = df[(df[col] >= lower_bound) & (df[col] <= upper_bound)]
+
+        elif method == 'zscore':
+            z_scores = np.abs((df[col] - df[col].mean()) / df[col].std())
+            df = df[z_scores < 3]
+
+        elif method == 'isolation_forest':
+            try:
+                from sklearn.ensemble import IsolationForest
+                iso = IsolationForest(contamination=0.1, random_state=42)
+                outliers = iso.fit_predict(df[[col]])
+                df = df[outliers == 1]
+            except ImportError:
+                logging.warning("IsolationForest not available, skipping outlier removal for column: " + col)
+
+    return df
+
+
+def create_sample_weights(df: pd.DataFrame, label_col: str = 'label_binary',
+                         profit_col: str = 'forward_return', method: str = 'class_balance') -> np.ndarray:
+    """
+    Create sample weights based on various strategies.
+
+    Args:
+        df: DataFrame with labels and profit information
+        label_col: Name of the label column
+        profit_col: Name of the profit column
+        method: Weighting method ('class_balance', 'profit_impact', 'combined')
+
+    Returns:
+        Array of sample weights
+    """
+    if method == 'class_balance':
+        # Standard class balancing
+        class_counts = df[label_col].value_counts()
+        total_samples = len(df)
+        weights = np.ones(total_samples)
+
+        for class_label, count in class_counts.items():
+            class_weight = total_samples / (len(class_counts) * count)
+            weights[df[label_col] == class_label] = class_weight
+
+    elif method == 'profit_impact':
+        # Weight by expected profit impact
+        if profit_col in df.columns:
+            profit_magnitude = np.abs(df[profit_col])
+            weights = 1 + profit_magnitude / profit_magnitude.max()
+        else:
+            weights = np.ones(len(df))
+
+    elif method == 'combined':
+        # Combine class balance and profit impact
+        class_weights = create_sample_weights(df, label_col, profit_col, 'class_balance')
+        profit_weights = create_sample_weights(df, label_col, profit_col, 'profit_impact')
+
+        # Normalize and combine
+        class_weights = class_weights / class_weights.max()
+        profit_weights = profit_weights / profit_weights.max()
+        weights = (class_weights + profit_weights) / 2
+
+    else:
+        weights = np.ones(len(df))
+
+    return weights
+
+
+def optimize_hyperparameters_optuna(X_train: pd.DataFrame, y_train: pd.Series,
+                                   sample_weights: np.ndarray = None,
+                                   n_trials: int = 25) -> dict:
+    """
+    Optimize LightGBM hyperparameters using Optuna.
+
+    Args:
+        X_train: Training features
+        y_train: Training labels
+        sample_weights: Sample weights for training
+        n_trials: Number of optimization trials
+
+    Returns:
+        Dictionary of best hyperparameters
+    """
+    if not OPTUNA_AVAILABLE:
+        logging.warning("Optuna not available, using default hyperparameters")
+        return {
+            'objective': 'binary',
+            'metric': 'binary_logloss',
+            'boosting_type': 'gbdt',
+            'num_leaves': 31,
+            'learning_rate': 0.05,
+            'feature_fraction': 0.9,
+            'bagging_fraction': 0.8,
+            'bagging_freq': 5,
+            'verbose': -1,
+            'random_state': 42,
+            'n_estimators': 100,
+        }
+
+    def objective(trial):
+        params = {
+            'objective': 'binary',
+            'metric': 'binary_logloss',
+            'boosting_type': 'gbdt',
+            'num_leaves': trial.suggest_int('num_leaves', 20, 100),
+            'max_depth': trial.suggest_int('max_depth', 3, 12),
+            'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
+            'feature_fraction': trial.suggest_float('feature_fraction', 0.5, 1.0),
+            'bagging_fraction': trial.suggest_float('bagging_fraction', 0.5, 1.0),
+            'bagging_freq': trial.suggest_int('bagging_freq', 1, 10),
+            'min_data_in_leaf': trial.suggest_int('min_data_in_leaf', 10, 100),
+            'lambda_l1': trial.suggest_float('lambda_l1', 0.0, 10.0),
+            'lambda_l2': trial.suggest_float('lambda_l2', 0.0, 10.0),
+            'verbose': -1,
+            'random_state': 42,
+            'n_estimators': 100,
+        }
+
+        model = lgb.LGBMClassifier(**params)
+
+        # Use stratified k-fold for evaluation
+        skf = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+        scores = []
+
+        for train_idx, val_idx in skf.split(X_train, y_train):
+            X_fold_train, X_fold_val = X_train.iloc[train_idx], X_train.iloc[val_idx]
+            y_fold_train, y_fold_val = y_train.iloc[train_idx], y_train.iloc[val_idx]
+
+            # Handle sample weights
+            fold_weights = None
+            if sample_weights is not None:
+                fold_weights = sample_weights[train_idx]
+
+            model.fit(
+                X_fold_train, y_fold_train,
+                sample_weight=fold_weights,
+                eval_set=[(X_fold_val, y_fold_val)],
+                callbacks=[lgb.early_stopping(20, verbose=False)]
+            )
+
+            # Use AUC as optimization metric
+            y_pred_proba = model.predict_proba(X_fold_val)[:, 1]
+            auc = roc_auc_score(y_fold_val, y_pred_proba)
+            scores.append(auc)
+
+        return np.mean(scores)
+
+    # Create and run optimization study
+    study = optuna.create_study(direction='maximize')
+    study.optimize(objective, n_trials=n_trials)
+
+    best_params = study.best_params
+    best_params.update({
+        'objective': 'binary',
+        'metric': 'binary_logloss',
+        'boosting_type': 'gbdt',
+        'verbose': -1,
+        'random_state': 42,
+        'n_estimators': 100,
+    })
+
+    logging.info(f"Optuna optimization completed. Best AUC: {study.best_value:.4f}")
+    logging.info(f"Best parameters: {best_params}")
+
+    return best_params
+
+
+def perform_feature_selection(X: pd.DataFrame, y: pd.Series, method: str = 'gain_importance',
+                             top_k: int = None, threshold: float = 0.0) -> list:
+    """
+    Perform feature selection using various methods.
+
+    Args:
+        X: Feature DataFrame
+        y: Target labels
+        method: Selection method ('gain_importance', 'permutation', 'shap')
+        top_k: Number of top features to select
+        threshold: Importance threshold for selection
+
+    Returns:
+        List of selected feature names
+    """
+    if method == 'gain_importance':
+        # Use LightGBM feature importance
+        model = lgb.LGBMClassifier(
+            objective='binary',
+            metric='binary_logloss',
+            boosting_type='gbdt',
+            num_leaves=31,
+            learning_rate=0.05,
+            verbose=-1,
+            random_state=42,
+            n_estimators=100
+        )
+
+        model.fit(X, y)
+        importance_scores = model.feature_importances_
+
+        # Select features based on importance
+        if top_k:
+            top_indices = np.argsort(importance_scores)[-top_k:]
+            selected_features = [X.columns[i] for i in top_indices]
+        else:
+            selected_features = [
+                X.columns[i] for i in range(len(importance_scores))
+                if importance_scores[i] > threshold
+            ]
+
+    elif method == 'permutation' and SHAP_AVAILABLE:
+        # Use permutation importance
+        from sklearn.inspection import permutation_importance
+
+        model = lgb.LGBMClassifier(
+            objective='binary',
+            metric='binary_logloss',
+            boosting_type='gbdt',
+            num_leaves=31,
+            learning_rate=0.05,
+            verbose=-1,
+            random_state=42,
+            n_estimators=100
+        )
+
+        model.fit(X, y)
+        perm_importance = permutation_importance(model, X, y, n_repeats=5, random_state=42)
+
+        if top_k:
+            top_indices = np.argsort(perm_importance.importances_mean)[-top_k:]
+            selected_features = [X.columns[i] for i in top_indices]
+        else:
+            selected_features = [
+                X.columns[i] for i in range(len(perm_importance.importances_mean))
+                if perm_importance.importances_mean[i] > threshold
+            ]
+
+    elif method == 'shap' and SHAP_AVAILABLE:
+        # Use SHAP feature importance
+        model = lgb.LGBMClassifier(
+            objective='binary',
+            metric='binary_logloss',
+            boosting_type='gbdt',
+            num_leaves=31,
+            learning_rate=0.05,
+            verbose=-1,
+            random_state=42,
+            n_estimators=100
+        )
+
+        model.fit(X, y)
+
+        explainer = shap.TreeExplainer(model)
+        shap_values = explainer.shap_values(X)
+
+        # For binary classification, shap_values might be a list
+        if isinstance(shap_values, list):
+            shap_values = shap_values[1]  # Take positive class
+
+        feature_importance = np.abs(shap_values).mean(axis=0)
+
+        if top_k:
+            top_indices = np.argsort(feature_importance)[-top_k:]
+            selected_features = [X.columns[i] for i in top_indices]
+        else:
+            selected_features = [
+                X.columns[i] for i in range(len(feature_importance))
+                if feature_importance[i] > threshold
+            ]
+
+    else:
+        # Default: return all features
+        logging.warning(f"Feature selection method '{method}' not available, using all features")
+        selected_features = list(X.columns)
+
+    logging.info(f"Selected {len(selected_features)} features using {method}: {selected_features}")
+    return selected_features
+
+
 
 
 def create_binary_labels(df: pd.DataFrame, horizon: int = 5, profit_threshold: float = 0.005,
@@ -346,10 +727,18 @@ def train_model_binary(
     X = df[feature_columns].copy()
     y = df[label_col].copy()
 
+    # Use sample weights if available
+    sample_weights_all = None
+    if 'sample_weight' in df.columns:
+        sample_weights_all = df['sample_weight'].values
+        logging.info("Using profit-impact based sample weights")
+
     # Drop rows with NaN values
     valid_mask = ~X.isna().any(axis=1) & ~y.isna()
     X = X[valid_mask]
     y = y[valid_mask].astype(int)
+    if sample_weights_all is not None:
+        sample_weights_all = sample_weights_all[valid_mask]
 
     # Handle small datasets by automatically reducing n_splits
     if len(X) < n_splits * 2:
@@ -368,6 +757,28 @@ def train_model_binary(
         class_weights[cls] = total_samples / (len(class_dist) * class_dist[cls])
 
     logging.info(f"Class weights: {class_weights}")
+
+    # Perform hyperparameter tuning if requested
+    if tune and OPTUNA_AVAILABLE:
+        logging.info(f"Performing Optuna hyperparameter optimization with {n_trials} trials...")
+        best_params = optimize_hyperparameters_optuna(
+            X, y, sample_weights=sample_weights_all, n_trials=n_trials
+        )
+        logging.info(f"Best hyperparameters found: {best_params}")
+    else:
+        best_params = {
+            'objective': 'binary',
+            'metric': 'binary_logloss',
+            'boosting_type': 'gbdt',
+            'num_leaves': 31,
+            'learning_rate': 0.05,
+            'feature_fraction': 0.9,
+            'bagging_fraction': 0.8,
+            'bagging_freq': 5,
+            'verbose': -1,
+            'random_state': 42,
+            'n_estimators': 100,
+        }
 
     # Walk-forward validation setup
     tscv = TimeSeriesSplit(n_splits=n_splits, test_size=None, gap=0)
@@ -430,20 +841,8 @@ def train_model_binary(
         # Calculate sample weights for training
         sample_weights = np.array([class_weights[label] for label in y_train])
 
-        # Model parameters
-        model_params = {
-            'objective': 'binary',
-            'metric': 'binary_logloss',
-            'boosting_type': 'gbdt',
-            'num_leaves': 31,
-            'learning_rate': 0.05,
-            'feature_fraction': 0.9,
-            'bagging_fraction': 0.8,
-            'bagging_freq': 5,
-            'verbose': -1,
-            'random_state': 42,
-            'n_estimators': 100,
-        }
+        # Use optimized parameters if available, otherwise use defaults
+        model_params = best_params.copy()
 
         # Create and train model
         model = lgb.LGBMClassifier(**model_params)
@@ -651,6 +1050,57 @@ def train_model_binary(
     if eval_economic:
         results['overall_metrics'].update(overall_economic)
 
+    # Generate and save binary confusion matrix
+    logging.info("Generating binary confusion matrix...")
+
+    # Create confusion matrix from all fold predictions
+    cm = confusion_matrix(fold_true_labels, fold_predictions, labels=[0, 1])
+
+    # Log confusion matrix to console
+    logging.info(f"Binary Confusion Matrix:\n{cm}")
+
+    # Save confusion matrix plot
+    fig, ax = plt.subplots(figsize=(8, 6))
+    im = ax.imshow(cm, cmap='Blues', interpolation='nearest')
+
+    # Add text annotations
+    for i in range(2):
+        for j in range(2):
+            text_color = "white" if cm[i, j] > cm.max() / 2 else "black"
+            ax.text(j, i, f'{cm[i, j]}', ha="center", va="center", color=text_color, fontsize=12)
+
+    ax.set_xticks([0, 1])
+    ax.set_yticks([0, 1])
+    ax.set_xticklabels(['Skip (0)', 'Trade (1)'], fontsize=10)
+    ax.set_yticklabels(['Skip (0)', 'Trade (1)'], fontsize=10)
+    ax.set_xlabel('Predicted Label', fontsize=12)
+    ax.set_ylabel('True Label', fontsize=12)
+    ax.set_title('Binary Confusion Matrix - Trade/No-Trade Model', fontsize=14, pad=20)
+
+    # Add colorbar
+    cbar = ax.figure.colorbar(im, ax=ax)
+    cbar.ax.set_ylabel("Count", rotation=-90, va="bottom")
+
+    plt.tight_layout()
+
+    # Save to matrices folder
+    os.makedirs('matrices', exist_ok=True)
+    confusion_matrix_path = os.path.join('matrices', 'confusion_matrix_binary.png')
+    plt.savefig(confusion_matrix_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+    logging.info(f"Binary confusion matrix saved to {confusion_matrix_path}")
+
+    # Add confusion matrix to results
+    results['confusion_matrix'] = {
+        'matrix': cm.tolist(),
+        'labels': ['Skip (0)', 'Trade (1)'],
+        'total_samples': int(cm.sum()),
+        'accuracy': float((cm[0, 0] + cm[1, 1]) / cm.sum()) if cm.sum() > 0 else 0.0,
+        'precision_trade': float(cm[1, 1] / (cm[1, 1] + cm[0, 1])) if (cm[1, 1] + cm[0, 1]) > 0 else 0.0,
+        'recall_trade': float(cm[1, 1] / (cm[1, 1] + cm[1, 0])) if (cm[1, 1] + cm[1, 0]) > 0 else 0.0
+    }
+
     # Save results
     with open(results_path, 'w') as f:
         json.dump(results, f, indent=2, default=str)
@@ -713,676 +1163,6 @@ def train_model_binary(
         logging.warning(f"Failed to write model card JSON: {e}")
 
     return results
-
-
-def train_model(
-    df: pd.DataFrame,
-    save_path: str,
-    results_path: str = 'training_results.json',
-    n_splits: int = 5,
-    horizon: int = 5,
-    up_thresh: float = 0.005,
-    down_thresh: float = -0.005,
-    drop_neutral: bool = False,
-    feature_columns: list | None = None,
-    tune: bool = False,
-    n_trials: int = 25,
-    feature_selection: bool = False,
-    early_stopping_rounds: int = 50,
-    eval_profit: bool = False,
-):
-    """
-    Train a LightGBM model using TimeSeriesSplit cross-validation, optional Optuna tuning,
-    save metrics & metadata to JSON, plot feature importance (gain), save confusion matrices per fold,
-    optionally perform feature selection and retrain model on selected features.
-
-    New features:
-    - early_stopping_rounds: passed to LightGBM fit for early stopping
-    - eval_profit: if True, a custom profit metric will be used/logged
-    """
-    # Input validation - check for mock objects and invalid data
-    if not isinstance(df, pd.DataFrame):
-        raise ValueError("Input df must be a pandas DataFrame, not a mock object")
-
-    if df.empty:
-        raise ValueError("Input DataFrame is empty")
-
-    # Additional validation for X and y after extraction
-    if feature_columns is None:
-        feature_columns = ['RSI', 'MACD', 'EMA_20', 'ATR', 'StochRSI', 'TrendStrength', 'Volatility']
-
-    # Ensure feature_columns is a proper list of strings
-    if not isinstance(feature_columns, list):
-        try:
-            feature_columns = list(feature_columns)
-        except Exception:
-            # Handle case where feature_columns might be a numpy array or other object
-            feature_columns = ['RSI', 'MACD', 'EMA_20', 'ATR', 'StochRSI', 'TrendStrength', 'Volatility']
-    feature_columns = [str(col) for col in feature_columns]  # Ensure all are strings
-
-    # Validate and filter feature columns that exist in the DataFrame
-    valid_features = [col for col in feature_columns if col in df.columns]
-    if len(valid_features) != len(feature_columns):
-        missing_features = [col for col in feature_columns if col not in df.columns]
-        logging.warning(f"Missing feature columns: {missing_features}. Using only valid features: {valid_features}")
-        feature_columns = valid_features
-
-    # Ensure we have at least some valid features
-    if not feature_columns:
-        raise ValueError("No valid feature columns found in DataFrame")
-
-    if 'Label' not in df.columns:
-        raise ValueError("DataFrame must contain 'Label' column")
-
-    # Ensure we have enough samples for cross-validation
-    if len(df) < n_splits:
-        n_splits = max(2, len(df) // 2)  # Use at least 2 splits, or half the data size
-        logging.warning(f"Dataset too small for requested {n_splits} splits, reduced to {n_splits} splits")
-
-    # Very relaxed check for small datasets (allow ≥2 samples for testing)
-    if len(df) < 2:
-        raise ValueError(f"Dataset too small after preprocessing: {len(df)} samples. Need at least 2 samples.")
-    elif len(df) < 5:
-        logging.warning(f"Very small dataset: {len(df)} samples. Training may not be reliable.")
-
-    # conditional import for optuna to avoid hard dependency when tuning not used
-    optuna = None
-    if tune:
-        try:
-            import optuna  # type: ignore
-        except Exception as e:
-            logging.error("Optuna is required for --tune but not installed. Install optuna or run without --tune.")
-            raise
-
-    if feature_columns is None:
-        feature_columns = ['RSI', 'MACD', 'EMA_20', 'ATR', 'StochRSI', 'TrendStrength', 'Volatility']
-
-    X = df[feature_columns].copy()
-    y = df['Label'].copy()
-
-    # Drop rows where label is NaN (due to shift in create_labels)
-    valid_mask = ~y.isna()
-    X = X[valid_mask]
-    y = y[valid_mask].astype(int)
-
-    # If drop_neutral requested, remove Label == 0
-    if drop_neutral:
-        mask = y != 0
-        X = X[mask]
-        y = y[mask]
-        logging.info("Dropped neutral (Label==0) rows before training.")
-
-    # If any NaNs remain in features after fill, drop those rows
-    feature_nan_mask = X.isna().any(axis=1)
-    if feature_nan_mask.any():
-        X = X[~feature_nan_mask]
-        y = y[~feature_nan_mask]
-        logging.info(f"Dropped {feature_nan_mask.sum()} rows with NaNs in features after fill.")
-
-    # Enhanced dataset validation and preprocessing
-    class_dist = Counter(y)
-    logging.info(f"Class distribution before training: {class_dist}")
-
-    # Check for single class
-    unique_classes = len(class_dist)
-    if unique_classes < 2:
-        if class_dist:
-            logging.warning(f"⚠️ Only one class present in target: {list(class_dist.keys())[0]}. Skipping training.")
-        else:
-            logging.warning("⚠️ No classes present in target after preprocessing. Skipping training.")
-        # Create minimal results for single-class scenario
-        results = {
-            'metadata': {
-                'label_horizon': horizon,
-                'thresholds': {'up_thresh': up_thresh, 'down_thresh': down_thresh},
-                'feature_list': feature_columns,
-                'drop_neutral': bool(drop_neutral),
-                'early_stopping_rounds': int(early_stopping_rounds),
-                'single_class_warning': True,
-            },
-            'class_distribution': dict(class_dist),
-            'folds': [],
-            'mean': {'f1': 0.0, 'precision': 0.0, 'recall': 0.0},
-        }
-        try:
-            with open(results_path, 'w') as fh:
-                json.dump(results, fh, indent=2)
-            logging.info(f"Training results saved to {results_path} (single class scenario)")
-        except Exception as e:
-            logging.error(f"Failed to save results: {e}")
-        return  # Exit early for single-class datasets
-
-    # Check for severe class imbalance
-    total_samples = len(y)
-    minority_class_ratio = min(class_dist.values()) / total_samples
-    if minority_class_ratio < 0.1:
-        logging.warning(f"⚠️ Severe class imbalance detected: {class_dist}. Minority class ratio: {minority_class_ratio:.3f}")
-
-    # Safe cross-validation setup
-    if len(X) < n_splits + 1:
-        original_n_splits = n_splits
-        if len(X) >= 3:  # Need at least 3 samples for meaningful CV
-            n_splits = min(n_splits, len(X) - 1)
-            logging.warning(f"⚠️ Insufficient samples for n_splits={original_n_splits}, reducing to {n_splits}")
-        else:
-            raise ValueError(f"Dataset too small for cross-validation: {len(X)} samples. Need at least 3 samples.")
-
-    # Choose appropriate cross-validation strategy
-    try:
-        # Try StratifiedKFold first for better class balance
-        cv_splitter = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
-        # Test if stratification is possible
-        for train_idx, test_idx in cv_splitter.split(X, y):
-            train_classes = set(y.iloc[train_idx])
-            test_classes = set(y.iloc[test_idx])
-            if len(train_classes) < unique_classes or len(test_classes) < unique_classes:
-                raise ValueError("Stratification would create folds with missing classes")
-        logging.info(f"Using StratifiedKFold with {n_splits} splits for balanced class distribution")
-    except (ValueError, Exception) as e:
-        # Fallback to regular KFold if stratification fails
-        logging.warning(f"⚠️ Stratification not possible ({e}), falling back to KFold")
-        cv_splitter = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-        logging.info(f"Using KFold with {n_splits} splits")
-
-    # Optional SMOTE for severe imbalance
-    if SMOTE_AVAILABLE and minority_class_ratio < 0.1 and len(X) >= 10:
-        try:
-            smote = SMOTE(random_state=42, k_neighbors=min(5, len(X) - 1))
-            X_resampled, y_resampled = smote.fit_resample(X, y)
-            logging.info(f"Applied SMOTE: {len(X)} -> {len(X_resampled)} samples")
-            X, y = X_resampled, y_resampled
-            class_dist = Counter(y)
-            logging.info(f"Class distribution after SMOTE: {class_dist}")
-        except Exception as e:
-            logging.warning(f"SMOTE failed: {e}. Continuing with original data.")
-
-    fold_metrics = []
-    fold_idx = 0
-    best_iterations = []
-
-    # Ensure results directory exists for saving confusion matrix images
-    results_dir = os.path.dirname(os.path.abspath(results_path)) or '.'
-    os.makedirs(results_dir, exist_ok=True)
-
-    # Ensure matrices directory exists for saving confusion matrices
-    os.makedirs("matrices", exist_ok=True)
-
-    # Define profit calculation helper
-    def compute_profit(y_true, y_pred):
-        y_true = np.array(y_true)
-        y_pred = np.array(y_pred)
-        profits = []
-        for yt, yp in zip(y_true, y_pred):
-            if yp == 0:
-                profits.append(0.0)
-            elif yp in (1, -1):
-                profits.append(1.0 if yp == yt else -1.0)
-            else:
-                profits.append(0.0)
-        return float(np.mean(profits))
-
-    # LightGBM eval metric wrapper
-    def lgb_profit_eval(preds, dataset):
-        y_true = dataset.get_label().astype(int)
-        n = len(y_true)
-        if len(preds) == n:
-            # binary case: preds are probability for positive class
-            y_pred = (np.array(preds) > 0.5).astype(int) * 2 - 1
-        else:
-            num_class = int(len(preds) / n)
-            try:
-                arr = np.array(preds).reshape(num_class, n).T
-            except Exception:
-                arr = np.array(preds).reshape(n, num_class)
-            y_pred_idx = np.argmax(arr, axis=1)
-            labels_map = np.unique(y_true)
-            # map indices to original labels
-            y_pred = labels_map[y_pred_idx]
-        mean_profit = compute_profit(y_true, y_pred)
-        return ('profit', mean_profit, True)
-
-    # If tuning requested, run Optuna to get best params
-    best_params = None
-    if tune:
-        logging.info(f"Starting Optuna tuning with {n_trials} trials (optimizing weighted F1)...")
-
-        def objective(trial):
-            # Suggest hyperparameters
-            params = {
-                'learning_rate': trial.suggest_loguniform('learning_rate', 1e-3, 0.3),
-                'n_estimators': int(trial.suggest_int('n_estimators', 100, 2000)),
-                'num_leaves': int(trial.suggest_int('num_leaves', 15, 255)),
-                'max_depth': int(trial.suggest_int('max_depth', -1, 15)),
-                'min_child_samples': int(trial.suggest_int('min_child_samples', 5, 100)),
-                'subsample': trial.suggest_uniform('subsample', 0.5, 1.0),
-                'colsample_bytree': trial.suggest_uniform('colsample_bytree', 0.5, 1.0),
-            }
-            # Evaluate with the chosen cross-validation strategy
-            scores = []
-            for train_idx, test_idx in cv_splitter.split(X, y):
-                X_tr, X_val = X.iloc[train_idx], X.iloc[test_idx]
-                y_tr, y_val = y.iloc[train_idx], y.iloc[test_idx]
-                model = lgb.LGBMClassifier(
-                    random_state=42,
-                    deterministic=True,
-                    num_threads=1,
-                    class_weight='balanced',
-                    **params,
-                )
-                # Use early stopping if provided
-                fit_kwargs = {}
-                if early_stopping_rounds:
-                    # Some LightGBM sklearn wrappers do not accept early_stopping_rounds
-                    # directly in fit() depending on version. Only provide eval_set here;
-                    # early stopping will be best-effort based on the installed lightgbm.
-                    fit_kwargs['eval_set'] = [(X_val, y_val)]
-                if eval_profit:
-                    fit_kwargs['eval_metric'] = lgb_profit_eval
-                model.fit(X_tr, y_tr, **fit_kwargs)
-                y_pred = model.predict(X_val)
-                score = f1_score(y_val, y_pred, average='weighted', zero_division=0)
-                scores.append(score)
-            # We maximize mean weighted F1
-            return float(np.mean(scores))
-
-        study = optuna.create_study(direction='maximize')
-        study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
-        best_params = study.best_params
-        best_score = study.best_value
-        logging.info(f"Optuna best score (mean weighted F1): {best_score:.4f}")
-        logging.info(f"Optuna best params: {json.dumps(best_params, indent=2)}")
-
-    # Cross-validation loop for reporting (use either default or tuned params for training inside CV)
-    for train_index, test_index in cv_splitter.split(X, y):
-        fold_idx += 1
-        X_train, X_test = X.iloc[train_index], X.iloc[test_index]
-        y_train, y_test = y.iloc[train_index], y.iloc[test_index]
-
-        # Check if fold has only one class
-        train_classes = set(y_train)
-        test_classes = set(y_test)
-        if len(train_classes) < 2 or len(test_classes) < 2:
-            logging.warning(f"⚠️ Fold {fold_idx} has insufficient class diversity. Train classes: {train_classes}, Test classes: {test_classes}. Skipping fold.")
-            fold_entry = {
-                'fold': fold_idx,
-                'f1': 0.0,
-                'precision': 0.0,
-                'recall': 0.0,
-                'per_class': {},
-                'confusion_matrix': [],
-                'skipped_reason': 'insufficient_class_diversity',
-            }
-            if eval_profit:
-                fold_entry['profit'] = 0.0
-            fold_metrics.append(fold_entry)
-            continue
-
-        if best_params:
-            model_params = {
-                'random_state': 42,
-                'class_weight': 'balanced',
-                'deterministic': True,
-                'num_threads': 1,
-                **best_params,
-            }
-        else:
-            model_params = {
-                'random_state': 42,
-                'n_estimators': 100,
-                'class_weight': 'balanced',
-                'deterministic': True,
-                'num_threads': 1,
-            }
-
-        model = lgb.LGBMClassifier(**model_params)
-
-        # Prepare fit kwargs for early stopping and custom eval
-        fit_kwargs = {}
-        if early_stopping_rounds:
-            # Provide eval_set for possible early stopping support in installed lightgbm.
-            fit_kwargs['eval_set'] = [(X_test, y_test)]
-        if eval_profit:
-            fit_kwargs['eval_metric'] = lgb_profit_eval
-
-        try:
-            model.fit(X_train, y_train, **fit_kwargs)
-        except Exception as e:
-            logging.warning(f"⚠️ Failed to fit model for fold {fold_idx}: {e}. Skipping fold.")
-            fold_entry = {
-                'fold': fold_idx,
-                'f1': 0.0,
-                'precision': 0.0,
-                'recall': 0.0,
-                'per_class': {},
-                'confusion_matrix': [],
-                'skipped_reason': f'fit_error: {str(e)}',
-            }
-            if eval_profit:
-                fold_entry['profit'] = 0.0
-            fold_metrics.append(fold_entry)
-            continue
-
-        # Log best iteration if available
-        best_it = getattr(model, 'best_iteration_', None)
-        if best_it is not None:
-            best_iterations.append(int(best_it))
-            logging.info(f"Fold {fold_idx} - best_iteration: {best_it}")
-
-        try:
-            y_pred = model.predict(X_test)
-            # Ensure y_pred is a numpy array, not MagicMock
-            y_pred = np.array(y_pred) if not isinstance(y_pred, np.ndarray) else y_pred
-        except Exception as e:
-            logging.warning(f"⚠️ Failed to predict for fold {fold_idx}: {e}. Skipping fold.")
-            fold_entry = {
-                'fold': fold_idx,
-                'f1': 0.0,
-                'precision': 0.0,
-                'recall': 0.0,
-                'per_class': {},
-                'confusion_matrix': [],
-                'skipped_reason': f'predict_error: {str(e)}',
-            }
-            if eval_profit:
-                fold_entry['profit'] = 0.0
-            fold_metrics.append(fold_entry)
-            continue
-
-        # Skip fold if predictions are empty or test set is empty
-        if len(y_pred) == 0 or len(y_test) == 0:
-            logging.warning(f"Fold {fold_idx} - Empty predictions or test set, skipping fold")
-            fold_entry = {
-                'fold': fold_idx,
-                'f1': 0.0,
-                'precision': 0.0,
-                'recall': 0.0,
-                'per_class': {},
-                'confusion_matrix': [],
-                'skipped_reason': 'empty_predictions',
-            }
-            if eval_profit:
-                fold_entry['profit'] = 0.0
-            fold_metrics.append(fold_entry)
-            continue
-
-        f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
-        prec = precision_score(y_test, y_pred, average='weighted', zero_division=0)
-        rec = recall_score(y_test, y_pred, average='weighted', zero_division=0)
-
-        # Per-class metrics and confusion matrix
-        report = classification_report(y_test, y_pred, output_dict=True, zero_division=0)
-        cm = confusion_matrix(y_test, y_pred)
-
-        # Compute profit metric per fold if requested
-        profit_val = None
-        if eval_profit:
-            profit_val = compute_profit(y_test, y_pred)
-            logging.info(f"Fold {fold_idx} - Profit: {profit_val:.4f}")
-
-        logging.info(f"Fold {fold_idx} - F1: {f1:.4f}, Precision: {prec:.4f}, Recall: {rec:.4f}")
-        logging.info(f"Fold {fold_idx} - Per-class metrics:\n{json.dumps(report, indent=2)}")
-        logging.info(f"Fold {fold_idx} - Confusion matrix:\n{cm.tolist()}")
-
-        # Save confusion matrix plot
-        try:
-            labels = np.unique(np.concatenate([y_test, y_pred]))
-            disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
-            fig, ax = plt.subplots(figsize=(6, 5))
-            disp.plot(ax=ax, cmap='Blues', colorbar=False)
-            plt.title(f'Confusion Matrix - Fold {fold_idx}')
-            cm_path = os.path.join("matrices", f'confusion_matrix_fold{fold_idx}.png')
-            plt.tight_layout()
-            plt.savefig(cm_path)
-            plt.close(fig)
-            logging.info(f"Confusion matrix for fold {fold_idx} saved at matrices/confusion_matrix_fold{fold_idx}.png")
-            cm_list = cm.tolist()
-        except Exception as e:
-            logging.warning(f"Failed to save confusion matrix plot for fold {fold_idx}: {e}")
-            cm_list = cm.tolist()
-
-        fold_entry = {
-            'fold': fold_idx,
-            'f1': f1,
-            'precision': prec,
-            'recall': rec,
-            'per_class': report,
-            'confusion_matrix': cm_list,
-        }
-        if profit_val is not None:
-            fold_entry['profit'] = profit_val
-
-        fold_metrics.append(fold_entry)
-
-    # Compute averages
-    mean_f1 = np.mean([m['f1'] for m in fold_metrics]) if fold_metrics else 0.0
-    mean_precision = np.mean([m['precision'] for m in fold_metrics]) if fold_metrics else 0.0
-    mean_recall = np.mean([m['recall'] for m in fold_metrics]) if fold_metrics else 0.0
-    mean_profit = np.mean([m.get('profit', 0.0) for m in fold_metrics]) if fold_metrics else 0.0
-
-    logging.info(f"Average F1: {mean_f1:.4f}")
-    logging.info(f"Average Precision: {mean_precision:.4f}")
-    logging.info(f"Average Recall: {mean_recall:.4f}")
-    if eval_profit:
-        logging.info(f"Average Profit: {mean_profit:.4f}")
-
-    # Summary logging
-    successful_folds = len([f for f in fold_metrics if f.get('skipped_reason') is None])
-    total_folds = len(fold_metrics)
-    logging.info(f"Training completed: {successful_folds}/{total_folds} folds successful")
-    if successful_folds < total_folds:
-        skipped_folds = [f for f in fold_metrics if f.get('skipped_reason') is not None]
-        reasons = Counter([f['skipped_reason'] for f in skipped_folds])
-        logging.info(f"Skipped folds by reason: {dict(reasons)}")
-
-    # Save metrics and metadata to JSON (metadata updated later with best_params or selected_features if any)
-    results = {
-        'metadata': {
-            'label_horizon': horizon,
-            'thresholds': {'up_thresh': up_thresh, 'down_thresh': down_thresh},
-            'feature_list': feature_columns,
-            'drop_neutral': bool(drop_neutral),
-            'early_stopping_rounds': int(early_stopping_rounds),
-            'cv_strategy': type(cv_splitter).__name__,
-            'n_splits': n_splits,
-            'smote_applied': SMOTE_AVAILABLE and minority_class_ratio < 0.1 and len(X) >= 10,
-        },
-        'class_distribution': dict(class_dist),
-        'folds': fold_metrics,
-        'mean': {'f1': mean_f1, 'precision': mean_precision, 'recall': mean_recall},
-    }
-
-    if eval_profit:
-        results['mean']['profit'] = mean_profit
-
-    if best_params:
-        results['metadata']['best_params'] = best_params
-
-    try:
-        with open(results_path, 'w') as fh:
-            json.dump(results, fh, indent=2)
-        logging.info(f"Training metrics and metadata saved to {results_path}")
-    except Exception as e:
-        logging.error(f"Failed to save training metrics to {results_path}: {e}")
-
-    # Train final model on full dataset and save it
-    final_model_params = {}
-    if best_params:
-        final_model_params = {
-            'random_state': 42,
-            'class_weight': 'balanced',
-            'deterministic': True,
-            'num_threads': 1,
-            **best_params,
-        }
-    else:
-        final_model_params = {
-            'random_state': 42,
-            'n_estimators': 100,
-            'class_weight': 'balanced',
-            'deterministic': True,
-            'num_threads': 1,
-        }
-
-    # If we collected best_iterations from folds, use their mean as n_estimators for the final model.
-    # Guard against invalid or zero values coming from different LightGBM wrappers.
-    if best_iterations:
-        try:
-            valid_iters = [int(x) for x in best_iterations if isinstance(x, (int, float)) and int(x) > 0]
-            if valid_iters:
-                avg_best_it = int(np.mean(valid_iters))
-                if avg_best_it > 0:
-                    final_model_params['n_estimators'] = int(avg_best_it)
-                    logging.info(f"Retraining final model with n_estimators={avg_best_it} based on fold best_iteration_")
-        except Exception:
-            # If anything goes wrong, fall back to default n_estimators already set above.
-            pass
-
-    # Guard: ensure n_estimators is a positive integer to avoid LightGBM train errors
-    try:
-        n_est = int(final_model_params.get("n_estimators", 0))
-        if n_est <= 0:
-            final_model_params["n_estimators"] = 100
-    except Exception:
-        final_model_params["n_estimators"] = 100
-
-    # Calculate sample weights for the final model (similar to class balancing)
-    # Use class weights if available, otherwise use uniform weights
-    if 'class_dist' in locals() and class_dist:
-        final_sample_weights = np.array([len(y) / (len(class_dist) * class_dist.get(label, 1)) for label in y])
-    else:
-        # Default to uniform weights if class distribution not available
-        final_sample_weights = np.ones(len(y))
-
-    final_model = lgb.LGBMClassifier(**final_model_params)
-    # For final model, no validation set; training on full data. Early stopping can't be used without a validation set.
-    final_model.fit(X, y, sample_weight=final_sample_weights)
-
-    # Full feature importance plot (save for transparency)
-    plt.figure(figsize=(10, 8))
-    try:
-        lgb.plot_importance(final_model, importance_type='gain', max_num_features=50)
-        plt.tight_layout()
-        fi_path = os.path.join(results_dir, 'feature_importance.png')
-        plt.savefig(fi_path)
-        plt.close()
-        logging.info(f"Feature importance chart saved to {fi_path}")
-    except Exception as e:
-        logging.warning(f"Failed to plot feature importance: {e}")
-
-    # Feature selection (optional)
-    selected_features = feature_columns
-    if feature_selection:
-        try:
-            # Get gain importances
-            booster = final_model.booster_
-            gains = booster.feature_importance(importance_type='gain')
-            # Map to features (ensure ordering matches feature_columns)
-            feature_gain_pairs = list(zip(feature_columns, gains))
-            max_gain = max(gains) if len(gains) > 0 else 0.0
-            threshold = max_gain * 0.01  # keep features with >=1% of max importance
-            kept = [f for f, g in feature_gain_pairs if g >= threshold]
-            if not kept:
-                logging.warning("Feature selection removed all features; keeping original feature set.")
-                kept = feature_columns
-            selected_features = kept
-            logging.info(f"Selected features after importance thresholding ({threshold:.4f}): {selected_features}")
-
-            # Validate selected features exist in DataFrame before indexing
-            valid_selected = [f for f in selected_features if f in X.columns]
-            if len(valid_selected) != len(selected_features):
-                missing = [f for f in selected_features if f not in X.columns]
-                logging.warning(f"Some selected features not found in DataFrame: {missing}. Using valid features only.")
-                selected_features = valid_selected
-
-            if not selected_features:
-                raise ValueError("No valid features available for retraining after feature selection")
-
-            # Retrain final model on selected features
-            X_selected = X[selected_features].copy()
-            final_model = lgb.LGBMClassifier(**final_model_params)
-            final_model.fit(X_selected, y)
-
-            # Update metadata and results JSON with selected features
-            results['metadata']['selected_features'] = selected_features
-            with open(results_path, 'w') as fh:
-                json.dump(results, fh, indent=2)
-            logging.info("Retrained final model on selected features and updated results JSON.")
-        except Exception as e:
-            # Catch any Pandas internal errors (like TypeError from isinstance checks) and provide clear error message
-            if "isinstance" in str(e).lower() or "TypeError" in str(type(e).__name__):
-                logging.error(f"Feature selection failed due to DataFrame indexing error: {e}")
-                raise ValueError("Feature selection failed due to invalid feature column types. Ensure feature_columns contains valid string column names.") from e
-            else:
-                logging.warning(f"Feature selection failed: {e}")
-
-    # Save the final model with proper error handling (don't re-raise)
-    try:
-        joblib.dump(final_model, save_path)
-        logging.info(f"Final model trained on full data and saved to {save_path}")
-    except Exception as e:
-        error_msg = f"Failed to save model to {save_path}: {e}"
-        logging.error(error_msg)
-        # Don't re-raise - just log the error for graceful handling in tests
-
-    # Persist a model card (JSON) containing feature schema, training window, scaler params (if any),
-    # CV settings and other metadata useful for inference-time validation and model governance.
-    try:
-        model_card = {
-            "model_file": os.path.abspath(save_path),
-            "feature_list": feature_columns,
-            "selected_features": results.get("metadata", {}).get("selected_features", feature_columns),
-            "training_metadata": results.get("metadata", {}),
-            "cv": {
-                "n_splits": int(n_splits),
-                "best_iterations": best_iterations,
-                "best_params": best_params,
-            },
-            "training_window": None,
-            "scaler": None,
-            "caveats": (
-                "This model was trained on historical OHLCV-based technical features. "
-                "Validate feature schema at inference time. Beware of data drift and "
-                "difference between live and backtest data; re-train and validate periodically."
-            )
-        }
-
-        # Attempt to infer training window from DataFrame index or timestamp-like columns
-        try:
-            # If DataFrame index is DatetimeIndex or convertible, use that
-            if hasattr(df, "index") and len(df.index):
-                try:
-                    mins = df.index.min()
-                    maxs = df.index.max()
-                    model_card["training_window"] = {"start": str(mins), "end": str(maxs)}
-                except Exception:
-                    model_card["training_window"] = None
-            # Fallback: look for common timestamp columns
-            elif "timestamp" in df.columns:
-                try:
-                    model_card["training_window"] = {
-                        "start": str(df["timestamp"].min()),
-                        "end": str(df["timestamp"].max()),
-                    }
-                except Exception:
-                    model_card["training_window"] = None
-        except Exception:
-            model_card["training_window"] = None
-
-        # Save model card as JSON next to the model file
-        card_path = os.path.splitext(os.path.abspath(save_path))[0] + ".model_card.json"
-        with open(card_path, "w", encoding="utf-8") as fh:
-            json.dump(model_card, fh, indent=2, default=str)
-        logging.info(f"Model card saved to {card_path}")
-    except Exception as e:
-        logging.warning(f"Failed to write model card JSON: {e}")
-
-    # Update results JSON with final metadata if not yet written
-    try:
-        with open(results_path, 'w') as fh:
-            json.dump(results, fh, indent=2)
-        logging.info(f"Final results JSON updated at {results_path}")
-    except Exception as e:
-        logging.error(f"Failed to update final results JSON: {e}")
 
 
 def setup_logging(logfile: str | None = None, level: int = logging.INFO):
@@ -1462,7 +1242,16 @@ def main():
     if not all(col in df.columns for col in required_columns):
         raise ValueError(f"Data must contain columns: {required_columns}")
 
-    df = generate_features(df)
+    # Generate enhanced features following retraining guide
+    df = generate_enhanced_features(
+        df,
+        include_multi_horizon=True,
+        include_regime_features=True,
+        include_interaction_features=True
+    )
+
+    # Remove outliers to improve data quality
+    df = remove_outliers(df, method='iqr', multiplier=1.5)
 
     # Use binary labels for trading decisions
     df = create_binary_labels(df, horizon=args.horizon, profit_threshold=args.up_thresh,
@@ -1476,8 +1265,47 @@ def main():
     else:
         raise ValueError("label_binary column not found after create_binary_labels.")
 
+    # Create sample weights based on profit impact
+    if 'forward_return' in df.columns:
+        sample_weights = create_sample_weights(
+            df, label_col='Label', profit_col='forward_return', method='combined'
+        )
+        df['sample_weight'] = sample_weights
+    else:
+        df['sample_weight'] = 1.0
+
+    # Get all available feature columns (enhanced features)
+    exclude_cols = ['Open', 'High', 'Low', 'Close', 'Volume', 'Label', 'label_binary',
+                   'future_price', 'forward_return', 'sample_weight', 'timestamp']
+    feature_columns = [col for col in df.columns if col not in exclude_cols and not col.startswith('DM_') and not col.startswith('TR')]
+
+    # Ensure only numeric columns are included
+    numeric_feature_columns = []
+    for col in feature_columns:
+        if df[col].dtype in ['int64', 'float64', 'int32', 'float32']:
+            numeric_feature_columns.append(col)
+        else:
+            logging.warning(f"Excluding non-numeric column: {col} (dtype: {df[col].dtype})")
+
+    feature_columns = numeric_feature_columns
+    logging.info(f"Using {len(feature_columns)} numeric feature columns")
+
+    # Perform feature selection if requested
+    if args.feature_selection:
+        X_temp = df[feature_columns].copy()
+        y_temp = df['Label'].copy()
+        valid_mask = ~X_temp.isna().any(axis=1) & ~y_temp.isna()
+        X_temp = X_temp[valid_mask]
+        y_temp = y_temp[valid_mask]
+
+        if len(X_temp) > 0:
+            selected_features = perform_feature_selection(
+                X_temp, y_temp, method='gain_importance', top_k=20
+            )
+            feature_columns = [col for col in selected_features if col in df.columns]
+            logging.info(f"Selected {len(feature_columns)} features: {feature_columns}")
+
     # Final sanity: ensure there are no NaNs in features used for training
-    feature_columns = ['RSI', 'MACD', 'EMA_20', 'ATR', 'StochRSI', 'TrendStrength', 'Volatility']
     df = df.dropna(subset=feature_columns + ['Label'])
 
     # Check for empty DataFrame after preprocessing

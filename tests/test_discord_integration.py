@@ -10,6 +10,32 @@ from decimal import Decimal
 # Skip all tests if aiohttp is not available (for CI environments without discord dependencies)
 aiohttp = pytest.importorskip("aiohttp")
 
+
+@pytest.fixture(autouse=True)
+def mock_aiohttp_session():
+    """Mock aiohttp ClientSession to prevent real HTTP requests."""
+    with patch('aiohttp.ClientSession') as mock_session_class:
+        mock_session = MagicMock()
+        mock_session_class.return_value = mock_session
+
+        # Mock successful response by default
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={})
+        mock_response.text = AsyncMock(return_value="")
+        mock_response.close = AsyncMock()
+        mock_session.post = AsyncMock(return_value=mock_response)
+        mock_session.closed = False
+        mock_session.close = AsyncMock()
+
+        yield mock_session
+
+
+@pytest.fixture
+def discord_test_mode():
+    """Fixture to set test mode for Discord integration."""
+    return os.getenv("DISCORD_TEST_MODE", "mock").lower() == "mock"
+
 """
 Discord Integration Tests
 
@@ -222,27 +248,46 @@ class TestDiscordIntegration:
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_webhook_integration_rate_limit_handling(self, discord_webhook_notifier):
+    async def test_webhook_integration_rate_limit_handling(self, discord_webhook_notifier, mock_aiohttp_session):
         """Test rate limit handling in webhook integration."""
-        # Send multiple notifications quickly to potentially trigger rate limits
-        tasks = []
-        for i in range(10):
-            task = discord_webhook_notifier.send_notification(f"Rate limit test {i}")
-            tasks.append(task)
+        # Mock rate limit response (429) followed by success
+        call_count = 0
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        async def mock_post_with_rate_limit(url, **kwargs):
+            nonlocal call_count
+            call_count += 1
 
-        # At least some should succeed
-        success_count = sum(1 for result in results if result is True)
-        assert success_count > 0
+            if call_count == 1:
+                # First call returns rate limit
+                mock_response = MagicMock()
+                mock_response.status = 429
+                mock_response.json = AsyncMock(return_value={"retry_after": 0.1})
+                mock_response.text = AsyncMock(return_value='{"retry_after": 0.1}')
+                mock_response.close = AsyncMock()
+                return mock_response
+            else:
+                # Subsequent calls succeed
+                mock_response = MagicMock()
+                mock_response.status = 200
+                mock_response.json = AsyncMock(return_value={})
+                mock_response.text = AsyncMock(return_value="")
+                mock_response.close = AsyncMock()
+                return mock_response
+
+        mock_aiohttp_session.post = AsyncMock(side_effect=mock_post_with_rate_limit)
+
+        result = await discord_webhook_notifier.send_notification("Rate limit test")
+
+        # Should succeed after retry
+        assert result is True
+        # Should have made 2 calls (first failed with 429, second succeeded)
+        assert mock_aiohttp_session.post.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_webhook_integration_error_recovery(self, discord_webhook_config):
+    async def test_webhook_integration_error_recovery(self, discord_webhook_config, mock_aiohttp_session):
         """Test error recovery in webhook integration."""
-        # Temporarily patch aiohttp to return error response
-        import aiohttp
-
-        async def mock_post_error(self, url, **kwargs):
+        # Mock server error response (500)
+        async def mock_post_error(url, **kwargs):
             """Mock POST method that returns an error response."""
             mock_response = MagicMock()
             mock_response.status = 500  # Server error
@@ -253,15 +298,15 @@ class TestDiscordIntegration:
             return mock_response
 
         # Temporarily replace the mock post method
-        original_post = aiohttp.ClientSession.post
-        aiohttp.ClientSession.post = mock_post_error
+        original_post = mock_aiohttp_session.post
+        mock_aiohttp_session.post = AsyncMock(side_effect=mock_post_error)
 
         try:
             notifier = DiscordNotifier(discord_webhook_config)
             try:
                 await notifier.initialize()
                 result = await notifier.send_notification("Error recovery test")
-                # Should handle the error gracefully
+                # Should handle the error gracefully and return False
                 assert result is False
             finally:
                 try:
@@ -270,7 +315,7 @@ class TestDiscordIntegration:
                     pass  # Ignore cleanup errors in tests
         finally:
             # Restore original method
-            aiohttp.ClientSession.post = original_post
+            mock_aiohttp_session.post = original_post
 
     @pytest.mark.asyncio
     async def test_webhook_integration_large_payload(self, discord_webhook_notifier):

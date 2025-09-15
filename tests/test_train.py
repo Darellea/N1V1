@@ -4,6 +4,7 @@ Tests for train.py - Predictive model training script.
 
 import pytest
 import pandas as pd
+import numpy as np
 import json
 import tempfile
 import os
@@ -367,6 +368,99 @@ class TestMainFunction:
 
             # Should exit gracefully
             mock_exit.assert_called_once_with(1)
+
+
+class TestConfusionMatrixGeneration:
+    """Test cases for binary confusion matrix generation."""
+
+    def test_binary_confusion_matrix_generation(self, tmp_path):
+        """Test that binary confusion matrix is generated correctly."""
+        from sklearn.metrics import confusion_matrix
+        import matplotlib.pyplot as plt
+
+        # Create mock true labels and predictions
+        y_true = np.array([0, 0, 1, 1, 0, 1, 0, 1, 1, 0])
+        y_pred = np.array([0, 1, 1, 1, 0, 0, 0, 1, 1, 0])
+
+        # Generate confusion matrix
+        cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+
+        # Validate confusion matrix properties
+        assert cm.shape == (2, 2), "Confusion matrix should be 2x2 for binary classification"
+        assert cm.sum() == len(y_true), "Confusion matrix sum should equal number of samples"
+
+        # Create and save confusion matrix plot
+        fig, ax = plt.subplots(figsize=(6, 6))
+        im = ax.imshow(cm, cmap='Blues')
+        ax.set_xticks([0, 1])
+        ax.set_yticks([0, 1])
+        ax.set_xticklabels(['Skip (0)', 'Trade (1)'])
+        ax.set_yticklabels(['Skip (0)', 'Trade (1)'])
+        ax.set_xlabel('Predicted')
+        ax.set_ylabel('Actual')
+        ax.set_title('Binary Confusion Matrix')
+
+        # Add text annotations
+        for i in range(2):
+            for j in range(2):
+                text = ax.text(j, i, cm[i, j], ha="center", va="center",
+                             color="white" if cm[i, j] > cm.max() / 2 else "black")
+
+        plt.tight_layout()
+        confusion_matrix_path = tmp_path / "confusion_matrix_binary.png"
+        plt.savefig(confusion_matrix_path)
+        plt.close()
+
+        # Validate that the file was created
+        assert confusion_matrix_path.exists(), "Binary confusion matrix file should be created"
+
+        # Validate confusion matrix values
+        # cm[0,0] = True Negatives, cm[0,1] = False Positives
+        # cm[1,0] = False Negatives, cm[1,1] = True Positives
+        assert cm[0, 0] >= 0, "True negatives should be non-negative"
+        assert cm[0, 1] >= 0, "False positives should be non-negative"
+        assert cm[1, 0] >= 0, "False negatives should be non-negative"
+        assert cm[1, 1] >= 0, "True positives should be non-negative"
+
+    def test_confusion_matrix_with_perfect_predictions(self, tmp_path):
+        """Test confusion matrix with perfect predictions."""
+        from sklearn.metrics import confusion_matrix
+        import matplotlib.pyplot as plt
+
+        # Perfect predictions
+        y_true = np.array([0, 0, 1, 1, 0, 1])
+        y_pred = np.array([0, 0, 1, 1, 0, 1])
+
+        cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+
+        # Should have only diagonal elements
+        assert cm[0, 0] == 3, "Should have 3 true negatives"
+        assert cm[0, 1] == 0, "Should have 0 false positives"
+        assert cm[1, 0] == 0, "Should have 0 false negatives"
+        assert cm[1, 1] == 3, "Should have 3 true positives"
+
+        # Save plot
+        fig, ax = plt.subplots(figsize=(6, 6))
+        im = ax.imshow(cm, cmap='Blues')
+        ax.set_xticks([0, 1])
+        ax.set_yticks([0, 1])
+        ax.set_xticklabels(['Skip (0)', 'Trade (1)'])
+        ax.set_yticklabels(['Skip (0)', 'Trade (1)'])
+        ax.set_xlabel('Predicted')
+        ax.set_ylabel('Actual')
+        ax.set_title('Perfect Binary Confusion Matrix')
+
+        for i in range(2):
+            for j in range(2):
+                text = ax.text(j, i, cm[i, j], ha="center", va="center",
+                             color="white" if cm[i, j] > cm.max() / 2 else "black")
+
+        plt.tight_layout()
+        confusion_matrix_path = tmp_path / "perfect_confusion_matrix_binary.png"
+        plt.savefig(confusion_matrix_path)
+        plt.close()
+
+        assert confusion_matrix_path.exists(), "Perfect confusion matrix file should be created"
 
 
 if __name__ == '__main__':

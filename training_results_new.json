@@ -1,0 +1,120 @@
+{
+  "metadata": {
+    "model_type": "binary_classification",
+    "objective": "p_trade_probability",
+    "horizon": 5,
+    "profit_threshold": 0.005,
+    "include_fees": true,
+    "fee_rate": 0.001,
+    "feature_columns": [
+      "RSI",
+      "MACD",
+      "EMA_20",
+      "ATR",
+      "StochRSI",
+      "TrendStrength",
+      "Volatility"
+    ],
+    "n_splits": 2,
+    "class_weights": {
+      "1": 0.9745762711864406,
+      "0": 1.0267857142857142
+    },
+    "validation_method": "walk_forward",
+    "hyperparameter_tuning": false,
+    "feature_selection": false
+  },
+  "overall_metrics": {
+    "auc": 0.875,
+    "f1": 0.8,
+    "total_samples": 76,
+    "class_distribution": {
+      "0": 38,
+      "1": 38
+    },
+    "pnl": 0.095,
+    "sharpe": 4.786344211304794,
+    "max_drawdown": -0.005,
+    "total_trades": 57,
+    "win_rate": 0.75
+  },
+  "fold_metrics": [
+    {
+      "fold": 1,
+      "train_samples": 39,
+      "test_samples": 38,
+      "auc": 0.5,
+      "f1": 0.6666666666666666,
+      "precision": 0.5,
+      "recall": 1.0,
+      "class_distribution": {
+        "train": {
+          "1": 21,
+          "0": 18
+        },
+        "test": {
+          "0": 19,
+          "1": 19
+        }
+      },
+      "pnl": 0.0,
+      "sharpe": 0.0,
+      "max_drawdown": -0.005,
+      "total_trades": 38,
+      "win_rate": 0.5
+    },
+    {
+      "fold": 2,
+      "train_samples": 77,
+      "test_samples": 38,
+      "auc": 1.0,
+      "f1": 1.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "class_distribution": {
+        "train": {
+          "1": 40,
+          "0": 37
+        },
+        "test": {
+          "0": 19,
+          "1": 19
+        }
+      },
+      "pnl": 0.09500000000000001,
+      "sharpe": 15.874507866387551,
+      "max_drawdown": 0.0,
+      "total_trades": 19,
+      "win_rate": 1.0
+    }
+  ],
+  "feature_importance": {
+    "RSI": "0",
+    "MACD": "131",
+    "EMA_20": "65",
+    "ATR": "0",
+    "StochRSI": "0",
+    "TrendStrength": "70",
+    "Volatility": "32"
+  },
+  "confusion_matrix": {
+    "matrix": [
+      [
+        19,
+        19
+      ],
+      [
+        0,
+        38
+      ]
+    ],
+    "labels": [
+      "Skip (0)",
+      "Trade (1)"
+    ],
+    "total_samples": 76,
+    "accuracy": 0.75,
+    "precision_trade": 0.6666666666666666,
+    "recall_trade": 1.0
+  }
+}

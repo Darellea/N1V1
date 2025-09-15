@@ -38,6 +38,13 @@ from enum import Enum
 import numpy as np
 import logging
 
+# Import metrics collector at module level to avoid blocking imports in async methods
+try:
+    from core.metrics_collector import get_metrics_collector
+    _metrics_collector_available = True
+except ImportError:
+    _metrics_collector_available = False
+
 
 @dataclass
 class CircuitBreakerConfig:
@@ -299,16 +306,16 @@ class CircuitBreaker:
             self._log_event("trigger", previous_state, CircuitBreakerState.TRIGGERED, reason)
 
             # Record state change in metrics
-            try:
-                from core.metrics_collector import get_metrics_collector
-                metrics_collector = get_metrics_collector()
-                await metrics_collector.record_metric(
-                    "circuit_breaker_state",
-                    1,  # 1 = triggered, 0 = normal
-                    {"account": "main"}
-                )
-            except Exception as e:
-                self.logger.debug(f"Could not record circuit breaker state in metrics: {e}")
+            if _metrics_collector_available:
+                try:
+                    metrics_collector = get_metrics_collector()
+                    await metrics_collector.record_metric(
+                        "circuit_breaker_state",
+                        1,  # 1 = triggered, 0 = normal
+                        {"account": "main"}
+                    )
+                except Exception as e:
+                    self.logger.debug(f"Could not record circuit breaker state in metrics: {e}")
 
     async def _enter_cooling_period(self) -> None:
         """Enter cooling period."""
@@ -414,16 +421,16 @@ class CircuitBreaker:
             self.logger.info(f"Equity updated: {equity}")
 
             # Record in metrics if available
-            try:
-                from core.metrics_collector import get_metrics_collector
-                metrics_collector = get_metrics_collector()
-                await metrics_collector.record_metric(
-                    "circuit_breaker_equity",
-                    equity,
-                    {"account": "main"}
-                )
-            except Exception as e:
-                self.logger.debug(f"Could not record equity in metrics: {e}")
+            if _metrics_collector_available:
+                try:
+                    metrics_collector = get_metrics_collector()
+                    await metrics_collector.record_metric(
+                        "circuit_breaker_equity",
+                        equity,
+                        {"account": "main"}
+                    )
+                except Exception as e:
+                    self.logger.debug(f"Could not record equity in metrics: {e}")
 
     def update_config(self, new_config: CircuitBreakerConfig) -> None:
         """Update configuration."""

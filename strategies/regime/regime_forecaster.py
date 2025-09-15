@@ -346,7 +346,7 @@ class FeatureEngineer:
             features_df['volume_price_trend'] = features_df['returns'] * features_df.get('volume_ratio', 1)
 
             # Fill NaN values
-            features_df = features_df.fillna(method='bfill').fillna(method='ffill').fillna(0)
+            features_df = features_df.bfill().ffill().fillna(0)
 
             # Select configured features
             available_features = [col for col in self.config.feature_columns if col in features_df.columns]

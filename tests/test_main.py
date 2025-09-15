@@ -367,13 +367,13 @@ class TestMainFunction:
     @patch('main.setup_logging')
     @patch('main.BotEngine')
     @pytest.mark.asyncio
-    async def test_main_status_mode(self, mock_bot_engine_class, mock_setup_logging,
-                                  mock_load_config, mock_getenv, mock_parse_args):
-        """Test main function in status mode (lines 193-195)."""
+    async def test_main_cli_mode_with_args(self, mock_bot_engine_class, mock_setup_logging,
+                                         mock_load_config, mock_getenv, mock_parse_args):
+        """Test main function in CLI mode with explicit args."""
         # Setup mocks
         mock_args = MagicMock()
         mock_args.api = False
-        mock_args.status = True
+        mock_args.status = False
         mock_parse_args.return_value = mock_args
 
         mock_getenv.return_value = "false"
@@ -384,26 +384,19 @@ class TestMainFunction:
         mock_bot_engine = MagicMock()
         # Make async methods AsyncMock
         mock_bot_engine.initialize = AsyncMock()
+        mock_bot_engine.run = AsyncMock()
         mock_bot_engine.shutdown = AsyncMock()
         mock_bot_engine_class.return_value = mock_bot_engine
 
-        with patch('sys.exit') as mock_exit:
-            await main()
+        await main(mock_args)
 
-            # Verify status mode execution
-            # Both load_config and setup_logging are called twice:
-            # once in status handling, once in BotEngine
-            assert mock_load_config.call_count == 2
-            assert mock_setup_logging.call_count == 2
-            # BotEngine is called twice: once for status, once for CLI mode
-            assert mock_bot_engine_class.call_count == 2
-            # The status bot engine calls
-            mock_bot_engine.initialize.assert_called()
-            # Note: print_status_table is not async in the actual implementation
-            # so we don't await it in the test
-            mock_bot_engine.print_status_table.assert_called()
-            mock_bot_engine.shutdown.assert_called()
-            mock_exit.assert_called_once_with(0)
+        # Verify CLI mode execution
+        assert mock_load_config.call_count == 1
+        assert mock_setup_logging.call_count == 1
+        assert mock_bot_engine_class.call_count == 1
+        mock_bot_engine.initialize.assert_called()
+        mock_bot_engine.run.assert_called()
+        mock_bot_engine.shutdown.assert_called()
 
     @patch('main.parse_arguments')
     @patch('os.getenv')

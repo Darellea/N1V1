@@ -59,11 +59,16 @@ class DiscordNotifier:
         #  - CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL
         #  - CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN
         #  - CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID
+        #  - DISCORD_TEST_MODE (for testing: "mock" or "live")
         self.webhook_url = os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL") or discord_config.get("webhook_url")
         self.bot_token = os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN") or discord_config.get("bot_token")
         self.channel_id = os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID") or discord_config.get("channel_id")
         self.alerts_enabled = discord_config.get("alerts", {}).get("enabled", False)
         self.commands_enabled = discord_config.get("commands", {}).get("enabled", False)
+
+        # Test mode configuration - defaults to mock for safety
+        self.test_mode = os.getenv("DISCORD_TEST_MODE", "mock").lower() == "mock"
+
         self.bot = None
         self.session = None
         self._session_lock = asyncio.Lock()  # Protect session creation/access

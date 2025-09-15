@@ -1,0 +1,95 @@
+{
+  "model_path": "models/stress_test.pkl",
+  "optimal_threshold": 0.8000000000000003,
+  "calibration_method": "isotonic_regression",
+  "threshold_optimization": {
+    "grid_search_range": [
+      0.5,
+      0.9
+    ],
+    "step_size": 0.05,
+    "optimization_metric": "sharpe_ratio",
+    "all_results": [
+      {
+        "threshold": 0.5,
+        "pnl": 0.054999999999999986,
+        "sharpe": 0.6333951460846752,
+        "max_drawdown": -0.05500000000000001,
+        "total_trades": 175,
+        "win_rate": 0.5471264367816092
+      },
+      {
+        "threshold": 0.55,
+        "pnl": 0.019999999999999993,
+        "sharpe": 0.24378362970015283,
+        "max_drawdown": -0.05500000000000001,
+        "total_trades": 156,
+        "win_rate": 0.5310344827586206
+      },
+      {
+        "threshold": 0.6000000000000001,
+        "pnl": 0.024999999999999998,
+        "sharpe": 0.3325716954045693,
+        "max_drawdown": -0.05,
+        "total_trades": 131,
+        "win_rate": 0.5333333333333333
+      },
+      {
+        "threshold": 0.6500000000000001,
+        "pnl": 0.035,
+        "sharpe": 0.5059559029559442,
+        "max_drawdown": -0.035,
+        "total_trades": 111,
+        "win_rate": 0.5379310344827586
+      },
+      {
+        "threshold": 0.7000000000000002,
+        "pnl": 0.09,
+        "sharpe": 1.4666704988501273,
+        "max_drawdown": -0.030000000000000006,
+        "total_trades": 88,
+        "win_rate": 0.5632183908045977
+      },
+      {
+        "threshold": 0.7500000000000002,
+        "pnl": 0.08,
+        "sharpe": 1.5057351525473945,
+        "max_drawdown": -0.01999999999999999,
+        "total_trades": 66,
+        "win_rate": 0.5586206896551724
+      },
+      {
+        "threshold": 0.8000000000000003,
+        "pnl": 0.085,
+        "sharpe": 1.9886187899073435,
+        "max_drawdown": -0.024999999999999994,
+        "total_trades": 43,
+        "win_rate": 0.5609195402298851
+      },
+      {
+        "threshold": 0.8500000000000003,
+        "pnl": 0.055,
+        "sharpe": 1.6196275476108823,
+        "max_drawdown": -0.014999999999999993,
+        "total_trades": 27,
+        "win_rate": 0.5471264367816092
+      },
+      {
+        "threshold": 0.9000000000000004,
+        "pnl": 0.01,
+        "sharpe": 0.40697177659770417,
+        "max_drawdown": -0.015000000000000001,
+        "total_trades": 14,
+        "win_rate": 0.5264367816091954
+      }
+    ]
+  },
+  "expected_performance": {
+    "threshold": 0.8000000000000003,
+    "pnl": 0.085,
+    "sharpe": 1.9886187899073435,
+    "max_drawdown": -0.024999999999999994,
+    "total_trades": 43,
+    "win_rate": 0.5609195402298851
+  }
+}

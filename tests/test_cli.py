@@ -53,48 +53,23 @@ class TestCLI:
 
     def test_status_flag_success(self):
         """Test --status flag shows status table and exits with code 0."""
-        import os
-        from unittest.mock import patch, AsyncMock, MagicMock
+        # Run the main script with --status flag
+        result = subprocess.run(
+            [sys.executable, "main.py", "--status"],
+            capture_output=True,
+            text=True,
+            cwd=Path(__file__).parent.parent,
+            timeout=5
+        )
 
-        # Mock ccxt exchange to avoid real API calls and rate limiting
-        with patch('ccxt.async_support.kucoin') as mock_kucoin_class, \
-             patch('aiohttp.ClientSession') as mock_session_class:
+        # Verify exit code is 0 (successful execution)
+        assert result.returncode == 0
 
-            # Create mock instances
-            mock_exchange = MagicMock()
-            mock_exchange.fetch_currencies = AsyncMock(return_value=[
-                {"id": "BTC", "name": "Bitcoin"},
-                {"id": "ETH", "name": "Ethereum"}
-            ])
-            mock_exchange.fetch_balance = AsyncMock(return_value={"total": {"USDT": 10000.0}})
-            mock_exchange.fetch_ticker = AsyncMock(return_value={"last": 50000.0})
-            mock_exchange.close = AsyncMock()
-
-            mock_kucoin_class.return_value = mock_exchange
-
-            # Mock aiohttp session for Discord notifications
-            mock_session = MagicMock()
-            mock_session.close = AsyncMock()
-            mock_session_class.return_value = mock_session
-
-            # Run the main script with --status flag
-            result = subprocess.run(
-                [sys.executable, "main.py", "--status"],
-                capture_output=True,
-                text=True,
-                cwd=Path(__file__).parent.parent,
-                timeout=30,
-                env={**os.environ, "CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL": ""}  # Disable Discord
-            )
-
-            # Verify exit code is 0 (successful execution)
-            assert result.returncode == 0
-
-            # Verify status table content is present
-            assert "Trading Bot Status" in result.stdout
-            assert "Mode" in result.stdout
-            assert "Status" in result.stdout
-            assert "Balance" in result.stdout
+        # Verify status table content is present
+        assert "Trading Bot Status" in result.stdout
+        assert "Mode" in result.stdout
+        assert "Status" in result.stdout
+        assert "Balance" in result.stdout
 
     def test_invalid_flag(self):
         """Test invalid flag produces error message and non-zero exit code."""
@@ -159,52 +134,27 @@ class TestCLI:
 
     def test_status_flag_output_format(self):
         """Test --status flag output format and content."""
-        import os
-        from unittest.mock import patch, AsyncMock, MagicMock
+        # Run the main script with --status flag
+        result = subprocess.run(
+            [sys.executable, "main.py", "--status"],
+            capture_output=True,
+            text=True,
+            cwd=Path(__file__).parent.parent,
+            timeout=5
+        )
 
-        # Mock ccxt exchange to avoid real API calls and rate limiting
-        with patch('ccxt.async_support.kucoin') as mock_kucoin_class, \
-             patch('aiohttp.ClientSession') as mock_session_class:
+        # Verify successful execution
+        assert result.returncode == 0
 
-            # Create mock instances
-            mock_exchange = MagicMock()
-            mock_exchange.fetch_currencies = AsyncMock(return_value=[
-                {"id": "BTC", "name": "Bitcoin"},
-                {"id": "ETH", "name": "Ethereum"}
-            ])
-            mock_exchange.fetch_balance = AsyncMock(return_value={"total": {"USDT": 10000.0}})
-            mock_exchange.fetch_ticker = AsyncMock(return_value={"last": 50000.0})
-            mock_exchange.close = AsyncMock()
+        # Verify the output contains expected table structure
+        lines = result.stdout.strip().split('\n')
 
-            mock_kucoin_class.return_value = mock_exchange
+        # Should have header and some data rows
+        assert len(lines) >= 3  # At minimum: header, separator, and one data row
 
-            # Mock aiohttp session for Discord notifications
-            mock_session = MagicMock()
-            mock_session.close = AsyncMock()
-            mock_session_class.return_value = mock_session
-
-            # Run the main script with --status flag
-            result = subprocess.run(
-                [sys.executable, "main.py", "--status"],
-                capture_output=True,
-                text=True,
-                cwd=Path(__file__).parent.parent,
-                timeout=30,
-                env={**os.environ, "CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL": ""}  # Disable Discord
-            )
-
-            # Verify successful execution
-            assert result.returncode == 0
-
-            # Verify the output contains expected table structure
-            lines = result.stdout.strip().split('\n')
-
-            # Should have header and some data rows
-            assert len(lines) >= 3  # At minimum: header, separator, and one data row
-
-            # Check for table-like formatting (contains pipes or plus signs for table borders)
-            table_content = result.stdout
-            assert ('|' in table_content or '+' in table_content or '─' in table_content)
+        # Check for table-like formatting (contains pipes or plus signs for table borders)
+        table_content = result.stdout
+        assert ('|' in table_content or '+' in table_content or '─' in table_content)
 
     def test_help_flag_comprehensive(self):
         """Test --help flag provides comprehensive information."""

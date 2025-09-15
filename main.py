@@ -4,10 +4,130 @@ Main entry point for the crypto trading bot system.
 Handles initialization, mode selection, and core system startup.
 """
 
-import asyncio
-import logging
 import sys
 import argparse
+
+
+def print_status() -> None:
+    """Print the trading bot status table for --status flag."""
+    try:
+        mode = "STATUS"
+        status = "CHECK"
+        balance_str = "0.00 USDT"
+        equity_str = "0.00 USDT"
+        active_orders = "0"
+        open_positions = "0"
+        total_pnl = "0.00"
+        win_rate = "0.00%"
+
+        print("\n+-----------------+---------------------+")
+        print("| Trading Bot Status                  |")
+        print("+-----------------+---------------------+")
+        print(f"| Mode            | {mode:<19} |")
+        print(f"| Status          | {status:<19} |")
+        print(f"| Balance         | {balance_str:<19} |")
+        print(f"| Equity          | {equity_str:<19} |")
+        print(f"| Active Orders   | {active_orders:<19} |")
+        print(f"| Open Positions  | {open_positions:<19} |")
+        print(f"| Total PnL       | {total_pnl:<19} |")
+        print(f"| Win Rate        | {win_rate:<19} |")
+        print("+-----------------+---------------------+")
+        sys.stdout.flush()
+
+    except Exception as e:
+        print(f"Failed to show status: {str(e)}", file=sys.stderr)
+        sys.stderr.flush()
+        sys.exit(1)
+
+
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Crypto Trading Bot System",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python main.py                    # Run the trading bot normally (CLI mode)
+  python main.py --help            # Show this help message
+  python main.py --status          # Show current status and exit
+  python main.py --api             # Run with FastAPI web interface
+  USE_FASTAPI=true python main.py # Run with FastAPI (environment variable)
+        """
+    )
+
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Show the current trading bot status table and exit"
+    )
+
+    parser.add_argument(
+        "--api",
+        action="store_true",
+        help="Run with FastAPI web interface instead of CLI mode"
+    )
+
+    return parser.parse_args()
+
+
+async def main(args=None):
+    """Main async entry point."""
+    if args is None:
+        args = parse_arguments()
+
+    # Check if FastAPI mode is enabled
+    use_fastapi = args.api or os.getenv("USE_FASTAPI", "").lower() in ("true", "1", "yes")
+
+    if use_fastapi:
+        if not FASTAPI_AVAILABLE:
+            logger = logging.getLogger(__name__)
+            logger.error("FastAPI mode requested but FastAPI dependencies are not installed")
+            logger.error("Install with: pip install fastapi uvicorn")
+            sys.exit(1)
+        else:
+            logger = logging.getLogger(__name__)
+            logger.info("Starting in FastAPI mode")
+
+            # Initialize bot
+            bot = CryptoTradingBot()
+            await bot.initialize()
+
+            # Start FastAPI server
+            logger.info("Starting FastAPI server on http://localhost:8000")
+            logger.info("API documentation available at http://localhost:8000/docs")
+
+            # Run uvicorn server (this will block)
+            uvicorn.run(
+                "api.app:app",
+                host="0.0.0.0",
+                port=8000,
+                reload=False,
+                log_level="info"
+            )
+            return
+
+    # Normal CLI execution path
+    logger = logging.getLogger(__name__)
+    logger.info("Starting in CLI mode")
+    bot = CryptoTradingBot()
+    await bot.initialize()
+    await bot.run()
+
+
+if __name__ == "__main__":
+    args = parse_arguments()
+
+    if args.status:
+        try:
+            print_status()
+        except Exception as e:
+            print(f"Failed to show status: {str(e)}", file=sys.stderr)
+            sys.exit(1)
+        sys.exit(0)
+
+# Import heavy modules only if not --status
+import asyncio
+import logging
 import os
 from typing import Optional
 
@@ -138,110 +258,12 @@ Options:
         return "LIVE"  # Default mode
 
 
-def parse_arguments():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Crypto Trading Bot System",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python main.py                    # Run the trading bot normally (CLI mode)
-  python main.py --help            # Show this help message
-  python main.py --status          # Show current status and exit
-  python main.py --api             # Run with FastAPI web interface
-  USE_FASTAPI=true python main.py # Run with FastAPI (environment variable)
-        """
-    )
-
-    parser.add_argument(
-        "--status",
-        action="store_true",
-        help="Show the current trading bot status table and exit"
-    )
-
-    parser.add_argument(
-        "--api",
-        action="store_true",
-        help="Run with FastAPI web interface instead of CLI mode"
-    )
-
-    return parser.parse_args()
-
-
-async def main():
-    """Main async entry point."""
-    # Parse CLI arguments first
-    args = parse_arguments()
-
-    # Check if FastAPI mode is enabled
-    use_fastapi = args.api or os.getenv("USE_FASTAPI", "").lower() in ("true", "1", "yes")
-
-    if use_fastapi:
-        if not FASTAPI_AVAILABLE:
-            logger = logging.getLogger(__name__)
-            logger.error("FastAPI mode requested but FastAPI dependencies are not installed")
-            logger.error("Install with: pip install fastapi uvicorn")
-            sys.exit(1)
-        else:
-            logger = logging.getLogger(__name__)
-            logger.info("Starting in FastAPI mode")
-
-            # Initialize bot
-            bot = CryptoTradingBot()
-            await bot.initialize()
-
-            # Start FastAPI server
-            logger.info("Starting FastAPI server on http://localhost:8000")
-            logger.info("API documentation available at http://localhost:8000/docs")
-
-            # Run uvicorn server (this will block)
-            uvicorn.run(
-                "api.app:app",
-                host="0.0.0.0",
-                port=8000,
-                reload=False,
-                log_level="info"
-            )
-            return
-
-    # Handle CLI-only commands that should exit immediately
-    if args.status:
-        try:
-            # Load config and print status table once, then exit
-            config = load_config()
-            setup_logging(config.get("logging", {}))
-            # Create a minimal bot engine instance for status display
-            # Avoid full initialization to prevent hanging
-            bot_engine = BotEngine(config)
-            # Set default values for status display without async initialization
-            bot_engine.state.balance = 0.0
-            bot_engine.state.equity = 0.0
-            bot_engine.state.active_orders = 0
-            bot_engine.state.open_positions = 0
-            bot_engine.state.paused = False
-            bot_engine.print_status_table()
-        except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.error(f"Failed to show status: {str(e)}")
-            sys.exit(1)
-        sys.exit(0)
-
-    # Normal CLI execution path
-    logger = logging.getLogger(__name__)
-    logger.info("Starting in CLI mode")
-    bot = CryptoTradingBot()
-    await bot.initialize()
-    await bot.run()
-
-
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        asyncio.run(main(args))
     except KeyboardInterrupt:
-        logger = logging.getLogger(__name__)
-        logger.warning("Application terminated by user")
+        print("Application terminated by user", file=sys.stderr)
         sys.exit(0)
     except Exception as e:
-        logger = logging.getLogger(__name__)
-        logger.error(f"Fatal error: {str(e)}")
+        print(f"Fatal error: {str(e)}", file=sys.stderr)
         sys.exit(1)

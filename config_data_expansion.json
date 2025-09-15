@@ -1,0 +1,80 @@
+{
+  "data_sources": [
+    {
+      "type": "csv",
+      "directory": "historical_data",
+      "file_pattern": "*.csv"
+    },
+    {
+      "type": "api",
+      "base_url": "https://api.binance.com",
+      "endpoint": "/api/v3/klines",
+      "response_format": "binance",
+      "headers": {
+        "User-Agent": "N1V1-Trading-Bot/1.0"
+      }
+    }
+  ],
+  "target_pairs": [
+    "EUR/USD",
+    "GBP/USD",
+    "USD/JPY",
+    "AUD/USD",
+    "USD/CHF",
+    "NZD/USD",
+    "USD/CAD"
+  ],
+  "timeframes": [
+    "1H",
+    "4H",
+    "1D"
+  ],
+  "data_dir": "historical_data",
+  "min_samples_per_pair": 1000,
+  "volatility_periods": [
+    {
+      "name": "COVID-19",
+      "start": "2020-03-01",
+      "end": "2020-06-30"
+    },
+    {
+      "name": "2008_Crisis",
+      "start": "2008-09-01",
+      "end": "2009-03-31"
+    },
+    {
+      "name": "Brexit",
+      "start": "2016-06-01",
+      "end": "2016-12-31"
+    },
+    {
+      "name": "Ukraine_Crisis",
+      "start": "2022-02-01",
+      "end": "2022-05-31"
+    },
+    {
+      "name": "2023_Banking_Crisis",
+      "start": "2023-03-01",
+      "end": "2023-05-31"
+    }
+  ],
+  "collection_schedule": {
+    "frequency": "daily",
+    "time": "02:00",
+    "target_samples_per_run": 1000,
+    "max_parallel_collections": 4
+  },
+  "data_quality": {
+    "remove_outliers": true,
+    "outlier_threshold": 0.99,
+    "validate_ohlc": true,
+    "check_duplicates": true,
+    "min_data_quality_score": 0.7
+  },
+  "storage": {
+    "format": "parquet",
+    "compression": "snappy",
+    "partition_by": ["pair", "timeframe"],
+    "retention_days": 365
+  }
+}

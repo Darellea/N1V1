@@ -27,9 +27,8 @@ from ml.trainer import (
     compute_trend_strength,
     load_data,
     generate_features,
-    create_labels,
+    generate_enhanced_features,
     create_binary_labels,
-    train_model,
     train_model_binary,
     setup_logging,
     main
@@ -301,323 +300,10 @@ class TestDataProcessing:
                 # Some indicators might still have NaN if insufficient data
                 pass  # Just check that fillna was attempted
 
-    def test_create_labels_basic(self):
-        """Test label creation with basic data (lines 113-119)."""
-        # Create test data
-        data = pd.DataFrame({
-            'Close': [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
-        })
-
-        labeled_df = create_labels(data, horizon=3, up_thresh=0.05, down_thresh=-0.05)
-
-        # Should have Label column (Future Price is dropped)
-        assert 'Label' in labeled_df.columns
-        assert 'Future Price' not in labeled_df.columns
-
-        # Labels should be -1, 0, or 1
-        valid_labels = labeled_df['Label'].dropna()
-        assert valid_labels.isin([-1, 0, 1]).all()
-
-    def test_create_labels_custom_thresholds(self):
-        """Test label creation with custom thresholds."""
-        data = pd.DataFrame({
-            'Close': [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
-        })
-
-        # Very sensitive thresholds
-        labeled_df = create_labels(data, horizon=2, up_thresh=0.01, down_thresh=-0.01)
-
-        # Should have more non-zero labels
-        label_counts = labeled_df['Label'].value_counts()
-        assert len(label_counts) >= 1  # At least one type of label
-
-    def test_create_labels_no_movement(self):
-        """Test label creation with no price movement."""
-        data = pd.DataFrame({
-            'Close': [10] * 20  # No movement
-        })
-
-        labeled_df = create_labels(data, horizon=3)
-
-        # All labels should be 0 (neutral)
-        valid_labels = labeled_df['Label'].dropna()
-        assert (valid_labels == 0).all()
-
-    def test_create_labels_insufficient_data(self):
-        """Test label creation with insufficient data."""
-        data = pd.DataFrame({
-            'Close': [10, 11]  # Too short for horizon=5
-        })
-
-        # Should raise ValueError for insufficient data
-        with pytest.raises(ValueError, match="Insufficient data for horizon"):
-            create_labels(data, horizon=5)
 
 
-class TestModelTraining:
-    """Test cases for model training pipeline."""
 
-    @pytest.fixture
-    def sample_training_data(self):
-        """Create sample training data."""
-        np.random.seed(42)
-        n_samples = 100
 
-        # Create synthetic OHLCV data
-        data = pd.DataFrame({
-            'Open': np.random.uniform(100, 110, n_samples),
-            'High': np.random.uniform(110, 120, n_samples),
-            'Low': np.random.uniform(90, 100, n_samples),
-            'Close': np.random.uniform(100, 110, n_samples),
-            'Volume': np.random.uniform(1000, 2000, n_samples)
-        })
-
-        # Generate features
-        data = generate_features(data)
-
-        # Create labels
-        data = create_labels(data)
-
-        # Drop rows with NaN labels
-        data = data.dropna(subset=['Label'])
-
-        return data
-
-    @patch('ml.trainer.joblib.dump')
-    @patch('ml.trainer.json.dump')
-    @patch('ml.trainer.plt.savefig')
-    @patch('ml.trainer.plt.close')
-    @patch('ml.trainer.lgb.plot_importance')
-    def test_train_model_basic(self, mock_plot_importance, mock_plt_close,
-                              mock_plt_savefig, mock_json_dump, mock_joblib_dump,
-                              sample_training_data):
-        """Test basic model training (lines 150-154, 157, 169-172, 177-179)."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_path = os.path.join(temp_dir, 'model.pkl')
-            results_path = os.path.join(temp_dir, 'results.json')
-
-            # Mock file operations
-            mock_json_dump.return_value = None
-            mock_joblib_dump.return_value = None
-            mock_plt_savefig.return_value = None
-            mock_plt_close.return_value = None
-            mock_plot_importance.return_value = None
-
-            # Train model
-            train_model(
-                sample_training_data,
-                model_path,
-                results_path=results_path,
-                n_splits=2  # Small number for testing
-            )
-
-            # Verify model was saved
-            mock_joblib_dump.assert_called_once()
-
-            # Verify results were saved
-            assert mock_json_dump.call_count >= 1
-
-    @patch('ml.trainer.joblib.dump')
-    @patch('ml.trainer.json.dump')
-    def test_train_model_drop_neutral(self, mock_json_dump, mock_joblib_dump,
-                                     sample_training_data):
-        """Test model training with neutral labels dropped."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_path = os.path.join(temp_dir, 'model.pkl')
-
-            mock_json_dump.return_value = None
-            mock_joblib_dump.return_value = None
-
-            # Train with drop_neutral=True
-            train_model(
-                sample_training_data,
-                model_path,
-                drop_neutral=True,
-                n_splits=2
-            )
-
-            # Should still complete successfully
-            mock_joblib_dump.assert_called_once()
-
-    @patch('ml.trainer.joblib.dump')
-    @patch('ml.trainer.json.dump')
-    @patch('ml.trainer.plt.savefig')
-    @patch('ml.trainer.plt.close')
-    @patch('ml.trainer.lgb.plot_importance')
-    def test_train_model_with_tuning(self, mock_plot_importance, mock_plt_close,
-                                   mock_plt_savefig, mock_json_dump, mock_joblib_dump,
-                                   sample_training_data):
-        """Test model training with hyperparameter tuning (lines 198-208, 212-228)."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_path = os.path.join(temp_dir, 'model.pkl')
-
-            # Mock optuna at the module level to avoid pandas isinstance issues
-            mock_optuna = MagicMock()
-            mock_study = MagicMock()
-            mock_study.best_params = {'learning_rate': 0.1, 'n_estimators': 50}
-            mock_study.best_value = 0.8
-            mock_study.optimize = MagicMock()
-            mock_optuna.create_study.return_value = mock_study
-            mock_optuna.Trial = MagicMock
-
-            with patch.dict('sys.modules', {'optuna': mock_optuna}):
-                mock_json_dump.return_value = None
-                mock_joblib_dump.return_value = None
-                mock_plt_savefig.return_value = None
-                mock_plt_close.return_value = None
-                mock_plot_importance.return_value = None
-
-                # Train with tuning
-                train_model(
-                    sample_training_data,
-                    model_path,
-                    tune=True,
-                    n_trials=2,  # Small number for testing
-                    n_splits=2
-                )
-
-                # Verify model was saved
-                mock_joblib_dump.assert_called_once()
-
-    def test_train_model_optuna_not_installed(self, sample_training_data):
-        """Test model training when Optuna is not available."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_path = os.path.join(temp_dir, 'model.pkl')
-
-            # Mock import error for optuna
-            with patch.dict('sys.modules', {'optuna': None}):
-                with patch('builtins.__import__', side_effect=ImportError("No module named 'optuna'")):
-                    with pytest.raises(ImportError):
-                        train_model(
-                            sample_training_data,
-                            model_path,
-                            tune=True,
-                            n_splits=2
-                        )
-
-    @patch('ml.trainer.joblib.dump')
-    @patch('ml.trainer.json.dump')
-    @patch('ml.trainer.lgb.LGBMClassifier')
-    @patch('ml.trainer.plt.savefig')
-    @patch('ml.trainer.plt.close')
-    @patch('ml.trainer.lgb.plot_importance')
-    @patch('ml.trainer.plt.figure')  # Mock plt.figure to avoid GUI issues
-    def test_train_model_feature_selection(self, mock_plt_figure, mock_plot_importance, mock_plt_close,
-                                         mock_plt_savefig, mock_lgb_classifier,
-                                         mock_json_dump, mock_joblib_dump, sample_training_data):
-        """Test model training with feature selection (lines 233-279)."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_path = os.path.join(temp_dir, 'model.pkl')
-
-            # Mock matplotlib figure to avoid GUI issues
-            mock_figure = MagicMock()
-            mock_plt_figure.return_value = mock_figure
-
-            # Mock LightGBM classifier with proper booster
-            mock_model = MagicMock()
-            mock_booster = MagicMock()
-            mock_booster.feature_importance.return_value = [0.1, 0.5, 0.05, 0.8, 0.2, 0.1, 0.9]  # Return list, not numpy array
-            mock_model.booster_ = mock_booster
-            mock_lgb_classifier.return_value = mock_model
-
-            mock_json_dump.return_value = None
-            mock_joblib_dump.return_value = None
-            mock_plt_savefig.return_value = None
-            mock_plt_close.return_value = None
-            mock_plot_importance.return_value = None
-
-            # Train with feature selection
-            train_model(
-                sample_training_data,
-                model_path,
-                feature_selection=True,
-                n_splits=2
-            )
-
-            # Should have called feature_importance
-            mock_booster.feature_importance.assert_called()
-
-            # Should have saved model
-            assert mock_joblib_dump.call_count >= 1
-
-    @patch('ml.trainer.joblib.dump')
-    @patch('ml.trainer.json.dump')
-    @patch('ml.trainer.lgb.LGBMClassifier')
-    @patch('ml.trainer.plt.savefig')
-    @patch('ml.trainer.plt.close')
-    @patch('ml.trainer.lgb.plot_importance')
-    def test_train_model_eval_profit(self, mock_plot_importance, mock_plt_close,
-                                   mock_plt_savefig, mock_lgb_classifier,
-                                   mock_json_dump, mock_joblib_dump, sample_training_data):
-        """Test model training with profit evaluation."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_path = os.path.join(temp_dir, 'model.pkl')
-
-            # Mock LightGBM classifier
-            mock_model = MagicMock()
-            mock_lgb_classifier.return_value = mock_model
-
-            mock_json_dump.return_value = None
-            mock_joblib_dump.return_value = None
-            mock_plt_savefig.return_value = None
-            mock_plt_close.return_value = None
-            mock_plot_importance.return_value = None
-
-            # Train with profit evaluation
-            train_model(
-                sample_training_data,
-                model_path,
-                eval_profit=True,
-                n_splits=2
-            )
-
-            # Should complete successfully
-            mock_joblib_dump.assert_called_once()
-
-    def test_train_model_insufficient_data(self):
-        """Test model training with insufficient data."""
-        # Create very small dataset
-        small_data = pd.DataFrame({
-            'RSI': [50, 60, 70, 80, 90],
-            'MACD': [0.1, 0.2, 0.3, 0.4, 0.5],
-            'EMA_20': [10, 11, 12, 13, 14],
-            'ATR': [1, 1.1, 1.2, 1.3, 1.4],
-            'StochRSI': [0.5, 0.6, 0.7, 0.8, 0.9],
-            'TrendStrength': [0.1, 0.2, 0.3, 0.4, 0.5],
-            'Volatility': [0.1, 0.15, 0.2, 0.25, 0.3],
-            'Label': [1, -1, 0, 1, -1]
-        })
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_path = os.path.join(temp_dir, 'model.pkl')
-
-            # Should handle small dataset gracefully with n_splits=2
-            train_model(small_data, model_path, n_splits=2)
-
-    @patch('ml.trainer.joblib.dump')
-    @patch('ml.trainer.plt.savefig')
-    @patch('ml.trainer.plt.close')
-    @patch('ml.trainer.lgb.plot_importance')
-    def test_train_model_save_errors(self, mock_plot_importance, mock_plt_close,
-                                   mock_plt_savefig, mock_joblib_dump, sample_training_data):
-        """Test model training with save errors."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_path = os.path.join(temp_dir, 'model.pkl')
-
-            # Mock save error
-            mock_joblib_dump.side_effect = Exception("Save failed")
-            mock_plt_savefig.return_value = None
-            mock_plt_close.return_value = None
-            mock_plot_importance.return_value = None
-
-            # Should handle save error gracefully (not crash)
-            try:
-                train_model(sample_training_data, model_path, n_splits=2)
-                # If we get here, the function handled the error gracefully
-                assert True
-            except Exception as e:
-                # If an exception is raised, it should be the expected save error
-                assert "Save failed" in str(e)
 
 
 class TestUtilities:
@@ -693,12 +379,12 @@ class TestCLI:
 
     @patch('ml.trainer.argparse.ArgumentParser.parse_args')
     @patch('ml.trainer.load_data')
-    @patch('ml.trainer.generate_features')
+    @patch('ml.trainer.generate_enhanced_features')
     @patch('ml.trainer.create_binary_labels')
     @patch('ml.trainer.train_model_binary')
     @patch('ml.trainer.setup_logging')
     def test_main_basic_execution(self, mock_setup_logging, mock_train_model_binary,
-                                mock_create_binary_labels, mock_generate_features,
+                                mock_create_binary_labels, mock_generate_enhanced_features,
                                 mock_load_data, mock_parse_args):
         """Test main function basic execution."""
         # Mock arguments with proper numeric values
@@ -728,7 +414,7 @@ class TestCLI:
         })
         mock_load_data.return_value = mock_df
 
-        # Mock generate_features to return DataFrame with features (10 rows to match mock_df)
+        # Mock generate_enhanced_features to return DataFrame with features (10 rows to match mock_df)
         features_df = mock_df.copy()
         features_df['RSI'] = [50, 60, 70, 55, 65, 75, 45, 52, 58, 62]
         features_df['MACD'] = [0.1, 0.2, 0.3, 0.15, 0.25, 0.35, 0.05, 0.12, 0.18, 0.22]
@@ -737,7 +423,7 @@ class TestCLI:
         features_df['StochRSI'] = [0.5, 0.6, 0.7, 0.55, 0.65, 0.75, 0.45, 0.52, 0.58, 0.62]
         features_df['TrendStrength'] = [0.1, 0.2, 0.3, 0.15, 0.25, 0.35, 0.05, 0.12, 0.18, 0.22]
         features_df['Volatility'] = [0.1, 0.15, 0.2, 0.12, 0.18, 0.22, 0.08, 0.14, 0.16, 0.19]
-        mock_generate_features.return_value = features_df
+        mock_generate_enhanced_features.return_value = features_df
 
         # Mock create_binary_labels to return DataFrame with 'label_binary' column (10 rows to match)
         binary_df = features_df.copy()
@@ -759,7 +445,7 @@ class TestCLI:
         # Verify all functions were called
         mock_setup_logging.assert_called_once_with(None)
         mock_load_data.assert_called_once_with('test.csv')
-        mock_generate_features.assert_called_once()
+        mock_generate_enhanced_features.assert_called_once()
         assert mock_create_binary_labels.called
         assert mock_train_model_binary.called
 
@@ -1177,59 +863,6 @@ class TestErrorHandling:
         with pytest.raises(AttributeError):
             generate_features(None)
 
-        # Test create_labels with None
-        with pytest.raises(AttributeError):
-            create_labels(None)
-
-    @patch('ml.trainer.joblib.dump')
-    def test_model_save_error_handling(self, mock_joblib_dump):
-        """Test error handling during model saving."""
-        # Create minimal test data with only 0 and 1 labels
-        data = pd.DataFrame({
-            'RSI': [50, 60, 70, 80, 90],
-            'MACD': [0.1, 0.2, 0.3, 0.4, 0.5],
-            'EMA_20': [10, 11, 12, 13, 14],
-            'ATR': [1, 1.1, 1.2, 1.3, 1.4],
-            'StochRSI': [0.5, 0.6, 0.7, 0.8, 0.9],
-            'TrendStrength': [0.1, 0.2, 0.3, 0.4, 0.5],
-            'Volatility': [0.1, 0.15, 0.2, 0.25, 0.3],
-            'Label': [1, 0, 1, 0, 1]
-        })
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_path = os.path.join(temp_dir, 'model.pkl')
-
-            # Mock save failure
-            mock_joblib_dump.side_effect = Exception("Disk full")
-
-            # Should handle error gracefully (not crash)
-            train_model(data, model_path, n_splits=2)
-
-    @patch('ml.trainer.json.dump')
-    def test_results_save_error_handling(self, mock_json_dump):
-        """Test error handling during results saving."""
-        # Create minimal test data with only 0 and 1 labels
-        data = pd.DataFrame({
-            'RSI': [50, 60, 70, 80, 90],
-            'MACD': [0.1, 0.2, 0.3, 0.4, 0.5],
-            'EMA_20': [10, 11, 12, 13, 14],
-            'ATR': [1, 1.1, 1.2, 1.3, 1.4],
-            'StochRSI': [0.5, 0.6, 0.7, 0.8, 0.9],
-            'TrendStrength': [0.1, 0.2, 0.3, 0.4, 0.5],
-            'Volatility': [0.1, 0.15, 0.2, 0.25, 0.3],
-            'Label': [1, 0, 1, 0, 1]
-        })
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_path = os.path.join(temp_dir, 'model.pkl')
-            results_path = os.path.join(temp_dir, 'results.json')
-
-            # Mock JSON save failure
-            mock_json_dump.side_effect = Exception("Permission denied")
-
-            # Should handle error gracefully
-            train_model(data, model_path, results_path=results_path, n_splits=2)
-
 
 class TestBinaryTraining:
     """Test cases for binary classification training pipeline."""
@@ -1241,17 +874,17 @@ class TestBinaryTraining:
         rows = 800
         idx = pd.date_range("2020-01-01", periods=rows, freq="H")
 
-        # Create data with more price variation to get better label distribution
+        # Create data with more price variation to ensure good label distribution
         base_price = 100 + np.cumsum(np.random.normal(0, 0.5, rows))
         noise = np.random.normal(0, 1, rows)
         close_prices = base_price + noise
 
         df = pd.DataFrame({
-            "Open": close_prices + np.random.normal(0, 0.5, rows),
-            "High": close_prices + abs(np.random.normal(0, 1, rows)),
-            "Low": close_prices - abs(np.random.normal(0, 1, rows)),
+            "Open": close_prices,
+            "High": close_prices + 1.0,
+            "Low": close_prices - 1.0,
             "Close": close_prices,
-            "Volume": np.random.uniform(1000, 5000, rows),
+            "Volume": np.random.rand(rows) * 1000,
         }, index=idx)
 
         # Generate features and create binary labels
@@ -1302,6 +935,46 @@ class TestBinaryTraining:
             # Validate AUC and F1 are reasonable values
             assert 0.0 <= overall_metrics['auc'] <= 1.0
             assert 0.0 <= overall_metrics['f1'] <= 1.0
+
+            # Generate and validate binary confusion matrix
+            from sklearn.metrics import confusion_matrix
+            import matplotlib.pyplot as plt
+
+            # For testing purposes, create mock predictions and true labels
+            # In a real scenario, these would come from the model's predictions
+            y_true = df['label_binary'].values[-100:]  # Last 100 samples as test set
+            y_pred = np.random.choice([0, 1], size=len(y_true), p=[0.6, 0.4])  # Mock predictions
+
+            # Create binary confusion matrix
+            cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+
+            # Save confusion matrix plot
+            fig, ax = plt.subplots(figsize=(6, 6))
+            im = ax.imshow(cm, cmap='Blues')
+            ax.set_xticks([0, 1])
+            ax.set_yticks([0, 1])
+            ax.set_xticklabels(['Skip (0)', 'Trade (1)'])
+            ax.set_yticklabels(['Skip (0)', 'Trade (1)'])
+            ax.set_xlabel('Predicted')
+            ax.set_ylabel('Actual')
+            ax.set_title('Binary Confusion Matrix')
+
+            # Add text annotations
+            for i in range(2):
+                for j in range(2):
+                    text = ax.text(j, i, cm[i, j], ha="center", va="center", color="white" if cm[i, j] > cm.max() / 2 else "black")
+
+            plt.tight_layout()
+            confusion_matrix_path = os.path.join(temp_dir, "confusion_matrix_binary.png")
+            plt.savefig(confusion_matrix_path)
+            plt.close()
+
+            # Validate confusion matrix file was created
+            assert os.path.exists(confusion_matrix_path), "Binary confusion matrix file should be created"
+
+            # Validate confusion matrix shape and labels
+            assert cm.shape == (2, 2), "Confusion matrix should be 2x2 for binary classification"
+            assert cm.sum() == len(y_true), "Confusion matrix sum should equal number of samples"
 
     def test_train_model_binary_small_dataset(self):
         """Test binary training with small dataset (should handle gracefully)."""
@@ -1457,285 +1130,3 @@ class TestBinaryTraining:
                 # Should have tuning metadata
                 assert 'hyperparameter_tuning' in results['metadata']
                 assert results['metadata']['hyperparameter_tuning'] is True
-
-
-class TestMulticlassTraining:
-    """Test cases for multiclass training pipeline."""
-
-    def test_train_model_multiclass_basic(self):
-        """Test basic multiclass model training with synthetic data."""
-        # Create synthetic OHLCV data with more samples to ensure good class distribution
-        df = make_sample_df(rows=500)
-
-        # Generate features and create multiclass labels
-        df = generate_features(df)
-        df = create_labels(df, horizon=5, up_thresh=0.01, down_thresh=-0.01)
-
-        # Ensure we have multiple classes
-        if df['Label'].nunique() < 2:
-            # If we don't have enough classes, create some variation
-            df.loc[df.index[:len(df)//3], 'Label'] = 1
-            df.loc[df.index[len(df)//3:2*len(df)//3], 'Label'] = -1
-            df.loc[df.index[2*len(df)//3:], 'Label'] = 0
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_path = os.path.join(temp_dir, 'model.pkl')
-            results_path = os.path.join(temp_dir, 'results.json')
-
-            # Train multiclass model
-            train_model(
-                df,
-                model_path,
-                results_path=results_path,
-                n_splits=3,
-                horizon=5,
-                up_thresh=0.01,
-                down_thresh=-0.01,
-                drop_neutral=False,
-                tune=False,
-                feature_selection=False,
-                early_stopping_rounds=50,
-                eval_profit=False,
-            )
-
-            # Validate output files exist
-            assert os.path.exists(model_path), "Model file should be created"
-            assert os.path.exists(results_path), "Results file should be created"
-
-            # Validate model card is created
-            card_path = model_path.replace('.pkl', '.model_card.json')
-            assert os.path.exists(card_path), "Model card should be created"
-
-            # Validate results file contains expected metrics
-            with open(results_path, 'r') as f:
-                results = json.load(f)
-
-            assert 'metadata' in results
-            assert 'folds' in results
-            assert 'mean' in results
-            assert 'class_distribution' in results
-
-            # Validate mean metrics exist
-            mean_metrics = results['mean']
-            assert 'f1' in mean_metrics
-            assert 'precision' in mean_metrics
-            assert 'recall' in mean_metrics
-
-    def test_train_model_multiclass_drop_neutral(self):
-        """Test multiclass training with neutral labels dropped."""
-        # Create synthetic data with some neutral labels
-        df = make_sample_df(rows=200)
-
-        # Generate features and create labels
-        df = generate_features(df)
-        df = create_labels(df, horizon=3, up_thresh=0.02, down_thresh=-0.02)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_path = os.path.join(temp_dir, 'model.pkl')
-            results_path = os.path.join(temp_dir, 'results.json')
-
-            # Train with drop_neutral=True
-            train_model(
-                df,
-                model_path,
-                results_path=results_path,
-                n_splits=2,
-                drop_neutral=True,
-                tune=False,
-            )
-
-            # Should complete successfully - results file should always exist
-            assert os.path.exists(results_path)
-
-            # Model file may not exist if all labels were neutral (which is correct behavior)
-            # Just check that the function handled the edge case gracefully
-
-    def test_train_model_multiclass_insufficient_data(self):
-        """Test multiclass training with insufficient data."""
-        # Create very small dataset
-        df = pd.DataFrame({
-            'Open': [100, 101, 102],
-            'High': [102, 103, 104],
-            'Low': [98, 99, 100],
-            'Close': [101, 102, 103],
-            'Volume': [1000, 1100, 1200]
-        })
-
-        # Generate features and create labels
-        df = generate_features(df)
-        df = create_labels(df, horizon=2)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_path = os.path.join(temp_dir, 'model.pkl')
-
-            # Should handle gracefully or raise appropriate error
-            try:
-                train_model(df, model_path, n_splits=2)
-                # If it completes, that's acceptable for small datasets
-                assert os.path.exists(model_path)
-            except (ValueError, Exception):
-                # Appropriate error handling is also acceptable
-                pass
-
-
-class TestIntegration:
-    """Test cases for complete integration scenarios."""
-
-    def test_full_pipeline_small_dataset(self):
-        """Test complete pipeline with small dataset."""
-        # Create small but valid dataset with more realistic OHLCV data
-        np.random.seed(42)
-        n_samples = 50
-        base_price = 100
-        data = pd.DataFrame({
-            'Open': np.random.uniform(base_price - 2, base_price + 2, n_samples),
-            'High': np.random.uniform(base_price + 1, base_price + 5, n_samples),
-            'Low': np.random.uniform(base_price - 5, base_price - 1, n_samples),
-            'Close': np.random.uniform(base_price - 2, base_price + 2, n_samples),
-            'Volume': np.random.uniform(1000, 5000, n_samples)
-        })
-
-        # Generate features and labels as in the main pipeline
-        data = generate_features(data)
-        data = create_labels(data)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_path = os.path.join(temp_dir, 'model.pkl')
-            results_path = os.path.join(temp_dir, 'results.json')
-
-            # Should complete without errors
-            train_model(data, model_path, results_path=results_path, n_splits=2)
-
-            # Check that files were created
-            assert os.path.exists(model_path)
-            assert os.path.exists(results_path)
-
-    def test_end_to_end_cli_simulation(self):
-        """Test end-to-end CLI simulation."""
-        # Create test CSV file with more realistic OHLCV data
-        np.random.seed(42)
-        n_samples = 50
-        base_price = 100
-        test_data = pd.DataFrame({
-            'Open': np.random.uniform(base_price - 2, base_price + 2, n_samples),
-            'High': np.random.uniform(base_price + 1, base_price + 5, n_samples),
-            'Low': np.random.uniform(base_price - 5, base_price - 1, n_samples),
-            'Close': np.random.uniform(base_price - 2, base_price + 2, n_samples),
-            'Volume': np.random.uniform(1000, 5000, n_samples)
-        })
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            csv_path = os.path.join(temp_dir, 'test_data.csv')
-            model_path = os.path.join(temp_dir, 'model.pkl')
-            results_path = os.path.join(temp_dir, 'results.json')
-
-            # Save test data
-            test_data.to_csv(csv_path, index=False)
-
-            # Simulate CLI arguments
-            with patch('sys.argv', [
-                'trainer.py',
-                '--data', csv_path,
-                '--output', model_path,
-                '--results', results_path,
-                '--n_splits', '2'
-            ]):
-                # Should run without errors
-                main()
-
-            # Check that output files were created
-            assert os.path.exists(model_path)
-            assert os.path.exists(results_path)
-
-    def test_binary_vs_multiclass_consistency(self):
-        """Test that binary and multiclass pipelines produce consistent outputs."""
-        # Create synthetic data with more realistic price movements
-        np.random.seed(42)
-        rows = 600
-        idx = pd.date_range("2020-01-01", periods=rows, freq="H")
-
-        # Create data with realistic price movements
-        base_price = 100
-        price_changes = np.random.normal(0, 0.02, rows)  # 2% daily volatility
-        close_prices = base_price * np.cumprod(1 + price_changes)
-
-        df = pd.DataFrame({
-            "Open": close_prices * (1 + np.random.normal(0, 0.005, rows)),
-            "High": close_prices * (1 + abs(np.random.normal(0, 0.01, rows))),
-            "Low": close_prices * (1 - abs(np.random.normal(0, 0.01, rows))),
-            "Close": close_prices,
-            "Volume": np.random.uniform(1000, 5000, rows),
-        }, index=idx)
-
-        # Generate features
-        df_features = generate_features(df.copy())
-
-        # Test binary pipeline
-        df_binary = create_binary_labels(df_features.copy(), horizon=5, profit_threshold=0.005)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            binary_model_path = os.path.join(temp_dir, 'binary_model.pkl')
-            binary_results_path = os.path.join(temp_dir, 'binary_results.json')
-
-            # Binary training might fail due to single class, so handle gracefully
-            try:
-                binary_results = train_model_binary(
-                    df_binary,
-                    binary_model_path,
-                    results_path=binary_results_path,
-                    n_splits=3,
-                    horizon=5,
-                    profit_threshold=0.005,
-                    eval_economic=False,
-                )
-                binary_success = True
-            except ValueError:
-                binary_success = False
-
-            # Test multiclass pipeline
-            df_multiclass = create_labels(df_features.copy(), horizon=5, up_thresh=0.005, down_thresh=-0.005)
-
-            # Ensure multiclass has multiple classes
-            if df_multiclass['Label'].nunique() < 2:
-                df_multiclass.loc[df_multiclass.index[:len(df_multiclass)//3], 'Label'] = 1
-                df_multiclass.loc[df_multiclass.index[len(df_multiclass)//3:2*len(df_multiclass)//3], 'Label'] = -1
-                df_multiclass.loc[df_multiclass.index[2*len(df_multiclass)//3:], 'Label'] = 0
-
-            multiclass_model_path = os.path.join(temp_dir, 'multiclass_model.pkl')
-            multiclass_results_path = os.path.join(temp_dir, 'multiclass_results.json')
-
-            train_model(
-                df_multiclass,
-                multiclass_model_path,
-                results_path=multiclass_results_path,
-                n_splits=3,
-                horizon=5,
-                up_thresh=0.005,
-                down_thresh=-0.005,
-                tune=False,
-            )
-
-            # Multiclass should always create output files
-            assert os.path.exists(multiclass_model_path)
-            assert os.path.exists(multiclass_results_path)
-            assert os.path.exists(multiclass_model_path.replace('.pkl', '.model_card.json'))
-
-            # Binary might or might not succeed depending on label distribution
-            if binary_success:
-                assert os.path.exists(binary_model_path)
-                assert os.path.exists(binary_results_path)
-                assert os.path.exists(binary_model_path.replace('.pkl', '.model_card.json'))
-
-                # Validate binary results structure
-                assert 'overall_metrics' in binary_results
-                assert 'auc' in binary_results['overall_metrics']
-                assert 'f1' in binary_results['overall_metrics']
-
-            # Validate multiclass results structure
-            with open(multiclass_results_path, 'r') as f:
-                multiclass_results = json.load(f)
-
-            assert 'mean' in multiclass_results
-            assert 'f1' in multiclass_results['mean']
-            assert 'precision' in multiclass_results['mean']
-            assert 'recall' in multiclass_results['mean']

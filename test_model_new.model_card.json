@@ -1,0 +1,57 @@
+{
+  "model_file": "C:\\Users\\TU\\Desktop\\new project\\N1V1\\test_model_new.pkl",
+  "feature_list": [
+    "RSI",
+    "MACD",
+    "EMA_20",
+    "ATR",
+    "StochRSI",
+    "TrendStrength",
+    "Volatility"
+  ],
+  "selected_features": [
+    "RSI",
+    "MACD",
+    "EMA_20",
+    "ATR",
+    "StochRSI",
+    "TrendStrength",
+    "Volatility"
+  ],
+  "training_metadata": {
+    "model_type": "binary_classification",
+    "objective": "p_trade_probability",
+    "horizon": 5,
+    "profit_threshold": 0.005,
+    "include_fees": true,
+    "fee_rate": 0.001,
+    "feature_columns": [
+      "RSI",
+      "MACD",
+      "EMA_20",
+      "ATR",
+      "StochRSI",
+      "TrendStrength",
+      "Volatility"
+    ],
+    "n_splits": 2,
+    "class_weights": {
+      "1": 0.9745762711864406,
+      "0": 1.0267857142857142
+    },
+    "validation_method": "walk_forward",
+    "hyperparameter_tuning": false,
+    "feature_selection": false
+  },
+  "cv": {
+    "n_splits": 2,
+    "best_iterations": [],
+    "best_params": null
+  },
+  "training_window": {
+    "start": "0",
+    "end": "114"
+  },
+  "scaler": null,
+  "caveats": "This model was trained on historical OHLCV-based technical features for binary trade/no-trade decisions. Validate feature schema at inference time. Beware of data drift and difference between live and backtest data; re-train and validate periodically."
+}
