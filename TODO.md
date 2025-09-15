@@ -1,90 +1,56 @@
-# Roadmap: Final Migration to Binary Trade/No-Trade Model
+# API Audit Report
 
-Goal:  
-Complete the transition from the old three-class (1 = long, 0 = hold, –1 = short) model to a **binary trade/no-trade** architecture, while finishing the remaining unimplemented tasks and ensuring smooth integration with the existing Regime Detector and Strategy Selector.
+## Overview
+This report details the findings from a comprehensive audit of the `api/` folder, focusing on security, error handling, performance, maintainability, and API contract consistency. The audit covered four files: `__init__.py`, `app.py`, `models.py`, and `schemas.py`.
 
----
+## Findings
 
-## 1. Label Redefinition  **(Critical – Data Layer)**  
-**Description:**  
-Create a new binary target that reflects only the decision to trade or skip, with strict prevention of look-ahead bias.
+### api/__init__.py
+**Status:** Reviewed - No issues detected.
+- This file is empty except for a module docstring. No code to audit.
 
-**Instructions:**  
-- **Define the signal horizon and profit threshold** (e.g., forward return over N bars > +τ after fees → label 1, otherwise 0).  
-- Ensure every feature used for training is available at or before the decision timestamp.  
-- Add the new column `label_binary` to the master dataset and update all ETL/loaders to use it.  
-- Version the dataset (e.g., `v2`) to keep a clean history of the old vs. new labeling.
+### api/app.py
+**Category:** Security  
+**Description:** CORS middleware allows all origins ("*"), which exposes the API to potential cross-origin attacks.  
+**Location:** Line 75-80  
+**Suggested Fix:** Replace `allow_origins=["*"]` with a specific list of allowed origins from environment variables.
 
----
+**Category:** Security  
+**Description:** API key authentication is inconsistent; some endpoints use `optional_api_key` while others use `verify_api_key`, potentially allowing unauthorized access.  
+**Location:** Lines 320, 340, 360, 380, 400, 420  
+**Suggested Fix:** Standardize authentication across all protected endpoints to use `verify_api_key`.
 
-## 2. Binary Model Configuration  **(Critical – ML Core)**  
-**Description:**  
-Reconfigure the ML training pipeline to handle a binary target while re-using the existing feature-engineering and cross-validation infrastructure.
+**Category:** Security  
+**Description:** No input validation or sanitization on API endpoints; direct database queries without parameter checks could lead to injection if not properly handled.  
+**Location:** Lines 320-450 (endpoint functions)  
+**Suggested Fix:** Add Pydantic request models for input validation and use parameterized queries consistently.
 
-**Instructions:**  
-- Update model definitions to output a single probability `p_trade` (e.g., logistic/gradient boosting).  
-- Apply class weighting if the trade/no-trade ratio is imbalanced.  
-- Use **walk-forward validation**, not random splits, to respect time-series order.  
-- Track both standard metrics (AUC, F1) and economic metrics (expected PnL, Sharpe).
+**Category:** Error Handling  
+**Description:** Some endpoints lack specific error handling for database failures or invalid data.  
+**Location:** Lines 320-450 (endpoint functions)  
+**Suggested Fix:** Add try-except blocks around database operations and return appropriate HTTP status codes.
 
----
+**Category:** Performance  
+**Description:** Rate limiting falls back to in-memory storage when Redis is unavailable, which won't work in multi-process deployments.  
+**Location:** Lines 110-120  
+**Suggested Fix:** Implement a more robust fallback or ensure Redis availability in production.
 
-## 3. Probability Calibration & Threshold Optimisation  **(Performance Layer)**  
-**Description:**  
-Ensure probability outputs are well-calibrated and choose a trade threshold that maximizes profit after costs.
+**Category:** Maintainability  
+**Description:** The file is excessively long (over 500 lines) with multiple responsibilities (middleware, authentication, endpoints).  
+**Location:** Entire file  
+**Suggested Fix:** Refactor into separate modules: `middleware.py`, `auth.py`, `endpoints.py`.
 
-**Instructions:**  
-- Calibrate probabilities with Platt scaling or isotonic regression on validation folds.  
-- Grid-search thresholds (e.g., 0.5–0.9) and evaluate expected PnL, Sharpe, and max drawdown.  
-- Store the selected threshold in configuration so it can be adjusted without retraining.
+**Category:** Code Smell  
+**Description:** Global `bot_engine` variable creates tight coupling and makes testing difficult.  
+**Location:** Line 25, function `set_bot_engine`  
+**Suggested Fix:** Use dependency injection or a service locator pattern instead of global state.
 
----
+**Category:** Code Smell  
+**Description:** Duplicate error formatting logic in multiple places.  
+**Location:** Lines 180-190, 220-240, 260-280  
+**Suggested Fix:** Consolidate error formatting into a single utility function.
 
-## 4. Integration with Regime Detector & Strategy Selector  **(Decision Layer)**  
-**Description:**  
-Connect the binary entry model to the existing modules that already determine trade direction and strategy.
-
-**Instructions:**  
-- When `p_trade > threshold`, trigger the **Strategy Selector**, which uses the **Regime Detector** to choose long/short logic.  
-- Verify that the output from the selector (direction and chosen strategy) flows to the Risk Manager and Order Executor.  
-- Add integration tests that feed market data → binary model → selector → executor and assert that orders are correct.
-
----
-
-## 5. Monitoring & Alerting Enhancements  **(Operations Layer)**  
-**Description:**  
-Extend the current Prometheus metrics and trade logs to track the new binary model’s health and calibration.
-
-**Instructions:**  
-- Expose metrics: current threshold, average `p_trade`, number of trades per regime, realized vs. predicted hit rate.  
-- Add alert rules for drift detection (e.g., sudden change in trade frequency or calibration error).  
-- Ensure logs capture `p_trade`, regime, selected strategy, and final order details for every decision.
-
----
-
-## 6. Documentation Update  **(Knowledge & Maintenance)**  
-**Description:**  
-Provide complete, current documentation of the binary migration and new operational flow.
-
-**Instructions:**  
-- Update README or internal wiki to explain:
-  - Motivation for binary trade/no-trade migration.
-  - Labeling rules and horizon.
-  - Calibration and threshold selection process.
-  - Full decision flow: **Binary Entry Model → Strategy Selector (Regime Detector) → Risk Manager → Order Executor**.
-- Include diagrams and a sample configuration file for quick onboarding of future contributors.
-
----
-
-## Execution Order
-1. **Label Redefinition**  
-2. **Binary Model Configuration**  
-3. **Probability Calibration & Threshold Optimisation**  
-4. **Integration with Regime Detector & Strategy Selector**  
-5. **Monitoring & Alerting Enhancements**  
-6. **Documentation Update**
-
----
-
-**Outcome:**  
-After completing these steps the framework will operate on a clean binary entry model, with calibrated probabilities, seamless direction control via the existing regime/strategy modules, robust monitoring, and clear documentation—ready for full backtesting and live deployment.
+### api/models.py
+**Category:** Security  
+**Description:** No input validation on model fields; arbitrary data can be stored without constraints.  
+**Location:** Classes Order, Signal,
