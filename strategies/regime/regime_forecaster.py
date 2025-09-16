@@ -52,6 +52,7 @@ try:
     TENSORFLOW_AVAILABLE = True
 except ImportError:
     TENSORFLOW_AVAILABLE = False
+    keras = None  # Define keras as None when not available
     warnings.warn("TensorFlow not available, neural network models disabled")
 
 try:
@@ -598,9 +599,12 @@ class LSTMForecaster:
         self.models: Dict[int, Any] = {}
         self.is_trained = False
 
-    def build_model(self, input_shape: Tuple[int, int], n_classes: int) -> keras.Model:
+    def build_model(self, input_shape: Tuple[int, int], n_classes: int):
         """Build LSTM model architecture."""
         try:
+            if keras is None:
+                raise ImportError("Keras not available")
+
             model = keras.Sequential([
                 keras.layers.LSTM(64, input_shape=input_shape, return_sequences=True),
                 keras.layers.Dropout(0.2),
@@ -626,7 +630,7 @@ class LSTMForecaster:
              feature_names: List[str]) -> TrainingMetrics:
         """Train LSTM models for each forecasting horizon."""
         try:
-            if not TENSORFLOW_AVAILABLE:
+            if not TENSORFLOW_AVAILABLE or keras is None:
                 raise ImportError("TensorFlow not available")
 
             start_time = datetime.now()
