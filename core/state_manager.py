@@ -6,6 +6,7 @@ and monitoring of all bot components.
 """
 
 import logging
+import threading
 from typing import Dict, Any, Optional, List
 from utils.time import now_ms
 
@@ -36,6 +37,10 @@ class StateManager:
         self.order_manager = order_manager
         self.performance_tracker = performance_tracker
 
+        # Thread synchronization locks
+        self._health_lock = threading.RLock()  # For component_health operations
+        self._state_lock = threading.RLock()   # For state tracking operations
+
         # Display components
         self.live_display = None
         self.display_table = None
@@ -58,11 +63,12 @@ class StateManager:
         try:
             current_time = now_ms()
 
-            # Throttle updates to prevent excessive logging
-            if current_time - self.last_update_time < (self.update_interval * 1000):
-                return
-
-            self.last_update_time = current_time
+            # Thread-safe access to state tracking
+            with self._state_lock:
+                # Throttle updates to prevent excessive logging
+                if current_time - self.last_update_time < (self.update_interval * 1000):
+                    return
+                self.last_update_time = current_time
 
             # Update state from order manager
             if self.order_manager:
@@ -72,42 +78,46 @@ class StateManager:
                     active_orders = await self.order_manager.get_active_order_count()
                     open_positions = await self.order_manager.get_open_position_count()
 
-                    # Update component health
-                    self.component_health["order_executor"] = {
-                        "status": "healthy",
-                        "last_check": current_time,
-                        "balance": balance,
-                        "equity": equity,
-                        "active_orders": active_orders,
-                        "open_positions": open_positions
-                    }
+                    # Thread-safe update to component health
+                    with self._health_lock:
+                        self.component_health["order_executor"] = {
+                            "status": "healthy",
+                            "last_check": current_time,
+                            "balance": balance,
+                            "equity": equity,
+                            "active_orders": active_orders,
+                            "open_positions": open_positions
+                        }
 
                 except Exception as e:
                     logger.exception(f"Failed to update state from order manager: {e}")
-                    self.component_health["order_executor"] = {
-                        "status": "error",
-                        "last_check": current_time,
-                        "error": str(e)
-                    }
+                    with self._health_lock:
+                        self.component_health["order_executor"] = {
+                            "status": "error",
+                            "last_check": current_time,
+                            "error": str(e)
+                        }
 
             # Update performance metrics
             if self.performance_tracker:
                 try:
                     perf_stats = self.performance_tracker.get_performance_stats()
-                    self.component_health["performance_tracker"] = {
-                        "status": "healthy",
-                        "last_check": current_time,
-                        "total_pnl": perf_stats.get("total_pnl", 0),
-                        "win_rate": perf_stats.get("win_rate", 0),
-                        "total_trades": perf_stats.get("wins", 0) + perf_stats.get("losses", 0)
-                    }
+                    with self._health_lock:
+                        self.component_health["performance_tracker"] = {
+                            "status": "healthy",
+                            "last_check": current_time,
+                            "total_pnl": perf_stats.get("total_pnl", 0),
+                            "win_rate": perf_stats.get("win_rate", 0),
+                            "total_trades": perf_stats.get("wins", 0) + perf_stats.get("losses", 0)
+                        }
                 except Exception as e:
                     logger.exception(f"Failed to update performance state: {e}")
-                    self.component_health["performance_tracker"] = {
-                        "status": "error",
-                        "last_check": current_time,
-                        "error": str(e)
-                    }
+                    with self._health_lock:
+                        self.component_health["performance_tracker"] = {
+                            "status": "error",
+                            "last_check": current_time,
+                            "error": str(e)
+                        }
 
         except Exception as e:
             logger.exception(f"Failed to update bot state: {e}")
@@ -129,9 +139,13 @@ class StateManager:
 
     async def _gather_display_data(self) -> Dict[str, Any]:
         """Gather data for display update."""
+        # Thread-safe access to component health
+        with self._health_lock:
+            component_health_copy = self.component_health.copy()
+
         display_data = {
             "timestamp": now_ms(),
-            "component_health": self.component_health.copy()
+            "component_health": component_health_copy
         }
 
         # Add order manager data
@@ -175,17 +189,21 @@ class StateManager:
 
     def _gather_status_data(self) -> Dict[str, Any]:
         """Gather data for status logging."""
+        # Thread-safe access to component health
+        with self._health_lock:
+            component_health_copy = self.component_health.copy()
+
         status_data = {
             "timestamp": now_ms(),
             "mode": self.config.get("environment", {}).get("mode", "unknown"),
-            "component_health": self.component_health.copy()
+            "component_health": component_health_copy
         }
 
         # Add order data (synchronous snapshot)
         if self.order_manager:
             try:
                 # Use cached values if available
-                order_health = self.component_health.get("order_executor", {})
+                order_health = component_health_copy.get("order_executor", {})
                 status_data.update({
                     "balance": order_health.get("balance", 0),
                     "equity": order_health.get("equity", 0),
@@ -198,7 +216,7 @@ class StateManager:
         # Add performance data
         if self.performance_tracker:
             try:
-                perf_health = self.component_health.get("performance_tracker", {})
+                perf_health = component_health_copy.get("performance_tracker", {})
                 status_data.update({
                     "total_pnl": perf_health.get("total_pnl", 0),
                     "win_rate": perf_health.get("win_rate", 0),
@@ -283,7 +301,9 @@ class StateManager:
             if details:
                 health_info.update(details)
 
-            self.component_health[component_name] = health_info
+            # Thread-safe update to component health
+            with self._health_lock:
+                self.component_health[component_name] = health_info
 
             if status == "error":
                 logger.warning(f"Component {component_name} health status: {status}")
@@ -295,7 +315,9 @@ class StateManager:
 
     def get_component_health(self) -> Dict[str, Any]:
         """Get the health status of all components."""
-        return self.component_health.copy()
+        # Thread-safe access to component health
+        with self._health_lock:
+            return self.component_health.copy()
 
     def get_overall_health(self) -> Dict[str, Any]:
         """Get overall system health assessment."""

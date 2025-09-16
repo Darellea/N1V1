@@ -343,6 +343,24 @@ class PerformanceReportGenerator:
                 )
             }
 
+            # Add percentage changes with safe division
+            if previous.duration > 0:
+                comparisons["historical_comparison"]["duration_change_pct"] = (
+                    (current.duration - previous.duration) / previous.duration * 100
+                )
+
+            prev_functions = previous.summary.get("total_functions", 0)
+            if prev_functions > 0:
+                comparisons["historical_comparison"]["function_count_change_pct"] = (
+                    (current.summary.get("total_functions", 0) - prev_functions) / prev_functions * 100
+                )
+
+            prev_score = previous.summary.get("performance_score", 50.0)
+            if prev_score != 0:
+                comparisons["historical_comparison"]["performance_score_change_pct"] = (
+                    (current.summary.get("performance_score", 50.0) - prev_score) / prev_score * 100
+                )
+
         return comparisons
 
     def _generate_recommendations(self, report: PerformanceReport) -> List[str]:

@@ -31,8 +31,20 @@ class MemoryManager:
             enable_monitoring: Whether to enable memory monitoring
             cleanup_interval: Interval for automatic cleanup in seconds
         """
-        self.enable_monitoring = enable_monitoring
-        self.cleanup_interval = cleanup_interval
+        # Import configuration from centralized system
+        from .config_manager import get_config_manager
+        config_manager = get_config_manager()
+        memory_config = config_manager.get_memory_config()
+
+        self.enable_monitoring = enable_monitoring if enable_monitoring is not None else memory_config.enable_monitoring
+        self.cleanup_interval = cleanup_interval if cleanup_interval != 300.0 else memory_config.cleanup_interval
+
+        # Thread synchronization locks
+        self._pools_lock = threading.RLock()  # For object pools operations
+        self._tracking_lock = threading.RLock()  # For object tracking operations
+        self._snapshots_lock = threading.RLock()  # For memory snapshots operations
+        self._metrics_lock = threading.RLock()  # For performance metrics operations
+        self._callbacks_lock = threading.RLock()  # For cleanup callbacks operations
 
         # Object pools
         self._object_pools: Dict[str, List[Any]] = {}
@@ -43,12 +55,12 @@ class MemoryManager:
         self._tracked_objects: WeakSet = WeakSet()
         self._object_refs: Dict[str, ref] = {}
 
-        # Memory monitoring
+        # Memory monitoring with configurable thresholds
         self._memory_snapshots: List[Dict[str, Any]] = []
         self._memory_thresholds: Dict[str, float] = {
-            "warning_mb": 500.0,  # Warning at 500MB
-            "critical_mb": 1000.0,  # Critical at 1GB
-            "cleanup_mb": 800.0  # Trigger cleanup at 800MB
+            "warning_mb": memory_config.warning_memory_mb,
+            "critical_mb": memory_config.max_memory_mb,
+            "cleanup_mb": memory_config.cleanup_memory_mb,
         }
 
         # Resource cleanup callbacks
@@ -116,22 +128,25 @@ class MemoryManager:
                 ]
             }
 
-            self._memory_snapshots.append(memory_info)
+            # Thread-safe access to memory snapshots
+            with self._snapshots_lock:
+                self._memory_snapshots.append(memory_info)
+                # Keep only last 100 snapshots
+                if len(self._memory_snapshots) > 100:
+                    self._memory_snapshots = self._memory_snapshots[-100:]
 
-            # Keep only last 100 snapshots
-            if len(self._memory_snapshots) > 100:
-                self._memory_snapshots = self._memory_snapshots[-100:]
-
-            # Check thresholds
-            if memory_mb >= self._memory_thresholds["critical_mb"]:
-                self._memory_criticals += 1
-                logger.critical(".2f")
-                self.trigger_emergency_cleanup()
-            elif memory_mb >= self._memory_thresholds["warning_mb"]:
-                self._memory_warnings += 1
-                logger.warning(".2f")
-                if memory_mb >= self._memory_thresholds["cleanup_mb"]:
-                    self.trigger_cleanup()
+            # Thread-safe access to metrics
+            with self._metrics_lock:
+                # Check thresholds
+                if memory_mb >= self._memory_thresholds["critical_mb"]:
+                    self._memory_criticals += 1
+                    logger.critical(".2f")
+                    self.trigger_emergency_cleanup()
+                elif memory_mb >= self._memory_thresholds["warning_mb"]:
+                    self._memory_warnings += 1
+                    logger.warning(".2f")
+                    if memory_mb >= self._memory_thresholds["cleanup_mb"]:
+                        self.trigger_cleanup()
 
         except Exception as e:
             logger.exception(f"Error checking memory usage: {e}")
@@ -149,47 +164,49 @@ class MemoryManager:
         Returns:
             Object from pool or newly created
         """
-        if pool_name not in self._object_pools:
-            self._object_pools[pool_name] = []
-            self._pool_sizes[pool_name] = max_pool_size
+        with self._pools_lock:
+            if pool_name not in self._object_pools:
+                self._object_pools[pool_name] = []
+                self._pool_sizes[pool_name] = max_pool_size
 
-        pool = self._object_pools[pool_name]
-        max_size = self._pool_sizes[pool_name]
+            pool = self._object_pools[pool_name]
+            max_size = self._pool_sizes[pool_name]
 
-        # Try to find an available object
-        for obj in pool:
-            if hasattr(obj, '_in_use') and not obj._in_use:
-                obj._in_use = True
-                logger.debug(f"Reused object from pool {pool_name}")
-                return obj
+            # Try to find an available object
+            for obj in pool:
+                if hasattr(obj, '_in_use') and not obj._in_use:
+                    obj._in_use = True
+                    logger.debug(f"Reused object from pool {pool_name}")
+                    return obj
 
-        # Create a new object if pool not full
-        if len(pool) < max_size:
+            # Create a new object if pool not full
+            if len(pool) < max_size:
+                try:
+                    obj = factory_func(*args, **kwargs)
+                    obj._in_use = True
+                    obj._pool_name = pool_name
+                    obj._created_time = time.time()
+
+                    pool.append(obj)
+                    with self._tracking_lock:
+                        self._tracked_objects.add(obj)
+
+                    logger.debug(f"Created new object for pool {pool_name}")
+                    return obj
+                except Exception as e:
+                    logger.exception(f"Failed to create object for pool {pool_name}: {e}")
+                    return None
+
+            # Pool is full, create temporary object
+            logger.warning(f"Pool {pool_name} is full, creating temporary object")
             try:
                 obj = factory_func(*args, **kwargs)
                 obj._in_use = True
-                obj._pool_name = pool_name
-                obj._created_time = time.time()
-
-                pool.append(obj)
-                self._tracked_objects.add(obj)
-
-                logger.debug(f"Created new object for pool {pool_name}")
+                obj._temporary = True
                 return obj
             except Exception as e:
-                logger.exception(f"Failed to create object for pool {pool_name}: {e}")
+                logger.exception(f"Failed to create temporary object for pool {pool_name}: {e}")
                 return None
-
-        # Pool is full, create temporary object
-        logger.warning(f"Pool {pool_name} is full, creating temporary object")
-        try:
-            obj = factory_func(*args, **kwargs)
-            obj._in_use = True
-            obj._temporary = True
-            return obj
-        except Exception as e:
-            logger.exception(f"Failed to create temporary object for pool {pool_name}: {e}")
-            return None
 
     def return_object_to_pool(self, obj: Any):
         """Return an object to its pool.
@@ -204,12 +221,13 @@ class MemoryManager:
             return
 
         pool_name = obj._pool_name
-        if pool_name in self._object_pools:
-            obj._in_use = False
-            obj._last_used = time.time()
-            logger.debug(f"Returned object to pool {pool_name}")
-        else:
-            logger.warning(f"Pool {pool_name} not found for object return")
+        with self._pools_lock:
+            if pool_name in self._object_pools:
+                obj._in_use = False
+                obj._last_used = time.time()
+                logger.debug(f"Returned object to pool {pool_name}")
+            else:
+                logger.warning(f"Pool {pool_name} not found for object return")
 
     def cleanup_pool(self, pool_name: str, force: bool = False):
         """Clean up a specific object pool.
@@ -218,37 +236,38 @@ class MemoryManager:
             pool_name: Name of the pool to clean up
             force: Whether to force cleanup of all objects
         """
-        if pool_name not in self._object_pools:
-            return
+        with self._pools_lock:
+            if pool_name not in self._object_pools:
+                return
 
-        pool = self._object_pools[pool_name]
-        current_time = time.time()
+            pool = self._object_pools[pool_name]
+            current_time = time.time()
 
-        if force:
-            # Force cleanup all objects
-            cleanup_count = 0
-            for obj in pool[:]:  # Copy the list to avoid modification during iteration
-                if hasattr(obj, '_in_use') and not obj._in_use:
+            if force:
+                # Force cleanup all objects
+                cleanup_count = 0
+                for obj in pool[:]:  # Copy the list to avoid modification during iteration
+                    if hasattr(obj, '_in_use') and not obj._in_use:
+                        pool.remove(obj)
+                        cleanup_count += 1
+
+                logger.info(f"Force cleaned up {cleanup_count} objects from pool {pool_name}")
+            else:
+                # Clean up old unused objects (older than 1 hour)
+                old_objects = []
+                for obj in pool:
+                    if (hasattr(obj, '_in_use') and not obj._in_use and
+                        hasattr(obj, '_last_used') and
+                        current_time - obj._last_used > 3600):  # 1 hour
+                        old_objects.append(obj)
+
+                for obj in old_objects:
                     pool.remove(obj)
-                    cleanup_count += 1
 
-            logger.info(f"Force cleaned up {cleanup_count} objects from pool {pool_name}")
-        else:
-            # Clean up old unused objects (older than 1 hour)
-            old_objects = []
-            for obj in pool:
-                if (hasattr(obj, '_in_use') and not obj._in_use and
-                    hasattr(obj, '_last_used') and
-                    current_time - obj._last_used > 3600):  # 1 hour
-                    old_objects.append(obj)
+                if old_objects:
+                    logger.info(f"Cleaned up {len(old_objects)} old objects from pool {pool_name}")
 
-            for obj in old_objects:
-                pool.remove(obj)
-
-            if old_objects:
-                logger.info(f"Cleaned up {len(old_objects)} old objects from pool {pool_name}")
-
-        self._pool_cleanup_times[pool_name] = current_time
+            self._pool_cleanup_times[pool_name] = current_time
 
     def cleanup_all_pools(self, force: bool = False):
         """Clean up all object pools.
@@ -331,7 +350,30 @@ class MemoryManager:
         Args:
             callback: Function to call during cleanup
         """
-        self._cleanup_callbacks.append(callback)
+        with self._callbacks_lock:
+            self._cleanup_callbacks.append(callback)
+
+    def integrate_cache_maintenance(self, cache_instance):
+        """Integrate cache maintenance with memory manager.
+
+        Args:
+            cache_instance: Cache instance with perform_maintenance method
+        """
+        async def cache_maintenance_callback():
+            """Async callback to perform cache maintenance."""
+            try:
+                if hasattr(cache_instance, 'perform_maintenance'):
+                    result = await cache_instance.perform_maintenance()
+                    if result.get("maintenance_performed", False):
+                        logger.info(f"Cache maintenance completed: {result}")
+            except Exception as e:
+                logger.error(f"Cache maintenance failed: {str(e)}")
+
+        # Add cache maintenance to cleanup callbacks
+        with self._callbacks_lock:
+            self._cleanup_callbacks.append(cache_maintenance_callback)
+
+        logger.info("Cache maintenance integrated with memory manager")
 
     def track_object(self, obj: Any, name: str):
         """Track an object with a weak reference.
@@ -340,14 +382,16 @@ class MemoryManager:
             obj: Object to track
             name: Name for the object
         """
-        self._object_refs[name] = ref(obj, lambda ref: self._on_object_deleted(name))
-        self._tracked_objects.add(obj)
+        with self._tracking_lock:
+            self._object_refs[name] = ref(obj, lambda ref: self._on_object_deleted(name))
+            self._tracked_objects.add(obj)
 
     def _on_object_deleted(self, name: str):
         """Callback when a tracked object is deleted."""
-        if name in self._object_refs:
-            del self._object_refs[name]
-        logger.debug(f"Tracked object {name} was deleted")
+        with self._tracking_lock:
+            if name in self._object_refs:
+                del self._object_refs[name]
+            logger.debug(f"Tracked object {name} was deleted")
 
     def get_memory_stats(self) -> Dict[str, Any]:
         """Get comprehensive memory statistics."""

@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING, Union
+from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING, Union, Protocol
 from decimal import Decimal, InvalidOperation
 import random
 import time
 from utils.time import now_ms, to_ms
 from typing import Callable
 import os
+from abc import ABC, abstractmethod
 
 import ccxt.async_support as ccxt
 from ccxt.base.errors import NetworkError, ExchangeError
@@ -33,8 +34,221 @@ from core.management.portfolio_manager import PortfolioManager
 from utils.adapter import signal_to_dict
 from core.contracts import SignalType
 
-logger = logging.getLogger(__name__)
+from .logging_utils import get_structured_logger, LogSensitivity
+
+logger = get_structured_logger("core.order_manager", LogSensitivity.SECURE)
 trade_logger = get_trade_logger()
+
+
+class OrderExecutionStrategy(ABC):
+    """Abstract base class for order execution strategies."""
+
+    def __init__(self, order_manager: 'OrderManager'):
+        self.order_manager = order_manager
+
+    @abstractmethod
+    async def execute_order(self, signal: Any) -> Optional[Dict[str, Any]]:
+        """Execute an order using this strategy."""
+        pass
+
+    @abstractmethod
+    def get_mode_name(self) -> str:
+        """Get the name of this execution mode."""
+        pass
+
+
+class LiveOrderExecutionStrategy(OrderExecutionStrategy):
+    """Strategy for live order execution with retry logic."""
+
+    def get_mode_name(self) -> str:
+        return "live"
+
+    async def execute_order(self, signal: Any) -> Optional[Dict[str, Any]]:
+        """Execute order in live mode with retry and error handling."""
+        try:
+            order_response = await self.order_manager.reliability_manager.retry_async(
+                lambda: self.order_manager.live_executor.execute_live_order(signal),
+                exceptions=(NetworkError, ExchangeError, asyncio.TimeoutError, OSError),
+            )
+            order = self.order_manager.order_processor.parse_order_response(order_response)
+            processed_order = await self.order_manager.order_processor.process_order(order)
+            trade_logger.log_order(processed_order, self.get_mode_name())
+            return processed_order
+        except Exception as e:
+            # Increment critical error counter and potentially activate safe mode
+            self.order_manager.reliability_manager.record_critical_error(
+                e, context={"symbol": getattr(signal, "symbol", None)}
+            )
+            logger.exception("Live order failed after retries")
+            trade_logger.log_failed_order(signal_to_dict(signal), str(e))
+            return None
+
+
+class PaperOrderExecutionStrategy(OrderExecutionStrategy):
+    """Strategy for paper trading order execution."""
+
+    def get_mode_name(self) -> str:
+        return "paper"
+
+    async def execute_order(self, signal: Any) -> Optional[Dict[str, Any]]:
+        """Execute order in paper trading mode."""
+        order = await self.order_manager.paper_executor.execute_paper_order(signal)
+        return await self.order_manager.order_processor.process_order(order)
+
+
+class BacktestOrderExecutionStrategy(OrderExecutionStrategy):
+    """Strategy for backtest order execution."""
+
+    def get_mode_name(self) -> str:
+        return "backtest"
+
+    async def execute_order(self, signal: Any) -> Optional[Dict[str, Any]]:
+        """Execute order in backtest mode."""
+        order = await self.order_manager.backtest_executor.execute_backtest_order(signal)
+        return await self.order_manager.order_processor.process_order(order)
+
+
+class FallbackOrderExecutionStrategy(OrderExecutionStrategy):
+    """Fallback strategy that defaults to paper trading."""
+
+    def get_mode_name(self) -> str:
+        return "paper_fallback"
+
+    async def execute_order(self, signal: Any) -> Optional[Dict[str, Any]]:
+        """Execute order using paper trading as fallback."""
+        logger.warning("Unknown trading mode, falling back to paper trading")
+        order = await self.order_manager.paper_executor.execute_paper_order(signal)
+        return await self.order_manager.order_processor.process_order(order)
+
+
+class BalanceRetrievalStrategy(ABC):
+    """Abstract base class for balance retrieval strategies."""
+
+    def __init__(self, order_manager: 'OrderManager'):
+        self.order_manager = order_manager
+
+    @abstractmethod
+    async def get_balance(self) -> Decimal:
+        """Get balance using this strategy."""
+        pass
+
+
+class LiveBalanceStrategy(BalanceRetrievalStrategy):
+    """Strategy for retrieving live trading balance."""
+
+    async def get_balance(self) -> Decimal:
+        """Get balance from live exchange."""
+        await self.order_manager._rate_limit()
+        try:
+            balance = await self.order_manager.live_executor.exchange.fetch_balance()
+            return Decimal(str(balance["total"].get(self.order_manager.config.get("base_currency"), 0)))
+        except Exception as e:
+            logger.warning(f"Failed to fetch live balance: {e}")
+            return Decimal(0)
+
+
+class PaperBalanceStrategy(BalanceRetrievalStrategy):
+    """Strategy for retrieving paper trading balance."""
+
+    async def get_balance(self) -> Decimal:
+        """Get balance from paper trading executor."""
+        return self.order_manager.paper_executor.get_balance()
+
+
+class BacktestBalanceStrategy(BalanceRetrievalStrategy):
+    """Strategy for retrieving backtest balance."""
+
+    async def get_balance(self) -> Decimal:
+        """Get balance from backtest/portfolio manager."""
+        if self.order_manager.portfolio_mode and self.order_manager.portfolio_manager.paper_balances:
+            total = sum([float(v) for v in self.order_manager.portfolio_manager.paper_balances.values()])
+            return Decimal(str(total))
+        return Decimal(0)
+
+
+class EquityCalculationStrategy(ABC):
+    """Abstract base class for equity calculation strategies."""
+
+    def __init__(self, order_manager: 'OrderManager'):
+        self.order_manager = order_manager
+
+    @abstractmethod
+    async def calculate_equity(self, balance: Decimal) -> Decimal:
+        """Calculate equity using this strategy."""
+        pass
+
+
+class LiveEquityStrategy(EquityCalculationStrategy):
+    """Strategy for calculating live trading equity."""
+
+    async def calculate_equity(self, balance: Decimal) -> Decimal:
+        """Calculate equity including unrealized PnL from live positions."""
+        unrealized = Decimal(0)
+        for symbol, position in self.order_manager.order_processor.positions.items():
+            try:
+                # Validate position data
+                entry_price = position.get("entry_price")
+                amount = position.get("amount")
+                if entry_price is None or amount is None:
+                    logger.warning(f"Invalid position data for {symbol}: missing entry_price or amount")
+                    continue
+
+                entry_price = Decimal(str(entry_price))
+                amount = Decimal(str(amount))
+
+                # Use cached ticker to reduce API calls
+                ticker = await self.order_manager._get_cached_ticker(symbol)
+                current_price = Decimal(str(ticker.get("last") or ticker.get("close") or 0))
+                unrealized += (current_price - entry_price) * amount
+            except (NetworkError, ExchangeError, OSError) as e:
+                logger.warning(f"Failed to fetch ticker for {symbol}: {e}")
+                continue
+            except (TypeError, ValueError, InvalidOperation) as e:
+                logger.warning(f"Data error while computing unrealized for {symbol}: {e}")
+                continue
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Unexpected error while computing unrealized PnL")
+                raise
+
+        return balance + unrealized
+
+
+class PortfolioEquityStrategy(EquityCalculationStrategy):
+    """Strategy for calculating portfolio equity."""
+
+    async def calculate_equity(self, balance: Decimal) -> Decimal:
+        """Calculate equity for portfolio mode."""
+        try:
+            total = Decimal(0)
+            # Sum balances and unrealized from positions
+            if self.order_manager.portfolio_manager.paper_balances:
+                total += sum(self.order_manager.portfolio_manager.paper_balances.values())
+            # Add unrealized per-position
+            for symbol, pos in self.order_manager.order_processor.positions.items():
+                try:
+                    entry = Decimal(pos.get("entry_price", Decimal(0)))
+                    amt = Decimal(pos.get("amount", Decimal(0)))
+                    total += entry * amt
+                except (TypeError, ValueError, InvalidOperation) as e:
+                    logger.warning(f"Invalid position data for {symbol}: {e}")
+                    continue
+                except Exception:
+                    logger.exception("Unexpected error while aggregating positions")
+                    raise
+            return total
+        except Exception:
+            logger.exception("Unexpected error calculating portfolio total")
+            raise
+
+
+class SimpleEquityStrategy(EquityCalculationStrategy):
+    """Simple strategy that returns balance as equity."""
+
+    async def calculate_equity(self, balance: Decimal) -> Decimal:
+        """Return balance as equity (no unrealized calculations)."""
+        return balance
 
 
 class OrderManager:
@@ -84,7 +298,7 @@ class OrderManager:
         self.reliability_manager = ReliabilityManager(config.get("reliability", {}))
         self.portfolio_manager = PortfolioManager()
 
-        # Set initial paper balance
+        # Set initial paper balance - use Decimal for precision
         initial_balance = None
         paper_cfg = config.get("paper") if isinstance(config, dict) else None
         if isinstance(paper_cfg, dict):
@@ -99,6 +313,16 @@ class OrderManager:
             initial_balance = config.get("initial_balance", None) if isinstance(config, dict) else None
             if not initial_balance:
                 initial_balance = self.config.get("initial_balance", None)
+
+        # Convert to Decimal for precision, with safe fallback
+        try:
+            if initial_balance is not None:
+                initial_balance = Decimal(str(initial_balance))
+            else:
+                initial_balance = Decimal("1000.0")  # Default balance
+        except (InvalidOperation, ValueError, TypeError):
+            logger.warning(f"Invalid initial_balance value: {initial_balance}, using default")
+            initial_balance = Decimal("1000.0")
 
         self.paper_executor.set_initial_balance(initial_balance)
         self.portfolio_manager.set_initial_balance(initial_balance)
@@ -126,6 +350,26 @@ class OrderManager:
         self._balance_cache_ttl: float = 10.0  # 10 seconds cache for balance
         self._equity_cache_ttl: float = 5.0   # 5 seconds cache for equity
 
+        # Initialize strategy patterns
+        self._execution_strategies = {
+            TradingMode.LIVE: LiveOrderExecutionStrategy(self),
+            TradingMode.PAPER: PaperOrderExecutionStrategy(self),
+            TradingMode.BACKTEST: BacktestOrderExecutionStrategy(self)
+        }
+        self._fallback_strategy = FallbackOrderExecutionStrategy(self)
+
+        self._balance_strategies = {
+            TradingMode.LIVE: LiveBalanceStrategy(self),
+            TradingMode.PAPER: PaperBalanceStrategy(self),
+            TradingMode.BACKTEST: BacktestBalanceStrategy(self)
+        }
+
+        self._equity_strategies = {
+            TradingMode.LIVE: LiveEquityStrategy(self),
+            TradingMode.PAPER: PortfolioEquityStrategy(self) if self.portfolio_mode else SimpleEquityStrategy(self),
+            TradingMode.BACKTEST: PortfolioEquityStrategy(self) if self.portfolio_mode else SimpleEquityStrategy(self)
+        }
+
     @property
     def paper_balances(self) -> Dict[str, Decimal]:
         """Compatibility shim: expose paper_balances from PortfolioManager for existing callers/tests."""
@@ -149,35 +393,10 @@ class OrderManager:
             trade_logger.log_failed_order(signal_to_dict(signal), "safe_mode_active")
             return {"id": None, "symbol": getattr(signal, "symbol", None), "status": "skipped", "reason": "safe_mode_active"}
 
-        # Determine execution path
+        # Use strategy pattern for order execution
         try:
-            if self.mode == TradingMode.BACKTEST:
-                order = await self.backtest_executor.execute_backtest_order(signal)
-                return await self.order_processor.process_order(order)
-            elif self.mode == TradingMode.PAPER:
-                order = await self.paper_executor.execute_paper_order(signal)
-                return await self.order_processor.process_order(order)
-            elif self.mode == TradingMode.LIVE:
-                # For live mode, execute with retry/backoff for network-related errors.
-                try:
-                    order_response = await self.reliability_manager.retry_async(
-                        lambda: self.live_executor.execute_live_order(signal),
-                        exceptions=(NetworkError, ExchangeError, asyncio.TimeoutError, OSError),
-                    )
-                    order = self.order_processor.parse_order_response(order_response)
-                    processed_order = await self.order_processor.process_order(order)
-                    trade_logger.log_order(processed_order, self.mode_name)
-                    return processed_order
-                except Exception as e:
-                    # Increment critical error counter and potentially activate safe mode
-                    self.reliability_manager.record_critical_error(e, context={"symbol": getattr(signal, "symbol", None)})
-                    logger.exception("Live order failed after retries")
-                    trade_logger.log_failed_order(signal_to_dict(signal), str(e))
-                    return None
-            else:
-                # Unknown mode: treat as paper for safety
-                order = await self.paper_executor.execute_paper_order(signal)
-                return await self.order_processor.process_order(order)
+            strategy = self._execution_strategies.get(self.mode, self._fallback_strategy)
+            return await strategy.execute_order(signal)
         except (NetworkError, ExchangeError, OSError) as e:
             logger.error(f"Order execution failed (exchange/network): {str(e)}", exc_info=True)
             trade_logger.log_failed_order(signal_to_dict(signal), str(e))
@@ -281,41 +500,27 @@ class OrderManager:
         """Get current account balance with caching for performance."""
         current_time = time.time()
 
-        # Check cache for live mode
-        if (self.mode == TradingMode.LIVE and
-            self._balance_cache is not None and
+        # Check cache first
+        if (self._balance_cache is not None and
             (current_time - self._balance_cache_timestamp) < self._balance_cache_ttl):
             return self._balance_cache
 
-        if self.mode == TradingMode.LIVE and self.live_executor:
-            await self._rate_limit()
-            try:
-                balance = await self.live_executor.exchange.fetch_balance()
-                balance_value = Decimal(str(balance["total"].get(self.config.get("base_currency"), 0)))
-                # Cache the result
-                self._balance_cache = balance_value
-                self._balance_cache_timestamp = current_time
-                return balance_value
-            except Exception as e:
-                logger.warning(f"Failed to fetch balance: {e}")
-                return Decimal(0)
-        elif self.mode == TradingMode.PAPER:
-            balance_value = self.paper_executor.get_balance()
-            # Cache paper balance as well
-            self._balance_cache = balance_value
-            self._balance_cache_timestamp = current_time
-            return balance_value
-        else:
-            # Backtest doesn't track balance; aggregate closed PnL if requested elsewhere
-            if self.portfolio_mode and self.portfolio_manager.paper_balances:
-                total = sum([float(v) for v in self.portfolio_manager.paper_balances.values()])
-                balance_value = Decimal(str(total))
+        # Use strategy pattern for balance retrieval
+        try:
+            strategy = self._balance_strategies.get(self.mode)
+            if strategy:
+                balance_value = await strategy.get_balance()
             else:
+                logger.warning(f"No balance strategy for mode {self.mode}, using fallback")
                 balance_value = Decimal(0)
-            # Cache backtest balance
-            self._balance_cache = balance_value
-            self._balance_cache_timestamp = current_time
-            return balance_value
+        except Exception as e:
+            logger.warning(f"Error getting balance: {e}")
+            balance_value = Decimal(0)
+
+        # Cache the result
+        self._balance_cache = balance_value
+        self._balance_cache_timestamp = current_time
+        return balance_value
 
     async def get_equity(self) -> Decimal:
         """Get current account equity (balance + unrealized PnL) with caching for performance."""
@@ -328,64 +533,17 @@ class OrderManager:
 
         balance = await self.get_balance()
 
-        if self.mode == TradingMode.LIVE and self.live_executor:
-            # For live trading, calculate unrealized PnL from open positions using cached tickers
-            unrealized = Decimal(0)
-            for symbol, position in self.order_processor.positions.items():
-                try:
-                    # Validate position data
-                    entry_price = position.get("entry_price")
-                    amount = position.get("amount")
-                    if entry_price is None or amount is None:
-                        logger.warning(f"Invalid position data for {symbol}: missing entry_price or amount")
-                        continue
-
-                    entry_price = Decimal(str(entry_price))
-                    amount = Decimal(str(amount))
-
-                    # Use cached ticker to reduce API calls
-                    ticker = await self._get_cached_ticker(symbol)
-                    current_price = Decimal(str(ticker.get("last") or ticker.get("close") or 0))
-                    unrealized += (current_price - entry_price) * amount
-                except (NetworkError, ExchangeError, OSError) as e:
-                    logger.warning(f"Failed to fetch ticker for {symbol}: {e}")
-                    continue
-                except (TypeError, ValueError, InvalidOperation) as e:
-                    logger.warning(f"Data error while computing unrealized for {symbol}: {e}")
-                    continue
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    logger.exception("Unexpected error while computing unrealized PnL")
-                    raise
-            equity_value = balance + unrealized
-        else:
-            # For paper/backtest aggregate per-pair unrealized
-            if self.portfolio_mode:
-                try:
-                    total = Decimal(0)
-                    # Sum balances and unrealized from positions (simple approach)
-                    if self.portfolio_manager.paper_balances:
-                        total += sum(self.portfolio_manager.paper_balances.values())
-                    # Add unrealized per-position by using order.price as proxy (best-effort)
-                    for symbol, pos in self.order_processor.positions.items():
-                        try:
-                            entry = Decimal(pos.get("entry_price", Decimal(0)))
-                            amt = Decimal(pos.get("amount", Decimal(0)))
-                            total += entry * amt
-                        except (TypeError, ValueError, InvalidOperation) as e:
-                            logger.warning(f"Invalid position data for {symbol}: {e}")
-                            continue
-                        except Exception:
-                            logger.exception("Unexpected error while aggregating positions")
-                            raise
-                    equity_value = total
-                except Exception:
-                    # If aggregation fails unexpectedly, surface it
-                    logger.exception("Unexpected error calculating portfolio total")
-                    raise
+        # Use strategy pattern for equity calculation
+        try:
+            strategy = self._equity_strategies.get(self.mode)
+            if strategy:
+                equity_value = await strategy.calculate_equity(balance)
             else:
+                logger.warning(f"No equity strategy for mode {self.mode}, using balance as equity")
                 equity_value = balance
+        except Exception as e:
+            logger.exception(f"Error calculating equity: {e}")
+            equity_value = balance
 
         # Cache the result
         self._equity_cache = equity_value

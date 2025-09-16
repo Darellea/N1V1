@@ -1,114 +1,229 @@
 """
-DataManager - Market data fetching and caching component.
+DataManager - Handles market data fetching and caching operations.
 
-Handles fetching market data from various sources, caching for performance,
-and managing multi-timeframe data operations.
+Manages data fetching from exchanges, caching, multi-timeframe data,
+and provides a unified interface for market data access.
 """
 
+from typing import Any, Optional
 import time
-import logging
-from typing import Dict, Any, Optional, List
+import asyncio
 
-logger = logging.getLogger(__name__)
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None
+
+from .logging_utils import get_structured_logger, LogSensitivity
+from .utils.error_utils import ErrorHandler, ErrorContext, ErrorSeverity, ErrorCategory, CircuitBreaker
+
+logger = get_structured_logger("core.data_manager", LogSensitivity.SECURE)
+error_handler = ErrorHandler("data_manager")
 
 
 class DataManager:
     """
-    Manages market data fetching, caching, and multi-timeframe operations.
+    Manages market data fetching, caching, and processing.
 
     Responsibilities:
-    - Market data fetching from DataFetcher
-    - Caching with TTL for performance
-    - Multi-timeframe data coordination
-    - Data validation and error handling
+    - Coordinate data fetching from exchanges
+    - Manage caching for performance
+    - Handle multi-timeframe data synchronization
+    - Provide unified data access interface
+    - Handle data validation and error recovery
     """
 
-    def __init__(self, data_fetcher, timeframe_manager=None, cache_ttl: float = 60.0):
+    def __init__(self, config: dict[str, Any]):
         """Initialize the DataManager.
 
         Args:
-            data_fetcher: DataFetcher instance for market data
-            timeframe_manager: Optional TimeframeManager for multi-timeframe data
-            cache_ttl: Cache time-to-live in seconds
+            config: Configuration dictionary
         """
+        self.config = config
+        self.mode = config.get("environment", {}).get("mode", "paper")
+        self.portfolio_mode = bool(config.get("trading", {}).get("portfolio_mode", False))
+        self.pairs = []
+
+        # Component references
+        self.data_fetcher = None
+        self.timeframe_manager = None
+
+        # Import configuration from centralized system
+        from .config_manager import get_config_manager
+        config_manager = get_config_manager()
+        dm_config = config_manager.get_data_manager_config()
+
+        # Caching configuration from centralized config
+        self.cache_enabled = dm_config.cache_enabled
+        self.cache_ttl = dm_config.cache_ttl
+        self.market_data_cache = {}
+        self.cache_timestamp = 0.0
+
+        # Circuit breaker for external service calls
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=config.get("circuit_breaker", {}).get("failure_threshold", 5),
+            recovery_timeout=config.get("circuit_breaker", {}).get("recovery_timeout", 60.0)
+        )
+
+    def set_components(self, data_fetcher, timeframe_manager=None):
+        """Set component references."""
         self.data_fetcher = data_fetcher
         self.timeframe_manager = timeframe_manager
-        self.cache_ttl = cache_ttl
 
-        # Market data cache
-        self.market_data_cache: Dict[str, Any] = {}
-        self.cache_timestamp: float = 0.0
-
-        # Trading pairs to monitor
-        self.pairs: List[str] = []
-
-        # Portfolio mode flag
-        self.portfolio_mode: bool = False
-
-    def set_trading_pairs(self, pairs: List[str], portfolio_mode: bool = False):
-        """Set the trading pairs to monitor."""
+    def set_trading_pairs(self, pairs: list[str]):
+        """Set the trading pairs for data management."""
         self.pairs = pairs
-        self.portfolio_mode = portfolio_mode
-        logger.info(f"DataManager configured for {len(pairs)} pairs in {'portfolio' if portfolio_mode else 'single'} mode")
+        logger.info(f"DataManager configured for {len(pairs)} pairs: {pairs}")
 
-    async def fetch_market_data(self) -> Dict[str, Any]:
+    async def fetch_market_data(self) -> dict[str, Any]:
         """Fetch market data with caching and multi-timeframe support."""
         current_time = time.time()
 
-        # Return cached data if still valid
-        if self.market_data_cache and (current_time - self.cache_timestamp) < self.cache_ttl:
+        # Check if we should use cached data
+        if self._should_use_cache(current_time):
             logger.debug("Using cached market data")
             return self.market_data_cache
 
-        # Fetch fresh data
-        market_data = await self._fetch_fresh_market_data()
-        multi_timeframe_data = await self._fetch_multi_timeframe_data()
+        try:
+            # Fetch fresh market data
+            market_data = await self._fetch_fresh_market_data()
 
-        # Combine single-timeframe and multi-timeframe data
-        combined_data = self._combine_market_data(market_data, multi_timeframe_data)
+            # Fetch multi-timeframe data if available
+            if self.timeframe_manager and self.pairs:
+                multi_timeframe_data = await self._fetch_multi_timeframe_data()
+                market_data = self._combine_market_data(market_data, multi_timeframe_data)
 
-        # Cache the fetched data
-        self.market_data_cache = combined_data
-        self.cache_timestamp = current_time
+            # Cache the fetched data
+            self._cache_market_data(market_data, current_time)
 
-        logger.debug("Fetched and cached fresh market data")
-        return self.market_data_cache
+            return market_data
 
-    async def _fetch_fresh_market_data(self) -> Dict[str, Any]:
-        """Fetch fresh market data from the data fetcher."""
-        market_data = {}
+        except (ConnectionError, TimeoutError) as e:
+            context = ErrorContext(
+                component="data_manager",
+                operation="fetch_market_data",
+                severity=ErrorSeverity.HIGH,
+                category=ErrorCategory.NETWORK,
+                metadata={"fetch_error": str(e)}
+            )
+            await error_handler.handle_error(e, context)
+        except (aiohttp.ClientError,) as e:
+            if aiohttp:
+                context = ErrorContext(
+                    component="data_manager",
+                    operation="fetch_market_data",
+                    severity=ErrorSeverity.HIGH,
+                    category=ErrorCategory.NETWORK,
+                    metadata={"fetch_error": str(e)}
+                )
+                await error_handler.handle_error(e, context)
+            else:
+                raise
+        except (ValueError, TypeError, KeyError) as e:
+            context = ErrorContext(
+                component="data_manager",
+                operation="fetch_market_data",
+                severity=ErrorSeverity.HIGH,
+                category=ErrorCategory.DATA,
+                metadata={"fetch_error": str(e)}
+            )
+            await error_handler.handle_error(e, context)
+        except Exception as e:
+            context = ErrorContext(
+                component="data_manager",
+                operation="fetch_market_data",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.DATA,
+                metadata={"fetch_error": str(e)}
+            )
+            await error_handler.handle_error(e, context)
+
+        # Return cached data if available, otherwise empty dict
+        if self.market_data_cache:
+            logger.warning("Using stale cached data due to fetch failure")
+            return self.market_data_cache
+
+        return {}
+
+    def _should_use_cache(self, current_time: float) -> bool:
+        """Determine if cached data should be used."""
+        if not self.cache_enabled:
+            return False
+
+        if not self.market_data_cache:
+            return False
+
+        time_since_cache = current_time - self.cache_timestamp
+        return time_since_cache < self.cache_ttl
+
+    async def _fetch_fresh_market_data(self) -> dict[str, Any]:
+        """Fetch fresh market data from the exchange."""
+        if not self.data_fetcher:
+            raise RuntimeError("DataFetcher not set")
 
         try:
             if self.portfolio_mode and hasattr(self.data_fetcher, "get_realtime_data"):
-                market_data = await self.data_fetcher.get_realtime_data(self.pairs)
+                return await self._fetch_portfolio_realtime_data()
             elif not self.portfolio_mode and hasattr(self.data_fetcher, "get_historical_data"):
-                symbol = self.pairs[0] if self.pairs else None
-                if symbol:
-                    df = await self.data_fetcher.get_historical_data(
-                        symbol=symbol,
-                        timeframe=self._get_default_timeframe(),
-                        limit=100,
-                    )
-                    market_data = {symbol: df}
+                return await self._fetch_single_historical_data()
+            elif hasattr(self.data_fetcher, "get_multiple_historical_data"):
+                return await self._fetch_multiple_historical_data()
             else:
-                if hasattr(self.data_fetcher, "get_multiple_historical_data"):
-                    market_data = await self.data_fetcher.get_multiple_historical_data(self.pairs)
+                logger.warning("No suitable data fetching method available")
+                return {}
 
         except Exception as e:
-            logger.exception(f"Failed to fetch market data: {e}")
-            # Return cached data if available as fallback
-            if self.market_data_cache:
-                logger.warning("Using stale cached data due to fetch failure")
-                return self.market_data_cache
+            logger.exception("Failed to fetch fresh market data")
+            raise
 
-        return market_data
+    async def _fetch_portfolio_realtime_data(self) -> dict[str, Any]:
+        """Fetch portfolio realtime data with caching support."""
+        if not self.pairs:
+            return {}
 
-    async def _fetch_multi_timeframe_data(self) -> Dict[str, Any]:
-        """Fetch multi-timeframe data if timeframe manager is available."""
+        try:
+            # Use circuit breaker for external service calls
+            return await self.circuit_breaker.call(self.data_fetcher.get_realtime_data, self.pairs)
+        except Exception as e:
+            logger.exception("Failed to fetch portfolio realtime data")
+            raise
+
+    async def _fetch_single_historical_data(self) -> dict[str, Any]:
+        """Fetch single historical data."""
+        if not self.pairs:
+            return {}
+
+        symbol = self.pairs[0]
+        timeframe = self.config.get("backtesting", {}).get("timeframe", "1h")
+
+        try:
+            # Use circuit breaker for external service calls
+            df = await self.circuit_breaker.call(
+                self.data_fetcher.get_historical_data,
+                symbol=symbol,
+                timeframe=timeframe,
+                limit=100,
+            )
+            return {symbol: df}
+        except Exception as e:
+            logger.exception(f"Failed to fetch historical data for {symbol}")
+            raise
+
+    async def _fetch_multiple_historical_data(self) -> dict[str, Any]:
+        """Fetch multiple historical data."""
+        if not self.pairs:
+            return {}
+
+        try:
+            # Use circuit breaker for external service calls
+            return await self.circuit_breaker.call(self.data_fetcher.get_multiple_historical_data, self.pairs)
+        except Exception as e:
+            logger.exception("Failed to fetch multiple historical data")
+            raise
+
+    async def _fetch_multi_timeframe_data(self) -> dict[str, Any]:
+        """Fetch multi-timeframe data for all symbols."""
         multi_timeframe_data = {}
-
-        if not self.timeframe_manager or not self.pairs:
-            return multi_timeframe_data
 
         for symbol in self.pairs:
             try:
@@ -120,12 +235,13 @@ class DataManager:
                     logger.warning(f"Failed to fetch multi-timeframe data for {symbol}")
             except Exception as e:
                 logger.warning(f"Error fetching multi-timeframe data for {symbol}: {e}")
+                continue
 
         return multi_timeframe_data
 
-    def _combine_market_data(self, market_data: Dict[str, Any],
-                           multi_timeframe_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Combine single-timeframe and multi-timeframe data."""
+    def _combine_market_data(self, market_data: dict[str, Any],
+                           multi_timeframe_data: dict[str, Any]) -> dict[str, Any]:
+        """Combine single-timeframe and multi-timeframe market data."""
         combined_data = market_data.copy()
 
         for symbol, synced_data in multi_timeframe_data.items():
@@ -143,77 +259,111 @@ class DataManager:
 
         return combined_data
 
-    def _get_default_timeframe(self) -> str:
-        """Get default timeframe for single-pair mode."""
-        # This could be configurable in the future
-        return "1h"
+    def _cache_market_data(self, combined_data: dict[str, Any], current_time: float) -> None:
+        """Cache the fetched market data."""
+        self.market_data_cache = combined_data
+        self.cache_timestamp = current_time
+        logger.debug("Fetched and cached market data")
+
+    async def get_symbol_data(self, symbol: str, timeframe: str = None) -> Optional[Any]:
+        """Get data for a specific symbol and timeframe."""
+        try:
+            if not self.market_data_cache:
+                await self.fetch_market_data()
+
+            if symbol not in self.market_data_cache:
+                logger.warning(f"Symbol {symbol} not found in cached data")
+                return None
+
+            symbol_data = self.market_data_cache[symbol]
+
+            # If timeframe specified, try to get specific timeframe data
+            if timeframe and isinstance(symbol_data, dict):
+                if 'multi_timeframe' in symbol_data:
+                    mt_data = symbol_data['multi_timeframe']
+                    if hasattr(mt_data, 'get_timeframe_data'):
+                        return mt_data.get_timeframe_data(timeframe)
+                elif 'single_timeframe' in symbol_data:
+                    return symbol_data['single_timeframe']
+
+            return symbol_data
+
+        except (KeyError, TypeError, AttributeError) as e:
+            logger.error(f"Failed to get symbol data for {symbol} - data structure error: {e}")
+            return None
+        except asyncio.TimeoutError as e:
+            logger.error(f"Timeout getting symbol data for {symbol}: {e}")
+            return None
+        except Exception as e:
+            logger.exception(f"Unexpected error getting symbol data for {symbol}: {e}")
+            return None
 
     def clear_cache(self):
         """Clear the market data cache."""
         self.market_data_cache = {}
         self.cache_timestamp = 0.0
-        logger.debug("Market data cache cleared")
+        logger.info("Market data cache cleared")
 
-    def get_cache_info(self) -> Dict[str, Any]:
-        """Get information about the current cache state."""
+    def get_cache_status(self) -> dict[str, Any]:
+        """Get cache status information."""
         return {
-            "cache_size": len(self.market_data_cache),
-            "cache_age": time.time() - self.cache_timestamp if self.cache_timestamp > 0 else 0,
+            "cache_enabled": self.cache_enabled,
             "cache_ttl": self.cache_ttl,
-            "is_cache_valid": (time.time() - self.cache_timestamp) < self.cache_ttl if self.cache_timestamp > 0 else False
+            "cache_size": len(self.market_data_cache),
+            "cache_age": time.time() - self.cache_timestamp if self.cache_timestamp > 0 else None,
+            "cached_symbols": list(self.market_data_cache.keys()) if self.market_data_cache else []
         }
 
-    def extract_multi_timeframe_data(self, market_data: Dict[str, Any], symbol: str) -> Optional[Dict[str, Any]]:
-        """
-        Extract multi-timeframe data for a specific symbol from market data.
-
-        Args:
-            market_data: Combined market data dictionary
-            symbol: Symbol to extract data for
-
-        Returns:
-            Multi-timeframe data or None if not available
-        """
+    async def initialize(self) -> None:
+        """Initialize the data manager and its components."""
         try:
-            if not market_data or symbol not in market_data:
-                return None
+            if self.data_fetcher and hasattr(self.data_fetcher, 'initialize'):
+                await self.data_fetcher.initialize()
 
-            symbol_data = market_data[symbol]
+            if self.timeframe_manager and hasattr(self.timeframe_manager, 'initialize'):
+                await self.timeframe_manager.initialize()
 
-            # Check if symbol_data is a dict with multi_timeframe key
-            if isinstance(symbol_data, dict) and 'multi_timeframe' in symbol_data:
-                return symbol_data['multi_timeframe']
-
-            # Check if symbol_data is a SyncedData object directly
-            if hasattr(symbol_data, 'data') and hasattr(symbol_data, 'timestamp'):
-                return symbol_data
-
-            return None
+            logger.info("DataManager initialized successfully")
 
         except Exception as e:
-            logger.warning(f"Failed to extract multi-timeframe data for {symbol}: {e}")
-            return None
+            context = ErrorContext(
+                component="data_manager",
+                operation="initialize",
+                severity=ErrorSeverity.CRITICAL,
+                category=ErrorCategory.DATA,
+                metadata={"init_error": str(e)}
+            )
+            await error_handler.handle_error(e, context)
+            raise
 
-    async def initialize(self):
-        """Initialize the data manager."""
-        logger.info("Initializing DataManager")
+    async def shutdown(self) -> None:
+        """Shutdown the data manager and its components."""
+        try:
+            if self.data_fetcher and hasattr(self.data_fetcher, 'shutdown'):
+                await self.data_fetcher.shutdown()
 
-        if hasattr(self.data_fetcher, 'initialize'):
-            await self.data_fetcher.initialize()
+            if self.timeframe_manager and hasattr(self.timeframe_manager, 'shutdown'):
+                await self.timeframe_manager.shutdown()
 
-        if self.timeframe_manager and hasattr(self.timeframe_manager, 'initialize'):
-            await self.timeframe_manager.initialize()
+            self.clear_cache()
+            logger.info("DataManager shutdown complete")
 
-        logger.info("DataManager initialization complete")
+        except (AttributeError, TypeError) as e:
+            logger.error(f"Error during DataManager shutdown - component error: {e}")
+        except asyncio.TimeoutError as e:
+            logger.error(f"Timeout during DataManager shutdown: {e}")
+        except Exception as e:
+            logger.exception(f"Unexpected error during DataManager shutdown: {e}")
 
-    async def shutdown(self):
-        """Shutdown the data manager."""
-        logger.info("Shutting down DataManager")
-
-        if hasattr(self.data_fetcher, 'shutdown'):
-            await self.data_fetcher.shutdown()
-
-        if self.timeframe_manager and hasattr(self.timeframe_manager, 'shutdown'):
-            await self.timeframe_manager.shutdown()
-
-        logger.info("DataManager shutdown complete")
+    def get_data_manager_status(self) -> dict[str, Any]:
+        """Get data manager status information."""
+        return {
+            "mode": self.mode,
+            "portfolio_mode": self.portfolio_mode,
+            "trading_pairs": self.pairs,
+            "cache_status": self.get_cache_status(),
+            "components_initialized": {
+                "data_fetcher": self.data_fetcher is not None,
+                "timeframe_manager": self.timeframe_manager is not None
+            }
+        }

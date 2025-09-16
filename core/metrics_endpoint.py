@@ -22,9 +22,10 @@ import ssl
 import json
 
 from core.metrics_collector import get_metrics_collector, MetricsCollector
-from utils.logger import get_logger
+from .logging_utils import get_structured_logger
+from .logging_utils import LogSensitivity
 
-logger = get_logger(__name__)
+logger = get_structured_logger("metrics_endpoint", LogSensitivity.INFO)
 
 
 class MetricsEndpoint:
@@ -53,12 +54,17 @@ class MetricsEndpoint:
         self.port = self.config.get('port', 9090)
         self.path = self.config.get('path', '/metrics')
 
-        # Security configuration
-        self.enable_auth = self.config.get('enable_auth', False)
+        # Security configuration - secure defaults
+        self.enable_auth = self.config.get('enable_auth', True)  # Secure default: auth enabled
         self.auth_token = self.config.get('auth_token', '')
-        self.enable_tls = self.config.get('enable_tls', False)
+        if not self.auth_token and self.enable_auth:
+            logger.warning("Authentication enabled but no auth_token provided - metrics endpoint will reject all requests")
+        self.enable_tls = self.config.get('enable_tls', True)  # Secure default: TLS enabled
         self.cert_file = self.config.get('cert_file', '')
         self.key_file = self.config.get('key_file', '')
+        if self.enable_tls and (not self.cert_file or not self.key_file):
+            logger.warning("TLS enabled but cert_file/key_file not provided - falling back to HTTP")
+            self.enable_tls = False
 
         # Performance configuration
         self.max_concurrent_requests = self.config.get('max_concurrent_requests', 10)
@@ -75,7 +81,7 @@ class MetricsEndpoint:
         self.error_count = 0
         self.avg_response_time = 0.0
 
-        logger.info(f"MetricsEndpoint initialized on {self.host}:{self.port}{self.path}")
+        logger.info(f"MetricsEndpoint initialized on {self.host}:{self.port}{self.path}", component="metrics_endpoint", operation="initialize", host=self.host, port=self.port, path=self.path)
 
     def create_app(self) -> web.Application:
         """Create aiohttp application for the metrics endpoint."""
@@ -98,6 +104,7 @@ class MetricsEndpoint:
         if self._running:
             return
 
+        ssl_context = None
         try:
             # Create aiohttp application
             self.app = web.Application()
@@ -113,10 +120,10 @@ class MetricsEndpoint:
             self.app.router.add_get('/', self._root_handler)
 
             # Configure SSL if enabled
-            ssl_context = None
             if self.enable_tls and self.cert_file and self.key_file:
                 ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
                 ssl_context.load_cert_chain(self.cert_file, self.key_file)
+                logger.info("SSL/TLS configured for metrics endpoint", component="metrics_endpoint", operation="start")
 
             # Create runner and site
             self.runner = web.AppRunner(
@@ -135,10 +142,21 @@ class MetricsEndpoint:
             await self.site.start()
 
             self._running = True
-            logger.info(f"✅ Metrics endpoint started on {self.host}:{self.port}{self.path}")
+            logger.info(f"✅ Metrics endpoint started on {self.host}:{self.port}{self.path}", component="metrics_endpoint", operation="start", host=self.host, port=self.port, path=self.path)
 
+        except FileNotFoundError as e:
+            logger.error(f"SSL certificate/key file not found: {e}", component="metrics_endpoint", operation="start", error=str(e))
+            raise
+        except ssl.SSLError as e:
+            logger.error(f"SSL configuration error: {e}", component="metrics_endpoint", operation="start", error=str(e))
+            raise
+        except OSError as e:
+            logger.error(f"Network binding error: {e}", component="metrics_endpoint", operation="start", error=str(e))
+            raise
         except Exception as e:
-            logger.exception(f"Failed to start metrics endpoint: {e}")
+            logger.exception(f"Failed to start metrics endpoint: {e}", component="metrics_endpoint", operation="start", error=str(e))
+            # Ensure cleanup on failure
+            await self._cleanup_on_failure()
             raise
 
     async def stop(self) -> None:
@@ -154,10 +172,47 @@ class MetricsEndpoint:
                 await self.runner.cleanup()
 
             self._running = False
-            logger.info("✅ Metrics endpoint stopped")
+            logger.info("✅ Metrics endpoint stopped", component="metrics_endpoint", operation="stop")
 
         except Exception as e:
-            logger.exception(f"Error stopping metrics endpoint: {e}")
+            logger.exception(f"Error stopping metrics endpoint: {e}", component="metrics_endpoint", operation="stop", error=str(e))
+            # Ensure cleanup even on error
+            await self._cleanup_on_failure()
+
+    async def _cleanup_on_failure(self) -> None:
+        """Cleanup resources when startup or operation fails."""
+        try:
+            if self.site:
+                try:
+                    await self.site.stop()
+                except Exception:
+                    pass  # Ignore errors during cleanup
+
+            if self.runner:
+                try:
+                    await self.runner.cleanup()
+                except Exception:
+                    pass  # Ignore errors during cleanup
+
+            # Reset state
+            self.site = None
+            self.runner = None
+            self.app = None
+            self._running = False
+
+            logger.debug("Metrics endpoint cleanup completed after failure", component="metrics_endpoint", operation="cleanup")
+
+        except Exception as e:
+            logger.error(f"Error during cleanup: {e}", component="metrics_endpoint", operation="cleanup", error=str(e))
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.stop()
 
     @web.middleware
     async def _request_middleware(self, request: web.Request, handler):
@@ -233,7 +288,9 @@ class MetricsEndpoint:
             raise web.HTTPInternalServerError(text="Error generating metrics")
 
     async def _health_handler(self, request: web.Request) -> web.Response:
-        """Handle health check requests."""
+        """Handle health check requests with efficient JSON serialization."""
+        import orjson
+
         health_status = {
             "status": "healthy",
             "timestamp": time.time(),
@@ -244,10 +301,22 @@ class MetricsEndpoint:
             "avg_response_time": self.avg_response_time
         }
 
-        return web.json_response(health_status)
+        # Use orjson for faster JSON serialization if available, fallback to json
+        try:
+            import orjson
+            json_data = orjson.dumps(health_status).decode('utf-8')
+        except ImportError:
+            import json
+            json_data = json.dumps(health_status)
+
+        return web.Response(
+            text=json_data,
+            content_type='application/json',
+            charset='utf-8'
+        )
 
     async def _root_handler(self, request: web.Request) -> web.Response:
-        """Handle root path requests."""
+        """Handle root path requests with efficient JSON serialization."""
         info = {
             "service": "N1V1 Trading Framework Metrics Endpoint",
             "version": "1.0.0",
@@ -259,7 +328,19 @@ class MetricsEndpoint:
             "status": "running" if self._running else "stopped"
         }
 
-        return web.json_response(info)
+        # Use orjson for faster JSON serialization if available, fallback to json
+        try:
+            import orjson
+            json_data = orjson.dumps(info).decode('utf-8')
+        except ImportError:
+            import json
+            json_data = json.dumps(info)
+
+        return web.Response(
+            text=json_data,
+            content_type='application/json',
+            charset='utf-8'
+        )
 
     def _get_endpoint_metrics(self) -> str:
         """Generate endpoint-specific metrics."""
@@ -304,6 +385,7 @@ class MetricsEndpoint:
 
 # Global endpoint instance
 _metrics_endpoint: Optional[MetricsEndpoint] = None
+_endpoint_cleanup_registered = False
 
 
 def get_metrics_endpoint() -> Optional[MetricsEndpoint]:
@@ -313,9 +395,28 @@ def get_metrics_endpoint() -> Optional[MetricsEndpoint]:
 
 def create_metrics_endpoint(config: Optional[Dict[str, Any]] = None) -> MetricsEndpoint:
     """Create a new metrics endpoint instance."""
-    global _metrics_endpoint
+    global _metrics_endpoint, _endpoint_cleanup_registered
     _metrics_endpoint = MetricsEndpoint(config or {})
+
+    # Register cleanup handler for application exit
+    if not _endpoint_cleanup_registered:
+        import atexit
+        atexit.register(_cleanup_endpoint_on_exit)
+        _endpoint_cleanup_registered = True
+        logger.info("Metrics endpoint cleanup handler registered with atexit", component="metrics_endpoint", operation="initialize")
+
     return _metrics_endpoint
+
+
+def _cleanup_endpoint_on_exit() -> None:
+    """Cleanup function called on application exit."""
+    logger.info("Performing metrics endpoint cleanup on application exit", component="metrics_endpoint", operation="cleanup")
+    try:
+        # Use asyncio.run() for synchronous cleanup
+        asyncio.run(stop_metrics_endpoint())
+        logger.info("Metrics endpoint cleanup completed successfully", component="metrics_endpoint", operation="cleanup")
+    except Exception as e:
+        logger.error(f"Error during metrics endpoint cleanup on exit: {str(e)}", component="metrics_endpoint", operation="cleanup", error=str(e))
 
 
 # Example configuration

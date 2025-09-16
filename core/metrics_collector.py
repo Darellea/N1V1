@@ -30,6 +30,7 @@ from datetime import datetime
 import json
 from pathlib import Path
 import aiohttp
+import numpy as np
 
 from core.diagnostics import get_diagnostics_manager
 from utils.logger import get_logger
@@ -86,15 +87,28 @@ class MetricSample:
 
 @dataclass
 class MetricSeries:
-    """A time series of metric measurements."""
+    """A time series of metric measurements with efficient storage."""
     name: str
     help_text: str = ""
     samples: List[MetricSample] = field(default_factory=list)
     max_samples: int = 1000
 
+    # Efficient storage using numpy arrays for large datasets
+    _values: Optional[np.ndarray] = field(default=None, init=False)
+    _timestamps: Optional[np.ndarray] = field(default=None, init=False)
+    _labels_list: List[Dict[str, str]] = field(default_factory=list, init=False)
+
+    def __post_init__(self):
+        """Initialize efficient storage structures."""
+        if self.max_samples > 100:  # Use numpy arrays for larger datasets
+            self._values = np.full(self.max_samples, np.nan, dtype=np.float64)
+            self._timestamps = np.full(self.max_samples, np.nan, dtype=np.float64)
+            self._current_index = 0
+            self._is_full = False
+
     def add_sample(self, value: float, labels: Dict[str, str] = None,
                   timestamp: float = None) -> None:
-        """Add a new sample to the series."""
+        """Add a new sample to the series with efficient storage."""
         sample = MetricSample(
             name=self.name,
             value=value,
@@ -103,22 +117,101 @@ class MetricSeries:
             help_text=self.help_text
         )
 
-        self.samples.append(sample)
+        # Use efficient numpy storage for large datasets
+        if self._values is not None:
+            self._values[self._current_index] = value
+            self._timestamps[self._current_index] = sample.timestamp
+            self._labels_list.append(labels or {})
 
-        # Keep only recent samples
-        if len(self.samples) > self.max_samples:
-            self.samples = self.samples[-self.max_samples:]
+            self._current_index += 1
+            if self._current_index >= self.max_samples:
+                self._current_index = 0
+                self._is_full = True
+
+            # Keep labels list in sync with numpy arrays
+            if len(self._labels_list) > self.max_samples:
+                self._labels_list = self._labels_list[-self.max_samples:]
+        else:
+            # Fallback to list storage for smaller datasets
+            self.samples.append(sample)
+            if len(self.samples) > self.max_samples:
+                self.samples = self.samples[-self.max_samples:]
 
     def get_latest_sample(self) -> Optional[MetricSample]:
-        """Get the most recent sample."""
-        return self.samples[-1] if self.samples else None
+        """Get the most recent sample with efficient lookup."""
+        if self._values is not None:
+            if self._is_full:
+                # Get the most recent value (circular buffer)
+                latest_idx = (self._current_index - 1) % self.max_samples
+                if not np.isnan(self._values[latest_idx]):
+                    return MetricSample(
+                        name=self.name,
+                        value=self._values[latest_idx],
+                        labels=self._labels_list[latest_idx] if latest_idx < len(self._labels_list) else {},
+                        timestamp=self._timestamps[latest_idx],
+                        help_text=self.help_text
+                    )
+            elif self._current_index > 0:
+                latest_idx = self._current_index - 1
+                return MetricSample(
+                    name=self.name,
+                    value=self._values[latest_idx],
+                    labels=self._labels_list[latest_idx] if latest_idx < len(self._labels_list) else {},
+                    timestamp=self._timestamps[latest_idx],
+                    help_text=self.help_text
+                )
+            return None
+        else:
+            # Fallback to list lookup
+            return self.samples[-1] if self.samples else None
 
     def get_samples_in_range(self, start_time: float, end_time: float) -> List[MetricSample]:
-        """Get samples within a time range."""
-        return [
-            sample for sample in self.samples
-            if start_time <= sample.timestamp <= end_time
-        ]
+        """Get samples within a time range with efficient filtering."""
+        if self._values is not None:
+            # Use numpy boolean indexing for efficient filtering
+            if self._is_full:
+                # Handle circular buffer
+                mask = (
+                    ((self._timestamps >= start_time) & (self._timestamps <= end_time)) &
+                    (~np.isnan(self._timestamps))
+                )
+                valid_indices = np.where(mask)[0]
+
+                samples = []
+                for idx in valid_indices:
+                    samples.append(MetricSample(
+                        name=self.name,
+                        value=self._values[idx],
+                        labels=self._labels_list[idx] if idx < len(self._labels_list) else {},
+                        timestamp=self._timestamps[idx],
+                        help_text=self.help_text
+                    ))
+                return samples
+            else:
+                # Handle linear buffer
+                valid_mask = (
+                    (self._timestamps[:self._current_index] >= start_time) &
+                    (self._timestamps[:self._current_index] <= end_time) &
+                    (~np.isnan(self._timestamps[:self._current_index]))
+                )
+                valid_indices = np.where(valid_mask)[0]
+
+                samples = []
+                for idx in valid_indices:
+                    samples.append(MetricSample(
+                        name=self.name,
+                        value=self._values[idx],
+                        labels=self._labels_list[idx] if idx < len(self._labels_list) else {},
+                        timestamp=self._timestamps[idx],
+                        help_text=self.help_text
+                    ))
+                return samples
+        else:
+            # Fallback to list filtering
+            return [
+                sample for sample in self.samples
+                if start_time <= sample.timestamp <= end_time
+            ]
 
 
 class MetricsCollector:

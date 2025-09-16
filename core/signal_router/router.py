@@ -802,7 +802,7 @@ class SignalRouter:
 
     def _check_signal_conflicts(self, new_signal: TradingSignal) -> List[TradingSignal]:
         """
-        Check for conflicting signals for the same symbol.
+        Check for conflicting signals for the same symbol using optimized lookup.
 
         Args:
             new_signal: The new signal to check
@@ -810,15 +810,48 @@ class SignalRouter:
         Returns:
             List of conflicting signals
         """
+        if not self.active_signals:
+            return []
+
+        # Get all active signals for the same symbol
+        symbol_signals = [sig for sig in self.active_signals.values() if sig.symbol == new_signal.symbol]
+
+        if not symbol_signals:
+            return []
+
         conflicts = []
-        for signal_id, active_signal in self.active_signals.items():
-            if active_signal.symbol == new_signal.symbol:
-                # Check for opposite signals (always conflicting)
-                if self._is_opposite_signal(new_signal, active_signal):
-                    conflicts.append(active_signal)
-                # Check for same-type signals when strength_based or newer_first is enabled
-                elif (self.conflict_resolution_rules["strength_based"] or self.conflict_resolution_rules["newer_first"]) and active_signal.signal_type == new_signal.signal_type:
-                    conflicts.append(active_signal)
+
+        # Vectorized conflict checking for opposite signals
+        new_signal_type = new_signal.signal_type.value
+        active_signal_types = np.array([sig.signal_type.value for sig in symbol_signals])
+
+        # Check for opposite signals using vectorized operations
+        is_entry_long = new_signal_type == SignalType.ENTRY_LONG.value
+        is_entry_short = new_signal_type == SignalType.ENTRY_SHORT.value
+
+        if is_entry_long:
+            # New signal is ENTRY_LONG, conflicts with ENTRY_SHORT
+            opposite_mask = active_signal_types == SignalType.ENTRY_SHORT.value
+        elif is_entry_short:
+            # New signal is ENTRY_SHORT, conflicts with ENTRY_LONG
+            opposite_mask = active_signal_types == SignalType.ENTRY_LONG.value
+        else:
+            # Exit signals - check for matching entry signals
+            if new_signal_type == SignalType.EXIT_LONG.value:
+                opposite_mask = active_signal_types == SignalType.ENTRY_LONG.value
+            elif new_signal_type == SignalType.EXIT_SHORT.value:
+                opposite_mask = active_signal_types == SignalType.ENTRY_SHORT.value
+            else:
+                opposite_mask = np.zeros(len(symbol_signals), dtype=bool)
+
+        # Add opposite signals to conflicts
+        conflicts.extend([symbol_signals[i] for i in np.where(opposite_mask)[0]])
+
+        # Check for same-type signals when strength_based or newer_first is enabled
+        if self.conflict_resolution_rules["strength_based"] or self.conflict_resolution_rules["newer_first"]:
+            same_type_mask = active_signal_types == new_signal_type
+            conflicts.extend([symbol_signals[i] for i in np.where(same_type_mask)[0]])
+
         return conflicts
 
     def _is_opposite_signal(self, signal1: TradingSignal, signal2: TradingSignal) -> bool:

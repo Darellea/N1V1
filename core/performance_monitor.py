@@ -32,7 +32,9 @@ from core.performance_profiler import get_profiler, PerformanceProfiler
 from core.metrics_collector import get_metrics_collector, MetricsCollector
 from utils.logger import get_logger
 
-logger = get_logger(__name__)
+from .logging_utils import get_structured_logger, LogSensitivity
+
+logger = get_structured_logger("core.performance_monitor", LogSensitivity.SECURE)
 
 
 @dataclass
@@ -363,9 +365,14 @@ class RealTimePerformanceMonitor:
                 else:
                     slope = 0.0
 
-                # Determine stability (coefficient of variation)
-                cv = std_val / mean_val if mean_val != 0 else 0
-                is_stable = cv < 0.5  # Less than 50% variation
+                # Determine stability (coefficient of variation) - safe division
+                if mean_val != 0 and std_val >= 0:
+                    cv = std_val / mean_val
+                    is_stable = cv < 0.5  # Less than 50% variation
+                else:
+                    # Handle edge cases: zero mean or negative std (shouldn't happen but be safe)
+                    cv = 0.0
+                    is_stable = True  # Consider stable if no variation or undefined
 
                 # Update baseline
                 baseline = PerformanceBaseline(
@@ -423,12 +430,20 @@ class RealTimePerformanceMonitor:
                     )
                     anomalies.append(anomaly)
 
-            # Percentile-based anomaly detection
+            # Percentile-based anomaly detection - safe division
             if value > baseline.percentile_99:
+                # Safe division for score calculation
+                denominator = baseline.max_value - baseline.percentile_95
+                if denominator > 0:
+                    score = (value - baseline.percentile_95) / denominator
+                else:
+                    # If percentile_95 equals max_value, use a high score for anomaly
+                    score = 1.0 if value > baseline.percentile_95 else 0.0
+
                 anomaly = AnomalyDetectionResult(
                     metric_name=metric_name,
                     is_anomaly=True,
-                    score=(value - baseline.percentile_95) / (baseline.max_value - baseline.percentile_95) if baseline.max_value > baseline.percentile_95 else 1.0,
+                    score=score,
                     confidence=0.95,
                     detection_method="percentile",
                     timestamp=current_time,

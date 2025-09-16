@@ -71,12 +71,13 @@ class CustomExceptionMiddleware(ExceptionMiddleware):
 # Add custom exception middleware at the very top
 app.add_middleware(CustomExceptionMiddleware)
 
-# Add CORS middleware
+# Add CORS middleware with restricted origins
+allowed_origins = os.getenv("ALLOWED_CORS_ORIGINS", "http://localhost:3000,http://localhost:8080").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[origin.strip() for origin in allowed_origins],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -305,25 +306,6 @@ async def verify_api_key(credentials: Optional[HTTPAuthorizationCredentials] = D
     return True
 
 
-async def optional_api_key(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
-    """Optional API key verification - enforces auth when API_KEY is set."""
-    current_api_key = os.getenv("API_KEY")
-    if current_api_key:
-        # API key is required when configured
-        if not credentials:
-            raise HTTPException(
-                status_code=401,
-                detail=format_error(401, "API key required")
-            )
-        if credentials.credentials != current_api_key:
-            raise HTTPException(
-                status_code=401,
-                detail=format_error(401, "Invalid API key")
-            )
-    # No API key configured, allow access
-    return True
-
-
 def set_bot_engine(engine):
     """Set the global bot engine reference."""
     global bot_engine
@@ -336,7 +318,7 @@ async def root():
     return {"message": "Crypto Trading Bot API", "version": "1.0.0"}
 
 
-@api_router.get("/status")
+@api_router.get("/status", dependencies=[Depends(verify_api_key)])
 async def get_status(request: Request):
     """Get bot status."""
     if not bot_engine:
@@ -354,7 +336,7 @@ async def get_status(request: Request):
     }
 
 
-@api_router.get("/orders", dependencies=[Depends(optional_api_key)])
+@api_router.get("/orders", dependencies=[Depends(verify_api_key)])
 async def get_orders(request: Request, db: Session = Depends(get_db)):
     """Get recent orders/trades."""
     # Query recent orders from database
@@ -377,7 +359,7 @@ async def get_orders(request: Request, db: Session = Depends(get_db)):
     return {"orders": orders}
 
 
-@api_router.get("/signals", dependencies=[Depends(optional_api_key)])
+@api_router.get("/signals", dependencies=[Depends(verify_api_key)])
 async def get_signals(request: Request, db: Session = Depends(get_db)):
     """Get recent trading signals."""
     # Query recent signals from database
@@ -397,7 +379,7 @@ async def get_signals(request: Request, db: Session = Depends(get_db)):
     return {"signals": signals}
 
 
-@api_router.get("/equity", dependencies=[Depends(optional_api_key)])
+@api_router.get("/equity", dependencies=[Depends(verify_api_key)])
 async def get_equity(request: Request, db: Session = Depends(get_db)):
     """Get equity curve data."""
     # Query equity data from database
@@ -456,7 +438,7 @@ async def resume_bot(request: Request):
     return {"message": "Bot resumed successfully"}
 
 
-@api_router.get("/performance", dependencies=[Depends(optional_api_key)])
+@api_router.get("/performance", dependencies=[Depends(verify_api_key)])
 async def get_performance(request: Request):
     """Get performance metrics."""
     if not bot_engine:

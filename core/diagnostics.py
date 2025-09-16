@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 import statistics
 import aiohttp
+import numpy as np
 
 from core.signal_router.events import (
     DiagnosticAlertEvent,
@@ -67,7 +68,7 @@ class AnomalyDetection:
 
 @dataclass
 class DiagnosticState:
-    """Current diagnostic state of the system."""
+    """Current diagnostic state of the system with optimized memory usage."""
     overall_status: HealthStatus = HealthStatus.HEALTHY
     last_check: Optional[datetime] = None
     check_count: int = 0
@@ -75,7 +76,17 @@ class DiagnosticState:
     anomaly_count: int = 0
     component_statuses: Dict[str, HealthCheckResult] = field(default_factory=dict)
     recent_anomalies: List[AnomalyDetection] = field(default_factory=list)
-    performance_metrics: Dict[str, List[float]] = field(default_factory=dict)
+    performance_metrics: Dict[str, np.ndarray] = field(default_factory=dict)
+
+    # Pre-allocated numpy arrays for performance metrics
+    _latency_buffer: np.ndarray = field(default=None, init=False)
+    _buffer_index: int = field(default=0, init=False)
+    _max_metrics: int = field(default=100, init=False)
+
+    def __post_init__(self):
+        """Initialize optimized data structures."""
+        if self._latency_buffer is None:
+            self._latency_buffer = np.full(self._max_metrics, np.nan, dtype=np.float64)
 
 
 class DiagnosticsManager:

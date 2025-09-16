@@ -3,8 +3,9 @@ Pydantic schemas for API request/response models.
 Standardizes error responses and data validation.
 """
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Any, Dict, Optional
+from decimal import Decimal
 
 
 class ErrorDetail(BaseModel):
@@ -71,14 +72,14 @@ class StatusResponse(BaseModel):
 
 class OrderResponse(BaseModel):
     """Order response model."""
-    id: str
-    symbol: str
+    id: str = Field(..., min_length=1, max_length=100)
+    symbol: str = Field(..., min_length=1, max_length=20, pattern=r"^[A-Z0-9]+/[A-Z0-9]+$")
     timestamp: Optional[str]
-    side: Optional[str]
-    quantity: Optional[float]
-    price: Optional[float]
+    side: Optional[str] = Field(None, pattern=r"^(buy|sell)$")
+    quantity: Optional[float] = Field(None, gt=0)
+    price: Optional[float] = Field(None, gt=0)
     pnl: Optional[float]
-    equity: Optional[float]
+    equity: Optional[float] = Field(None, ge=0)
     cumulative_return: Optional[float]
 
 
@@ -109,12 +110,12 @@ class OrdersListResponse(BaseModel):
 
 class SignalResponse(BaseModel):
     """Signal response model."""
-    id: str
-    symbol: str
+    id: str = Field(..., min_length=1, max_length=100)
+    symbol: str = Field(..., min_length=1, max_length=20, pattern=r"^[A-Z0-9]+/[A-Z0-9]+$")
     timestamp: Optional[str]
-    confidence: Optional[float]
-    signal_type: Optional[str]
-    strategy: Optional[str]
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
+    signal_type: Optional[str] = Field(None, pattern=r"^(buy|sell|hold)$")
+    strategy: Optional[str] = Field(None, min_length=1, max_length=50)
 
 
 class SignalsListResponse(BaseModel):

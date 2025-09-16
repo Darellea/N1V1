@@ -88,6 +88,10 @@ class EnsembleManager:
         self.strategy_weights: Dict[str, float] = {}
         self.performance_metrics: Dict[str, Dict[str, float]] = {}
 
+        # Caching for repeated calculations
+        self._confidence_cache: Dict[str, float] = {}
+        self._signal_filter_cache: Dict[str, List[StrategySignal]] = {}
+
         # Initialize from config
         self._load_from_config()
 
@@ -247,27 +251,53 @@ class EnsembleManager:
             )
 
     def _majority_vote(self, strategy_signals: List[StrategySignal]) -> EnsembleResult:
-        """Implement majority voting mechanism."""
-        buy_votes = 0
-        sell_votes = 0
-        hold_votes = 0
-        total_weight = sum(s.weight for s in strategy_signals)
+        """Implement majority voting mechanism using vectorized operations."""
+        if not strategy_signals:
+            return EnsembleResult(
+                decision=EnsembleDecision.NO_CONSENSUS,
+                final_signal=None,
+                contributing_strategies=[],
+                vote_counts={"buy": 0, "sell": 0, "hold": 0},
+                total_weight=0.0,
+                confidence_score=0.0,
+                voting_mode=VotingMode.MAJORITY_VOTE,
+                strategy_weights={}
+            )
 
-        contributing_strategies = []
-        vote_counts = {"buy": 0, "sell": 0, "hold": 0}
+        # Vectorized signal type extraction and weight calculation
+        valid_signals = [s for s in strategy_signals if s.signal]
+        if not valid_signals:
+            return EnsembleResult(
+                decision=EnsembleDecision.NO_CONSENSUS,
+                final_signal=None,
+                contributing_strategies=[],
+                vote_counts={"buy": 0, "sell": 0, "hold": 0},
+                total_weight=0.0,
+                confidence_score=0.0,
+                voting_mode=VotingMode.MAJORITY_VOTE,
+                strategy_weights={}
+            )
 
-        for sig in strategy_signals:
-            if sig.signal:
-                if sig.signal.signal_type == SignalType.ENTRY_LONG:
-                    buy_votes += sig.weight
-                    vote_counts["buy"] += 1
-                elif sig.signal.signal_type == SignalType.ENTRY_SHORT:
-                    sell_votes += sig.weight
-                    vote_counts["sell"] += 1
-                else:
-                    hold_votes += sig.weight
-                    vote_counts["hold"] += 1
-                contributing_strategies.append(sig.strategy_id)
+        # Extract signal types and weights using vectorized operations
+        signal_types = np.array([s.signal.signal_type.value for s in valid_signals])
+        weights = np.array([s.weight for s in valid_signals])
+
+        # Vectorized vote counting
+        buy_mask = signal_types == SignalType.ENTRY_LONG.value
+        sell_mask = signal_types == SignalType.ENTRY_SHORT.value
+        hold_mask = ~(buy_mask | sell_mask)
+
+        buy_votes = np.sum(weights[buy_mask])
+        sell_votes = np.sum(weights[sell_mask])
+        hold_votes = np.sum(weights[hold_mask])
+
+        total_weight = np.sum(weights)
+        contributing_strategies = [s.strategy_id for s in valid_signals]
+        vote_counts = {
+            "buy": np.sum(buy_mask),
+            "sell": np.sum(sell_mask),
+            "hold": np.sum(hold_mask)
+        }
 
         # Check majority threshold
         max_votes = max(buy_votes, sell_votes, hold_votes)
@@ -301,28 +331,53 @@ class EnsembleManager:
         )
 
     def _weighted_vote(self, strategy_signals: List[StrategySignal]) -> EnsembleResult:
-        """Implement weighted voting based on strategy performance."""
-        buy_weight = 0.0
-        sell_weight = 0.0
-        hold_weight = 0.0
-        total_weight = sum(s.weight for s in strategy_signals)
+        """Implement weighted voting based on strategy performance using vectorized operations."""
+        if not strategy_signals:
+            return EnsembleResult(
+                decision=EnsembleDecision.NO_CONSENSUS,
+                final_signal=None,
+                contributing_strategies=[],
+                vote_counts={"buy": 0, "sell": 0, "hold": 0},
+                total_weight=0.0,
+                confidence_score=0.0,
+                voting_mode=VotingMode.WEIGHTED_VOTE,
+                strategy_weights={}
+            )
 
-        contributing_strategies = []
-        vote_counts = {"buy": 0, "sell": 0, "hold": 0}
+        # Vectorized signal type extraction and weight calculation
+        valid_signals = [s for s in strategy_signals if s.signal]
+        if not valid_signals:
+            return EnsembleResult(
+                decision=EnsembleDecision.NO_CONSENSUS,
+                final_signal=None,
+                contributing_strategies=[],
+                vote_counts={"buy": 0, "sell": 0, "hold": 0},
+                total_weight=0.0,
+                confidence_score=0.0,
+                voting_mode=VotingMode.WEIGHTED_VOTE,
+                strategy_weights={}
+            )
 
-        for sig in strategy_signals:
-            if sig.signal:
-                weight = sig.weight
-                if sig.signal.signal_type == SignalType.ENTRY_LONG:
-                    buy_weight += weight
-                    vote_counts["buy"] += 1
-                elif sig.signal.signal_type == SignalType.ENTRY_SHORT:
-                    sell_weight += weight
-                    vote_counts["sell"] += 1
-                else:
-                    hold_weight += weight
-                    vote_counts["hold"] += 1
-                contributing_strategies.append(sig.strategy_id)
+        # Extract signal types and weights using vectorized operations
+        signal_types = np.array([s.signal.signal_type.value for s in valid_signals])
+        weights = np.array([s.weight for s in valid_signals])
+
+        # Vectorized weighted vote calculation
+        buy_mask = signal_types == SignalType.ENTRY_LONG.value
+        sell_mask = signal_types == SignalType.ENTRY_SHORT.value
+        hold_mask = ~(buy_mask | sell_mask)
+
+        buy_weight = np.sum(weights[buy_mask])
+        sell_weight = np.sum(weights[sell_mask])
+        hold_weight = np.sum(weights[hold_mask])
+
+        total_weight = np.sum(weights)
+        contributing_strategies = [s.strategy_id for s in valid_signals]
+        vote_counts = {
+            "buy": np.sum(buy_mask),
+            "sell": np.sum(sell_mask),
+            "hold": np.sum(hold_mask)
+        }
 
         # Find winning direction
         weights = {"buy": buy_weight, "sell": sell_weight, "hold": hold_weight}
@@ -357,36 +412,58 @@ class EnsembleManager:
         )
 
     def _confidence_average(self, strategy_signals: List[StrategySignal]) -> EnsembleResult:
-        """Implement confidence averaging mechanism."""
-        buy_confidences = []
-        sell_confidences = []
-        hold_confidences = []
+        """Implement confidence averaging mechanism using vectorized operations."""
+        if not strategy_signals:
+            return EnsembleResult(
+                decision=EnsembleDecision.NO_CONSENSUS,
+                final_signal=None,
+                contributing_strategies=[],
+                vote_counts={"buy": 0, "sell": 0, "hold": 0},
+                total_weight=0.0,
+                confidence_score=0.0,
+                voting_mode=VotingMode.CONFIDENCE_AVERAGE,
+                strategy_weights={}
+            )
 
-        contributing_strategies = []
-        vote_counts = {"buy": 0, "sell": 0, "hold": 0}
-        total_weight = sum(s.weight for s in strategy_signals)
+        # Vectorized signal type extraction and confidence calculation
+        valid_signals = [s for s in strategy_signals if s.signal]
+        if not valid_signals:
+            return EnsembleResult(
+                decision=EnsembleDecision.NO_CONSENSUS,
+                final_signal=None,
+                contributing_strategies=[],
+                vote_counts={"buy": 0, "sell": 0, "hold": 0},
+                total_weight=0.0,
+                confidence_score=0.0,
+                voting_mode=VotingMode.CONFIDENCE_AVERAGE,
+                strategy_weights={}
+            )
 
-        for sig in strategy_signals:
-            if sig.signal:
-                confidence = sig.confidence
-                if sig.signal.signal_type == SignalType.ENTRY_LONG:
-                    buy_confidences.append(confidence)
-                    vote_counts["buy"] += 1
-                elif sig.signal.signal_type == SignalType.ENTRY_SHORT:
-                    sell_confidences.append(confidence)
-                    vote_counts["sell"] += 1
-                else:
-                    hold_confidences.append(confidence)
-                    vote_counts["hold"] += 1
-                contributing_strategies.append(sig.strategy_id)
+        # Extract signal types, confidences, and weights using vectorized operations
+        signal_types = np.array([s.signal.signal_type.value for s in valid_signals])
+        confidences = np.array([s.confidence for s in valid_signals])
+        weights = np.array([s.weight for s in valid_signals])
 
-        # Calculate average confidences
-        avg_buy = np.mean(buy_confidences) if buy_confidences else 0.0
-        avg_sell = np.mean(sell_confidences) if sell_confidences else 0.0
-        avg_hold = np.mean(hold_confidences) if hold_confidences else 0.0
+        # Vectorized confidence averaging
+        buy_mask = signal_types == SignalType.ENTRY_LONG.value
+        sell_mask = signal_types == SignalType.ENTRY_SHORT.value
+        hold_mask = ~(buy_mask | sell_mask)
+
+        # Calculate average confidences using numpy masked operations
+        avg_buy = np.mean(confidences[buy_mask]) if np.any(buy_mask) else 0.0
+        avg_sell = np.mean(confidences[sell_mask]) if np.any(sell_mask) else 0.0
+        avg_hold = np.mean(confidences[hold_mask]) if np.any(hold_mask) else 0.0
+
+        total_weight = np.sum(weights)
+        contributing_strategies = [s.strategy_id for s in valid_signals]
+        vote_counts = {
+            "buy": np.sum(buy_mask),
+            "sell": np.sum(sell_mask),
+            "hold": np.sum(hold_mask)
+        }
 
         # Check if we have any entry signals (buy or sell)
-        has_entry_signals = (buy_confidences or sell_confidences)
+        has_entry_signals = np.any(buy_mask) or np.any(sell_mask)
 
         if not has_entry_signals:
             # No entry signals, cannot make a trading decision
@@ -490,7 +567,7 @@ class EnsembleManager:
 
     def update_weights(self, performance_metrics: Dict[str, Dict[str, float]]) -> None:
         """
-        Update strategy weights based on performance metrics.
+        Update strategy weights based on performance metrics using vectorized operations.
 
         Args:
             performance_metrics: Dict of strategy_id -> performance metrics
@@ -500,11 +577,22 @@ class EnsembleManager:
 
         self.performance_metrics.update(performance_metrics)
 
-        # Calculate new weights based on performance
-        for strategy_id in self.strategy_weights:
-            metrics = self.performance_metrics.get(strategy_id, {})
-            new_weight = self._calculate_weight_from_metrics(metrics)
-            self.strategy_weights[strategy_id] = new_weight
+        # Vectorized weight calculation for all strategies
+        strategy_ids = list(self.strategy_weights.keys())
+
+        # Extract metrics arrays for vectorized computation
+        sharpe_ratios = np.array([self.performance_metrics.get(sid, {}).get("sharpe_ratio", 0.0) for sid in strategy_ids])
+        win_rates = np.array([self.performance_metrics.get(sid, {}).get("win_rate", 0.5) for sid in strategy_ids])
+        profit_factors = np.array([self.performance_metrics.get(sid, {}).get("profit_factor", 1.0) for sid in strategy_ids])
+
+        # Vectorized weight calculations
+        normalized_sharpes = np.maximum(0, (sharpe_ratios + 3) / 6)
+        weights = (normalized_sharpes * 0.4 + win_rates * 0.4 + np.minimum(profit_factors / 2, 1.0) * 0.2)
+        final_weights = np.maximum(weights, 0.1)
+
+        # Update weights dictionary
+        for i, strategy_id in enumerate(strategy_ids):
+            self.strategy_weights[strategy_id] = final_weights[i]
 
         logger.info(f"Updated strategy weights: {self.strategy_weights}")
 

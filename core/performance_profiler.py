@@ -94,9 +94,15 @@ class PerformanceProfiler:
         self.current_session: Optional[ProfilingSession] = None
         self.sessions: Dict[str, ProfilingSession] = {}
 
-        # Historical data
+        # Optimized historical data storage using numpy arrays
         self.metrics_history: deque = deque(maxlen=max_history)
-        self.baseline_metrics: Dict[str, Dict] = {}
+        self.baseline_metrics: Dict[str, np.ndarray] = {}
+
+        # Pre-allocated numpy arrays for performance metrics
+        self._execution_times_buffer = np.zeros(1000, dtype=np.float64)
+        self._memory_usage_buffer = np.zeros(1000, dtype=np.int64)
+        self._cpu_usage_buffer = np.zeros(1000, dtype=np.float64)
+        self._buffer_index = 0
 
         # Monitoring threads
         self.monitoring_thread: Optional[threading.Thread] = None

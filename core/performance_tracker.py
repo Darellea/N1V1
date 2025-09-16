@@ -5,12 +5,16 @@ Handles performance calculation, equity progression tracking,
 and performance statistics management.
 """
 
-import logging
 import numpy as np
 from typing import Dict, Any, Optional, List
 from utils.time import now_ms, to_ms, to_iso
 
-logger = logging.getLogger(__name__)
+from .logging_utils import get_structured_logger, LogSensitivity
+from .utils.error_utils import ErrorHandler, ErrorContext, ErrorSeverity, ErrorCategory
+from .utils.config_utils import get_config
+
+logger = get_structured_logger("core.performance_tracker", LogSensitivity.SECURE)
+error_handler = ErrorHandler("performance_tracker")
 
 
 class PerformanceTracker:
@@ -33,10 +37,16 @@ class PerformanceTracker:
         """
         self.config = config
 
-        # Starting balance for calculations
-        self.starting_balance: float = float(
-            self.config.get("trading", {}).get("initial_balance", 1000.0)
+        # Import configuration from centralized system
+        from .config_manager import get_config_manager
+        config_manager = get_config_manager()
+        pt_config = config_manager.get_performance_tracker_config()
+
+        # Starting balance from configuration (with fallback to config file)
+        config_balance = float(
+            self.config.get("trading", {}).get("initial_balance", pt_config.starting_balance)
         )
+        self.starting_balance: float = config_balance
 
         # Performance statistics
         self.performance_stats: Dict[str, Any] = {
@@ -105,12 +115,19 @@ class PerformanceTracker:
 
             # Calculate Sharpe ratio (annualized)
             returns_history = self.performance_stats["returns_history"]
-            if len(returns_history) > 1 and np.std(returns_history) > 0:
+            if len(returns_history) > 1:
                 returns = np.array(returns_history)
                 risk_free_rate = 0.0  # Can be configured
                 excess_returns = returns - risk_free_rate
-                sharpe = float(np.mean(excess_returns) / np.std(excess_returns))
-                self.performance_stats["sharpe_ratio"] = sharpe * np.sqrt(252)  # Annualize
+                std_returns = np.std(excess_returns)
+
+                # Safe division: handle zero standard deviation (constant returns)
+                if std_returns > 0:
+                    sharpe = float(np.mean(excess_returns) / std_returns)
+                    self.performance_stats["sharpe_ratio"] = sharpe * np.sqrt(252)  # Annualize
+                else:
+                    # For constant returns, Sharpe ratio is undefined, use 0 or None
+                    self.performance_stats["sharpe_ratio"] = 0.0
 
         except Exception as e:
             logger.exception(f"Failed to update performance metrics: {e}")
@@ -217,10 +234,18 @@ class PerformanceTracker:
                 additional_metrics["largest_win"] = max(pnl_values) if pnl_values else 0
                 additional_metrics["largest_loss"] = min(pnl_values) if pnl_values else 0
 
-                # Profit factor
+                # Profit factor - safe division
                 total_wins = sum(p for p in pnl_values if p > 0)
                 total_losses = abs(sum(p for p in pnl_values if p < 0))
-                additional_metrics["profit_factor"] = total_wins / total_losses if total_losses > 0 else float('inf')
+
+                if total_losses > 0:
+                    additional_metrics["profit_factor"] = total_wins / total_losses
+                elif total_wins > 0:
+                    # Wins but no losses - infinite profit factor
+                    additional_metrics["profit_factor"] = float('inf')
+                else:
+                    # No wins and no losses - undefined, use 0
+                    additional_metrics["profit_factor"] = 0.0
 
             return additional_metrics
 
@@ -256,7 +281,7 @@ class PerformanceTracker:
                 "starting_balance": self.starting_balance,
                 "total_return_pct": (
                     (base_stats.get("total_pnl", 0) / self.starting_balance * 100)
-                    if self.starting_balance > 0 else 0
+                    if self.starting_balance and self.starting_balance > 0 else 0.0
                 ),
                 "total_trades": base_stats.get("wins", 0) + base_stats.get("losses", 0),
                 "report_generated_at": now_ms()

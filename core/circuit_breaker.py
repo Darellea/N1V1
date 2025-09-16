@@ -31,12 +31,13 @@ Trigger Conditions:
 """
 
 import asyncio
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Protocol
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 import numpy as np
 import logging
+from abc import ABC, abstractmethod
 
 # Import metrics collector at module level to avoid blocking imports in async methods
 try:
@@ -150,6 +151,170 @@ class EquityPoint:
     trade_count: int
 
 
+class TriggerStrategy(ABC):
+    """Abstract base class for trigger condition strategies."""
+
+    def __init__(self, config: CircuitBreakerConfig):
+        self.config = config
+
+    @abstractmethod
+    async def check_condition(self, conditions: Dict[str, Any], circuit_breaker: 'CircuitBreaker') -> bool:
+        """Check if this trigger condition is met."""
+        pass
+
+    @abstractmethod
+    def get_trigger_name(self) -> str:
+        """Get the name of this trigger condition."""
+        pass
+
+
+class EquityDrawdownTrigger(TriggerStrategy):
+    """Strategy for checking equity drawdown conditions."""
+
+    def get_trigger_name(self) -> str:
+        return "equity_drawdown"
+
+    async def check_condition(self, conditions: Dict[str, Any], circuit_breaker: 'CircuitBreaker') -> bool:
+        """Check if equity drawdown exceeds threshold."""
+        if 'equity' not in conditions:
+            return False
+
+        equity = conditions['equity']
+        # Assume peak equity is initial 10000 for simplicity
+        peak_equity = 10000.0
+
+        if peak_equity <= 0:
+            return False
+
+        drawdown = (peak_equity - equity) / peak_equity
+        return drawdown >= self.config.equity_drawdown_threshold
+
+
+class ConsecutiveLossesTrigger(TriggerStrategy):
+    """Strategy for checking consecutive losses conditions."""
+
+    def get_trigger_name(self) -> str:
+        return "consecutive_losses"
+
+    async def check_condition(self, conditions: Dict[str, Any], circuit_breaker: 'CircuitBreaker') -> bool:
+        """Check if consecutive losses exceed threshold."""
+        if 'consecutive_losses' not in conditions:
+            return False
+
+        consecutive_losses = conditions['consecutive_losses']
+        return consecutive_losses >= self.config.consecutive_losses_threshold
+
+
+class VolatilitySpikeTrigger(TriggerStrategy):
+    """Strategy for checking volatility spike conditions."""
+
+    def get_trigger_name(self) -> str:
+        return "volatility_spike"
+
+    async def check_condition(self, conditions: Dict[str, Any], circuit_breaker: 'CircuitBreaker') -> bool:
+        """Check if volatility spike exceeds threshold."""
+        if 'volatility' not in conditions:
+            return False
+
+        volatility = conditions['volatility']
+        return volatility >= self.config.volatility_spike_threshold
+
+
+class AnomalyTrigger(TriggerStrategy):
+    """Strategy for checking anomaly detection conditions."""
+
+    def get_trigger_name(self) -> str:
+        return "market_anomaly"
+
+    async def check_condition(self, conditions: Dict[str, Any], circuit_breaker: 'CircuitBreaker') -> bool:
+        """Check for market anomalies using integrated anomaly detector."""
+        if not circuit_breaker.anomaly_detector:
+            return False
+
+        if 'market_data' not in conditions:
+            return False
+
+        try:
+            return await circuit_breaker.anomaly_detector.detect_market_anomaly(conditions['market_data'])
+        except Exception:
+            return False
+
+
+class StateMachine:
+    """State machine for managing circuit breaker state transitions."""
+
+    def __init__(self, circuit_breaker: 'CircuitBreaker'):
+        self.circuit_breaker = circuit_breaker
+        self.transitions = self._build_transitions()
+
+    def _build_transitions(self) -> Dict[CircuitBreakerState, Dict[str, CircuitBreakerState]]:
+        """Build the state transition table."""
+        return {
+            CircuitBreakerState.NORMAL: {
+                'trigger': CircuitBreakerState.TRIGGERED,
+                'monitor': CircuitBreakerState.MONITORING
+            },
+            CircuitBreakerState.MONITORING: {
+                'trigger': CircuitBreakerState.TRIGGERED,
+                'normal': CircuitBreakerState.NORMAL
+            },
+            CircuitBreakerState.TRIGGERED: {
+                'cooling': CircuitBreakerState.COOLING,
+                'emergency': CircuitBreakerState.EMERGENCY
+            },
+            CircuitBreakerState.COOLING: {
+                'recovery': CircuitBreakerState.RECOVERY,
+                'trigger': CircuitBreakerState.TRIGGERED
+            },
+            CircuitBreakerState.RECOVERY: {
+                'normal': CircuitBreakerState.NORMAL,
+                'trigger': CircuitBreakerState.TRIGGERED
+            },
+            CircuitBreakerState.EMERGENCY: {
+                'normal': CircuitBreakerState.NORMAL
+            }
+        }
+
+    async def transition(self, action: str, reason: str = "") -> bool:
+        """Attempt to transition to a new state based on the action."""
+        async with self.circuit_breaker._lock:
+            current_state = self.circuit_breaker.state
+
+            if current_state not in self.transitions:
+                return False
+
+            state_transitions = self.transitions[current_state]
+            if action not in state_transitions:
+                return False
+
+            new_state = state_transitions[action]
+            old_state = self.circuit_breaker.state
+            self.circuit_breaker.state = new_state
+
+            # Log the transition
+            self.circuit_breaker._log_event(
+                f"state_transition_{action}",
+                old_state,
+                new_state,
+                reason or f"State transition: {action}"
+            )
+
+            # Execute state-specific actions
+            await self._execute_state_actions(new_state, old_state)
+            return True
+
+    async def _execute_state_actions(self, new_state: CircuitBreakerState, old_state: CircuitBreakerState) -> None:
+        """Execute actions specific to entering a new state."""
+        if new_state == CircuitBreakerState.COOLING:
+            await self.circuit_breaker._enter_cooling_period()
+        elif new_state == CircuitBreakerState.RECOVERY:
+            await self.circuit_breaker._enter_recovery_period()
+        elif new_state == CircuitBreakerState.NORMAL and old_state != CircuitBreakerState.NORMAL:
+            await self.circuit_breaker._return_to_normal()
+        elif new_state == CircuitBreakerState.TRIGGERED:
+            await self.circuit_breaker._trigger_circuit_breaker("State machine trigger")
+
+
 class CircuitBreaker:
     """
     Circuit Breaker implementation for the N1V1 trading framework.
@@ -181,6 +346,17 @@ class CircuitBreaker:
         self.signal_router = None
         self.risk_manager = None
         self.anomaly_detector = None
+
+        # Initialize strategy pattern components
+        self.trigger_strategies = [
+            EquityDrawdownTrigger(config),
+            ConsecutiveLossesTrigger(config),
+            VolatilitySpikeTrigger(config),
+            AnomalyTrigger(config)
+        ]
+
+        # Initialize state machine
+        self.state_machine = StateMachine(self)
 
     def _log_event(self, event_type: str, previous_state: CircuitBreakerState,
                    new_state: CircuitBreakerState, reason: str, **kwargs) -> None:
@@ -237,45 +413,35 @@ class CircuitBreaker:
         return score
 
     async def check_and_trigger(self, conditions: Dict[str, Any]) -> bool:
-        """Check conditions and trigger if needed."""
-        triggered = False
+        """Check conditions and trigger if needed using strategy pattern."""
+        triggered_strategies = []
 
-        # Check equity drawdown
-        if 'equity' in conditions:
-            equity = conditions['equity']
-            # Assume peak equity is initial 10000 for simplicity
-            peak_equity = 10000.0
-            if self._check_equity_drawdown(peak_equity, equity):
-                triggered = True
+        # Use strategy pattern to check all trigger conditions
+        for strategy in self.trigger_strategies:
+            try:
+                if await strategy.check_condition(conditions, self):
+                    triggered_strategies.append(strategy.get_trigger_name())
+            except Exception as e:
+                self.logger.warning(f"Error checking {strategy.get_trigger_name()}: {e}")
+                continue
 
-        # Check consecutive losses
-        if 'consecutive_losses' in conditions:
-            consecutive_losses = conditions['consecutive_losses']
-            if consecutive_losses >= self.config.consecutive_losses_threshold:
-                triggered = True
-
-        # Check volatility
-        if 'volatility' in conditions:
-            volatility = conditions['volatility']
-            if volatility >= self.config.volatility_spike_threshold:
-                triggered = True
-
-        if triggered:
-            await self._trigger_circuit_breaker("Multi-factor trigger")
+        if triggered_strategies:
+            # Use state machine to transition to triggered state
+            await self.state_machine.transition("trigger", f"Strategies triggered: {', '.join(triggered_strategies)}")
 
             # Integration: cancel orders when triggered
             if self.order_manager and hasattr(self.order_manager, 'cancel_all_orders'):
                 try:
                     await self.order_manager.cancel_all_orders()
-                except:
-                    pass  # Ignore errors in tests
+                except Exception as e:
+                    self.logger.warning(f"Failed to cancel orders: {e}")
 
             # Integration: block signals when triggered
             if self.signal_router and hasattr(self.signal_router, 'block_signals'):
                 try:
                     await self.signal_router.block_signals()
-                except:
-                    pass  # Ignore errors in tests
+                except Exception as e:
+                    self.logger.warning(f"Failed to block signals: {e}")
 
             return True
         return False

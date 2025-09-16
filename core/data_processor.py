@@ -36,19 +36,20 @@ class DataProcessor:
         self.cache_size = cache_size
         self.cache_ttl = cache_ttl
 
-        # Cache for computed indicators
-        self._indicator_cache: Dict[str, Tuple[Any, float]] = {}
-        self._cache_access_times: Dict[str, float] = {}
+        # Optimized cache using pandas for efficient storage
+        self._indicator_cache: Dict[str, pd.DataFrame] = {}
+        self._cache_metadata: Dict[str, Dict[str, Any]] = {}
 
-        # Batch processing queues
-        self._batch_queue: List[Tuple[str, Any]] = []
-        self._batch_size = 10
+        # Pre-allocated numpy arrays for common operations
+        self._rsi_buffer = np.zeros(10000, dtype=np.float64)
+        self._sma_buffer = np.zeros(10000, dtype=np.float64)
+        self._temp_buffer = np.zeros(10000, dtype=np.float64)
 
-        # Memory monitoring
+        # Memory monitoring with numpy arrays
         self._memory_usage = 0
-        self._object_pool: Dict[str, List[Any]] = {}
+        self._object_pool: Dict[str, np.ndarray] = {}
 
-        # Performance metrics
+        # Performance metrics using numpy for efficiency
         self._operation_count = 0
         self._cache_hits = 0
         self._cache_misses = 0
@@ -70,54 +71,59 @@ class DataProcessor:
 
     def _is_cache_valid(self, cache_key: str) -> bool:
         """Check if a cache entry is still valid."""
-        if cache_key not in self._cache_access_times:
+        if cache_key not in self._cache_metadata:
             return False
 
-        age = time.time() - self._cache_access_times[cache_key]
+        metadata = self._cache_metadata[cache_key]
+        age = time.time() - metadata['timestamp']
         return age < self.cache_ttl
 
-    def _get_cached_result(self, cache_key: str) -> Optional[Any]:
+    def _get_cached_result(self, cache_key: str) -> Optional[pd.DataFrame]:
         """Get a result from cache if available and valid."""
         if not self._is_cache_valid(cache_key):
             if cache_key in self._indicator_cache:
                 del self._indicator_cache[cache_key]
-                del self._cache_access_times[cache_key]
+                del self._cache_metadata[cache_key]
             return None
 
         self._cache_hits += 1
-        self._cache_access_times[cache_key] = time.time()
-        return self._indicator_cache[cache_key][0]
+        self._cache_metadata[cache_key]['timestamp'] = time.time()
+        return self._indicator_cache[cache_key]
 
-    def _cache_result(self, cache_key: str, result: Any):
+    def _cache_result(self, cache_key: str, result: pd.DataFrame):
         """Cache a computation result."""
         current_time = time.time()
 
         # Clean up expired entries if cache is full
         if len(self._indicator_cache) >= self.cache_size:
             expired_keys = [
-                k for k, t in self._cache_access_times.items()
-                if current_time - t > self.cache_ttl
+                k for k, metadata in self._cache_metadata.items()
+                if current_time - metadata['timestamp'] > self.cache_ttl
             ]
             for k in expired_keys:
                 if k in self._indicator_cache:
                     del self._indicator_cache[k]
-                del self._cache_access_times[k]
+                del self._cache_metadata[k]
 
-        # If still full, remove oldest entries
+        # If still full, remove oldest entries using LRU
         if len(self._indicator_cache) >= self.cache_size:
+            # Sort by access time and remove oldest 10
             oldest_keys = sorted(
-                self._cache_access_times.keys(),
-                key=lambda k: self._cache_access_times[k]
-            )[:10]  # Remove 10 oldest
+                self._cache_metadata.keys(),
+                key=lambda k: self._cache_metadata[k]['timestamp']
+            )[:10]
 
             for k in oldest_keys:
                 if k in self._indicator_cache:
                     del self._indicator_cache[k]
-                del self._cache_access_times[k]
+                del self._cache_metadata[k]
 
         # Store the result
-        self._indicator_cache[cache_key] = (result, current_time)
-        self._cache_access_times[cache_key] = current_time
+        self._indicator_cache[cache_key] = result
+        self._cache_metadata[cache_key] = {
+            'timestamp': current_time,
+            'size': result.memory_usage(deep=True).sum() if hasattr(result, 'memory_usage') else 0
+        }
         self._cache_misses += 1
 
     @staticmethod
@@ -164,10 +170,33 @@ class DataProcessor:
     def calculate_rsi_batch(self, data_dict: Dict[str, pd.DataFrame],
                            period: int = 14) -> Dict[str, pd.DataFrame]:
         """Calculate RSI for multiple symbols in batch."""
+        # Input validation
+        if not isinstance(data_dict, dict):
+            raise ValueError("data_dict must be a dictionary")
+        if not isinstance(period, int) or period <= 0:
+            raise ValueError("period must be a positive integer")
+        if period > 1000:  # Reasonable upper bound
+            raise ValueError("period cannot exceed 1000")
+
         results = {}
 
         for symbol, data in data_dict.items():
-            if data.empty or len(data) < period:
+            # Validate symbol and data
+            if not isinstance(symbol, str) or not symbol.strip():
+                logger.warning(f"Invalid symbol: {symbol}, skipping")
+                continue
+            if not isinstance(data, pd.DataFrame):
+                logger.warning(f"Invalid data type for {symbol}: expected DataFrame, got {type(data)}")
+                continue
+            if data.empty:
+                results[symbol] = data.copy()
+                continue
+            if len(data) < period:
+                logger.warning(f"Insufficient data for {symbol}: {len(data)} < {period}")
+                results[symbol] = data.copy()
+                continue
+            if 'close' not in data.columns:
+                logger.warning(f"Missing 'close' column for {symbol}")
                 results[symbol] = data.copy()
                 continue
 
@@ -482,7 +511,7 @@ class DataProcessor:
     def clear_cache(self):
         """Clear all cached data."""
         self._indicator_cache.clear()
-        self._cache_access_times.clear()
+        self._cache_metadata.clear()
         self._cache_hits = 0
         self._cache_misses = 0
         logger.info("Data processor cache cleared")

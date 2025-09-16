@@ -10,6 +10,18 @@ Tests cover:
 - Knowledge base integration
 - Performance benchmarking
 - Edge cases and error handling
+
+Import Fix Documentation:
+-------------------------
+Fixed ImportError: cannot import name 'Backtester' from 'backtest.backtester'
+
+Changes made:
+1. Created backtest/__init__.py to make backtest a proper Python package
+2. Added Backtester class to backtest/backtester.py with run_backtest() and run_backtest_sync() methods
+3. Updated __init__.py to export Backtester and other classes/functions
+
+The Backtester class provides a mock implementation for testing purposes,
+returning sample backtest results with computed metrics.
 """
 
 import pytest

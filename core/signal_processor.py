@@ -5,10 +5,13 @@ Handles strategy management, signal generation, risk assessment,
 and signal routing through the risk management system.
 """
 
-import logging
 from typing import Dict, Any, Optional, List
 
-logger = logging.getLogger(__name__)
+from .logging_utils import get_structured_logger, LogSensitivity
+from .utils.error_utils import ErrorHandler, ErrorContext, ErrorSeverity, ErrorCategory, CircuitBreaker
+
+logger = get_structured_logger("core.signal_processor", LogSensitivity.SECURE)
+error_handler = ErrorHandler("signal_processor")
 
 
 class SignalProcessor:
@@ -45,6 +48,15 @@ class SignalProcessor:
         self.block_signals: bool = False
         self.risk_block_signals: bool = False
 
+        # Circuit breaker for external service calls
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=config.get("circuit_breaker", {}).get("failure_threshold", 5),
+            recovery_timeout=config.get("circuit_breaker", {}).get("recovery_timeout", 60.0)
+        )
+
+        # Circuit breaker status
+        self.circuit_breaker_status = "closed"
+
     def set_trading_pairs(self, pairs: List[str]):
         """Set the trading pairs for signal processing."""
         self.pairs = pairs
@@ -57,6 +69,13 @@ class SignalProcessor:
 
     async def generate_signals(self, market_data: Dict[str, Any]) -> List[Any]:
         """Generate trading signals from all active strategies."""
+        # Input validation
+        if not isinstance(market_data, dict):
+            raise ValueError("market_data must be a dictionary")
+        if not market_data:
+            logger.warning("Empty market_data provided")
+            return []
+
         signals = []
 
         if not self.strategies:
@@ -106,9 +125,14 @@ class SignalProcessor:
                 logger.warning("Strategy selector returned no strategy, using all available strategies")
                 signals = await self._generate_signals_from_all_strategies(market_data)
 
+        except (AttributeError, TypeError, KeyError) as e:
+            logger.error(f"Strategy selection error - invalid data structure: {e}")
+            signals = await self._generate_signals_from_all_strategies(market_data)
+        except (ValueError, RuntimeError) as e:
+            logger.error(f"Strategy selection error - configuration or runtime issue: {e}")
+            signals = await self._generate_signals_from_all_strategies(market_data)
         except Exception as e:
-            logger.exception(f"Error in strategy selection: {e}")
-            # Fallback to all strategies
+            logger.exception(f"Unexpected error in strategy selection: {e}")
             signals = await self._generate_signals_from_all_strategies(market_data)
 
         return signals
@@ -124,8 +148,14 @@ class SignalProcessor:
                 multi_tf_data = self._extract_multi_tf_data(market_data, primary_symbol) if primary_symbol else None
                 strategy_signals = await strategy.generate_signals(market_data, multi_tf_data)
                 signals.extend(strategy_signals)
+            except (AttributeError, TypeError, ValueError) as e:
+                logger.error(f"Signal generation error - invalid data or configuration in {strategy.__class__.__name__}: {e}")
+                # Continue with other strategies
+            except asyncio.TimeoutError as e:
+                logger.error(f"Signal generation timeout in {strategy.__class__.__name__}: {e}")
+                # Continue with other strategies
             except Exception as e:
-                logger.exception(f"Error generating signals from {strategy.__class__.__name__}: {e}")
+                logger.exception(f"Unexpected error generating signals from {strategy.__class__.__name__}: {e}")
                 # Continue with other strategies
 
         return signals
@@ -148,8 +178,14 @@ class SignalProcessor:
                     approved_signals.append(signal)
                 else:
                     logger.debug(f"Signal rejected by risk manager: {signal}")
+            except (AttributeError, TypeError, ValueError) as e:
+                logger.error(f"Risk evaluation error - invalid signal data or configuration: {e}")
+                # Conservatively reject signal on error
+            except asyncio.TimeoutError as e:
+                logger.error(f"Risk evaluation timeout: {e}")
+                # Conservatively reject signal on error
             except Exception as e:
-                logger.exception(f"Error evaluating signal through risk manager: {e}")
+                logger.exception(f"Unexpected error evaluating signal through risk manager: {e}")
                 # Conservatively reject signal on error
 
         logger.debug(f"Risk evaluation: {len(approved_signals)}/{len(signals)} signals approved")
@@ -231,10 +267,15 @@ class SignalProcessor:
         for strategy in self.strategies:
             try:
                 if hasattr(strategy, 'initialize'):
-                    await strategy.initialize(data_fetcher)
+                    # Use circuit breaker for external service calls
+                    await self.circuit_breaker.call(strategy.initialize, data_fetcher)
                 logger.info(f"Initialized strategy: {strategy.__class__.__name__}")
+            except (AttributeError, TypeError, ValueError) as e:
+                logger.error(f"Strategy initialization error - invalid data fetcher or configuration in {strategy.__class__.__name__}: {e}")
+            except asyncio.TimeoutError as e:
+                logger.error(f"Strategy initialization timeout in {strategy.__class__.__name__}: {e}")
             except Exception as e:
-                logger.exception(f"Failed to initialize strategy {strategy.__class__.__name__}: {e}")
+                logger.exception(f"Unexpected error initializing strategy {strategy.__class__.__name__}: {e}")
 
     async def shutdown_strategies(self):
         """Shutdown all strategies."""
@@ -243,5 +284,9 @@ class SignalProcessor:
                 if hasattr(strategy, 'shutdown'):
                     await strategy.shutdown()
                 logger.debug(f"Shutdown strategy: {strategy.__class__.__name__}")
+            except (AttributeError, TypeError) as e:
+                logger.error(f"Strategy shutdown error - invalid strategy state in {strategy.__class__.__name__}: {e}")
+            except asyncio.TimeoutError as e:
+                logger.error(f"Strategy shutdown timeout in {strategy.__class__.__name__}: {e}")
             except Exception as e:
-                logger.exception(f"Error shutting down strategy {strategy.__class__.__name__}: {e}")
+                logger.exception(f"Unexpected error shutting down strategy {strategy.__class__.__name__}: {e}")

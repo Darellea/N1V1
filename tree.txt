@@ -1,0 +1,1100 @@
+Folder PATH listing
+Volume serial number is 4C14-6D87
+C:.
+│   .coverage
+│   .env
+│   .gitignore
+│   BINARY_INTEGRATION_README.md
+│   BINARY_MIGRATION_DOCUMENTATION.md
+│   config.json
+│   config_binary_integration_example.json
+│   config_data_expansion.json
+│   config_ensemble_example.json
+│   config_retraining_scheduler.json
+│   demo_calibrated_model.pkl
+│   demo_calibrated_model_config.json
+│   demo_docstring_standardization.py
+│   demo_duplication_elimination.py
+│   demo_time_utils.log
+│   demo_training_results.json
+│   ENHANCED_BINARY_MODEL_README.md
+│   ENSEMBLE_README.md
+│   feature_importance.png
+│   horizon_threshold_test.txt
+│   INFO.txt
+│   listerror.txt
+│   loc_analysis.json
+│   main.py
+│   pyproject.toml
+│   pytest.ini
+│   README.md
+│   requirements-dev.txt
+│   requirements.txt
+│   shap_feature_importance.txt
+│   start.bat
+│   test_data.csv
+│   test_model.model_card.json
+│   test_model.pkl
+│   test_model_config.json
+│   test_model_new.model_card.json
+│   test_model_new.pkl
+│   test_model_new_config.json
+│   test_results.json
+│   TODO.md
+│   trading_bot.db
+│   trainer.log
+│   training_results.json
+│   training_results_backtest.json
+│   training_results_new.json
+│   training_results_shap12.json
+│   training_results_stress.json
+│   training_results_unbalance.json
+│   training_results_weights.json
+│
+├───.github
+│   └───workflows
+│           ci.yml
+│
+├───.market_cache
+│       0deb40868e2921d06d775cc27ebc9c69.json
+│       d8356e8032f43b3b8eb8c958546f18d4.json
+│
+├───.pytest_cache
+│   │   .gitignore
+│   │   CACHEDIR.TAG
+│   │   README.md
+│   │
+│   └───v
+│       └───cache
+│               lastfailed
+│               nodeids
+│               stepwise
+│
+├───.ruff_cache
+│   │   .gitignore
+│   │   CACHEDIR.TAG
+│   │
+│   └───content
+│           11765594851679816698
+│           15656287712547573635
+│           16471728984578604708
+│           17941625260945127573
+│           1879841978194122611
+│           4412941540588411191
+│           4471166355422738127
+│           6511378154874081861
+│           7020655576297244954
+│           8381966871360792646
+│           8842203879447870097
+│           8855290875804623567
+│           9025242937876286884
+│           9857255376808413183
+│
+├───.test_cache
+│       d000ef0ba3f268e462cdb0231a27a1ea.json
+│       d72421fd8327206f4ba3304c86e3dcff.json
+│       efe5aa5dd322987512bbb8b4f320b4e3.json
+│
+├───.test_historical_data
+├───api
+│   │   app.py
+│   │   models.py
+│   │   schemas.py
+│   │   __init__.py
+│   │
+│   └───__pycache__
+│           app.cpython-310.pyc
+│           models.cpython-310.pyc
+│           schemas.cpython-310.pyc
+│           __init__.cpython-310.pyc
+│
+├───backtest
+│   │   backtester.py
+│   │
+│   └───__pycache__
+│           backtester.cpython-310.pyc
+│
+├───core
+│   │   alert_rules_manager.py
+│   │   async_optimizer.py
+│   │   binary_model_integration.py
+│   │   binary_model_metrics.py
+│   │   bot_engine.py
+│   │   cache.py
+│   │   circuit_breaker.py
+│   │   contracts.py
+│   │   dashboard_manager.py
+│   │   data_expansion_manager.py
+│   │   data_manager.py
+│   │   data_processor.py
+│   │   diagnostics.py
+│   │   ensemble_manager.py
+│   │   memory_manager.py
+│   │   metrics_collector.py
+│   │   metrics_endpoint.py
+│   │   model_monitor.py
+│   │   order_executor.py
+│   │   order_manager.py
+│   │   performance_monitor.py
+│   │   performance_profiler.py
+│   │   performance_reports.py
+│   │   performance_tracker.py
+│   │   self_healing_engine.py
+│   │   signal_processor.py
+│   │   signal_router.py
+│   │   state_manager.py
+│   │   task_manager.py
+│   │   timeframe_manager.py
+│   │   trading_coordinator.py
+│   │   types.py
+│   │   watchdog.py
+│   │   __init__.py
+│   │
+│   ├───execution
+│   │   │   adaptive_pricer.py
+│   │   │   backtest_executor.py
+│   │   │   base_executor.py
+│   │   │   dca_executor.py
+│   │   │   execution_types.py
+│   │   │   live_executor.py
+│   │   │   order_processor.py
+│   │   │   paper_executor.py
+│   │   │   retry_manager.py
+│   │   │   smart_layer.py
+│   │   │   smart_order_executor.py
+│   │   │   twap_executor.py
+│   │   │   validator.py
+│   │   │   vwap_executor.py
+│   │   │   __init__.py
+│   │   │
+│   │   └───__pycache__
+│   │           adaptive_pricer.cpython-310.pyc
+│   │           backtest_executor.cpython-310.pyc
+│   │           base_executor.cpython-310.pyc
+│   │           dca_executor.cpython-310.pyc
+│   │           execution_types.cpython-310.pyc
+│   │           live_executor.cpython-310.pyc
+│   │           order_processor.cpython-310.pyc
+│   │           paper_executor.cpython-310.pyc
+│   │           retry_manager.cpython-310.pyc
+│   │           smart_layer.cpython-310.pyc
+│   │           smart_order_executor.cpython-310.pyc
+│   │           twap_executor.cpython-310.pyc
+│   │           validator.cpython-310.pyc
+│   │           vwap_executor.cpython-310.pyc
+│   │           __init__.cpython-310.pyc
+│   │
+│   ├───management
+│   │   │   portfolio_manager.py
+│   │   │   reliability_manager.py
+│   │   │   __init__.py
+│   │   │
+│   │   └───__pycache__
+│   │           portfolio_manager.cpython-310.pyc
+│   │           reliability_manager.cpython-310.pyc
+│   │           __init__.cpython-310.pyc
+│   │
+│   ├───signal_router
+│   │   │   events.py
+│   │   │   event_bus.py
+│   │   │   retry_hooks.py
+│   │   │   router.py
+│   │   │   route_policies.py
+│   │   │   signal_validators.py
+│   │   │   __init__.py
+│   │   │
+│   │   └───__pycache__
+│   │           events.cpython-310.pyc
+│   │           event_bus.cpython-310.pyc
+│   │           retry_hooks.cpython-310.pyc
+│   │           router.cpython-310.pyc
+│   │           route_policies.cpython-310.pyc
+│   │           signal_validators.cpython-310.pyc
+│   │           __init__.cpython-310.pyc
+│   │
+│   ├───types
+│   │   │   order_types.py
+│   │   │   __init__.py
+│   │   │
+│   │   └───__pycache__
+│   │           order_types.cpython-310.pyc
+│   │           __init__.cpython-310.pyc
+│   │
+│   └───__pycache__
+│           alert_rules_manager.cpython-310.pyc
+│           async_optimizer.cpython-310.pyc
+│           binary_model_integration.cpython-310.pyc
+│           binary_model_metrics.cpython-310.pyc
+│           bot_engine.cpython-310.pyc
+│           cache.cpython-310.pyc
+│           circuit_breaker.cpython-310.pyc
+│           contracts.cpython-310.pyc
+│           dashboard_manager.cpython-310.pyc
+│           data_expansion_manager.cpython-310.pyc
+│           data_manager.cpython-310.pyc
+│           data_processor.cpython-310.pyc
+│           diagnostics.cpython-310.pyc
+│           ensemble_manager.cpython-310.pyc
+│           metrics_collector.cpython-310.pyc
+│           metrics_endpoint.cpython-310.pyc
+│           model_monitor.cpython-310.pyc
+│           order_executor.cpython-310.pyc
+│           order_manager.cpython-310.pyc
+│           performance_monitor.cpython-310.pyc
+│           performance_profiler.cpython-310.pyc
+│           performance_reports.cpython-310.pyc
+│           performance_tracker.cpython-310.pyc
+│           self_healing_engine.cpython-310.pyc
+│           signal_processor.cpython-310.pyc
+│           signal_router.cpython-310.pyc
+│           state_manager.cpython-310.pyc
+│           task_manager.cpython-310.pyc
+│           timeframe_manager.cpython-310.pyc
+│           trading_coordinator.cpython-310.pyc
+│           types.cpython-310.pyc
+│           watchdog.cpython-310.pyc
+│           __init__.cpython-310.pyc
+│
+├───data
+│   │   dataset_versioning.py
+│   │   data_fetcher.py
+│   │   historical_loader.py
+│   │   performance_baselines.json
+│   │   __init__.py
+│   │
+│   └───__pycache__
+│           dataset_versioning.cpython-310.pyc
+│           data_fetcher.cpython-310.pyc
+│           historical_loader.cpython-310.pyc
+│           __init__.cpython-310.pyc
+│
+├───demo
+│   │   demo_circuit_breaker.py
+│   │   demo_cross_pair_validation.py
+│   │   demo_monitoring_integration.py
+│   │   demo_performance_optimization.py
+│   │   demo_regime_forecasting.py
+│   │   demo_self_healing_engine.py
+│   │   demo_strategy_generator.py
+│   │   demo_time_utils.py
+│   │   test_anomaly_integration.py
+│   │   test_execution_demo.py
+│   │   test_metrics_demo.py
+│   │   test_simple_metrics.py
+│   │
+│   └───__pycache__
+│           demo_time_utils.cpython-310.pyc
+│           test_anomaly_integration.cpython-310-pytest-8.0.0.pyc
+│           test_anomaly_integration.cpython-310.pyc
+│           test_execution_demo.cpython-310-pytest-8.0.0.pyc
+│           test_metrics_demo.cpython-310-pytest-8.0.0.pyc
+│           test_simple_metrics.cpython-310-pytest-8.0.0.pyc
+│
+├───docs
+│       MEMORY_MANAGEMENT_GUIDE.md
+│
+├───examples
+│       enhanced_binary_training_example.py
+│
+├───historical_data
+│       AUD_USD_1D_20250915_133713.csv
+│       AUD_USD_1H_20250915_133652.csv
+│       AUD_USD_4H_20250915_133651.csv
+│       collection_summary.json
+│       EUR_USD_1D_20250915_133653.csv
+│       EUR_USD_1H_20250915_133653.csv
+│       EUR_USD_1H_sample.csv
+│       EUR_USD_4H_20250915_133652.csv
+│       EUR_USD_4H_sample.csv
+│       GBP_USD_1D_20250915_133653.csv
+│       GBP_USD_1H_20250915_133652.csv
+│       GBP_USD_1H_sample.csv
+│       GBP_USD_4H_20250915_133652.csv
+│       GBP_USD_4H_sample.csv
+│       NZD_USD_1D_20250915_133704.csv
+│       NZD_USD_1H_20250915_133704.csv
+│       NZD_USD_4H_20250915_133704.csv
+│       sample_ohlcv_data.csv
+│       USD_CAD_1D_20250915_133652.csv
+│       USD_CAD_1H_20250915_133652.csv
+│       USD_CAD_4H_20250915_133652.csv
+│       USD_CHF_1D_20250915_133651.csv
+│       USD_CHF_1H_20250915_133704.csv
+│       USD_CHF_4H_20250915_133651.csv
+│       USD_JPY_1D_20250915_133652.csv
+│       USD_JPY_1H_20250915_133653.csv
+│       USD_JPY_1H_sample.csv
+│       USD_JPY_4H_20250915_133652.csv
+│       USD_JPY_4H_sample.csv
+│
+├───htmlcov
+│       .gitignore
+│       class_index.html
+│       coverage_html_cb_497bf287.js
+│       demo_cross_pair_validation_py.html
+│       demo_time_utils_py.html
+│       favicon_32_cb_58284776.png
+│       features_py.html
+│       function_index.html
+│       index.html
+│       indicators_py.html
+│       keybd_closed_cb_ce680311.png
+│       main_py.html
+│       market_regime_py.html
+│       ml_filter_py.html
+│       status.json
+│       strategy_selector_py.html
+│       style_cb_dca529e9.css
+│       train_py.html
+│       z_10fae538ba4e8521_app_py.html
+│       z_10fae538ba4e8521_models_py.html
+│       z_10fae538ba4e8521_schemas_py.html
+│       z_10fae538ba4e8521___init___py.html
+│       z_22d7c15248c2fa5a_base_strategy_py.html
+│       z_22d7c15248c2fa5a_ema_cross_strategy_py.html
+│       z_22d7c15248c2fa5a_mixins_py.html
+│       z_22d7c15248c2fa5a_rsi_strategy_py.html
+│       z_22d7c15248c2fa5a___init___py.html
+│       z_32578bd9783f6dcb_test_endpoints_py.html
+│       z_3ce5af010d1c7d4f_predictive_model_manager_py.html
+│       z_3ce5af010d1c7d4f_price_predictor_py.html
+│       z_3ce5af010d1c7d4f_types_py.html
+│       z_3ce5af010d1c7d4f_volatility_predictor_py.html
+│       z_3ce5af010d1c7d4f_volume_predictor_py.html
+│       z_3ce5af010d1c7d4f___init___py.html
+│       z_4e025dc8a9c8fecd_order_types_py.html
+│       z_4e025dc8a9c8fecd___init___py.html
+│       z_574cf5557d5920bf_discord_bot_py.html
+│       z_574cf5557d5920bf_test_discord_send_py.html
+│       z_574cf5557d5920bf___init___py.html
+│       z_57760688d1f824db_bot_engine_py.html
+│       z_57760688d1f824db_contracts_py.html
+│       z_57760688d1f824db_ensemble_manager_py.html
+│       z_57760688d1f824db_order_manager_py.html
+│       z_57760688d1f824db_signal_router_py.html
+│       z_57760688d1f824db_task_manager_py.html
+│       z_57760688d1f824db_types_py.html
+│       z_57760688d1f824db___init___py.html
+│       z_5b1b2cc629c066e3_event_bus_py.html
+│       z_5b1b2cc629c066e3_retry_hooks_py.html
+│       z_5b1b2cc629c066e3_router_py.html
+│       z_5b1b2cc629c066e3_route_policies_py.html
+│       z_5b1b2cc629c066e3_signal_validators_py.html
+│       z_5b1b2cc629c066e3___init___py.html
+│       z_6ed8576d587cd48e_risk_manager_py.html
+│       z_6ed8576d587cd48e___init___py.html
+│       z_75db459c35a1805d_allocator_py.html
+│       z_75db459c35a1805d_hedging_py.html
+│       z_75db459c35a1805d_portfolio_manager_py.html
+│       z_75db459c35a1805d___init___py.html
+│       z_7a2bca78a0ec196b_base_optimizer_py.html
+│       z_7a2bca78a0ec196b_genetic_optimizer_py.html
+│       z_7a2bca78a0ec196b_optimizer_factory_py.html
+│       z_7a2bca78a0ec196b_rl_optimizer_py.html
+│       z_7a2bca78a0ec196b_walk_forward_py.html
+│       z_7a2bca78a0ec196b___init___py.html
+│       z_82550ee36d03a657_backtest_executor_py.html
+│       z_82550ee36d03a657_base_executor_py.html
+│       z_82550ee36d03a657_dca_executor_py.html
+│       z_82550ee36d03a657_live_executor_py.html
+│       z_82550ee36d03a657_order_processor_py.html
+│       z_82550ee36d03a657_paper_executor_py.html
+│       z_82550ee36d03a657_smart_order_executor_py.html
+│       z_82550ee36d03a657_twap_executor_py.html
+│       z_82550ee36d03a657_vwap_executor_py.html
+│       z_82550ee36d03a657___init___py.html
+│       z_8944735a9b1a4a7a_portfolio_manager_py.html
+│       z_8944735a9b1a4a7a_reliability_manager_py.html
+│       z_8944735a9b1a4a7a___init___py.html
+│       z_8a398cd7c5d1827d_model_loader_py.html
+│       z_8a398cd7c5d1827d_trainer_py.html
+│       z_a44f0ac069e85531_conftest_py.html
+│       z_a44f0ac069e85531_test_adapter_py.html
+│       z_a44f0ac069e85531_test_adaptive_risk_py.html
+│       z_a44f0ac069e85531_test_backtester_py.html
+│       z_a44f0ac069e85531_test_backtest_executor_py.html
+│       z_a44f0ac069e85531_test_bot_engine_py.html
+│       z_a44f0ac069e85531_test_cli_py.html
+│       z_a44f0ac069e85531_test_config_loader_py.html
+│       z_a44f0ac069e85531_test_data_fetcher_py.html
+│       z_a44f0ac069e85531_test_data_py.html
+│       z_a44f0ac069e85531_test_demo_time_utils_py.html
+│       z_a44f0ac069e85531_test_discord_integration_py.html
+│       z_a44f0ac069e85531_test_discord_notifier_py.html
+│       z_a44f0ac069e85531_test_ensemble_manager_py.html
+│       z_a44f0ac069e85531_test_execution_py.html
+│       z_a44f0ac069e85531_test_features_py.html
+│       z_a44f0ac069e85531_test_historical_loader_py.html
+│       z_a44f0ac069e85531_test_indicators_py.html
+│       z_a44f0ac069e85531_test_integration_py.html
+│       z_a44f0ac069e85531_test_journal_writer_py.html
+│       z_a44f0ac069e85531_test_live_executor_py.html
+│       z_a44f0ac069e85531_test_logger_py.html
+│       z_a44f0ac069e85531_test_main_py.html
+│       z_a44f0ac069e85531_test_market_regime_py.html
+│       z_a44f0ac069e85531_test_ml_artifact_model_card_py.html
+│       z_a44f0ac069e85531_test_ml_filter_py.html
+│       z_a44f0ac069e85531_test_ml_signal_router_py.html
+│       z_a44f0ac069e85531_test_model_loader_py.html
+│       z_a44f0ac069e85531_test_optimization_py.html
+│       z_a44f0ac069e85531_test_order_manager_py.html
+│       z_a44f0ac069e85531_test_order_processor_py.html
+│       z_a44f0ac069e85531_test_paper_executor_py.html
+│       z_a44f0ac069e85531_test_portfolio_py.html
+│       z_a44f0ac069e85531_test_predictive_models_py.html
+│       z_a44f0ac069e85531_test_regression_py.html
+│       z_a44f0ac069e85531_test_reliability_manager_py.html
+│       z_a44f0ac069e85531_test_retry_py.html
+│       z_a44f0ac069e85531_test_risk_py.html
+│       z_a44f0ac069e85531_test_safe_mode_py.html
+│       z_a44f0ac069e85531_test_signal_router_py.html
+│       z_a44f0ac069e85531_test_strategies_py.html
+│       z_a44f0ac069e85531_test_strategy_py.html
+│       z_a44f0ac069e85531_test_strategy_selector_py.html
+│       z_a44f0ac069e85531_test_task_manager_py.html
+│       z_a44f0ac069e85531_test_time_py.html
+│       z_a44f0ac069e85531_test_time_utils_py.html
+│       z_a44f0ac069e85531_test_trading_signal_amount_py.html
+│       z_a44f0ac069e85531_test_trainer_py.html
+│       z_a44f0ac069e85531_test_train_py.html
+│       z_a44f0ac069e85531_test_types_py.html
+│       z_c810615cce0f7acb_adapter_py.html
+│       z_c810615cce0f7acb_config_loader_py.html
+│       z_c810615cce0f7acb_logger_py.html
+│       z_c810615cce0f7acb_retry_py.html
+│       z_c810615cce0f7acb_time_py.html
+│       z_ec4c8277a12d4c86_backtester_py.html
+│       z_efda893aa850b0c0_data_fetcher_py.html
+│       z_efda893aa850b0c0_historical_loader_py.html
+│       z_efda893aa850b0c0___init___py.html
+│
+├───knowledge_base
+│   │   adaptive.py
+│   │   manager.py
+│   │   schema.py
+│   │   storage.py
+│   │   __init__.py
+│   │
+│   └───__pycache__
+│           adaptive.cpython-310.pyc
+│           manager.cpython-310.pyc
+│           schema.cpython-310.pyc
+│           storage.cpython-310.pyc
+│           __init__.cpython-310.pyc
+│
+├───logs
+│       anomalies.json
+│       anomalies.log
+│       crypto_bot.log
+│       data_expansion.log
+│       n1v1.log
+│       retraining_scheduler.log
+│       signal_journal.jsonl
+│       test.json
+│       trades.csv
+│
+├───matrices
+│       confusion_matrix_binary.png
+│       confusion_matrix_binary{fold}.png
+│
+├───md
+│       LAST.md
+│       NEW.md
+│
+├───ml
+│   │   features.py
+│   │   indicators.py
+│   │   ml_filter.py
+│   │   model_loader.py
+│   │   train.py
+│   │   trainer.py
+│   │   __init__.py
+│   │
+│   └───__pycache__
+│           features.cpython-310.pyc
+│           indicators.cpython-310.pyc
+│           ml_filter.cpython-310.pyc
+│           model_loader.cpython-310.pyc
+│           train.cpython-310.pyc
+│           trainer.cpython-310-pytest-8.0.0.pyc
+│           trainer.cpython-310.pyc
+│           __init__.cpython-310.pyc
+│
+├───models
+│   │   backtest_with_costs.model_card.json
+│   │   backtest_with_costs.pkl
+│   │   backtest_with_costs_config.json
+│   │   compare_unbalance.model_card.json
+│   │   compare_unbalance.pkl
+│   │   compare_unbalance_config.json
+│   │   compare_weights.model_card.json
+│   │   compare_weights.pkl
+│   │   compare_weights_config.json
+│   │   enhanced_binary_model.model_card.json
+│   │   enhanced_binary_model.pkl
+│   │   enhanced_binary_model_config.json
+│   │   enhanced_model.model_card.json
+│   │   enhanced_model.pkl
+│   │   enhanced_model_config.json
+│   │   enhanced_model_shap12.model_card.json
+│   │   enhanced_model_shap12.pkl
+│   │   enhanced_model_shap12_config.json
+│   │   enhanced_model_top12.model_card.json
+│   │   enhanced_model_top12.pkl
+│   │   enhanced_model_top12_config.json
+│   │   stress_test.model_card.json
+│   │   stress_test.pkl
+│   │   stress_test_config.json
+│   │
+│   └───registry
+├───monitoring
+│   │   alert_rules.yml
+│   │   prometheus.yml
+│   │
+│   └───dashboards
+│           system_health.json
+│           trading_overview.json
+│
+├───notifier
+│   │   discord_bot.py
+│   │   test_discord_send.py
+│   │   __init__.py
+│   │
+│   └───__pycache__
+│           discord_bot.cpython-310.pyc
+│           test_discord_send.cpython-310-pytest-8.0.0.pyc
+│           __init__.cpython-310.pyc
+│
+├───optimization
+│   │   base_optimizer.py
+│   │   cross_asset_validation.py
+│   │   genetic_optimizer.py
+│   │   optimizer_factory.py
+│   │   rl_optimizer.py
+│   │   strategy_generator.py
+│   │   walk_forward.py
+│   │   __init__.py
+│   │
+│   └───__pycache__
+│           base_optimizer.cpython-310.pyc
+│           cross_asset_validation.cpython-310.pyc
+│           genetic_optimizer.cpython-310.pyc
+│           optimizer_factory.cpython-310.pyc
+│           rl_optimizer.cpython-310.pyc
+│           strategy_generator.cpython-310.pyc
+│           walk_forward.cpython-310.pyc
+│           __init__.cpython-310.pyc
+│
+├───portfolio
+│   │   allocation_engine.py
+│   │   allocator.py
+│   │   hedging.py
+│   │   performance_aggregator.py
+│   │   portfolio_manager.py
+│   │   strategy_ensemble.py
+│   │   __init__.py
+│   │
+│   └───__pycache__
+│           allocation_engine.cpython-310.pyc
+│           allocator.cpython-310.pyc
+│           hedging.cpython-310.pyc
+│           portfolio_manager.cpython-310.pyc
+│           strategy_ensemble.cpython-310.pyc
+│           __init__.cpython-310.pyc
+│
+├───predictive_models
+│   │   predictive_model_manager.py
+│   │   price_predictor.py
+│   │   types.py
+│   │   volatility_predictor.py
+│   │   volume_predictor.py
+│   │   __init__.py
+│   │
+│   └───__pycache__
+│           predictive_model_manager.cpython-310.pyc
+│           price_predictor.cpython-310.pyc
+│           types.cpython-310.pyc
+│           volatility_predictor.cpython-310.pyc
+│           volume_predictor.cpython-310.pyc
+│           __init__.cpython-310.pyc
+│
+├───README
+│       README_CIRCUIT_BREAKER.md
+│       README_MONITORING_OBSERVABILITY.md
+│       README_REGIME_FORECASTING.md
+│       README_SELF_HEALING_ENGINE.md
+│       README_STRATEGY_GENERATOR.md
+│       README_TESTING_FRAMEWORK.md
+│
+├───reporting
+│   │   metrics.py
+│   │   scheduler.py
+│   │   sync.py
+│   │   __init__.py
+│   │
+│   └───__pycache__
+│           metrics.cpython-310.pyc
+│           scheduler.cpython-310.pyc
+│           sync.cpython-310.pyc
+│           __init__.cpython-310.pyc
+│
+├───reports
+│   │   binary_model_performance_20250912_083921.json
+│   │
+│   └───metrics
+│           metrics_test_strategy_20250907_134146.csv
+│           metrics_test_strategy_20250907_134146.json
+│           metrics_test_strategy_20250908_140249.csv
+│           metrics_test_strategy_20250908_140249.json
+│           metrics_test_strategy_20250908_140427.csv
+│           metrics_test_strategy_20250908_140427.json
+│           metrics_test_strategy_20250908_141536.csv
+│           metrics_test_strategy_20250908_141536.json
+│           metrics_test_strategy_20250908_155313.csv
+│           metrics_test_strategy_20250908_155313.json
+│           metrics_test_strategy_20250908_161001.csv
+│           metrics_test_strategy_20250908_161001.json
+│           metrics_test_strategy_20250908_163339.csv
+│           metrics_test_strategy_20250908_163339.json
+│           metrics_test_strategy_20250908_173334.csv
+│           metrics_test_strategy_20250908_173334.json
+│           metrics_test_strategy_20250908_173719.csv
+│           metrics_test_strategy_20250908_173719.json
+│           metrics_test_strategy_20250909_082127.csv
+│           metrics_test_strategy_20250909_082127.json
+│           metrics_test_strategy_20250909_082128.csv
+│           metrics_test_strategy_20250909_082128.json
+│           metrics_test_strategy_20250909_082543.csv
+│           metrics_test_strategy_20250909_082543.json
+│           metrics_test_strategy_20250909_083023.csv
+│           metrics_test_strategy_20250909_083023.json
+│           metrics_test_strategy_20250909_150202.csv
+│           metrics_test_strategy_20250909_150202.json
+│           metrics_test_strategy_20250909_152340.csv
+│           metrics_test_strategy_20250909_152340.json
+│           metrics_test_strategy_20250909_160802.csv
+│           metrics_test_strategy_20250909_160802.json
+│           metrics_test_strategy_20250909_175549.csv
+│           metrics_test_strategy_20250909_175549.json
+│           metrics_test_strategy_20250909_184000.csv
+│           metrics_test_strategy_20250909_184000.json
+│           metrics_test_strategy_20250909_185048.csv
+│           metrics_test_strategy_20250909_185048.json
+│           metrics_test_strategy_20250910_090445.csv
+│           metrics_test_strategy_20250910_090445.json
+│           metrics_test_strategy_20250910_101712.csv
+│           metrics_test_strategy_20250910_101712.json
+│           metrics_test_strategy_20250910_124831.csv
+│           metrics_test_strategy_20250910_124831.json
+│           metrics_test_strategy_20250910_144205.csv
+│           metrics_test_strategy_20250910_144205.json
+│           metrics_test_strategy_20250910_150105.csv
+│           metrics_test_strategy_20250910_150105.json
+│           metrics_test_strategy_20250910_154144.csv
+│           metrics_test_strategy_20250910_154144.json
+│           metrics_test_strategy_20250912_090958.csv
+│           metrics_test_strategy_20250912_090958.json
+│           metrics_test_strategy_20250912_145329.csv
+│           metrics_test_strategy_20250912_145329.json
+│           metrics_test_strategy_20250913_154124.csv
+│           metrics_test_strategy_20250913_154124.json
+│           metrics_test_strategy_20250913_165913.csv
+│           metrics_test_strategy_20250913_165913.json
+│           metrics_test_strategy_20250915_093343.csv
+│           metrics_test_strategy_20250915_093343.json
+│           metrics_test_strategy_20250915_100526.csv
+│           metrics_test_strategy_20250915_100526.json
+│           metrics_test_strategy_20250915_103104.csv
+│           metrics_test_strategy_20250915_103104.json
+│           metrics_test_strategy_20250915_105007.csv
+│           metrics_test_strategy_20250915_105007.json
+│           metrics_test_strategy_20250915_105642.csv
+│           metrics_test_strategy_20250915_105642.json
+│           metrics_test_strategy_20250915_110902.csv
+│           metrics_test_strategy_20250915_110902.json
+│           metrics_test_strategy_20250915_111549.csv
+│           metrics_test_strategy_20250915_111549.json
+│           metrics_test_strategy_20250915_112112.csv
+│           metrics_test_strategy_20250915_112112.json
+│           metrics_test_strategy_20250915_120447.csv
+│           metrics_test_strategy_20250915_120447.json
+│           metrics_test_strategy_20250915_121704.csv
+│           metrics_test_strategy_20250915_121704.json
+│           metrics_test_strategy_20250915_135356.csv
+│           metrics_test_strategy_20250915_135356.json
+│           metrics_test_strategy_20250915_140929.csv
+│           metrics_test_strategy_20250915_140929.json
+│           metrics_test_strategy_20250915_142348.csv
+│           metrics_test_strategy_20250915_142348.json
+│
+├───results
+│   ├───cross_asset_validation
+│   └───walk_forward
+│           walk_forward_results.json
+│           walk_forward_summary.json
+│           walk_forward_windows.csv
+│
+├───risk
+│   │   adaptive_policy.py
+│   │   anomaly_detector.py
+│   │   risk_manager.py
+│   │   __init__.py
+│   │
+│   └───__pycache__
+│           adaptive_policy.cpython-310.pyc
+│           anomaly_detector.cpython-310.pyc
+│           risk_manager.cpython-310.pyc
+│           __init__.cpython-310.pyc
+│
+├───scheduler
+│   │   diagnostic_scheduler.py
+│   │   retraining_scheduler.py
+│   │
+│   └───__pycache__
+│           retraining_scheduler.cpython-310.pyc
+│
+├───scripts
+│   │   count_loc.py
+│   │   demo_binary_integration.py
+│   │   demo_binary_monitoring.py
+│   │   demo_binary_training.py
+│   │   demo_calibration_threshold.py
+│   │   migrate_to_binary_labels.py
+│   │   run_data_expansion.py
+│   │   run_final_audit.py
+│   │   run_retraining_scheduler.py
+│   │   test_binary_labels.py
+│   │
+│   └───__pycache__
+│           count_loc.cpython-310.pyc
+│           count_loc_no_venv.cpython-310.pyc
+│           demo_binary_monitoring.cpython-310.pyc
+│           test_binary_labels.cpython-310-pytest-8.0.0.pyc
+│
+├───strategies
+│   │   atr_breakout_strategy.py
+│   │   base_strategy.py
+│   │   bollinger_reversion_strategy.py
+│   │   donchian_breakout_strategy.py
+│   │   ema_cross_strategy.py
+│   │   keltner_channel_strategy.py
+│   │   macd_strategy.py
+│   │   mixins.py
+│   │   obv_strategy.py
+│   │   rsi_strategy.py
+│   │   stochastic_strategy.py
+│   │   vwap_pullback_strategy.py
+│   │   __init__.py
+│   │
+│   ├───generated
+│   │   │   __init__.py
+│   │   │
+│   │   └───__pycache__
+│   │           __init__.cpython-310.pyc
+│   │
+│   ├───regime
+│   │   │   market_regime.py
+│   │   │   regime_forecaster.py
+│   │   │   strategy_selector.py
+│   │   │
+│   │   └───__pycache__
+│   │           market_regime.cpython-310.pyc
+│   │           regime_forecaster.cpython-310.pyc
+│   │           strategy_selector.cpython-310.pyc
+│   │
+│   └───__pycache__
+│           atr_breakout_strategy.cpython-310.pyc
+│           base_strategy.cpython-310.pyc
+│           bollinger_reversion_strategy.cpython-310.pyc
+│           donchian_breakout_strategy.cpython-310.pyc
+│           ema_cross_strategy.cpython-310.pyc
+│           keltner_channel_strategy.cpython-310.pyc
+│           macd_strategy.cpython-310.pyc
+│           mixins.cpython-310.pyc
+│           obv_strategy.cpython-310.pyc
+│           rsi_strategy.cpython-310.pyc
+│           stochastic_strategy.cpython-310.pyc
+│           vwap_pullback_strategy.cpython-310.pyc
+│           __init__.cpython-310.pyc
+│
+├───templates
+│       dashboard.html
+│
+├───tests
+│   │   conftest.py
+│   │   edge_case_testing.py
+│   │   integration_test_framework.py
+│   │   run_comprehensive_tests.py
+│   │   test_adapter.py
+│   │   test_adaptive_risk.py
+│   │   test_anomaly_detector.py
+│   │   test_backtester.py
+│   │   test_backtest_executor.py
+│   │   test_binary_integration.py
+│   │   test_bot_engine.py
+│   │   test_circuit_breaker.py
+│   │   test_circular_import_fix.py
+│   │   test_cli.py
+│   │   test_config_loader.py
+│   │   test_cross_asset_validation.py
+│   │   test_cross_feature_integration.py
+│   │   test_data.py
+│   │   test_data_fetcher.py
+│   │   test_demo_time_utils.py
+│   │   test_discord_integration.py
+│   │   test_discord_notifier.py
+│   │   test_docstring_standardization.py
+│   │   test_ensemble_manager.py
+│   │   test_event_driven_architecture.py
+│   │   test_execution.py
+│   │   test_features.py
+│   │   test_historical_loader.py
+│   │   test_indicators.py
+│   │   test_integration.py
+│   │   test_journal_writer.py
+│   │   test_knowledge_base.py
+│   │   test_live_executor.py
+│   │   test_logger.py
+│   │   test_main.py
+│   │   test_market_regime.py
+│   │   test_memory_leak_stress.py
+│   │   test_ml_artifact_model_card.py
+│   │   test_ml_filter.py
+│   │   test_ml_signal_router.py
+│   │   test_model_loader.py
+│   │   test_monitoring_observability.py
+│   │   test_optimization.py
+│   │   test_order_manager.py
+│   │   test_order_processor.py
+│   │   test_paper_executor.py
+│   │   test_performance_optimization.py
+│   │   test_portfolio.py
+│   │   test_predictive_models.py
+│   │   test_regime_aware_backtester.py
+│   │   test_regime_forecaster.py
+│   │   test_regression.py
+│   │   test_reliability_manager.py
+│   │   test_retry.py
+│   │   test_risk.py
+│   │   test_safe_mode.py
+│   │   test_self_healing_engine.py
+│   │   test_signal_router.py
+│   │   test_strategies.py
+│   │   test_strategy.py
+│   │   test_strategy_generator.py
+│   │   test_strategy_selector.py
+│   │   test_task_manager.py
+│   │   test_time.py
+│   │   test_timeframe_manager.py
+│   │   test_time_utils.py
+│   │   test_trading_signal_amount.py
+│   │   test_train.py
+│   │   test_trainer.py
+│   │   test_types.py
+│   │   test_walk_forward.py
+│   │   trading_bot.db
+│   │
+│   ├───api
+│   │   │   test_endpoints.py
+│   │   │
+│   │   └───__pycache__
+│   │           test_endpoints.cpython-310-pytest-8.0.0.pyc
+│   │           test_endpoints.cpython-310.pyc
+│   │
+│   ├───core
+│   │   │   test_alerting.py
+│   │   │   test_anomaly_detection.py
+│   │   │   test_diagnostics.py
+│   │   │
+│   │   └───__pycache__
+│   │           test_alerting.cpython-310-pytest-8.0.0.pyc
+│   │           test_anomaly_detection.cpython-310-pytest-8.0.0.pyc
+│   │           test_diagnostics.cpython-310-pytest-8.0.0.pyc
+│   │
+│   ├───execution
+│   │   │   test_smart_layer.py
+│   │   │   test_validator.py
+│   │   │
+│   │   └───__pycache__
+│   │           test_smart_layer.cpython-310-pytest-8.0.0.pyc
+│   │           test_validator.cpython-310-pytest-8.0.0.pyc
+│   │
+│   ├───logs
+│   │       crypto_bot.log
+│   │       trades.csv
+│   │
+│   ├───portfolio
+│   │   │   test_allocation_engine.py
+│   │   │   test_strategy_ensemble.py
+│   │   │
+│   │   └───__pycache__
+│   │           test_allocation_engine.cpython-310-pytest-8.0.0.pyc
+│   │           test_strategy_ensemble.cpython-310-pytest-8.0.0.pyc
+│   │
+│   ├───risk
+│   │   │   test_adaptive_policy.py
+│   │   │   test_risk_manager_integration.py
+│   │   │
+│   │   └───__pycache__
+│   │           test_adaptive_policy.cpython-310-pytest-8.0.0.pyc
+│   │           test_risk_manager_integration.cpython-310-pytest-8.0.0.pyc
+│   │
+│   └───__pycache__
+│           conftest.cpython-310-pytest-8.0.0.pyc
+│           test_adapter.cpython-310-pytest-8.0.0.pyc
+│           test_adaptive_risk.cpython-310-pytest-8.0.0.pyc
+│           test_anomaly_detector.cpython-310-pytest-8.0.0.pyc
+│           test_backtester.cpython-310-pytest-8.0.0.pyc
+│           test_backtest_executor.cpython-310-pytest-8.0.0.pyc
+│           test_binary_integration.cpython-310-pytest-8.0.0.pyc
+│           test_bot_engine.cpython-310-pytest-8.0.0.pyc
+│           test_circuit_breaker.cpython-310-pytest-8.0.0.pyc
+│           test_circuit_breaker.cpython-310.pyc
+│           test_circular_import_fix.cpython-310-pytest-8.0.0.pyc
+│           test_cli.cpython-310-pytest-8.0.0.pyc
+│           test_config_loader.cpython-310-pytest-8.0.0.pyc
+│           test_cross_asset_validation.cpython-310-pytest-8.0.0.pyc
+│           test_cross_feature_integration.cpython-310-pytest-8.0.0.pyc
+│           test_data.cpython-310-pytest-8.0.0.pyc
+│           test_data.cpython-310.pyc
+│           test_data_fetcher.cpython-310-pytest-8.0.0.pyc
+│           test_demo_time_utils.cpython-310-pytest-8.0.0.pyc
+│           test_discord_integration.cpython-310-pytest-8.0.0.pyc
+│           test_discord_notifier.cpython-310-pytest-8.0.0.pyc
+│           test_docstring_standardization.cpython-310-pytest-8.0.0.pyc
+│           test_docstring_standardization.cpython-310.pyc
+│           test_ensemble_manager.cpython-310-pytest-8.0.0.pyc
+│           test_event_driven_architecture.cpython-310-pytest-8.0.0.pyc
+│           test_execution.cpython-310-pytest-8.0.0.pyc
+│           test_features.cpython-310-pytest-8.0.0.pyc
+│           test_historical_loader.cpython-310-pytest-8.0.0.pyc
+│           test_indicators.cpython-310-pytest-8.0.0.pyc
+│           test_integration.cpython-310-pytest-8.0.0.pyc
+│           test_integration_all_features.cpython-310-pytest-8.0.0.pyc
+│           test_journal_writer.cpython-310-pytest-8.0.0.pyc
+│           test_knowledge_base.cpython-310-pytest-8.0.0.pyc
+│           test_live_executor.cpython-310-pytest-8.0.0.pyc
+│           test_live_executor.cpython-310.pyc
+│           test_logger.cpython-310-pytest-8.0.0.pyc
+│           test_main.cpython-310-pytest-8.0.0.pyc
+│           test_market_regime.cpython-310-pytest-8.0.0.pyc
+│           test_memory_leak_stress.cpython-310-pytest-8.0.0.pyc
+│           test_ml_artifact_model_card.cpython-310-pytest-8.0.0.pyc
+│           test_ml_filter.cpython-310-pytest-8.0.0.pyc
+│           test_ml_signal_router.cpython-310-pytest-8.0.0.pyc
+│           test_model_loader.cpython-310-pytest-8.0.0.pyc
+│           test_monitoring_observability.cpython-310-pytest-8.0.0.pyc
+│           test_optimization.cpython-310-pytest-8.0.0.pyc
+│           test_order_manager.cpython-310-pytest-8.0.0.pyc
+│           test_order_processor.cpython-310-pytest-8.0.0.pyc
+│           test_paper_executor.cpython-310-pytest-8.0.0.pyc
+│           test_performance_optimization.cpython-310-pytest-8.0.0.pyc
+│           test_portfolio.cpython-310-pytest-8.0.0.pyc
+│           test_predictive_models.cpython-310-pytest-8.0.0.pyc
+│           test_regime_aware_backtester.cpython-310-pytest-8.0.0.pyc
+│           test_regime_forecaster.cpython-310-pytest-8.0.0.pyc
+│           test_regression.cpython-310-pytest-8.0.0.pyc
+│           test_reliability_manager.cpython-310-pytest-8.0.0.pyc
+│           test_retry.cpython-310-pytest-8.0.0.pyc
+│           test_risk.cpython-310-pytest-8.0.0.pyc
+│           test_risk.cpython-310.pyc
+│           test_safe_mode.cpython-310-pytest-8.0.0.pyc
+│           test_self_healing_engine.cpython-310-pytest-8.0.0.pyc
+│           test_signal_router.cpython-310-pytest-8.0.0.pyc
+│           test_signal_router.cpython-310.pyc
+│           test_signal_router_event_bus.cpython-310-pytest-8.0.0.pyc
+│           test_signal_router_event_bus_new.cpython-310-pytest-8.0.0.pyc
+│           test_signal_router_retry_hooks.cpython-310-pytest-8.0.0.pyc
+│           test_signal_router_retry_hooks_new.cpython-310-pytest-8.0.0.pyc
+│           test_signal_router_route_policies.cpython-310-pytest-8.0.0.pyc
+│           test_signal_router_route_policies_fixed.cpython-310-pytest-8.0.0.pyc
+│           test_signal_router_route_policies_new.cpython-310-pytest-8.0.0.pyc
+│           test_signal_router_signal_validators.cpython-310-pytest-8.0.0.pyc
+│           test_signal_router_signal_validators_fixed.cpython-310-pytest-8.0.0.pyc
+│           test_signal_router_signal_validators_new.cpython-310-pytest-8.0.0.pyc
+│           test_strategies.cpython-310-pytest-8.0.0.pyc
+│           test_strategy.cpython-310-pytest-8.0.0.pyc
+│           test_strategy.cpython-310.pyc
+│           test_strategy_generator.cpython-310-pytest-8.0.0.pyc
+│           test_strategy_selector.cpython-310-pytest-8.0.0.pyc
+│           test_task_manager.cpython-310-pytest-8.0.0.pyc
+│           test_time.cpython-310-pytest-8.0.0.pyc
+│           test_timeframe_manager.cpython-310-pytest-8.0.0.pyc
+│           test_time_utils.cpython-310-pytest-8.0.0.pyc
+│           test_trading_signal_amount.cpython-310-pytest-8.0.0.pyc
+│           test_train.cpython-310-pytest-8.0.0.pyc
+│           test_trainer.cpython-310-pytest-8.0.0.pyc
+│           test_trainer.cpython-310.pyc
+│           test_types.cpython-310-pytest-8.0.0.pyc
+│           test_walk_forward.cpython-310-pytest-8.0.0.pyc
+│
+├───test_historical_data
+├───test_logs
+│       test_log_00c2199b1ab74277a5d89a2cf2dfb593.log
+│       test_log_03d448a5229942ffaaa4fa7475cefe11.log
+│       test_log_40967e06f94648e495cc588f8b5af7b3.log
+│       test_log_444d4c954d054993bd5d245f6c3932bf.log
+│       test_log_73bcd05cfcee418280b6ca62bd9d463a.log
+│       test_log_93aeb47a0e724325a3f1ec4b8e5997ac.log
+│       test_log_999134ec16d747a5905bfa684951c1cb.log
+│       test_log_a4c21cf010f24efe87cfbc61e553baf4.log
+│       test_log_b9da3eb5fac54f7eafd6a29495a25f3b.log
+│       test_log_c72f968b58b34340893f321a38be5377.log
+│       test_log_c987aa140d834976874d7c0fc43b6c93.log
+│       test_log_cab1616fbb8e472aa540f630117c611d.log
+│       test_log_d4991b0995844c2497af3d6827cf93f5.log
+│       test_log_ee66f04a498545219f17ad1cccbaded6.log
+│       test_log_f22fbc25d1cc470e8dadaca64935b81d.log
+│
+├───tools
+│       check_imports.py
+│
+├───utils
+│   │   adapter.py
+│   │   code_quality.py
+│   │   config_factory.py
+│   │   config_generator.py
+│   │   config_loader.py
+│   │   constants.py
+│   │   dependency_manager.py
+│   │   docstring_standardizer.py
+│   │   duplication_analyzer.py
+│   │   error_handler.py
+│   │   error_handling_utils.py
+│   │   final_auditor.py
+│   │   logger.py
+│   │   logging_manager.py
+│   │   logging_utils.py
+│   │   retry.py
+│   │   security.py
+│   │   time.py
+│   │   __init__.py
+│   │
+│   └───__pycache__
+│           adapter.cpython-310.pyc
+│           config_factory.cpython-310.pyc
+│           config_loader.cpython-310.pyc
+│           constants.cpython-310.pyc
+│           docstring_standardizer.cpython-310.pyc
+│           error_handler.cpython-310.pyc
+│           error_handling_utils.cpython-310.pyc
+│           logger.cpython-310.pyc
+│           logging_manager.cpython-310.pyc
+│           logging_utils.cpython-310.pyc
+│           retry.cpython-310.pyc
+│           security.cpython-310.pyc
+│           time.cpython-310.pyc
+│           __init__.cpython-310.pyc
+│
+└───__pycache__
+        demo_circuit_breaker.cpython-310.pyc
+        demo_self_healing_engine.cpython-310.pyc
+        demo_time_utils.cpython-310.pyc
+        features.cpython-310.pyc
+        indicators.cpython-310.pyc
+        main.cpython-310.pyc
+        market_regime.cpython-310.pyc
+        ml_filter.cpython-310.pyc
+        strategy_selector.cpython-310.pyc
+        test_simple_assert.cpython-310-pytest-8.0.0.pyc
+        train.cpython-310.pyc

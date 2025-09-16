@@ -16,6 +16,7 @@ import json
 import os
 from pathlib import Path
 import aiohttp
+import aiofiles
 import time
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
@@ -86,6 +87,12 @@ class DataExpansionManager:
         Returns:
             Collection results summary
         """
+        # Input validation
+        if not isinstance(target_samples, int) or target_samples <= 0:
+            raise ValueError("target_samples must be a positive integer")
+        if target_samples > 100000:  # Reasonable upper bound
+            raise ValueError("target_samples cannot exceed 100,000")
+
         logger.info(f"Starting multi-pair data collection for {len(self.target_pairs)} pairs")
 
         results = {
@@ -127,7 +134,7 @@ class DataExpansionManager:
             results['collection_duration'] = time.time() - start_time
 
             # Save collection summary
-            self._save_collection_summary(results)
+            await self._save_collection_summary(results)
 
             logger.info(f"Multi-pair data collection completed: {results['total_samples_collected']} total samples")
 
@@ -416,29 +423,40 @@ class DataExpansionManager:
 
         return max(0.0, min(1.0, score))
 
-    def _save_pair_data(self, df: pd.DataFrame, pair: str, timeframe: str) -> Path:
-        """Save pair data to file."""
+    async def _save_pair_data(self, df: pd.DataFrame, pair: str, timeframe: str) -> Path:
+        """Save pair data to file asynchronously."""
         # Create filename
         pair_clean = pair.replace('/', '_')
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{pair_clean}_{timeframe}_{timestamp}.csv"
         file_path = self.data_dir / filename
 
-        # Save to CSV
-        df.to_csv(file_path, index=False)
+        # Save to CSV asynchronously
+        csv_content = df.to_csv(index=False)
+
+        async with aiofiles.open(file_path, 'w') as f:
+            await f.write(csv_content)
+
         logger.info(f"Saved {len(df)} samples to {file_path}")
 
         return file_path
 
-    def _save_collection_summary(self, results: Dict[str, Any]):
-        """Save collection summary to file."""
+    async def _save_collection_summary(self, results: Dict[str, Any]):
+        """Save collection summary to file asynchronously."""
         summary_file = self.data_dir / "collection_summary.json"
 
         # Add timestamp
         results['timestamp'] = datetime.now().isoformat()
 
-        with open(summary_file, 'w') as f:
-            json.dump(results, f, indent=2, default=str)
+        # Use orjson for faster JSON serialization if available
+        try:
+            import orjson
+            json_content = orjson.dumps(results, option=orjson.OPT_INDENT_2).decode('utf-8')
+        except ImportError:
+            json_content = json.dumps(results, indent=2, default=str)
+
+        async with aiofiles.open(summary_file, 'w') as f:
+            await f.write(json_content)
 
         logger.info(f"Collection summary saved to {summary_file}")
 
@@ -466,7 +484,7 @@ class DataExpansionManager:
                 results['errors'].append(error_msg)
 
         # Save volatility data summary
-        self._save_volatility_summary(results)
+        await self._save_volatility_summary(results)
 
         return results
 
@@ -506,10 +524,13 @@ class DataExpansionManager:
         # Clean and validate
         combined_data = self._combine_and_clean_data([combined_data])
 
-        # Save period data
+        # Save period data asynchronously
         filename = f"volatility_{period_name.replace(' ', '_').lower()}_{datetime.now().strftime('%Y%m%d')}.csv"
         file_path = self.data_dir / filename
-        combined_data.to_csv(file_path, index=False)
+        csv_content = combined_data.to_csv(index=False)
+
+        async with aiofiles.open(file_path, 'w') as f:
+            await f.write(csv_content)
 
         return {
             'samples_collected': len(combined_data),
@@ -517,14 +538,21 @@ class DataExpansionManager:
             'period_name': period_name
         }
 
-    def _save_volatility_summary(self, results: Dict[str, Any]):
-        """Save volatility data collection summary."""
+    async def _save_volatility_summary(self, results: Dict[str, Any]):
+        """Save volatility data collection summary asynchronously."""
         summary_file = self.data_dir / "volatility_collection_summary.json"
 
         results['timestamp'] = datetime.now().isoformat()
 
-        with open(summary_file, 'w') as f:
-            json.dump(results, f, indent=2, default=str)
+        # Use orjson for faster JSON serialization if available
+        try:
+            import orjson
+            json_content = orjson.dumps(results, option=orjson.OPT_INDENT_2).decode('utf-8')
+        except ImportError:
+            json_content = json.dumps(results, indent=2, default=str)
+
+        async with aiofiles.open(summary_file, 'w') as f:
+            await f.write(json_content)
 
         logger.info(f"Volatility collection summary saved to {summary_file}")
 
