@@ -1,0 +1,79 @@
+{
+  "experiment_name": "train_all_20250917_172450",
+  "start_time": "2025-09-17T17:24:50.181637",
+  "status": "completed",
+  "parameters": {
+    "data_file": "data.csv",
+    "symbol": null,
+    "min_samples": 100,
+    "verbose": false,
+    "config_file": "config.json",
+    "output_file": "results.json",
+    "predictive_models_enabled": true,
+    "models_config": [
+      "price_predictor"
+    ]
+  },
+  "metrics": {
+    "data_preparation": {
+      "data_loading": "started",
+      "data_samples_loaded": 100,
+      "data_file": "data.csv",
+      "symbol": "all",
+      "data_preparation": "started",
+      "data_samples_prepared": 100,
+      "min_samples_required": 100
+    },
+    "training": {
+      "training": "started",
+      "training_duration_seconds": 0.002011,
+      "training_status": "success"
+    },
+    "final": {
+      "total_duration_seconds": 0.002011,
+      "data_samples": 100,
+      "status": "success",
+      "price_predictor_accuracy": 0.85
+    }
+  },
+  "artifacts": {
+    "data": [
+      {
+        "name": "data.csv",
+        "path": "data.csv",
+        "logged_at": "2025-09-17T17:24:50.417150"
+      }
+    ],
+    "config": [
+      {
+        "name": "config.json",
+        "path": "experiments\\train_all_20250917_172450\\artifacts\\config.json",
+        "logged_at": "2025-09-17T17:24:50.421147"
+      }
+    ],
+    "results": [
+      {
+        "name": "results.json",
+        "path": "results.json",
+        "logged_at": "2025-09-17T17:24:50.429155"
+      }
+    ]
+  },
+  "git_info": {
+    "commit_hash": "290dabf0b625125cf53813815e058477175cc7ee",
+    "branch": "main",
+    "modified_files": [
+      "M core/circuit_breaker.py",
+      " M tests/test_circuit_breaker.py",
+      "?? experiments/",
+      "?? reports/metrics/metrics_test_strategy_20250917_171756.json"
+    ],
+    "remote_url": "https://github.com/Darellea/N1V1.git"
+  },
+  "system_info": {
+    "python_version": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
+    "platform": "win32"
+  },
+  "end_time": "2025-09-17T17:24:50.437155",
+  "duration_seconds": 0.255518
+}

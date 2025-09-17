@@ -53,12 +53,12 @@
 - core/performance_tracker.py: 14%
 - core/self_healing_engine.py: 26%
 - core/signal_processor.py: 14%
-- core/signal_router.py: 0%
+- core/signal_router.py: 32% *[x] Added comprehensive unit and integration tests for core/signal_router.py*
 - core/signal_router/event_bus.py: 25%
 - core/signal_router/events.py: 78%
 - core/signal_router/retry_hooks.py: 30%
 - core/signal_router/route_policies.py: 20%
-- core/signal_router/router.py: 8%
+- core/signal_router/router.py: 34% *[x] Added comprehensive unit and integration tests for core/signal_router.py*
 - core/signal_router/signal_validators.py: 11%
 - core/state_manager.py: 11%
 - core/task_manager.py: 23%

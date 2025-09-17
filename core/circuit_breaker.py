@@ -306,9 +306,22 @@ class StateMachine:
                 reason or f"State transition: {action}"
             )
 
-            # Execute state-specific actions
-            await self._execute_state_actions(new_state, old_state)
-            return True
+            # Execute state-specific actions (without holding the lock to prevent deadlocks)
+            # Release lock before calling async actions
+            pass
+
+        # Execute state-specific actions outside the lock to prevent deadlocks
+        try:
+            await asyncio.wait_for(
+                self._execute_state_actions(new_state, old_state),
+                timeout=30.0  # 30 second timeout for state actions
+            )
+        except asyncio.TimeoutError:
+            self.circuit_breaker.logger.warning(f"Timeout executing state actions for {new_state}")
+        except Exception as e:
+            self.circuit_breaker.logger.warning(f"Error executing state actions for {new_state}: {e}")
+
+        return True
 
     async def _execute_state_actions(self, new_state: CircuitBreakerState, old_state: CircuitBreakerState) -> None:
         """Execute actions specific to entering a new state."""
@@ -424,28 +437,49 @@ class CircuitBreaker:
 
     async def check_and_trigger(self, conditions: Dict[str, Any]) -> bool:
         """Check conditions and trigger if needed using strategy pattern."""
+        self.logger.debug(f"Checking trigger conditions: {conditions}")
+        start_time = asyncio.get_event_loop().time()
         triggered_strategies = []
 
         # Use strategy pattern to check all trigger conditions with timeout protection
         for strategy in self.trigger_strategies:
             try:
                 # Add timeout protection to prevent hangs
+                strategy_start = asyncio.get_event_loop().time()
                 result = await asyncio.wait_for(
                     strategy.check_condition(conditions, self),
                     timeout=10.0  # 10 second timeout per strategy
                 )
+                strategy_duration = asyncio.get_event_loop().time() - strategy_start
+                self.logger.debug(f"Strategy {strategy.get_trigger_name()} checked in {strategy_duration:.3f}s: {result}")
+
                 if result:
                     triggered_strategies.append(strategy.get_trigger_name())
             except asyncio.TimeoutError:
-                self.logger.warning(f"Timeout checking {strategy.get_trigger_name()}")
+                self.logger.warning(f"Timeout checking {strategy.get_trigger_name()} after 10s")
                 continue
             except Exception as e:
                 self.logger.warning(f"Error checking {strategy.get_trigger_name()}: {e}")
                 continue
 
         if triggered_strategies:
-            # Use state machine to transition to triggered state
-            await self.state_machine.transition("trigger", f"Strategies triggered: {', '.join(triggered_strategies)}")
+            self.logger.info(f"Trigger conditions met: {triggered_strategies}")
+
+            # Use state machine to transition to triggered state with timeout
+            try:
+                transition_start = asyncio.get_event_loop().time()
+                transition_result = await asyncio.wait_for(
+                    self.state_machine.transition("trigger", f"Strategies triggered: {', '.join(triggered_strategies)}"),
+                    timeout=30.0  # 30 second timeout for state transition
+                )
+                transition_duration = asyncio.get_event_loop().time() - transition_start
+                self.logger.debug(f"State transition completed in {transition_duration:.3f}s: {transition_result}")
+            except asyncio.TimeoutError:
+                self.logger.error("Timeout during state transition to TRIGGERED")
+                return False
+            except Exception as e:
+                self.logger.error(f"Error during state transition: {e}")
+                return False
 
             # Integration: cancel orders when triggered with timeout
             if self.order_manager and hasattr(self.order_manager, 'cancel_all_orders'):
@@ -454,6 +488,7 @@ class CircuitBreaker:
                         self.order_manager.cancel_all_orders(),
                         timeout=30.0  # 30 second timeout
                     )
+                    self.logger.debug("Successfully cancelled all orders")
                 except asyncio.TimeoutError:
                     self.logger.warning("Timeout cancelling orders")
                 except Exception as e:
@@ -466,12 +501,18 @@ class CircuitBreaker:
                         self.signal_router.block_signals(),
                         timeout=30.0  # 30 second timeout
                     )
+                    self.logger.debug("Successfully blocked signals")
                 except asyncio.TimeoutError:
                     self.logger.warning("Timeout blocking signals")
                 except Exception as e:
                     self.logger.warning(f"Failed to block signals: {e}")
 
+            total_duration = asyncio.get_event_loop().time() - start_time
+            self.logger.info(f"check_and_trigger completed in {total_duration:.3f}s")
             return True
+
+        check_duration = asyncio.get_event_loop().time() - start_time
+        self.logger.debug(f"check_and_trigger completed in {check_duration:.3f}s - no triggers")
         return False
 
     async def _trigger_circuit_breaker(self, reason: str) -> None:

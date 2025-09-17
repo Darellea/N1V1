@@ -13,6 +13,7 @@ from typing import List, Dict, Optional, Callable, Any, TYPE_CHECKING
 from decimal import Decimal
 from pathlib import Path
 import pandas as pd
+import numpy as np
 
 from utils.time import now_ms
 from core.contracts import TradingSignal, SignalType, SignalStrength
@@ -1194,6 +1195,8 @@ class SignalRouter:
         Returns:
             List of historical signals
         """
+        if limit <= 0:
+            return []
         return self.signal_history[-limit:] if self.signal_history else []
 
     def clear_signals(self) -> None:
