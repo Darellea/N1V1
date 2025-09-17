@@ -235,8 +235,15 @@ class AnomalyTrigger(TriggerStrategy):
             return False
 
         try:
-            return await circuit_breaker.anomaly_detector.detect_market_anomaly(conditions['market_data'])
-        except Exception:
+            return await asyncio.wait_for(
+                circuit_breaker.anomaly_detector.detect_market_anomaly(conditions['market_data']),
+                timeout=15.0  # 15 second timeout for anomaly detection
+            )
+        except asyncio.TimeoutError:
+            circuit_breaker.logger.warning("Timeout in anomaly detection")
+            return False
+        except Exception as e:
+            circuit_breaker.logger.warning(f"Error in anomaly detection: {e}")
             return False
 
 
@@ -358,6 +365,9 @@ class CircuitBreaker:
         # Initialize state machine
         self.state_machine = StateMachine(self)
 
+        # Initialize background tasks set
+        self._background_tasks = set()
+
     def _log_event(self, event_type: str, previous_state: CircuitBreakerState,
                    new_state: CircuitBreakerState, reason: str, **kwargs) -> None:
         """Log a circuit breaker event to event_history."""
@@ -416,11 +426,19 @@ class CircuitBreaker:
         """Check conditions and trigger if needed using strategy pattern."""
         triggered_strategies = []
 
-        # Use strategy pattern to check all trigger conditions
+        # Use strategy pattern to check all trigger conditions with timeout protection
         for strategy in self.trigger_strategies:
             try:
-                if await strategy.check_condition(conditions, self):
+                # Add timeout protection to prevent hangs
+                result = await asyncio.wait_for(
+                    strategy.check_condition(conditions, self),
+                    timeout=10.0  # 10 second timeout per strategy
+                )
+                if result:
                     triggered_strategies.append(strategy.get_trigger_name())
+            except asyncio.TimeoutError:
+                self.logger.warning(f"Timeout checking {strategy.get_trigger_name()}")
+                continue
             except Exception as e:
                 self.logger.warning(f"Error checking {strategy.get_trigger_name()}: {e}")
                 continue
@@ -429,17 +447,27 @@ class CircuitBreaker:
             # Use state machine to transition to triggered state
             await self.state_machine.transition("trigger", f"Strategies triggered: {', '.join(triggered_strategies)}")
 
-            # Integration: cancel orders when triggered
+            # Integration: cancel orders when triggered with timeout
             if self.order_manager and hasattr(self.order_manager, 'cancel_all_orders'):
                 try:
-                    await self.order_manager.cancel_all_orders()
+                    await asyncio.wait_for(
+                        self.order_manager.cancel_all_orders(),
+                        timeout=30.0  # 30 second timeout
+                    )
+                except asyncio.TimeoutError:
+                    self.logger.warning("Timeout cancelling orders")
                 except Exception as e:
                     self.logger.warning(f"Failed to cancel orders: {e}")
 
-            # Integration: block signals when triggered
+            # Integration: block signals when triggered with timeout
             if self.signal_router and hasattr(self.signal_router, 'block_signals'):
                 try:
-                    await self.signal_router.block_signals()
+                    await asyncio.wait_for(
+                        self.signal_router.block_signals(),
+                        timeout=30.0  # 30 second timeout
+                    )
+                except asyncio.TimeoutError:
+                    self.logger.warning("Timeout blocking signals")
                 except Exception as e:
                     self.logger.warning(f"Failed to block signals: {e}")
 
@@ -471,15 +499,20 @@ class CircuitBreaker:
             self.trigger_count += 1
             self._log_event("trigger", previous_state, CircuitBreakerState.TRIGGERED, reason)
 
-            # Record state change in metrics
+            # Record state change in metrics with timeout protection
             if _metrics_collector_available:
                 try:
                     metrics_collector = get_metrics_collector()
-                    await metrics_collector.record_metric(
-                        "circuit_breaker_state",
-                        1,  # 1 = triggered, 0 = normal
-                        {"account": "main"}
+                    await asyncio.wait_for(
+                        metrics_collector.record_metric(
+                            "circuit_breaker_state",
+                            1,  # 1 = triggered, 0 = normal
+                            {"account": "main"}
+                        ),
+                        timeout=5.0  # 5 second timeout for metrics
                     )
+                except asyncio.TimeoutError:
+                    self.logger.debug("Timeout recording circuit breaker state in metrics")
                 except Exception as e:
                     self.logger.debug(f"Could not record circuit breaker state in metrics: {e}")
 
@@ -493,9 +526,18 @@ class CircuitBreaker:
         # Integration: freeze portfolio when entering cooling
         if self.risk_manager and hasattr(self.risk_manager, 'freeze_portfolio'):
             try:
-                asyncio.create_task(self.risk_manager.freeze_portfolio())
-            except:
-                pass  # Ignore errors in tests
+                # Create task with proper exception handling and timeout
+                task = asyncio.create_task(
+                    asyncio.wait_for(
+                        self.risk_manager.freeze_portfolio(),
+                        timeout=30.0  # 30 second timeout
+                    )
+                )
+                # Store task reference to prevent unhandled exceptions
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+            except Exception as e:
+                self.logger.warning(f"Failed to freeze portfolio: {e}")
 
     async def _enter_recovery_period(self) -> None:
         """Enter recovery period."""
@@ -514,16 +556,34 @@ class CircuitBreaker:
         # Integration: unfreeze portfolio when returning to normal
         if self.risk_manager and hasattr(self.risk_manager, 'unfreeze_portfolio'):
             try:
-                asyncio.create_task(self.risk_manager.unfreeze_portfolio())
-            except:
-                pass  # Ignore errors in tests
+                # Create task with proper exception handling and timeout
+                task = asyncio.create_task(
+                    asyncio.wait_for(
+                        self.risk_manager.unfreeze_portfolio(),
+                        timeout=30.0  # 30 second timeout
+                    )
+                )
+                # Store task reference to prevent unhandled exceptions
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+            except Exception as e:
+                self.logger.warning(f"Failed to unfreeze portfolio: {e}")
 
         # Integration: unblock signals when returning to normal
         if self.signal_router and hasattr(self.signal_router, 'unblock_signals'):
             try:
-                asyncio.create_task(self.signal_router.unblock_signals())
-            except:
-                pass  # Ignore errors in tests
+                # Create task with proper exception handling and timeout
+                task = asyncio.create_task(
+                    asyncio.wait_for(
+                        self.signal_router.unblock_signals(),
+                        timeout=30.0  # 30 second timeout
+                    )
+                )
+                # Store task reference to prevent unhandled exceptions
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+            except Exception as e:
+                self.logger.warning(f"Failed to unblock signals: {e}")
 
     async def set_state(self, state: CircuitBreakerState, reason: str) -> None:
         """Set circuit breaker state manually."""
@@ -563,12 +623,17 @@ class CircuitBreaker:
         self.trigger_count = snapshot['trigger_count']
 
     async def _check_anomaly_integration(self, market_data: Dict[str, Any]) -> bool:
-        """Check anomaly integration."""
+        """Check anomaly integration with timeout protection."""
         if self.anomaly_detector and hasattr(self.anomaly_detector, 'detect_market_anomaly'):
             try:
-                return await self.anomaly_detector.detect_market_anomaly(market_data)
-            except:
-                pass  # Ignore errors in tests
+                return await asyncio.wait_for(
+                    self.anomaly_detector.detect_market_anomaly(market_data),
+                    timeout=15.0  # 15 second timeout for anomaly detection
+                )
+            except asyncio.TimeoutError:
+                self.logger.warning("Timeout in anomaly detection")
+            except Exception as e:
+                self.logger.warning(f"Error in anomaly detection: {e}")
         return False
 
     def _evaluate_triggers(self, conditions: Dict[str, Any]) -> Dict[str, Any]:
@@ -586,21 +651,55 @@ class CircuitBreaker:
             self.current_equity = equity
             self.logger.info(f"Equity updated: {equity}")
 
-            # Record in metrics if available
+            # Record in metrics if available with timeout protection
             if _metrics_collector_available:
                 try:
                     metrics_collector = get_metrics_collector()
-                    await metrics_collector.record_metric(
-                        "circuit_breaker_equity",
-                        equity,
-                        {"account": "main"}
+                    await asyncio.wait_for(
+                        metrics_collector.record_metric(
+                            "circuit_breaker_equity",
+                            equity,
+                            {"account": "main"}
+                        ),
+                        timeout=5.0  # 5 second timeout for metrics
                     )
+                except asyncio.TimeoutError:
+                    self.logger.debug("Timeout recording equity in metrics")
                 except Exception as e:
                     self.logger.debug(f"Could not record equity in metrics: {e}")
 
     def update_config(self, new_config: CircuitBreakerConfig) -> None:
         """Update configuration."""
         self.config = new_config
+
+    async def cleanup_background_tasks(self) -> None:
+        """Clean up any pending background tasks."""
+        if hasattr(self, '_background_tasks') and self._background_tasks:
+            try:
+                # Wait for all background tasks to complete with timeout
+                await asyncio.wait_for(
+                    asyncio.gather(*self._background_tasks, return_exceptions=True),
+                    timeout=10.0  # 10 second timeout for cleanup
+                )
+            except asyncio.TimeoutError:
+                self.logger.warning("Timeout waiting for background tasks to complete")
+            except Exception as e:
+                self.logger.warning(f"Error during background task cleanup: {e}")
+            finally:
+                self._background_tasks.clear()
+
+    async def shutdown(self) -> None:
+        """Shutdown the circuit breaker and clean up resources."""
+        self.logger.info("Shutting down circuit breaker")
+
+        # Clean up background tasks
+        await self.cleanup_background_tasks()
+
+        # Reset to normal state if needed
+        if self.state != CircuitBreakerState.NORMAL:
+            await self.reset_to_normal("Shutdown")
+
+        self.logger.info("Circuit breaker shutdown complete")
 
 
 # Global circuit breaker instance

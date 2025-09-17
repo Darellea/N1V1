@@ -524,10 +524,13 @@ class TestCircuitBreakerConfiguration:
 
 # Integration test fixtures
 @pytest.fixture
-def circuit_breaker():
-    """Circuit breaker fixture."""
+async def circuit_breaker():
+    """Circuit breaker fixture with proper cleanup."""
     config = CircuitBreakerConfig()
-    return CircuitBreaker(config)
+    cb = CircuitBreaker(config)
+    yield cb
+    # Cleanup background tasks after test
+    await cb.cleanup_background_tasks()
 
 
 @pytest.fixture
