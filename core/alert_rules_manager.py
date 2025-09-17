@@ -48,36 +48,17 @@ class AlertRule:
                     value = metrics_data[metric_name]
                     threshold = float(threshold_str)
                     if operator == ">":
-                        triggered = value > threshold
+                        return value > threshold
                     elif operator == "<":
-                        triggered = value < threshold
+                        return value < threshold
                     elif operator == ">=":
-                        triggered = value >= threshold
+                        return value >= threshold
                     elif operator == "<=":
-                        triggered = value <= threshold
+                        return value <= threshold
                     elif operator == "==":
-                        triggered = value == threshold
+                        return value == threshold
                     else:
                         return False
-
-                    if triggered and self.manager:
-                        # Check deduplication
-                        if not self._is_deduplicated():
-                            alert = {
-                                'rule_name': self.name,
-                                'severity': self.severity,
-                                'description': self.description,
-                                'timestamp': time.time(),
-                                'metrics_data': metrics_data
-                            }
-                            await self.manager._deliver_notifications(alert, self.channels)
-                            self._record_alert(alert)
-                            return True
-                        else:
-                            # Alert is deduplicated, don't trigger
-                            return False
-                    elif triggered:
-                        return True
         except (ValueError, KeyError):
             pass
 

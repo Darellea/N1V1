@@ -16,9 +16,14 @@ def load_model(path: str):
     """
     if not os.path.exists(path):
         raise FileNotFoundError(f"Model file not found: {path}")
-    model = joblib.load(path)
-    logger.info(f"Loaded model from {path}")
-    return model
+
+    try:
+        model = joblib.load(path)
+        logger.info(f"Loaded model from {path}")
+        return model
+    except Exception as e:
+        logger.error(f"Failed to load model from {path}: {e}")
+        raise ValueError(f"Model file at {path} is corrupted or of wrong format: {e}") from e
 
 
 def load_model_with_card(path: str) -> Tuple[Any, Optional[Dict[str, Any]]]:

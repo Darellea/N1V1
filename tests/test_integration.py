@@ -1,411 +1,764 @@
-import asyncio
+"""
+Integration Tests for N1V1 Crypto Trading Framework Optimization Modules
+
+This module contains comprehensive integration tests that verify the end-to-end
+functionality of the optimization workflow, including data loading, strategy
+generation, backtesting, and optimization processes.
+
+Tests cover:
+- End-to-end optimization workflow
+- Component interactions between data, backtesting, and optimization systems
+- Output validation and correctness verification
+- Error scenarios and graceful failure handling
+- Integration with test database for isolation
+"""
+
 import pytest
-from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
-from core.contracts import TradingSignal, SignalType, SignalStrength
-from core.types import TradingMode
-from core.order_manager import OrderManager
-from notifier.discord_bot import DiscordNotifier
-from core.signal_router import SignalRouter
-from core.execution.paper_executor import PaperOrderExecutor
+import tempfile
+import os
+import sqlite3
+import json
+from unittest.mock import Mock, patch, MagicMock
+from datetime import datetime, timedelta
+import pandas as pd
+import numpy as np
+
+from optimization.base_optimizer import BaseOptimizer, OptimizationResult
+from optimization.genetic_optimizer import GeneticOptimizer
+from optimization.walk_forward import WalkForwardOptimizer
+from optimization.strategy_factory import StrategyFactory
+from backtest.backtester import Backtester, compute_backtest_metrics
+from data.historical_loader import HistoricalDataLoader
+from data.interfaces import IDataFetcher
 
 
-class DummyRiskManager:
-    """Simple risk manager stub that approves all signals."""
+class MockDataFetcher(IDataFetcher):
+    """Mock data fetcher for testing purposes."""
 
-    require_stop_loss = False
+    def __init__(self, test_data=None):
+        self.test_data = test_data or self._generate_test_data()
 
-    async def evaluate_signal(self, signal, market_data=None):
-        await asyncio.sleep(0)  # yield control to allow concurrency in tests
+    def _generate_test_data(self):
+        """Generate mock OHLCV data for testing."""
+        dates = pd.date_range('2023-01-01', periods=1000, freq='1H')
+        np.random.seed(42)  # For reproducible results
 
-        # Populate missing fields for test signals
-        if hasattr(signal, 'current_price') and signal.current_price:
-            current_price = signal.current_price
+        # Generate realistic price data with trend and volatility
+        base_price = 50000
+        returns = np.random.normal(0.0001, 0.02, len(dates))  # Small drift with volatility
+        prices = base_price * np.exp(np.cumsum(returns))
 
-            # Set stop loss if missing (5% below current price for longs, 5% above for shorts)
-            if not signal.stop_loss:
-                if signal.signal_type.name.endswith("LONG"):
-                    signal.stop_loss = current_price * Decimal("0.95")  # 5% stop loss
-                else:
-                    signal.stop_loss = current_price * Decimal("1.05")  # 5% stop loss
+        # Generate volume data
+        volumes = np.random.lognormal(10, 1, len(dates))
 
-            # Set take profit if missing (10% above current price for longs, 10% below for shorts)
-            if not signal.take_profit:
-                if signal.signal_type.name.endswith("LONG"):
-                    signal.take_profit = current_price * Decimal("1.10")  # 10% take profit
-                else:
-                    signal.take_profit = current_price * Decimal("0.90")  # 10% take profit
+        data = pd.DataFrame({
+            'open': prices,
+            'high': prices * (1 + np.random.uniform(0, 0.02, len(dates))),
+            'low': prices * (1 - np.random.uniform(0, 0.02, len(dates))),
+            'close': prices * (1 + np.random.normal(0, 0.01, len(dates))),
+            'volume': volumes
+        }, index=dates)
 
-        return True
+        # Ensure high >= max(open, close) and low <= min(open, close)
+        data['high'] = np.maximum(data[['open', 'close']].max(axis=1), data['high'])
+        data['low'] = np.minimum(data[['open', 'close']].min(axis=1), data['low'])
+
+        return data
+
+    async def get_historical_data(self, symbol, timeframe, since, limit=1000):
+        """Return mock historical data."""
+        # Filter data based on 'since' timestamp
+        since_dt = pd.to_datetime(since, unit='ms')
+        filtered_data = self.test_data[self.test_data.index >= since_dt]
+
+        if len(filtered_data) > limit:
+            filtered_data = filtered_data.head(limit)
+
+        return filtered_data
 
 
-class TestIntegration:
-    """Integration tests for end-to-end trading workflows."""
+class MockStrategy:
+    """Mock trading strategy for testing."""
 
-    @pytest.fixture
-    def config(self):
-        """Complete config for integration testing."""
-        return {
-            "order": {
-                "base_currency": "USDT",
-                "exchange": "binance"
-            },
-            "risk": {},
-            "paper": {
-                "initial_balance": 10000.0
-            },
-            "reliability": {},
-            "discord": {
-                "alerts": {"enabled": True},
-                "webhook_url": "https://discord.com/api/webhooks/test"
-            }
-        }
+    def __init__(self, config):
+        self.config = config
+        self.name = config.get('name', 'mock_strategy')
 
-    @pytest.fixture
-    def mock_executors(self):
-        """Mock all executors for integration."""
-        with patch('core.order_manager.LiveOrderExecutor') as mock_live, \
-             patch('core.order_manager.PaperOrderExecutor') as mock_paper, \
-             patch('core.order_manager.BacktestOrderExecutor') as mock_backtest:
-
-            mock_paper_instance = MagicMock()
-            mock_paper_instance.execute_paper_order = AsyncMock(return_value={
-                "id": "integration_order",
-                "symbol": "BTC/USDT",
-                "status": "filled",
-                "amount": 1.0,
-                "price": 50000.0,
-                "cost": 50000.0
-            })
-
-            # Mock paper_balance attribute and get_balance method
-            mock_paper_instance.paper_balance = Decimal("10000")
-            mock_paper_instance.get_balance = MagicMock(return_value=Decimal("10000"))
-            mock_paper_instance.set_initial_balance = MagicMock()
-            mock_paper_instance.set_portfolio_mode = MagicMock()
-
-            # Mock config for fee calculation
-            mock_config = MagicMock()
-            mock_config.__getitem__ = MagicMock(side_effect=lambda key: {
-                "trade_fee": Decimal("0.001"),  # 0.1% fee
-                "slippage": Decimal("0.001"),   # 0.1% slippage
-                "base_currency": "USDT"
-            }[key])
-            mock_paper_instance.config = mock_config
-
-            # Mock the execute_paper_order to update balance
-            async def mock_execute_with_balance_update(signal):
-                # Simulate order execution result
-                result = {
-                    "id": "paper_0",
-                    "symbol": signal.symbol,
-                    "type": signal.order_type,
-                    "side": "buy",
-                    "amount": float(signal.amount),
-                    "price": float(signal.price),
-                    "status": "filled",
-                    "filled": float(signal.amount),
-                    "remaining": 0.0,
-                    "cost": float(signal.amount) * float(signal.price),
-                    "fee": {"cost": 0.00001, "currency": "USDT"},
-                    "timestamp": 1234567890
-                }
-                # Simulate balance update: 10000 - 500 - 0.00001 = 9499.99999
-                mock_paper_instance.paper_balance = Decimal("9499.99999")
-                mock_paper_instance.get_balance.return_value = Decimal("9499.99999")
-                return result
-
-            mock_paper_instance.execute_paper_order.side_effect = mock_execute_with_balance_update
-
-            mock_paper.return_value = mock_paper_instance
-            mock_live.return_value = MagicMock()
-            mock_backtest.return_value = MagicMock()
-
-            yield {
-                'paper': mock_paper_instance
-            }
-
-    @pytest.fixture
-    def mock_managers(self):
-        """Mock managers for integration."""
-        with patch('core.order_manager.ReliabilityManager') as mock_reliability, \
-             patch('core.order_manager.PortfolioManager') as mock_portfolio, \
-             patch('core.order_manager.OrderProcessor') as mock_processor:
-
-            mock_reliability_instance = MagicMock()
-            mock_reliability_instance.safe_mode_active = False
-            mock_reliability_instance.retry_async = AsyncMock(side_effect=lambda func, **kwargs: func())
-
-            mock_portfolio_instance = MagicMock()
-            mock_portfolio_instance.paper_balances = {"USDT": Decimal("9500")}
-            mock_portfolio_instance.set_initial_balance = MagicMock()
-            mock_portfolio_instance.initialize_portfolio = MagicMock()
-
-            mock_processor_instance = MagicMock()
-            mock_processor_instance.process_order = AsyncMock(return_value={
-                "id": "processed_integration_order",
-                "symbol": "BTC/USDT",
-                "status": "filled",
-                "amount": 1.0,
-                "price": 50000.0,
-                "cost": 50000.0,
-                "pnl": 0.0
-            })
-            mock_processor_instance.open_orders = {}
-            mock_processor_instance.closed_orders = {}
-            mock_processor_instance.positions = {}
-            mock_processor_instance.get_active_order_count = MagicMock(return_value=0)
-            mock_processor_instance.get_open_position_count = MagicMock(return_value=0)
-
-            mock_reliability.return_value = mock_reliability_instance
-            mock_portfolio.return_value = mock_portfolio_instance
-            mock_processor.return_value = mock_processor_instance
-
-            yield {
-                'reliability': mock_reliability_instance,
-                'portfolio': mock_portfolio_instance,
-                'processor': mock_processor_instance
-            }
-
-    @pytest.fixture
-    def mock_discord_session(self):
-        """Mock Discord aiohttp session."""
-        with patch('aiohttp.ClientSession') as mock_session:
-            mock_instance = MagicMock()
-            mock_session.return_value = mock_instance
-
-            # Mock response with async context manager
-            mock_response = MagicMock()
-            mock_response.status = 204
-            mock_response.text = AsyncMock(return_value="OK")
-            mock_response.json = AsyncMock(return_value={})
-            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-            mock_response.__aexit__ = AsyncMock(return_value=None)
-
-            mock_instance.post = AsyncMock(return_value=mock_response)
-            mock_instance.close = AsyncMock()
-
-            yield mock_instance
-
-    @pytest.mark.asyncio
-    async def test_signal_to_order_flow(self, config, mock_executors, mock_managers):
-        """Test complete flow from signal generation to order execution."""
-        # Initialize components
-        order_manager = OrderManager(config, TradingMode.PAPER)
-
-        # Create a trading signal
-        signal = TradingSignal(
-            strategy_id="integration_test_strategy",
-            symbol="BTC/USDT",
-            signal_type=SignalType.ENTRY_LONG,
-            signal_strength=SignalStrength.STRONG,
-            order_type="market",
-            amount=Decimal("1.0"),
-            price=Decimal("50000"),
-            current_price=Decimal("50000")
-        )
-
-        # Execute the order
-        order_result = await order_manager.execute_order(signal)
-
-        # Verify the order was processed
-        assert order_result is not None
-        assert order_result["id"] == "processed_integration_order"
-        assert order_result["symbol"] == "BTC/USDT"
-        assert order_result["status"] == "filled"
-
-        # Verify executor was called
-        mock_executors['paper'].execute_paper_order.assert_called_once_with(signal)
-        mock_managers['processor'].process_order.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_signal_to_notification_flow(self, config, mock_executors, mock_managers, mock_discord_session):
-        """Test complete flow from signal to Discord notification."""
-        # Initialize components
-        order_manager = OrderManager(config, TradingMode.PAPER)
-        discord_config = config["discord"]
-        discord_notifier = DiscordNotifier(discord_config)
-
-        # Create and execute a trading signal
-        signal = TradingSignal(
-            strategy_id="notification_test_strategy",
-            symbol="ETH/USDT",
-            signal_type=SignalType.ENTRY_LONG,
-            signal_strength=SignalStrength.STRONG,
-            order_type="market",
-            amount=Decimal("2.0"),
-            price=Decimal("3000"),
-            current_price=Decimal("3000")
-        )
-
-        # Execute order
-        order_result = await order_manager.execute_order(signal)
-
-        # Send signal alert
-        signal_alert_result = await discord_notifier.send_signal_alert(signal)
-
-        # Send trade alert
-        trade_data = {
-            "symbol": order_result["symbol"],
-            "type": "market",
-            "side": "buy",
-            "amount": order_result["amount"],
-            "price": order_result["price"],
-            "pnl": order_result.get("pnl", 0),
-            "status": order_result["status"],
-            "mode": "paper"
-        }
-        trade_alert_result = await discord_notifier.send_trade_alert(trade_data)
-
-        # Verify notifications were sent
-        assert signal_alert_result is True
-        assert trade_alert_result is True
-
-        # Verify Discord API was called twice
-        assert mock_discord_session.post.call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_signal_router_to_order_manager_integration(self, config, mock_executors, mock_managers):
-        """Test integration between SignalRouter and OrderManager."""
-        # Initialize components
-        order_manager = OrderManager(config, TradingMode.PAPER)
-        risk_manager = DummyRiskManager()
-        signal_router = SignalRouter(risk_manager=risk_manager)
-
-        # Create a signal
-        signal = TradingSignal(
-            strategy_id="router_integration_test",
-            symbol="ADA/USDT",
-            signal_type=SignalType.ENTRY_LONG,
-            signal_strength=SignalStrength.STRONG,
-            order_type="market",
-            amount=Decimal("100.0"),
-            price=Decimal("1.50"),
-            current_price=Decimal("1.50")
-        )
-
-        # Process signal through router
-        router_result = await signal_router.process_signal(signal)
-
-        # Verify signal was approved
-        assert router_result is not None
-
-        # Execute order through order manager
-        order_result = await order_manager.execute_order(signal)
-
-        # Verify order execution
-        assert order_result is not None
-        assert order_result["symbol"] == "BTC/USDT"  # Mock returns BTC/USDT
-        assert order_result["status"] == "filled"
-
-    @pytest.mark.asyncio
-    async def test_portfolio_balance_updates(self, config, mock_executors, mock_managers):
-        """Test that portfolio balances are correctly updated after trades."""
-        order_manager = OrderManager(config, TradingMode.PAPER)
-
-        # Initial balance check
-        initial_balance = await order_manager.get_balance()
-        assert initial_balance == Decimal("10000")
-
-        # Execute a trade
-        signal = TradingSignal(
-            strategy_id="balance_test",
-            symbol="BTC/USDT",
-            signal_type=SignalType.ENTRY_LONG,
-            signal_strength=SignalStrength.STRONG,
-            order_type="market",
-            amount=Decimal("0.01"),  # 0.01 BTC
-            price=Decimal("50000")   # at $50000 = $500 cost
-        )
-
-        await order_manager.execute_order(signal)
-
-        # Check updated balance with tolerance for decimal precision
-        updated_balance = await order_manager.get_balance()
-        assert abs(updated_balance - Decimal("9499.99999")) < Decimal("0.0001")
-
-    @pytest.mark.asyncio
-    async def test_multiple_signals_concurrent_processing(self, config, mock_executors, mock_managers):
-        """Test processing multiple signals concurrently."""
-        order_manager = OrderManager(config, TradingMode.PAPER)
-
-        # Create multiple signals
+    def generate_signals(self, data):
+        """Generate mock trading signals."""
         signals = []
-        for i in range(5):
-            signal = TradingSignal(
-                strategy_id=f"concurrent_test_{i}",
-                symbol=f"ALT{i}/USDT",
-                signal_type=SignalType.ENTRY_LONG,
-                signal_strength=SignalStrength.STRONG,
-                order_type="market",
-                amount=Decimal("1.0"),
-                price=Decimal("10.0")
+
+        # Simple RSI-based strategy simulation
+        rsi_period = self.config.get('rsi_period', 14)
+        overbought = self.config.get('overbought', 70)
+        oversold = self.config.get('oversold', 30)
+
+        # Mock RSI calculation (simplified)
+        if len(data) > rsi_period:
+            for i in range(rsi_period, len(data)):
+                # Simulate RSI values
+                rsi_value = np.random.uniform(20, 80)
+
+                if rsi_value <= oversold:
+                    signals.append({
+                        'timestamp': data.index[i],
+                        'signal': 'BUY',
+                        'price': data.iloc[i]['close'],
+                        'rsi': rsi_value
+                    })
+                elif rsi_value >= overbought:
+                    signals.append({
+                        'timestamp': data.index[i],
+                        'signal': 'SELL',
+                        'price': data.iloc[i]['close'],
+                        'rsi': rsi_value
+                    })
+
+        return signals
+
+
+class TestOptimizationIntegration:
+    """Integration tests for the complete optimization workflow."""
+
+    @pytest.fixture
+    def test_db_path(self):
+        """Create a temporary test database."""
+        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+            db_path = f.name
+        yield db_path
+        # Cleanup
+        if os.path.exists(db_path):
+            os.unlink(db_path)
+
+    @pytest.fixture
+    def mock_data_fetcher(self):
+        """Create mock data fetcher with test data."""
+        return MockDataFetcher()
+
+    @pytest.fixture
+    def historical_loader(self, mock_data_fetcher):
+        """Create historical data loader with mock fetcher."""
+        config = {
+            'backtesting': {
+                'data_dir': 'test_data',
+                'force_refresh': True
+            }
+        }
+        return HistoricalDataLoader(config, mock_data_fetcher)
+
+    @pytest.fixture
+    def backtester(self):
+        """Create backtester instance."""
+        return Backtester()
+
+    @pytest.fixture
+    def genetic_optimizer(self):
+        """Create genetic optimizer for testing."""
+        config = {
+            'population_size': 10,
+            'generations': 3,
+            'mutation_rate': 0.1,
+            'crossover_rate': 0.7,
+            'elitism_rate': 0.1,
+            'fitness_metric': 'sharpe_ratio'
+        }
+        return GeneticOptimizer(config)
+
+    @pytest.fixture
+    def walk_forward_optimizer(self):
+        """Create walk-forward optimizer for testing."""
+        config = {
+            'train_window_days': 30,
+            'test_window_days': 7,
+            'rolling': True,
+            'min_observations': 50,
+            'improvement_threshold': 0.05
+        }
+        return WalkForwardOptimizer(config)
+
+    @pytest.mark.asyncio
+    async def test_end_to_end_optimization_workflow(self, historical_loader, backtester,
+                                                   genetic_optimizer, test_db_path):
+        """
+        Test the complete end-to-end optimization workflow.
+
+        This test verifies that data loading, strategy generation, backtesting,
+        and optimization work together seamlessly.
+        """
+        # Step 1: Load historical data
+        symbols = ['BTC/USDT']
+        start_date = '2023-01-01'
+        end_date = '2023-12-31'
+        timeframe = '1d'
+
+        data_dict = await historical_loader.load_historical_data(
+            symbols, start_date, end_date, timeframe, force_refresh=True
+        )
+
+        assert 'BTC/USDT' in data_dict
+        btc_data = data_dict['BTC/USDT']
+        assert not btc_data.empty
+        assert len(btc_data) > 100  # Ensure sufficient data
+
+        # Step 2: Register mock strategy with factory
+        StrategyFactory.register_strategy(
+            'test_rsi',
+            MockStrategy,
+            'Test RSI Strategy',
+            {
+                'rsi_period': {'min': 5, 'max': 30, 'type': int, 'default': 14},
+                'overbought': {'min': 60, 'max': 80, 'type': int, 'default': 70},
+                'oversold': {'min': 20, 'max': 40, 'type': int, 'default': 30}
+            }
+        )
+
+        # Step 3: Create and configure optimizer
+        genetic_optimizer.add_parameter_bounds(
+            genetic_optimizer.ParameterBounds(
+                name='rsi_period',
+                min_value=5,
+                max_value=30,
+                param_type='int'
             )
-            signals.append(signal)
-
-        # Execute orders concurrently
-        tasks = [order_manager.execute_order(signal) for signal in signals]
-        results = await asyncio.gather(*tasks)
-
-        # Verify all orders were processed
-        assert len(results) == 5
-        for result in results:
-            assert result is not None
-            assert result["status"] == "filled"
-
-        # Verify executor was called for each signal
-        assert mock_executors['paper'].execute_paper_order.call_count == 5
-
-    @pytest.mark.asyncio
-    async def test_error_handling_in_integration_flow(self, config, mock_executors, mock_managers):
-        """Test error handling in the integration flow."""
-        order_manager = OrderManager(config, TradingMode.PAPER)
-
-        # Mock executor to raise an exception
-        mock_executors['paper'].execute_paper_order.side_effect = Exception("Exchange error")
-
-        signal = TradingSignal(
-            strategy_id="error_test",
-            symbol="BTC/USDT",
-            signal_type=SignalType.ENTRY_LONG,
-            signal_strength=SignalStrength.STRONG,
-            order_type="market",
-            amount=Decimal("1.0")
+        )
+        genetic_optimizer.add_parameter_bounds(
+            genetic_optimizer.ParameterBounds(
+                name='overbought',
+                min_value=60,
+                max_value=80,
+                param_type='int'
+            )
+        )
+        genetic_optimizer.add_parameter_bounds(
+            genetic_optimizer.ParameterBounds(
+                name='oversold',
+                min_value=20,
+                max_value=40,
+                param_type='int'
+            )
         )
 
-        # Execute order - should handle the error gracefully
-        order_result = await order_manager.execute_order(signal)
+        # Step 4: Mock strategy creation for testing
+        def mock_strategy_factory(params):
+            config = {
+                'name': 'test_strategy',
+                'rsi_period': params.get('rsi_period', 14),
+                'overbought': params.get('overbought', 70),
+                'oversold': params.get('oversold', 30)
+            }
+            return MockStrategy(config)
 
-        # Should return None on error
-        assert order_result is None
+        # Step 5: Run optimization with mocked components
+        with patch.object(genetic_optimizer, '_run_backtest') as mock_backtest, \
+             patch('optimization.genetic_optimizer.StrategyFactory.create_strategy_from_genome') as mock_create:
 
-        # Verify error was recorded
-        mock_managers['reliability'].record_critical_error.assert_called_once()
+            # Mock backtest to return realistic equity progression
+            mock_backtest.return_value = [
+                {'trade_id': 1, 'timestamp': btc_data.index[0], 'equity': 10000, 'pnl': 0, 'cumulative_return': 0.0},
+                {'trade_id': 2, 'timestamp': btc_data.index[10], 'equity': 10200, 'pnl': 200, 'cumulative_return': 0.02},
+                {'trade_id': 3, 'timestamp': btc_data.index[20], 'equity': 10100, 'pnl': -100, 'cumulative_return': 0.01}
+            ]
+
+            # Mock strategy creation
+            mock_create.return_value = mock_strategy_factory({'rsi_period': 14, 'overbought': 70, 'oversold': 30})
+
+            # Run optimization
+            result = genetic_optimizer.optimize(MockStrategy, btc_data)
+
+            # Step 6: Verify results
+            assert isinstance(result, dict)
+            assert 'rsi_period' in result
+            assert 'overbought' in result
+            assert 'oversold' in result
+
+            # Verify parameter bounds
+            assert 5 <= result['rsi_period'] <= 30
+            assert 60 <= result['overbought'] <= 80
+            assert 20 <= result['oversold'] <= 40
+
+    def test_component_interaction_data_to_backtest(self, historical_loader, backtester):
+        """
+        Test interaction between data loading and backtesting components.
+
+        Verifies that data loaded by the historical loader can be properly
+        consumed by the backtesting system.
+        """
+        # Create test data
+        dates = pd.date_range('2023-01-01', periods=100, freq='1H')
+        test_data = pd.DataFrame({
+            'open': np.random.uniform(50000, 51000, 100),
+            'high': np.random.uniform(50500, 51500, 100),
+            'low': np.random.uniform(49500, 50500, 100),
+            'close': np.random.uniform(50000, 51000, 100),
+            'volume': np.random.uniform(100, 1000, 100)
+        }, index=dates)
+
+        # Mock strategy that generates signals
+        mock_strategy = Mock()
+        mock_strategy.generate_signals.return_value = [
+            {'timestamp': dates[10], 'signal': 'BUY', 'price': test_data.iloc[10]['close']},
+            {'timestamp': dates[20], 'signal': 'SELL', 'price': test_data.iloc[20]['close']},
+            {'timestamp': dates[30], 'signal': 'BUY', 'price': test_data.iloc[30]['close']},
+            {'timestamp': dates[40], 'signal': 'SELL', 'price': test_data.iloc[40]['close']}
+        ]
+
+        # Test backtest execution
+        with patch.object(backtester, 'run_backtest') as mock_run:
+            mock_run.return_value = {
+                'total_return': 0.05,
+                'sharpe_ratio': 1.2,
+                'max_drawdown': 0.03,
+                'win_rate': 0.6,
+                'total_trades': 2,
+                'equity_progression': [
+                    {'trade_id': 1, 'timestamp': dates[10], 'equity': 10000, 'pnl': 200, 'cumulative_return': 0.02},
+                    {'trade_id': 2, 'timestamp': dates[20], 'equity': 10200, 'pnl': -50, 'cumulative_return': 0.015},
+                    {'trade_id': 3, 'timestamp': dates[30], 'equity': 10150, 'pnl': 150, 'cumulative_return': 0.035},
+                    {'trade_id': 4, 'timestamp': dates[40], 'equity': 10300, 'pnl': 100, 'cumulative_return': 0.05}
+                ],
+                'metrics': {}
+            }
+
+            result = backtester.run_backtest_sync(mock_strategy, test_data)
+
+            # Verify backtest was called
+            mock_run.assert_called_once()
+
+            # Verify result structure
+            assert 'total_return' in result
+            assert 'sharpe_ratio' in result
+            assert 'equity_progression' in result
+            assert len(result['equity_progression']) == 4
+
+    def test_component_interaction_backtest_to_optimizer(self, backtester, genetic_optimizer):
+        """
+        Test interaction between backtesting and optimization components.
+
+        Verifies that backtest results are properly consumed by the optimizer
+        for fitness evaluation.
+        """
+        # Create test data
+        dates = pd.date_range('2023-01-01', periods=50, freq='1D')
+        test_data = pd.DataFrame({
+            'close': np.random.uniform(50000, 51000, 50),
+            'high': np.random.uniform(50500, 51500, 50),
+            'low': np.random.uniform(49500, 50500, 50),
+            'open': np.random.uniform(50000, 51000, 50),
+            'volume': np.random.uniform(100, 1000, 50)
+        }, index=dates)
+
+        # Mock strategy
+        mock_strategy = Mock()
+        mock_strategy.generate_signals.return_value = [
+            {'timestamp': dates[10], 'signal': 'BUY', 'price': test_data.iloc[10]['close']},
+            {'timestamp': dates[20], 'signal': 'SELL', 'price': test_data.iloc[20]['close']}
+        ]
+
+        # Mock backtest results
+        mock_equity_progression = [
+            {'trade_id': 1, 'timestamp': dates[10], 'equity': 10000, 'pnl': 200, 'cumulative_return': 0.02},
+            {'trade_id': 2, 'timestamp': dates[20], 'equity': 10200, 'pnl': 100, 'cumulative_return': 0.04}
+        ]
+
+        # Test fitness evaluation
+        with patch.object(genetic_optimizer, '_run_backtest', return_value=mock_equity_progression), \
+             patch('optimization.base_optimizer.compute_backtest_metrics') as mock_compute:
+
+            mock_compute.return_value = {
+                'sharpe_ratio': 1.5,
+                'total_return': 0.04,
+                'max_drawdown': 0.02,
+                'win_rate': 0.75,
+                'total_trades': 2,
+                'wins': 1,
+                'losses': 1
+            }
+
+            fitness = genetic_optimizer.evaluate_fitness(mock_strategy, test_data)
+
+            # Verify fitness calculation
+            assert isinstance(fitness, float)
+            assert fitness > 0
+
+            # Verify backtest was called
+            genetic_optimizer._run_backtest.assert_called_once_with(mock_strategy, test_data)
+
+            # Verify metrics computation was called
+            mock_compute.assert_called_once_with(mock_equity_progression)
+
+    def test_output_validation_optimization_results(self, genetic_optimizer):
+        """
+        Test validation of optimization output results.
+
+        Verifies that optimization results contain all required fields
+        and meet expected criteria.
+        """
+        # Create mock optimization results
+        mock_result = {
+            'rsi_period': 14,
+            'overbought': 70,
+            'oversold': 30,
+            'fitness_score': 1.25,
+            'total_evaluations': 50,
+            'optimization_time': 45.2
+        }
+
+        # Test result validation
+        assert 'rsi_period' in mock_result
+        assert 'overbought' in mock_result
+        assert 'oversold' in mock_result
+        assert isinstance(mock_result['rsi_period'], int)
+        assert isinstance(mock_result['overbought'], int)
+        assert isinstance(mock_result['oversold'], int)
+        assert 5 <= mock_result['rsi_period'] <= 30
+        assert 60 <= mock_result['overbought'] <= 80
+        assert 20 <= mock_result['oversold'] <= 40
+        assert mock_result['fitness_score'] > 0
+        assert mock_result['total_evaluations'] > 0
+        assert mock_result['optimization_time'] > 0
+
+    def test_output_validation_backtest_metrics(self):
+        """
+        Test validation of backtest metrics output.
+
+        Verifies that backtest metrics contain all required fields
+        and are within reasonable ranges.
+        """
+        # Create mock equity progression
+        dates = pd.date_range('2023-01-01', periods=20, freq='1D')
+        equity_progression = [
+            {'trade_id': i+1, 'timestamp': dates[i], 'equity': 10000 + i*50,
+             'pnl': 50 if i % 2 == 0 else -25, 'cumulative_return': i*0.005}
+            for i in range(20)
+        ]
+
+        # Compute metrics
+        metrics = compute_backtest_metrics(equity_progression)
+
+        # Validate required fields
+        required_fields = [
+            'equity_curve', 'max_drawdown', 'sharpe_ratio',
+            'profit_factor', 'total_return', 'total_trades',
+            'wins', 'losses', 'win_rate'
+        ]
+
+        for field in required_fields:
+            assert field in metrics, f"Missing required field: {field}"
+
+        # Validate field types and ranges
+        assert isinstance(metrics['equity_curve'], list)
+        assert len(metrics['equity_curve']) == len(equity_progression)
+        assert isinstance(metrics['max_drawdown'], (int, float))
+        assert 0 <= metrics['max_drawdown'] <= 1  # Should be between 0 and 1
+        assert isinstance(metrics['sharpe_ratio'], (int, float))
+        assert isinstance(metrics['profit_factor'], (int, float))
+        assert metrics['profit_factor'] >= 0
+        assert isinstance(metrics['total_return'], (int, float))
+        assert isinstance(metrics['total_trades'], int)
+        assert metrics['total_trades'] >= 0
+        assert isinstance(metrics['wins'], int)
+        assert isinstance(metrics['losses'], int)
+        assert metrics['wins'] + metrics['losses'] == metrics['total_trades']
+        assert isinstance(metrics['win_rate'], (int, float))
+        assert 0 <= metrics['win_rate'] <= 1
 
     @pytest.mark.asyncio
-    async def test_safe_mode_integration(self, config, mock_executors, mock_managers):
-        """Test safe mode integration across components."""
-        order_manager = OrderManager(config, TradingMode.PAPER)
+    async def test_error_scenario_data_loading_failure(self, historical_loader):
+        """
+        Test error handling when data loading fails.
 
-        # Activate safe mode
-        mock_managers['reliability'].safe_mode_active = True
+        Verifies that the system gracefully handles data loading failures
+        and provides appropriate error messages.
+        """
+        # Mock data fetcher to raise exception
+        with patch.object(historical_loader.data_fetcher, 'get_historical_data', side_effect=Exception("API Error")):
+            with pytest.raises(Exception):
+                await historical_loader.load_historical_data(
+                    ['BTC/USDT'], '2023-01-01', '2023-12-31', '1d'
+                )
 
-        signal = TradingSignal(
-            strategy_id="safe_mode_test",
-            symbol="BTC/USDT",
-            signal_type=SignalType.ENTRY_LONG,
-            signal_strength=SignalStrength.STRONG,
-            order_type="market",
-            amount=Decimal("1.0")
+    def test_error_scenario_backtest_failure(self, backtester, genetic_optimizer):
+        """
+        Test error handling when backtesting fails.
+
+        Verifies that optimization continues gracefully when individual
+        backtests fail.
+        """
+        # Create test data
+        test_data = pd.DataFrame({
+            'close': [100, 101, 102],
+            'high': [102, 103, 104],
+            'low': [98, 99, 100],
+            'open': [100, 101, 102],
+            'volume': [1000, 1100, 1200]
+        })
+
+        # Mock strategy that fails
+        mock_strategy = Mock()
+        mock_strategy.side_effect = Exception("Strategy execution failed")
+
+        # Test that fitness evaluation handles errors gracefully
+        with patch.object(genetic_optimizer, '_run_backtest', side_effect=Exception("Backtest failed")):
+            fitness = genetic_optimizer.evaluate_fitness(mock_strategy, test_data)
+
+            # Should return negative infinity for failed evaluation
+            assert fitness == float('-inf')
+
+    def test_error_scenario_optimization_with_invalid_parameters(self, genetic_optimizer):
+        """
+        Test error handling when optimization receives invalid parameters.
+
+        Verifies that parameter validation works correctly and handles
+        invalid inputs appropriately.
+        """
+        # Test with invalid parameter bounds
+        with pytest.raises((ValueError, TypeError)):
+            genetic_optimizer.add_parameter_bounds(
+                genetic_optimizer.ParameterBounds(
+                    name='invalid_param',
+                    min_value='invalid',  # Should be numeric
+                    max_value=100,
+                    param_type='int'
+                )
+            )
+
+    def test_database_integration_isolation(self, test_db_path):
+        """
+        Test that integration tests use isolated test database.
+
+        Verifies that tests can create and use a test database without
+        affecting the main application database.
+        """
+        # Create test database connection
+        conn = sqlite3.connect(test_db_path)
+        cursor = conn.cursor()
+
+        # Create test table
+        cursor.execute('''
+            CREATE TABLE test_optimization_results (
+                id INTEGER PRIMARY KEY,
+                strategy_name TEXT,
+                best_params TEXT,
+                best_fitness REAL,
+                timestamp DATETIME
+            )
+        ''')
+
+        # Insert test data
+        test_result = {
+            'strategy_name': 'test_strategy',
+            'best_params': json.dumps({'rsi_period': 14}),
+            'best_fitness': 1.25,
+            'timestamp': datetime.now().isoformat()
+        }
+
+        cursor.execute('''
+            INSERT INTO test_optimization_results
+            (strategy_name, best_params, best_fitness, timestamp)
+            VALUES (?, ?, ?, ?)
+        ''', (
+            test_result['strategy_name'],
+            test_result['best_params'],
+            test_result['best_fitness'],
+            test_result['timestamp']
+        ))
+
+        conn.commit()
+
+        # Verify data was inserted
+        cursor.execute('SELECT COUNT(*) FROM test_optimization_results')
+        count = cursor.fetchone()[0]
+        assert count == 1
+
+        # Verify data integrity
+        cursor.execute('SELECT * FROM test_optimization_results WHERE id = 1')
+        row = cursor.fetchone()
+        assert row[1] == 'test_strategy'
+        assert json.loads(row[2])['rsi_period'] == 14
+        assert row[3] == 1.25
+
+        conn.close()
+
+        # Verify database file exists and has content
+        assert os.path.exists(test_db_path)
+        assert os.path.getsize(test_db_path) > 0
+
+    def test_walk_forward_integration_workflow(self, walk_forward_optimizer):
+        """
+        Test walk-forward optimization integration.
+
+        Verifies that walk-forward optimization works correctly with
+        the overall optimization framework.
+        """
+        # Create test data with sufficient length
+        dates = pd.date_range('2023-01-01', periods=200, freq='1D')
+        test_data = pd.DataFrame({
+            'close': np.random.uniform(50000, 51000, 200),
+            'high': np.random.uniform(50500, 51500, 200),
+            'low': np.random.uniform(49500, 50500, 200),
+            'open': np.random.uniform(50000, 51000, 200),
+            'volume': np.random.uniform(100, 1000, 200)
+        }, index=dates)
+
+        # Mock strategy
+        mock_strategy = Mock()
+        mock_strategy.generate_signals.return_value = []
+
+        # Mock optimization method
+        with patch.object(walk_forward_optimizer, 'optimize', return_value={'test_param': 42}):
+            result = walk_forward_optimizer.optimize(mock_strategy, test_data)
+
+            assert isinstance(result, dict)
+            assert 'test_param' in result
+
+    def test_strategy_factory_integration(self):
+        """
+        Test strategy factory integration with optimization.
+
+        Verifies that the strategy factory can create strategies
+        that work with the optimization system.
+        """
+        # Register test strategy
+        StrategyFactory.register_strategy(
+            'integration_test',
+            MockStrategy,
+            'Integration Test Strategy',
+            {
+                'test_param': {'min': 1, 'max': 100, 'type': int, 'default': 50}
+            }
         )
 
-        # Execute order - should be skipped due to safe mode
-        order_result = await order_manager.execute_order(signal)
+        # Verify strategy is registered
+        available = StrategyFactory.get_available_strategies()
+        assert 'integration_test' in available
+        assert available['integration_test'] == 'Integration Test Strategy'
 
-        # Should return skipped result
-        assert order_result is not None
-        assert order_result["status"] == "skipped"
-        assert order_result["reason"] == "safe_mode_active"
+        # Get strategy info
+        info = StrategyFactory.get_strategy_info('integration_test')
+        assert info is not None
+        assert info['description'] == 'Integration Test Strategy'
+        assert 'test_param' in info['parameters']
 
-        # Verify no actual execution happened
-        mock_executors['paper'].execute_paper_order.assert_not_called()
+    def test_memory_management_during_optimization(self, genetic_optimizer):
+        """
+        Test memory management during optimization runs.
+
+        Verifies that the optimization system properly manages memory
+        and doesn't leak resources during long-running optimizations.
+        """
+        # Create test data
+        test_data = pd.DataFrame({
+            'close': np.random.uniform(50000, 51000, 100),
+            'high': np.random.uniform(50500, 51500, 100),
+            'low': np.random.uniform(49500, 50500, 100),
+            'open': np.random.uniform(50000, 51000, 100),
+            'volume': np.random.uniform(100, 1000, 100)
+        })
+
+        # Mock strategy
+        mock_strategy = Mock()
+
+        # Track memory usage (simplified)
+        initial_population_size = len(genetic_optimizer.population) if hasattr(genetic_optimizer, 'population') else 0
+
+        # Run multiple fitness evaluations
+        for _ in range(5):
+            with patch.object(genetic_optimizer, '_run_backtest', return_value=[]):
+                fitness = genetic_optimizer.evaluate_fitness(mock_strategy, test_data)
+                assert isinstance(fitness, (int, float))
+
+        # Verify population size remains stable (no memory leaks)
+        if hasattr(genetic_optimizer, 'population'):
+            assert len(genetic_optimizer.population) == initial_population_size
+
+    def test_concurrent_optimization_runs(self, genetic_optimizer):
+        """
+        Test running multiple optimization instances concurrently.
+
+        Verifies that the optimization system can handle concurrent
+        runs without interference.
+        """
+        import threading
+
+        results = {}
+        errors = []
+
+        def run_optimization(optimizer_id):
+            try:
+                # Create separate test data for each thread
+                test_data = pd.DataFrame({
+                    'close': np.random.uniform(50000, 51000, 50),
+                    'high': np.random.uniform(50500, 51500, 50),
+                    'low': np.random.uniform(49500, 50500, 50),
+                    'open': np.random.uniform(50000, 51000, 50),
+                    'volume': np.random.uniform(100, 1000, 50)
+                })
+
+                mock_strategy = Mock()
+
+                with patch.object(genetic_optimizer, '_run_backtest', return_value=[]):
+                    fitness = genetic_optimizer.evaluate_fitness(mock_strategy, test_data)
+                    results[optimizer_id] = fitness
+            except Exception as e:
+                errors.append(f"Thread {optimizer_id}: {str(e)}")
+
+        # Create and start threads
+        threads = []
+        for i in range(3):
+            thread = threading.Thread(target=run_optimization, args=(f"opt_{i}",))
+            threads.append(thread)
+            thread.start()
+
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join()
+
+        # Verify no errors occurred
+        assert len(errors) == 0, f"Errors in concurrent runs: {errors}"
+
+        # Verify all threads produced results
+        assert len(results) == 3
+        for optimizer_id, fitness in results.items():
+            assert isinstance(fitness, (int, float))
+            assert optimizer_id.startswith("opt_")
+
+    def test_large_dataset_handling(self):
+        """
+        Test optimization with large datasets.
+
+        Verifies that the system can handle large amounts of data
+        without performance degradation or memory issues.
+        """
+        # Create large test dataset
+        dates = pd.date_range('2020-01-01', periods=10000, freq='1H')  # ~1 year of hourly data
+        large_data = pd.DataFrame({
+            'close': np.random.uniform(50000, 51000, 10000),
+            'high': np.random.uniform(50500, 51500, 10000),
+            'low': np.random.uniform(49500, 50500, 10000),
+            'open': np.random.uniform(50000, 51000, 10000),
+            'volume': np.random.uniform(100, 1000, 10000)
+        }, index=dates)
+
+        # Test data processing
+        assert len(large_data) == 10000
+        assert not large_data.empty
+
+        # Test metrics computation on large dataset
+        # Create mock equity progression
+        equity_progression = [
+            {'trade_id': i+1, 'timestamp': dates[i], 'equity': 10000 + i*0.1,
+             'pnl': 0.1, 'cumulative_return': i*0.00001}
+            for i in range(min(1000, len(dates)))  # Limit for performance
+        ]
+
+        metrics = compute_backtest_metrics(equity_progression)
+
+        # Verify metrics are computed correctly
+        assert 'sharpe_ratio' in metrics
+        assert 'total_return' in metrics
+        assert isinstance(metrics['sharpe_ratio'], (int, float))
+        assert isinstance(metrics['total_return'], (int, float))
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

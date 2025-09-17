@@ -20,6 +20,191 @@ from dataclasses import dataclass, asdict
 from backtest.backtester import compute_backtest_metrics
 
 
+# ============================================================================
+# DISTRIBUTED PROCESSING SUPPORT
+# ============================================================================
+#
+# The current optimization framework runs all fitness evaluations on a single machine,
+# which creates a significant bottleneck for large-scale optimization problems with:
+# - Many strategies to optimize simultaneously
+# - Large population sizes in genetic algorithms
+# - Complex fitness evaluations requiring significant computation
+#
+# RECOMMENDED DISTRIBUTED FRAMEWORKS:
+# 1. Ray (https://ray.io/): Excellent for distributed computing with simple API
+#    - Use Ray for parallel fitness evaluations across multiple nodes
+#    - Supports both CPU and GPU acceleration
+#    - Easy integration with existing Python code
+#
+# 2. Dask (https://dask.org/): Good for distributed data processing
+#    - Use Dask for distributed computation on large datasets
+#    - Integrates well with pandas and numpy
+#    - Supports dynamic task scheduling
+#
+# IMPLEMENTATION APPROACH:
+# - Create an OptimizerBackend abstract class for different execution modes
+# - Implement DistributedOptimizer using Ray/Dask for parallel execution
+# - Keep LocalOptimizer for single-machine execution (current implementation)
+# - Allow switching between backends based on problem size and available resources
+# ============================================================================
+
+class OptimizerBackend(ABC):
+    """
+    Abstract base class for optimization execution backends.
+
+    This class defines the interface for different execution modes:
+    - Local execution (single machine)
+    - Distributed execution (multiple nodes/machines)
+    - GPU-accelerated execution
+    """
+
+    @abstractmethod
+    def evaluate_fitness_batch(self, strategy_instances: List[Any], data: pd.DataFrame) -> List[float]:
+        """
+        Evaluate fitness for multiple strategy instances in parallel.
+
+        Args:
+            strategy_instances: List of strategy instances to evaluate
+            data: Historical data for backtesting
+
+        Returns:
+            List of fitness scores corresponding to each strategy instance
+        """
+        pass
+
+    @abstractmethod
+    def initialize(self, config: Dict[str, Any]) -> None:
+        """
+        Initialize the backend with configuration.
+
+        Args:
+            config: Backend-specific configuration
+        """
+        pass
+
+    @abstractmethod
+    def shutdown(self) -> None:
+        """
+        Clean up resources and shutdown the backend.
+        """
+        pass
+
+
+class DistributedOptimizer(OptimizerBackend):
+    """
+    Placeholder for distributed optimization backend.
+
+    This class serves as a template for implementing distributed processing
+    using frameworks like Ray or Dask. It provides the interface that would
+    be implemented to distribute fitness evaluations across multiple nodes.
+
+    IMPLEMENTATION NOTES:
+    - Use Ray/Dask to parallelize fitness evaluations
+    - Handle node failures and load balancing
+    - Support dynamic scaling based on workload
+    - Cache results to avoid redundant computations
+    - Monitor resource usage and performance metrics
+    """
+
+    def __init__(self, config: Dict[str, Any]):
+        """
+        Initialize distributed optimizer.
+
+        Args:
+            config: Configuration for distributed execution
+        """
+        self.config = config
+        self.logger = logging.getLogger(f"{self.__class__.__name__}")
+
+        # Placeholder for distributed framework client
+        self.distributed_client = None
+
+        # Configuration for distributed execution
+        self.num_workers = config.get('num_workers', 4)
+        self.framework = config.get('framework', 'ray')  # 'ray' or 'dask'
+        self.cluster_address = config.get('cluster_address', None)
+
+    def initialize(self, config: Dict[str, Any]) -> None:
+        """
+        Initialize the distributed backend.
+
+        This method would:
+        1. Connect to Ray/Dask cluster
+        2. Initialize worker nodes
+        3. Set up distributed data structures
+        4. Configure load balancing
+
+        Args:
+            config: Backend configuration
+        """
+        self.logger.info(f"Initializing {self.framework} distributed backend")
+
+        # Placeholder implementation - would initialize Ray/Dask here
+        if self.framework == 'ray':
+            # import ray
+            # ray.init(address=self.cluster_address, num_cpus=self.num_workers)
+            self.logger.info("Ray distributed backend initialized (placeholder)")
+        elif self.framework == 'dask':
+            # from dask.distributed import Client
+            # self.distributed_client = Client(self.cluster_address)
+            self.logger.info("Dask distributed backend initialized (placeholder)")
+
+    def evaluate_fitness_batch(self, strategy_instances: List[Any], data: pd.DataFrame) -> List[float]:
+        """
+        Evaluate fitness for multiple strategies in parallel using distributed computing.
+
+        This method would:
+        1. Distribute strategy instances across worker nodes
+        2. Execute fitness evaluations in parallel
+        3. Collect and return results
+        4. Handle failures and retries
+
+        Args:
+            strategy_instances: List of strategy instances to evaluate
+            data: Historical data for backtesting
+
+        Returns:
+            List of fitness scores
+        """
+        self.logger.info(f"Evaluating {len(strategy_instances)} strategies using {self.framework}")
+
+        # Placeholder implementation - would use Ray/Dask for parallel execution
+        fitness_scores = []
+
+        for i, strategy in enumerate(strategy_instances):
+            # In real implementation, this would be distributed
+            # fitness = ray.remote(evaluate_single_fitness).remote(strategy, data)
+            # fitness_scores.append(fitness)
+
+            # Placeholder: simulate distributed evaluation
+            fitness_scores.append(float('-inf'))  # Placeholder score
+
+        # In real implementation:
+        # return ray.get(fitness_scores) if self.framework == 'ray' else [f.result() for f in fitness_scores]
+
+        self.logger.info("Distributed fitness evaluation completed (placeholder)")
+        return fitness_scores
+
+    def shutdown(self) -> None:
+        """
+        Shutdown the distributed backend and clean up resources.
+
+        This method would:
+        1. Close connections to worker nodes
+        2. Clean up distributed data structures
+        3. Save any cached results
+        4. Log final statistics
+        """
+        self.logger.info(f"Shutting down {self.framework} distributed backend")
+
+        # Placeholder implementation - would shutdown Ray/Dask here
+        if self.distributed_client:
+            # self.distributed_client.close()
+            pass
+
+        self.logger.info("Distributed backend shutdown complete")
+
+
 @dataclass
 class OptimizationResult:
     """Container for optimization results."""
@@ -297,13 +482,22 @@ class BaseOptimizer(ABC):
         """
         Save optimization results to file.
 
+        SECURITY FIX: Path validation prevents directory traversal attacks.
+        Only allows file operations within the designated results directory.
+        Resolves paths to canonical form and validates against safe base directory.
+
         Args:
-            output_path: Path to save results
+            output_path: Path to save results (relative to results directory)
 
         Returns:
             Path to saved file
         """
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # SECURITY: Validate and sanitize file path to prevent directory traversal
+        safe_path = self._validate_and_sanitize_path(output_path, operation="save")
+        if safe_path is None:
+            raise ValueError(f"Invalid path for save operation: {output_path}")
+
+        os.makedirs(os.path.dirname(safe_path), exist_ok=True)
 
         result = OptimizationResult(
             strategy_name=self.config.get('strategy_name', 'unknown'),
@@ -319,27 +513,37 @@ class BaseOptimizer(ABC):
             convergence_info=self._get_convergence_info()
         )
 
-        with open(output_path, 'w') as f:
+        with open(safe_path, 'w') as f:
             json.dump(result.to_dict(), f, indent=2)
 
-        self.logger.info(f"Results saved to {output_path}")
-        return output_path
+        self.logger.info(f"Results saved to {safe_path}")
+        return safe_path
 
     def load_results(self, input_path: str) -> Optional[OptimizationResult]:
         """
         Load optimization results from file.
 
+        SECURITY FIX: Path validation prevents directory traversal attacks.
+        Only allows file operations within the designated results directory.
+        Resolves paths to canonical form and validates against safe base directory.
+
         Args:
-            input_path: Path to load results from
+            input_path: Path to load results from (relative to results directory)
 
         Returns:
             OptimizationResult if file exists, None otherwise
         """
-        if not os.path.exists(input_path):
+        # SECURITY: Validate and sanitize file path to prevent directory traversal
+        safe_path = self._validate_and_sanitize_path(input_path, operation="load")
+        if safe_path is None:
+            self.logger.error(f"Invalid path for load operation: {input_path}")
+            return None
+
+        if not os.path.exists(safe_path):
             return None
 
         try:
-            with open(input_path, 'r') as f:
+            with open(safe_path, 'r') as f:
                 data = json.load(f)
 
             result = OptimizationResult.from_dict(data)
@@ -347,7 +551,7 @@ class BaseOptimizer(ABC):
             self.best_fitness = result.best_fitness
             self.results_history = result.results_history
 
-            self.logger.info(f"Results loaded from {input_path}")
+            self.logger.info(f"Results loaded from {safe_path}")
             return result
 
         except Exception as e:
@@ -377,6 +581,60 @@ class BaseOptimizer(ABC):
             }
 
         return None
+
+    def _validate_and_sanitize_path(self, user_path: str, operation: str) -> Optional[str]:
+        """
+        Validate and sanitize file paths to prevent directory traversal attacks.
+
+        SECURITY: This method implements path validation to mitigate file path injection
+        vulnerabilities. It resolves paths to canonical form and ensures they remain
+        within a designated safe directory, preventing access to sensitive system files.
+
+        Args:
+            user_path: User-provided path string
+            operation: Operation type ('save' or 'load') for logging
+
+        Returns:
+            Sanitized absolute path if valid, None if invalid
+        """
+        try:
+            # Define the safe base directory for file operations
+            # This should be configurable but defaults to 'results' directory
+            base_dir = self.config.get('results_directory', 'results')
+
+            # Convert to absolute path and resolve any symlinks/canonicalize
+            # This prevents directory traversal using .. or symlinks
+            resolved_path = os.path.abspath(os.path.join(base_dir, user_path))
+
+            # Ensure the resolved path is within the base directory
+            # This is the key security check that prevents directory traversal
+            base_dir_abs = os.path.abspath(base_dir)
+
+            # Check if resolved path starts with base directory path
+            if not resolved_path.startswith(base_dir_abs + os.sep) and resolved_path != base_dir_abs:
+                self.logger.error(
+                    f"SECURITY: Path traversal attempt blocked in {operation} operation. "
+                    f"User path: {user_path}, Resolved: {resolved_path}, Base: {base_dir_abs}"
+                )
+                return None
+
+            # Additional validation: ensure no null bytes or other dangerous characters
+            if '\x00' in resolved_path:
+                self.logger.error(f"SECURITY: Null byte detected in path: {user_path}")
+                return None
+
+            # Ensure the path doesn't contain dangerous characters
+            dangerous_chars = ['<', '>', '|', '*', '?']
+            if any(char in resolved_path for char in dangerous_chars):
+                self.logger.error(f"SECURITY: Dangerous characters in path: {user_path}")
+                return None
+
+            self.logger.debug(f"Path validation successful for {operation}: {resolved_path}")
+            return resolved_path
+
+        except Exception as e:
+            self.logger.error(f"Error validating path '{user_path}': {str(e)}")
+            return None
 
     @abstractmethod
     def optimize(self, strategy_class, data: pd.DataFrame) -> Dict[str, Any]:

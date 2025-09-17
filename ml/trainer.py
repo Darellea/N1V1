@@ -3,6 +3,7 @@ import json
 import logging
 from collections import Counter
 import os
+from typing import Dict, List, Optional, Tuple, Any, Union
 
 import numpy as np
 import pandas as pd
@@ -52,8 +53,70 @@ except ImportError:
     SMOTE_AVAILABLE = False
     logging.warning("imbalanced-learn not available. SMOTE resampling will be skipped.")
 
-# Reproducibility
+# Reproducibility - Set global random seeds for all libraries
+import random
+random.seed(42)
 np.random.seed(42)
+
+# Set seeds for machine learning libraries if available
+try:
+    import tensorflow as tf
+    tf.random.set_seed(42)
+except ImportError:
+    pass
+
+try:
+    import torch
+    torch.manual_seed(42)
+    torch.cuda.manual_seed_all(42)
+except ImportError:
+    pass
+
+# Centralized configuration for trainer parameters
+# This eliminates hard-coded values and allows easy configuration changes
+TRAINER_CONFIG = {
+    'indicator_params': {
+        'rsi_period': 14,
+        'ema_period': 20,
+        'macd_fast': 12,
+        'macd_slow': 26,
+        'macd_signal': 9,
+        'atr_period': 14,
+        'stoch_k_period': 14,
+        'stoch_d_period': 3,
+        'trend_strength_period': 20,
+        'bb_period': 20,
+        'bb_std_dev': 2.0,
+        'adx_period': 14
+    },
+    'data_processing': {
+        'nan_fill_defaults': {
+            'rsi': 50.0,
+            'macd': 0.0,
+            'ema_20': None,  # Use current price
+            'atr': None,     # Use current range
+            'stochrsi': 0.5,
+            'trendstrength': 0.0,
+            'volatility': 0.01
+        },
+        'outlier_method': 'iqr',
+        'outlier_multiplier': 1.5,
+        'zscore_threshold': 3.0
+    },
+    'model_training': {
+        'default_n_splits': 5,
+        'early_stopping_rounds': 50,
+        'calibration_thresholds': [0.5, 0.95],
+        'calibration_step': 0.05,
+        'economic_profit_threshold': 0.005,
+        'fee_rate': 0.001
+    },
+    'feature_selection': {
+        'gain_importance_top_k': 20,
+        'permutation_repeats': 5,
+        'importance_threshold': 0.0
+    }
+}
 
 
 class CalibratedModel:
@@ -75,8 +138,10 @@ class CalibratedModel:
         return (proba >= threshold).astype(int)
 
 
-def compute_rsi(series: pd.Series, period: int = 14) -> pd.Series:
+def compute_rsi(series: pd.Series, period: Optional[int] = None) -> pd.Series:
     """Compute Relative Strength Index."""
+    if period is None:
+        period = TRAINER_CONFIG['indicator_params']['rsi_period']
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
@@ -85,16 +150,24 @@ def compute_rsi(series: pd.Series, period: int = 14) -> pd.Series:
     return rsi
 
 
-def compute_macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
+def compute_macd(series: pd.Series, fast: Optional[int] = None, slow: Optional[int] = None, signal: Optional[int] = None) -> pd.Series:
     """Compute MACD indicator."""
+    if fast is None:
+        fast = TRAINER_CONFIG['indicator_params']['macd_fast']
+    if slow is None:
+        slow = TRAINER_CONFIG['indicator_params']['macd_slow']
+    if signal is None:
+        signal = TRAINER_CONFIG['indicator_params']['macd_signal']
     ema_fast = series.ewm(span=fast, adjust=False).mean()
     ema_slow = series.ewm(span=slow, adjust=False).mean()
     macd = ema_fast - ema_slow
     return macd
 
 
-def compute_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
+def compute_atr(df: pd.DataFrame, period: Optional[int] = None) -> pd.Series:
     """Compute Average True Range."""
+    if period is None:
+        period = TRAINER_CONFIG['indicator_params']['atr_period']
     high_low = df['High'] - df['Low']
     high_close = np.abs(df['High'] - df['Close'].shift())
     low_close = np.abs(df['Low'] - df['Close'].shift())
@@ -103,8 +176,10 @@ def compute_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return atr
 
 
-def compute_stochrsi(series: pd.Series, period: int = 14) -> pd.Series:
+def compute_stochrsi(series: pd.Series, period: Optional[int] = None) -> pd.Series:
     """Compute Stochastic RSI."""
+    if period is None:
+        period = TRAINER_CONFIG['indicator_params']['stoch_k_period']
     rsi = compute_rsi(series, period)
     stoch_rsi = (rsi - rsi.rolling(window=period).min()) / (
         rsi.rolling(window=period).max() - rsi.rolling(window=period).min()
@@ -112,8 +187,10 @@ def compute_stochrsi(series: pd.Series, period: int = 14) -> pd.Series:
     return stoch_rsi
 
 
-def compute_trend_strength(series: pd.Series, period: int = 20) -> pd.Series:
+def compute_trend_strength(series: pd.Series, period: Optional[int] = None) -> pd.Series:
     """Compute Trend Strength using linear regression slope."""
+    if period is None:
+        period = TRAINER_CONFIG['indicator_params']['trend_strength_period']
     from scipy.stats import linregress
 
     def get_slope(window):
@@ -128,20 +205,92 @@ def compute_trend_strength(series: pd.Series, period: int = 20) -> pd.Series:
 
 
 def load_data(path: str) -> pd.DataFrame:
-    """Load historical OHLCV data from a CSV file."""
-    return pd.read_csv(path)
+    """
+    Load historical OHLCV data from a CSV file with data type validation.
+
+    This function loads data and performs basic validation to ensure
+    numerical columns are properly typed, preventing downstream errors.
+
+    Args:
+        path: Path to the CSV file containing OHLCV data
+
+    Returns:
+        DataFrame with validated OHLCV data
+    """
+    logger.info(f"Loading data from {path}")
+
+    try:
+        df = pd.read_csv(path)
+
+        # Ensure required columns exist
+        required_cols = ['Open', 'High', 'Low', 'Close']
+        if 'Volume' in df.columns:
+            required_cols.append('Volume')
+
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            raise ValueError(f"Missing required columns: {missing_cols}")
+
+        # Data type validation for numerical columns
+        # This ensures prices and volumes are numeric types
+        numerical_cols = ['Open', 'High', 'Low', 'Close']
+        if 'Volume' in df.columns:
+            numerical_cols.append('Volume')
+
+        for col in numerical_cols:
+            original_dtype = df[col].dtype
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            coerced_count = df[col].isna().sum()
+            if coerced_count > 0:
+                logger.warning(f"Column '{col}' had {coerced_count} invalid values coerced to NaN "
+                             f"(original dtype: {original_dtype})")
+
+        # Handle NaNs introduced by coercion
+        # Remove rows with NaN in essential price columns
+        essential_cols = ['Open', 'High', 'Low', 'Close']
+        nan_rows = df[essential_cols].isna().any(axis=1).sum()
+        if nan_rows > 0:
+            logger.warning(f"Removing {nan_rows} rows with NaN values in essential columns")
+            df = df.dropna(subset=essential_cols)
+
+        # For volume, fill NaNs with 0
+        if 'Volume' in df.columns:
+            nan_volume = df['Volume'].isna().sum()
+            if nan_volume > 0:
+                logger.info(f"Filling {nan_volume} NaN values in Volume column with 0")
+                df['Volume'] = df['Volume'].fillna(0)
+
+        logger.info(f"Loaded {len(df)} rows of validated data")
+        return df
+
+    except (FileNotFoundError, PermissionError) as e:
+        logger.error(f"File access error loading data from {path}: {e}")
+        raise
+    except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
+        logger.error(f"Data parsing error loading data from {path}: {e}")
+        raise
+    except (ValueError, TypeError) as e:
+        logger.error(f"Data validation error loading data from {path}: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error loading data from {path}: {e}")
+        raise
 
 
 def generate_features(df: pd.DataFrame) -> pd.DataFrame:
     """Generate technical indicators as features."""
     df = df.copy()
+
+    # Use configuration values for indicator parameters
+    ema_period = TRAINER_CONFIG['indicator_params']['ema_period']
+
     df['RSI'] = compute_rsi(df['Close'])
     df['MACD'] = compute_macd(df['Close'])
-    df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
+    df['EMA_20'] = df['Close'].ewm(span=ema_period, adjust=False).mean()
     df['ATR'] = compute_atr(df)
     df['StochRSI'] = compute_stochrsi(df['Close'])
     df['TrendStrength'] = compute_trend_strength(df['Close'])
-    df['Volatility'] = df['Close'].rolling(window=20).std()
+    df['Volatility'] = df['Close'].rolling(window=ema_period).std()
 
     # Handle NaNs produced by indicator calculations
     # First, try to fill NaN values using forward/backward fill
@@ -152,13 +301,14 @@ def generate_features(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # For indicators that still have NaN at the beginning, fill with reasonable defaults
-    df['RSI'] = df['RSI'].fillna(50.0)  # Neutral RSI
-    df['MACD'] = df['MACD'].fillna(0.0)  # Neutral MACD
-    df['EMA_20'] = df['EMA_20'].fillna(df['Close'])  # Use current price as EMA
-    df['ATR'] = df['ATR'].fillna(df['High'] - df['Low'])  # Use current range
-    df['StochRSI'] = df['StochRSI'].fillna(0.5)  # Neutral Stochastic RSI
-    df['TrendStrength'] = df['TrendStrength'].fillna(0.0)  # Neutral trend strength
-    df['Volatility'] = df['Volatility'].fillna(0.01)  # Small default volatility
+    nan_defaults = TRAINER_CONFIG['data_processing']['nan_fill_defaults']
+    df['RSI'] = df['RSI'].fillna(nan_defaults['rsi'])
+    df['MACD'] = df['MACD'].fillna(nan_defaults['macd'])
+    df['EMA_20'] = df['EMA_20'].fillna(df['Close']) if nan_defaults['ema_20'] is None else df['EMA_20'].fillna(nan_defaults['ema_20'])
+    df['ATR'] = df['ATR'].fillna(df['High'] - df['Low']) if nan_defaults['atr'] is None else df['ATR'].fillna(nan_defaults['atr'])
+    df['StochRSI'] = df['StochRSI'].fillna(nan_defaults['stochrsi'])
+    df['TrendStrength'] = df['TrendStrength'].fillna(nan_defaults['trendstrength'])
+    df['Volatility'] = df['Volatility'].fillna(nan_defaults['volatility'])
 
     # Drop any remaining rows with NaN values that couldn't be filled
     df = df.dropna(subset=['RSI', 'MACD', 'EMA_20', 'ATR', 'StochRSI', 'TrendStrength', 'Volatility'])
@@ -183,14 +333,20 @@ def generate_enhanced_features(df: pd.DataFrame, include_multi_horizon: bool = T
     """
     df = df.copy()
 
+    # Use configuration values for indicator parameters
+    ema_period = TRAINER_CONFIG['indicator_params']['ema_period']
+    bb_period = TRAINER_CONFIG['indicator_params']['bb_period']
+    bb_std_dev = TRAINER_CONFIG['indicator_params']['bb_std_dev']
+    adx_period = TRAINER_CONFIG['indicator_params']['adx_period']
+
     # Basic technical indicators
     df['RSI'] = compute_rsi(df['Close'])
     df['MACD'] = compute_macd(df['Close'])
-    df['EMA_20'] = df['Close'].ewm(span=20, adjust=False).mean()
+    df['EMA_20'] = df['Close'].ewm(span=ema_period, adjust=False).mean()
     df['ATR'] = compute_atr(df)
     df['StochRSI'] = compute_stochrsi(df['Close'])
     df['TrendStrength'] = compute_trend_strength(df['Close'])
-    df['Volatility'] = df['Close'].rolling(window=20).std()
+    df['Volatility'] = df['Close'].rolling(window=ema_period).std()
 
     # Multi-horizon features (returns 1, 3, 5, 24 bars)
     if include_multi_horizon:
@@ -205,10 +361,9 @@ def generate_enhanced_features(df: pd.DataFrame, include_multi_horizon: bool = T
     # Regime-aware features
     if include_regime_features:
         # Bollinger Bands
-        bb_period = 20
         df['BB_middle'] = df['Close'].rolling(window=bb_period).mean()
-        df['BB_upper'] = df['BB_middle'] + 2 * df['Close'].rolling(window=bb_period).std()
-        df['BB_lower'] = df['BB_middle'] - 2 * df['Close'].rolling(window=bb_period).std()
+        df['BB_upper'] = df['BB_middle'] + bb_std_dev * df['Close'].rolling(window=bb_period).std()
+        df['BB_lower'] = df['BB_middle'] - bb_std_dev * df['Close'].rolling(window=bb_period).std()
         df['BB_width'] = (df['BB_upper'] - df['BB_lower']) / df['BB_middle']
         df['BB_position'] = (df['Close'] - df['BB_lower']) / (df['BB_upper'] - df['BB_lower'])
 
@@ -217,8 +372,8 @@ def generate_enhanced_features(df: pd.DataFrame, include_multi_horizon: bool = T
         df['atr_normalized_return'] = df['return_1'] / df['ATR']
 
         # Volume z-score
-        df['volume_sma'] = df['Volume'].rolling(window=20).mean()
-        df['volume_std'] = df['Volume'].rolling(window=20).std()
+        df['volume_sma'] = df['Volume'].rolling(window=ema_period).mean()
+        df['volume_std'] = df['Volume'].rolling(window=ema_period).std()
         df['volume_zscore'] = (df['Volume'] - df['volume_sma']) / df['volume_std']
 
         # ADX (Average Directional Index) approximation
@@ -226,7 +381,7 @@ def generate_enhanced_features(df: pd.DataFrame, include_multi_horizon: bool = T
                                 np.maximum(df['High'] - df['High'].shift(1), 0), 0)
         df['DM_minus'] = np.where(df['Low'].shift(1) - df['Low'] > df['High'] - df['High'].shift(1),
                                  np.maximum(df['Low'].shift(1) - df['Low'], 0), 0)
-        df['ADX'] = compute_adx(df, period=14)
+        df['ADX'] = compute_adx(df, period=adx_period)
 
     # Interaction features
     if include_interaction_features:
@@ -283,8 +438,8 @@ def compute_adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return df['ADX']
 
 
-def remove_outliers(df: pd.DataFrame, columns: list = None, method: str = 'iqr',
-                   multiplier: float = 1.5) -> pd.DataFrame:
+def remove_outliers(df: pd.DataFrame, columns: list = None, method: Optional[str] = None,
+                   multiplier: Optional[float] = None, random_state: int = 42) -> pd.DataFrame:
     """
     Remove outliers from specified columns using various methods.
 
@@ -298,6 +453,12 @@ def remove_outliers(df: pd.DataFrame, columns: list = None, method: str = 'iqr',
         DataFrame with outliers removed
     """
     df = df.copy()
+
+    # Use config values if parameters not provided
+    if method is None:
+        method = TRAINER_CONFIG['data_processing']['outlier_method']
+    if multiplier is None:
+        multiplier = TRAINER_CONFIG['data_processing']['outlier_multiplier']
 
     if columns is None:
         columns = df.select_dtypes(include=[np.number]).columns.tolist()
@@ -315,13 +476,14 @@ def remove_outliers(df: pd.DataFrame, columns: list = None, method: str = 'iqr',
             df = df[(df[col] >= lower_bound) & (df[col] <= upper_bound)]
 
         elif method == 'zscore':
+            zscore_threshold = TRAINER_CONFIG['data_processing']['zscore_threshold']
             z_scores = np.abs((df[col] - df[col].mean()) / df[col].std())
-            df = df[z_scores < 3]
+            df = df[z_scores < zscore_threshold]
 
         elif method == 'isolation_forest':
             try:
                 from sklearn.ensemble import IsolationForest
-                iso = IsolationForest(contamination=0.1, random_state=42)
+                iso = IsolationForest(contamination=0.1, random_state=random_state)
                 outliers = iso.fit_predict(df[[col]])
                 df = df[outliers == 1]
             except ImportError:
@@ -478,7 +640,7 @@ def optimize_hyperparameters_optuna(X_train: pd.DataFrame, y_train: pd.Series,
 
 
 def perform_feature_selection(X: pd.DataFrame, y: pd.Series, method: str = 'gain_importance',
-                             top_k: int = None, threshold: float = 0.0) -> list:
+                             top_k: Optional[int] = None, threshold: Optional[float] = None) -> list:
     """
     Perform feature selection using various methods.
 
@@ -509,6 +671,11 @@ def perform_feature_selection(X: pd.DataFrame, y: pd.Series, method: str = 'gain
         importance_scores = model.feature_importances_
 
         # Select features based on importance
+        if top_k is None:
+            top_k = TRAINER_CONFIG['feature_selection']['gain_importance_top_k']
+        if threshold is None:
+            threshold = TRAINER_CONFIG['feature_selection']['importance_threshold']
+
         if top_k:
             top_indices = np.argsort(importance_scores)[-top_k:]
             selected_features = [X.columns[i] for i in top_indices]
@@ -589,8 +756,8 @@ def perform_feature_selection(X: pd.DataFrame, y: pd.Series, method: str = 'gain
 
 
 
-def create_binary_labels(df: pd.DataFrame, horizon: int = 5, profit_threshold: float = 0.005,
-                        include_fees: bool = True, fee_rate: float = 0.001) -> pd.DataFrame:
+def create_binary_labels(df: pd.DataFrame, horizon: Optional[int] = None, profit_threshold: Optional[float] = None,
+                        include_fees: bool = True, fee_rate: Optional[float] = None) -> pd.DataFrame:
     """
     Create binary labels for trading decisions with strict prevention of look-ahead bias.
 
@@ -608,6 +775,14 @@ def create_binary_labels(df: pd.DataFrame, horizon: int = 5, profit_threshold: f
     - DataFrame with added 'label_binary' column (1 for trade, 0 for skip)
     """
     df = df.copy()
+
+    # Use config values if parameters not provided
+    if horizon is None:
+        horizon = TRAINER_CONFIG['model_training']['default_n_splits']  # Use n_splits as default horizon
+    if profit_threshold is None:
+        profit_threshold = TRAINER_CONFIG['model_training']['economic_profit_threshold']
+    if fee_rate is None:
+        fee_rate = TRAINER_CONFIG['model_training']['fee_rate']
 
     # Ensure horizon is an integer (handle MagicMock in tests)
     try:
@@ -653,49 +828,20 @@ def create_binary_labels(df: pd.DataFrame, horizon: int = 5, profit_threshold: f
     return df
 
 
-def train_model_binary(
-    df: pd.DataFrame,
-    save_path: str,
-    results_path: str = 'training_results.json',
-    n_splits: int = 5,
-    horizon: int = 5,
-    profit_threshold: float = 0.005,
-    include_fees: bool = True,
-    fee_rate: float = 0.001,
-    feature_columns: list | None = None,
-    tune: bool = False,
-    n_trials: int = 25,
-    feature_selection: bool = False,
-    early_stopping_rounds: int = 50,
-    eval_economic: bool = True,
-):
+def validate_inputs(df: pd.DataFrame, feature_columns: Optional[List[str]]) -> Tuple[str, List[str]]:
     """
-    Train a binary classification model for trading decisions using walk-forward validation.
-
-    This function implements:
-    - Walk-forward validation (time-series aware)
-    - Binary classification with single probability output p_trade
-    - Class weighting for imbalanced datasets
-    - Economic metrics tracking (expected PnL, Sharpe ratio)
-    - Standard ML metrics (AUC, F1)
+    Validate input DataFrame and feature columns.
 
     Args:
-        df: DataFrame with features and binary labels
-        save_path: Path to save trained model
-        results_path: Path to save training results JSON
-        n_splits: Number of walk-forward splits
-        horizon: Forward return horizon used for labeling
-        profit_threshold: Profit threshold used for labeling
-        include_fees: Whether fees were included in labeling
-        fee_rate: Fee rate used for labeling
+        df: Input DataFrame with features and labels
         feature_columns: List of feature column names
-        tune: Whether to perform hyperparameter tuning
-        n_trials: Number of tuning trials
-        feature_selection: Whether to perform feature selection
-        early_stopping_rounds: Early stopping rounds for training
-        eval_economic: Whether to compute economic metrics
+
+    Returns:
+        Tuple of (label_column_name, validated_feature_columns)
+
+    Raises:
+        ValueError: If validation fails
     """
-    # Input validation
     if not isinstance(df, pd.DataFrame):
         raise ValueError("Input df must be a pandas DataFrame")
 
@@ -723,6 +869,23 @@ def train_model_binary(
     if not feature_columns:
         raise ValueError("No valid feature columns found in DataFrame")
 
+    return label_col, feature_columns
+
+
+def prepare_data(df: pd.DataFrame, feature_columns: List[str], label_col: str,
+                n_splits: int) -> Tuple[pd.DataFrame, pd.Series, Optional[np.ndarray], int]:
+    """
+    Prepare and clean data for training.
+
+    Args:
+        df: Input DataFrame
+        feature_columns: List of feature column names
+        label_col: Name of the label column
+        n_splits: Number of validation splits
+
+    Returns:
+        Tuple of (X, y, sample_weights, adjusted_n_splits)
+    """
     # Prepare data
     X = df[feature_columns].copy()
     y = df[label_col].copy()
@@ -746,7 +909,19 @@ def train_model_binary(
         logging.warning(f"Adjusting n_splits from {n_splits} to {adjusted_splits} due to small dataset size ({len(X)} samples)")
         n_splits = adjusted_splits
 
-    # Class distribution analysis
+    return X, y, sample_weights_all, n_splits
+
+
+def analyze_class_distribution(y: pd.Series) -> Dict[int, float]:
+    """
+    Analyze class distribution and calculate class weights.
+
+    Args:
+        y: Target labels
+
+    Returns:
+        Dictionary mapping class labels to weights
+    """
     class_dist = Counter(y)
     logging.info(f"Class distribution: {dict(class_dist)}")
 
@@ -757,12 +932,29 @@ def train_model_binary(
         class_weights[cls] = total_samples / (len(class_dist) * class_dist[cls])
 
     logging.info(f"Class weights: {class_weights}")
+    return class_weights
 
-    # Perform hyperparameter tuning if requested
+
+def perform_hyperparameter_tuning(X: pd.DataFrame, y: pd.Series,
+                                sample_weights: Optional[np.ndarray],
+                                tune: bool, n_trials: int) -> Dict[str, Any]:
+    """
+    Perform hyperparameter tuning if requested.
+
+    Args:
+        X: Feature DataFrame
+        y: Target labels
+        sample_weights: Sample weights
+        tune: Whether to perform tuning
+        n_trials: Number of tuning trials
+
+    Returns:
+        Dictionary of best hyperparameters
+    """
     if tune and OPTUNA_AVAILABLE:
         logging.info(f"Performing Optuna hyperparameter optimization with {n_trials} trials...")
         best_params = optimize_hyperparameters_optuna(
-            X, y, sample_weights=sample_weights_all, n_trials=n_trials
+            X, y, sample_weights=sample_weights, n_trials=n_trials
         )
         logging.info(f"Best hyperparameters found: {best_params}")
     else:
@@ -779,147 +971,269 @@ def train_model_binary(
             'random_state': 42,
             'n_estimators': 100,
         }
+    return best_params
+
+
+def calculate_economic_metrics(y_true: List[int], y_pred_proba: List[float],
+                             profit_threshold: float, threshold: float = 0.5) -> Dict[str, float]:
+    """
+    Calculate economic metrics from predictions.
+
+    Args:
+        y_true: True labels
+        y_pred_proba: Predicted probabilities
+        profit_threshold: Profit threshold for PnL calculation
+        threshold: Decision threshold
+
+    Returns:
+        Dictionary of economic metrics
+    """
+    if len(y_true) == 0:
+        return {'pnl': 0.0, 'sharpe': 0.0, 'max_drawdown': 0.0}
+
+    # Convert probabilities to binary predictions
+    y_pred_proba = np.array(y_pred_proba)
+    y_pred = (y_pred_proba >= threshold).astype(int)
+
+    # Simple PnL calculation (assuming 1 unit position size)
+    pnl = []
+    for true, pred in zip(y_true, y_pred):
+        if pred == 1:  # We took a trade
+            if true == 1:  # Trade was profitable
+                pnl.append(profit_threshold)
+            else:  # Trade was unprofitable
+                pnl.append(-profit_threshold)
+        else:  # We skipped the trade
+            pnl.append(0.0)
+
+    pnl = np.array(pnl)
+    cumulative_pnl = np.cumsum(pnl)
+
+    # Sharpe ratio (annualized, assuming daily data)
+    if len(pnl) > 1 and np.std(pnl) > 0:
+        sharpe = np.mean(pnl) / np.std(pnl) * np.sqrt(252)  # 252 trading days per year
+    else:
+        sharpe = 0.0
+
+    # Maximum drawdown
+    peak = np.maximum.accumulate(cumulative_pnl)
+    drawdown = cumulative_pnl - peak
+    max_drawdown = np.min(drawdown) if len(drawdown) > 0 else 0.0
+
+    return {
+        'pnl': float(np.sum(pnl)),
+        'sharpe': float(sharpe),
+        'max_drawdown': float(max_drawdown),
+        'total_trades': int(np.sum(y_pred)),
+        'win_rate': float(np.mean(y_pred == y_true)) if np.sum(y_pred) > 0 else 0.0
+    }
+
+
+def _train_single_fold(fold_data: Tuple[pd.DataFrame, pd.Series, Dict[int, float], Dict[str, Any], int, bool, float, int]) -> Dict[str, Any]:
+    """
+    Train a single fold for parallel processing.
+
+    This helper function trains one fold of the walk-forward validation,
+    allowing parallel execution of multiple folds to improve training performance.
+
+    Args:
+        fold_data: Tuple containing (X_train, y_train, X_test, y_test, class_weights, model_params, early_stopping_rounds, eval_economic, profit_threshold, fold_idx)
+
+    Returns:
+        Dictionary with fold results
+    """
+    X_train, y_train, X_test, y_test, class_weights, model_params, early_stopping_rounds, eval_economic, profit_threshold, fold_idx = fold_data
+
+    # Calculate sample weights for training
+    sample_weights = np.array([class_weights[label] for label in y_train])
+
+    # Create and train model
+    model = lgb.LGBMClassifier(**model_params)
+
+    # Fit with sample weights for class balancing
+    model.fit(
+        X_train, y_train,
+        sample_weight=sample_weights,
+        eval_set=[(X_test, y_test)],
+        eval_metric='binary_logloss',
+        callbacks=[lgb.early_stopping(early_stopping_rounds)] if early_stopping_rounds > 0 else None
+    )
+
+    # Get predictions and probabilities
+    y_pred_proba = model.predict_proba(X_test)[:, 1]  # Probability of positive class (trade)
+    y_pred = (y_pred_proba >= 0.5).astype(int)
+
+    # Calculate metrics
+    auc = roc_auc_score(y_test, y_pred_proba)
+    f1 = f1_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred, zero_division=0)
+    recall = recall_score(y_test, y_pred, zero_division=0)
+
+    # Economic metrics
+    economic_metrics = {}
+    if eval_economic:
+        economic_metrics = calculate_economic_metrics(y_test, y_pred_proba, profit_threshold)
+
+    # Store fold results
+    fold_result = {
+        'fold': fold_idx,
+        'train_samples': len(X_train),
+        'test_samples': len(X_test),
+        'auc': float(auc),
+        'f1': float(f1),
+        'precision': float(precision),
+        'recall': float(recall),
+        'class_distribution': {
+            'train': dict(Counter(y_train)),
+            'test': dict(Counter(y_test))
+        },
+        'probabilities': y_pred_proba.tolist(),
+        'predictions': y_pred.tolist(),
+        'true_labels': y_test.tolist()
+    }
+
+    if eval_economic:
+        fold_result.update(economic_metrics)
+
+    return fold_result
+
+
+def run_walk_forward_validation(X: pd.DataFrame, y: pd.Series, class_weights: Dict[int, float],
+                              model_params: Dict[str, Any], n_splits: int,
+                              early_stopping_rounds: Optional[int] = None, eval_economic: bool = True,
+                              profit_threshold: Optional[float] = None) -> Tuple[List[Dict], List[float], List[int], List[int]]:
+    """
+    Run walk-forward validation with parallel processing for improved performance.
+
+    This function implements parallel cross-validation by training multiple folds concurrently
+    using ProcessPoolExecutor. This significantly reduces training time for computationally
+    expensive models by leveraging multiple CPU cores.
+
+    For distributed training at scale, consider using frameworks like Dask or Ray:
+    - Dask: Provides distributed computing capabilities with familiar pandas-like API
+    - Ray: Offers distributed training with support for complex ML workflows
+    - Both can scale model training across multiple machines in a cluster
+
+    Args:
+        X: Feature DataFrame
+        y: Target labels
+        class_weights: Class weights dictionary
+        model_params: Model hyperparameters
+        n_splits: Number of validation splits
+        early_stopping_rounds: Early stopping rounds
+        eval_economic: Whether to compute economic metrics
+        profit_threshold: Profit threshold for economic metrics
+
+    Returns:
+        Tuple of (fold_metrics, fold_probabilities, fold_predictions, fold_true_labels)
+    """
+    # Use config values if parameters not provided
+    if early_stopping_rounds is None:
+        early_stopping_rounds = TRAINER_CONFIG['model_training']['early_stopping_rounds']
+    if profit_threshold is None:
+        profit_threshold = TRAINER_CONFIG['model_training']['economic_profit_threshold']
 
     # Walk-forward validation setup
     tscv = TimeSeriesSplit(n_splits=n_splits, test_size=None, gap=0)
 
+    # Prepare fold data for parallel processing
+    fold_tasks = []
+    for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X), 1):
+        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+
+        fold_tasks.append((
+            X_train, y_train, X_test, y_test, class_weights, model_params,
+            early_stopping_rounds, eval_economic, profit_threshold, fold_idx
+        ))
+
+    logging.info(f"Starting parallel walk-forward validation with {n_splits} folds using ProcessPoolExecutor")
+
+    # Execute folds in parallel
+    fold_results = []
+    with ProcessPoolExecutor(max_workers=min(n_splits, multiprocessing.cpu_count())) as executor:
+        # Submit all fold training tasks
+        futures = [executor.submit(_train_single_fold, task) for task in fold_tasks]
+
+        # Collect results as they complete
+        for future in futures:
+            try:
+                fold_result = future.result()
+                fold_results.append(fold_result)
+                fold_idx = fold_result['fold']
+                auc = fold_result['auc']
+                f1 = fold_result['f1']
+                pnl = fold_result.get('pnl', 0)
+                logging.info(f"Fold {fold_idx} completed - AUC: {auc:.4f}, F1: {f1:.4f}, PnL: {pnl:.4f}")
+            except Exception as e:
+                logging.error(f"Error in fold training: {e}")
+                raise
+
+    # Sort results by fold index
+    fold_results.sort(key=lambda x: x['fold'])
+
+    # Extract metrics and predictions
     fold_metrics = []
     fold_probabilities = []
     fold_predictions = []
     fold_true_labels = []
 
-    # Economic metrics tracking
-    def calculate_economic_metrics(y_true, y_pred_proba, threshold=0.5):
-        """Calculate economic metrics from predictions."""
-        if len(y_true) == 0:
-            return {'pnl': 0.0, 'sharpe': 0.0, 'max_drawdown': 0.0}
+    for result in fold_results:
+        # Remove prediction data from metrics (keep only summary)
+        metrics_only = {k: v for k, v in result.items() if k not in ['probabilities', 'predictions', 'true_labels']}
+        fold_metrics.append(metrics_only)
 
-        # Convert probabilities to binary predictions
-        y_pred_proba = np.array(y_pred_proba)
-        y_pred = (y_pred_proba >= threshold).astype(int)
+        # Collect predictions
+        fold_probabilities.extend(result['probabilities'])
+        fold_predictions.extend(result['predictions'])
+        fold_true_labels.extend(result['true_labels'])
 
-        # Simple PnL calculation (assuming 1 unit position size)
-        pnl = []
-        for true, pred in zip(y_true, y_pred):
-            if pred == 1:  # We took a trade
-                if true == 1:  # Trade was profitable
-                    pnl.append(profit_threshold)
-                else:  # Trade was unprofitable
-                    pnl.append(-profit_threshold)
-            else:  # We skipped the trade
-                pnl.append(0.0)
+    logging.info(f"Parallel walk-forward validation completed for {n_splits} folds")
+    return fold_metrics, fold_probabilities, fold_predictions, fold_true_labels
 
-        pnl = np.array(pnl)
-        cumulative_pnl = np.cumsum(pnl)
 
-        # Sharpe ratio (annualized, assuming daily data)
-        if len(pnl) > 1 and np.std(pnl) > 0:
-            sharpe = np.mean(pnl) / np.std(pnl) * np.sqrt(252)  # 252 trading days per year
-        else:
-            sharpe = 0.0
+def train_final_model(X: pd.DataFrame, y: pd.Series, class_weights: Dict[int, float],
+                    model_params: Dict[str, Any]) -> lgb.LGBMClassifier:
+    """
+    Train final model on all data.
 
-        # Maximum drawdown
-        peak = np.maximum.accumulate(cumulative_pnl)
-        drawdown = cumulative_pnl - peak
-        max_drawdown = np.min(drawdown) if len(drawdown) > 0 else 0.0
+    Args:
+        X: Feature DataFrame
+        y: Target labels
+        class_weights: Class weights dictionary
+        model_params: Model hyperparameters
 
-        return {
-            'pnl': float(np.sum(pnl)),
-            'sharpe': float(sharpe),
-            'max_drawdown': float(max_drawdown),
-            'total_trades': int(np.sum(y_pred)),
-            'win_rate': float(np.mean(y_pred == y_true)) if np.sum(y_pred) > 0 else 0.0
-        }
-
-    # Walk-forward validation loop
-    for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X), 1):
-        logging.info(f"Training fold {fold_idx}/{n_splits}")
-
-        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-
-        # Calculate sample weights for training
-        sample_weights = np.array([class_weights[label] for label in y_train])
-
-        # Use optimized parameters if available, otherwise use defaults
-        model_params = best_params.copy()
-
-        # Create and train model
-        model = lgb.LGBMClassifier(**model_params)
-
-        # Fit with sample weights for class balancing
-        model.fit(
-            X_train, y_train,
-            sample_weight=sample_weights,
-            eval_set=[(X_test, y_test)],
-            eval_metric='binary_logloss',
-            callbacks=[lgb.early_stopping(early_stopping_rounds)] if early_stopping_rounds > 0 else None
-        )
-
-        # Get predictions and probabilities
-        y_pred_proba = model.predict_proba(X_test)[:, 1]  # Probability of positive class (trade)
-        y_pred = (y_pred_proba >= 0.5).astype(int)
-
-        # Calculate metrics
-        auc = roc_auc_score(y_test, y_pred_proba)
-        f1 = f1_score(y_test, y_pred)
-        precision = precision_score(y_test, y_pred, zero_division=0)
-        recall = recall_score(y_test, y_pred, zero_division=0)
-
-        # Economic metrics
-        economic_metrics = {}
-        if eval_economic:
-            economic_metrics = calculate_economic_metrics(y_test, y_pred_proba)
-
-        # Store fold results
-        fold_result = {
-            'fold': fold_idx,
-            'train_samples': len(X_train),
-            'test_samples': len(X_test),
-            'auc': float(auc),
-            'f1': float(f1),
-            'precision': float(precision),
-            'recall': float(recall),
-            'class_distribution': {
-                'train': dict(Counter(y_train)),
-                'test': dict(Counter(y_test))
-            }
-        }
-
-        if eval_economic:
-            fold_result.update(economic_metrics)
-
-        fold_metrics.append(fold_result)
-
-        # Store predictions for ensemble analysis
-        fold_probabilities.extend(y_pred_proba)
-        fold_predictions.extend(y_pred)
-        fold_true_labels.extend(y_test)
-
-        logging.info(f"Fold {fold_idx} - AUC: {auc:.4f}, F1: {f1:.4f}, PnL: {economic_metrics.get('pnl', 0):.4f}")
-
-    # Calculate overall metrics
-    overall_auc = roc_auc_score(fold_true_labels, fold_probabilities)
-    overall_f1 = f1_score(fold_true_labels, fold_predictions)
-
-    # Overall economic metrics
-    overall_economic = {}
-    if eval_economic:
-        overall_economic = calculate_economic_metrics(fold_true_labels, fold_probabilities)
-
-    # Train final model on all data
+    Returns:
+        Trained LightGBM model
+    """
     logging.info("Training final model on all data...")
 
     # Calculate weights for full dataset
     final_sample_weights = np.array([class_weights[label] for label in y])
 
     final_model = lgb.LGBMClassifier(**model_params)
-    final_model.fit(
-        X, y,
-        sample_weight=final_sample_weights
-    )
+    final_model.fit(X, y, sample_weight=final_sample_weights)
 
-    # Probability Calibration and Threshold Optimization
+    return final_model
+
+
+def optimize_threshold(X: pd.DataFrame, y: pd.Series, model_params: Dict[str, Any],
+                     class_weights: Dict[int, float], n_splits: int,
+                     profit_threshold: float) -> Tuple[Any, float, Dict[str, Any]]:
+    """
+    Perform probability calibration and threshold optimization.
+
+    Args:
+        X: Feature DataFrame
+        y: Target labels
+        model_params: Model hyperparameters
+        class_weights: Class weights dictionary
+        n_splits: Number of validation splits
+        profit_threshold: Profit threshold for economic metrics
+
+    Returns:
+        Tuple of (calibrated_model, optimal_threshold, best_threshold_result)
+    """
     logging.info("Performing probability calibration and threshold optimization...")
 
     # Use walk-forward validation data for calibration
@@ -947,12 +1261,12 @@ def train_model_binary(
         calibrator = IsotonicRegression(out_of_bounds='clip')
         calibrator.fit(calibration_probabilities, calibration_true_labels)
 
-        calibrated_model = CalibratedModel(final_model, calibrator)
+        calibrated_model = CalibratedModel(fold_model, calibrator)
         logging.info("✅ Probability calibration completed using isotonic regression")
 
     except Exception as e:
         logging.warning(f"⚠️ Probability calibration failed: {e}. Using original model.")
-        calibrated_model = final_model
+        calibrated_model = fold_model
 
     # Threshold Optimization
     logging.info("Optimizing decision threshold for maximum profit...")
@@ -966,6 +1280,7 @@ def train_model_binary(
         economic_metrics = calculate_economic_metrics(
             calibration_true_labels,
             calibration_probabilities,
+            profit_threshold,
             threshold=threshold
         )
 
@@ -993,6 +1308,50 @@ def train_model_binary(
     logging.info(f"   Expected Total Trades: {best_threshold_result['total_trades']}")
     logging.info(f"   Expected Win Rate: {best_threshold_result['win_rate']:.4f}")
 
+    return calibrated_model, optimal_threshold, best_threshold_result
+
+
+def save_model_and_results(calibrated_model: Any, final_model: lgb.LGBMClassifier,
+                         save_path: str, results_path: str, optimal_threshold: float,
+                         threshold_results: List[Dict], feature_columns: List[str],
+                         fold_metrics: List[Dict], fold_probabilities: List[float],
+                         fold_predictions: List[int], fold_true_labels: List[int],
+                         overall_auc: float, overall_f1: float, overall_economic: Dict[str, float],
+                         class_weights: Dict[int, float], horizon: int, profit_threshold: float,
+                         include_fees: bool, fee_rate: float, n_splits: int, tune: bool,
+                         feature_selection: bool, eval_economic: bool, df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Save model and training results.
+
+    Args:
+        calibrated_model: Calibrated model to save
+        final_model: Final trained model
+        save_path: Path to save model
+        results_path: Path to save results JSON
+        optimal_threshold: Optimal decision threshold
+        threshold_results: Threshold optimization results
+        feature_columns: List of feature columns
+        fold_metrics: Fold-level metrics
+        fold_probabilities: All fold probabilities
+        fold_predictions: All fold predictions
+        fold_true_labels: All fold true labels
+        overall_auc: Overall AUC score
+        overall_f1: Overall F1 score
+        overall_economic: Overall economic metrics
+        class_weights: Class weights dictionary
+        horizon: Forward return horizon
+        profit_threshold: Profit threshold
+        include_fees: Whether fees were included
+        fee_rate: Fee rate
+        n_splits: Number of validation splits
+        tune: Whether hyperparameter tuning was performed
+        feature_selection: Whether feature selection was performed
+        eval_economic: Whether economic metrics were computed
+        df: Original DataFrame for model card
+
+    Returns:
+        Training results dictionary
+    """
     # Save calibrated model and optimal threshold
     model_config = {
         'model_path': save_path,
@@ -1004,22 +1363,30 @@ def train_model_binary(
             'optimization_metric': 'sharpe_ratio',
             'all_results': threshold_results
         },
-        'expected_performance': best_threshold_result
+        'expected_performance': max(threshold_results, key=lambda x: (x['sharpe'], x['pnl']))
     }
 
     # Save model configuration
     config_path = save_path.replace('.pkl', '_config.json')
-    with open(config_path, 'w') as f:
-        json.dump(model_config, f, indent=2, default=str)
-    logging.info(f"Model configuration saved to {config_path}")
+    try:
+        with open(config_path, 'w') as f:
+            json.dump(model_config, f, indent=2, default=str)
+        logging.info(f"Model configuration saved to {config_path}")
+    except (IOError, OSError) as e:
+        logging.error(f"Failed to save model configuration: {e}")
+        raise
 
     # Save calibrated model
-    if calibrated_model != final_model:
-        joblib.dump(calibrated_model, save_path)
-        logging.info(f"Calibrated model saved to {save_path}")
-    else:
-        joblib.dump(final_model, save_path)
-        logging.info(f"Final model saved to {save_path}")
+    try:
+        if calibrated_model != final_model:
+            joblib.dump(calibrated_model, save_path)
+            logging.info(f"Calibrated model saved to {save_path}")
+        else:
+            joblib.dump(final_model, save_path)
+            logging.info(f"Final model saved to {save_path}")
+    except Exception as e:
+        logging.error(f"Failed to save model: {e}")
+        raise
 
     # Prepare results
     results = {
@@ -1060,36 +1427,39 @@ def train_model_binary(
     logging.info(f"Binary Confusion Matrix:\n{cm}")
 
     # Save confusion matrix plot
-    fig, ax = plt.subplots(figsize=(8, 6))
-    im = ax.imshow(cm, cmap='Blues', interpolation='nearest')
+    try:
+        fig, ax = plt.subplots(figsize=(8, 6))
+        im = ax.imshow(cm, cmap='Blues', interpolation='nearest')
 
-    # Add text annotations
-    for i in range(2):
-        for j in range(2):
-            text_color = "white" if cm[i, j] > cm.max() / 2 else "black"
-            ax.text(j, i, f'{cm[i, j]}', ha="center", va="center", color=text_color, fontsize=12)
+        # Add text annotations
+        for i in range(2):
+            for j in range(2):
+                text_color = "white" if cm[i, j] > cm.max() / 2 else "black"
+                ax.text(j, i, f'{cm[i, j]}', ha="center", va="center", color=text_color, fontsize=12)
 
-    ax.set_xticks([0, 1])
-    ax.set_yticks([0, 1])
-    ax.set_xticklabels(['Skip (0)', 'Trade (1)'], fontsize=10)
-    ax.set_yticklabels(['Skip (0)', 'Trade (1)'], fontsize=10)
-    ax.set_xlabel('Predicted Label', fontsize=12)
-    ax.set_ylabel('True Label', fontsize=12)
-    ax.set_title('Binary Confusion Matrix - Trade/No-Trade Model', fontsize=14, pad=20)
+        ax.set_xticks([0, 1])
+        ax.set_yticks([0, 1])
+        ax.set_xticklabels(['Skip (0)', 'Trade (1)'], fontsize=10)
+        ax.set_yticklabels(['Skip (0)', 'Trade (1)'], fontsize=10)
+        ax.set_xlabel('Predicted Label', fontsize=12)
+        ax.set_ylabel('True Label', fontsize=12)
+        ax.set_title('Binary Confusion Matrix - Trade/No-Trade Model', fontsize=14, pad=20)
 
-    # Add colorbar
-    cbar = ax.figure.colorbar(im, ax=ax)
-    cbar.ax.set_ylabel("Count", rotation=-90, va="bottom")
+        # Add colorbar
+        cbar = ax.figure.colorbar(im, ax=ax)
+        cbar.ax.set_ylabel("Count", rotation=-90, va="bottom")
 
-    plt.tight_layout()
+        plt.tight_layout()
 
-    # Save to matrices folder
-    os.makedirs('matrices', exist_ok=True)
-    confusion_matrix_path = os.path.join('matrices', 'confusion_matrix_binary.png')
-    plt.savefig(confusion_matrix_path, dpi=150, bbox_inches='tight')
-    plt.close()
+        # Save to matrices folder
+        os.makedirs('matrices', exist_ok=True)
+        confusion_matrix_path = os.path.join('matrices', 'confusion_matrix_binary.png')
+        plt.savefig(confusion_matrix_path, dpi=150, bbox_inches='tight')
+        plt.close()
 
-    logging.info(f"Binary confusion matrix saved to {confusion_matrix_path}")
+        logging.info(f"Binary confusion matrix saved to {confusion_matrix_path}")
+    except Exception as e:
+        logging.warning(f"Failed to save confusion matrix plot: {e}")
 
     # Add confusion matrix to results
     results['confusion_matrix'] = {
@@ -1102,10 +1472,14 @@ def train_model_binary(
     }
 
     # Save results
-    with open(results_path, 'w') as f:
-        json.dump(results, f, indent=2, default=str)
+    try:
+        with open(results_path, 'w') as f:
+            json.dump(results, f, indent=2, default=str)
+        logging.info(f"Training results saved to {results_path}")
+    except (IOError, OSError) as e:
+        logging.error(f"Failed to save training results: {e}")
+        raise
 
-    logging.info(f"Training results saved to {results_path}")
     logging.info(f"Overall AUC: {overall_auc:.4f}, F1: {overall_f1:.4f}")
     if eval_economic:
         logging.info(f"Overall PnL: {overall_economic['pnl']:.4f}, Sharpe: {overall_economic['sharpe']:.4f}")
@@ -1161,6 +1535,103 @@ def train_model_binary(
         logging.info(f"Model card saved to {card_path}")
     except Exception as e:
         logging.warning(f"Failed to write model card JSON: {e}")
+
+    return results
+
+
+def train_model_binary(
+    df: pd.DataFrame,
+    save_path: str,
+    results_path: str = 'training_results.json',
+    n_splits: Optional[int] = None,
+    horizon: Optional[int] = None,
+    profit_threshold: Optional[float] = None,
+    include_fees: bool = True,
+    fee_rate: Optional[float] = None,
+    feature_columns: Optional[List[str]] = None,
+    tune: bool = False,
+    n_trials: int = 25,
+    feature_selection: bool = False,
+    early_stopping_rounds: Optional[int] = None,
+    eval_economic: bool = True,
+) -> Dict[str, Any]:
+    """
+    Train a binary classification model for trading decisions using walk-forward validation.
+
+    This function orchestrates the complete training pipeline by calling smaller,
+    single-responsibility functions in sequence.
+
+    Args:
+        df: DataFrame with features and binary labels
+        save_path: Path to save trained model
+        results_path: Path to save training results JSON
+        n_splits: Number of walk-forward splits
+        horizon: Forward return horizon used for labeling
+        profit_threshold: Profit threshold used for labeling
+        include_fees: Whether fees were included in labeling
+        fee_rate: Fee rate used for labeling
+        feature_columns: List of feature column names
+        tune: Whether to perform hyperparameter tuning
+        n_trials: Number of tuning trials
+        feature_selection: Whether to perform feature selection
+        early_stopping_rounds: Early stopping rounds for training
+        eval_economic: Whether to compute economic metrics
+
+    Returns:
+        Dictionary containing training results and metrics
+    """
+    # Use config values if parameters not provided
+    if n_splits is None:
+        n_splits = TRAINER_CONFIG['model_training']['default_n_splits']
+    if horizon is None:
+        horizon = TRAINER_CONFIG['model_training']['default_n_splits']  # Use n_splits as default horizon
+    if profit_threshold is None:
+        profit_threshold = TRAINER_CONFIG['model_training']['economic_profit_threshold']
+    if fee_rate is None:
+        fee_rate = TRAINER_CONFIG['model_training']['fee_rate']
+    if early_stopping_rounds is None:
+        early_stopping_rounds = TRAINER_CONFIG['model_training']['early_stopping_rounds']
+
+    # Step 1: Validate inputs
+    label_col, feature_columns = validate_inputs(df, feature_columns)
+
+    # Step 2: Prepare data
+    X, y, sample_weights_all, n_splits = prepare_data(df, feature_columns, label_col, n_splits)
+
+    # Step 3: Analyze class distribution
+    class_weights = analyze_class_distribution(y)
+
+    # Step 4: Perform hyperparameter tuning
+    model_params = perform_hyperparameter_tuning(X, y, sample_weights_all, tune, n_trials)
+
+    # Step 5: Run walk-forward validation
+    fold_metrics, fold_probabilities, fold_predictions, fold_true_labels = run_walk_forward_validation(
+        X, y, class_weights, model_params, n_splits, early_stopping_rounds, eval_economic, profit_threshold
+    )
+
+    # Step 6: Calculate overall metrics
+    overall_auc = roc_auc_score(fold_true_labels, fold_probabilities)
+    overall_f1 = f1_score(fold_true_labels, fold_predictions)
+    overall_economic = {}
+    if eval_economic:
+        overall_economic = calculate_economic_metrics(fold_true_labels, fold_probabilities, profit_threshold)
+
+    # Step 7: Train final model
+    final_model = train_final_model(X, y, class_weights, model_params)
+
+    # Step 8: Optimize threshold
+    calibrated_model, optimal_threshold, best_threshold_result = optimize_threshold(
+        X, y, model_params, class_weights, n_splits, profit_threshold
+    )
+
+    # Step 9: Save model and results
+    results = save_model_and_results(
+        calibrated_model, final_model, save_path, results_path, optimal_threshold,
+        [best_threshold_result], feature_columns, fold_metrics, fold_probabilities,
+        fold_predictions, fold_true_labels, overall_auc, overall_f1, overall_economic,
+        class_weights, horizon, profit_threshold, include_fees, fee_rate, n_splits,
+        tune, feature_selection, eval_economic, df
+    )
 
     return results
 

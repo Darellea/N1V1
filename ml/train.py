@@ -3,6 +3,7 @@
 Training script for predictive models.
 
 This script trains all predictive models using historical data and sliding window cross-validation.
+Refactored to use configuration and dependency injection for better maintainability.
 """
 
 import argparse
@@ -10,64 +11,184 @@ import logging
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable, Tuple
 import json
 import sys
 from datetime import datetime
+from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
+import os
 
 from predictive_models import PredictiveModelManager
 from utils.config_loader import load_config
 
 logger = logging.getLogger(__name__)
 
+# Experiment tracking configuration
+EXPERIMENT_CONFIG = {
+    'tracking_dir': 'experiments',
+    'log_parameters': True,
+    'log_metrics': True,
+    'log_artifacts': True,
+    'save_model_artifacts': True,
+    'track_git_info': True
+}
 
-def load_historical_data(data_path: str, symbol: str = None) -> pd.DataFrame:
+# Centralized configuration for training parameters
+# This eliminates hard-coded values and allows easy configuration changes
+TRAINING_CONFIG = {
+    'data_loading': {
+        'nan_threshold': 0.1,  # Maximum allowed NaN ratio per column
+        'fill_volume_na': 0,   # Value to fill NaN volumes
+        'timestamp_format': None  # Auto-detect timestamp format
+    },
+    'data_preparation': {
+        'min_samples': 1000,   # Minimum samples required for training
+        'outlier_threshold': 3.0,  # Standard deviations for outlier removal
+        'default_column_map': {
+            'open': 'Open',
+            'high': 'High',
+            'low': 'Low',
+            'close': 'Close',
+            'volume': 'Volume'
+        }
+    },
+    'parallel_processing': {
+        'max_workers': None,  # None means use all available cores
+        'chunk_size': 1000    # Process data in chunks for memory efficiency
+    }
+}
+
+
+def load_historical_data(data_path: str, symbol: str = None, chunksize: int = None) -> pd.DataFrame:
     """
-    Load historical OHLCV data for training.
+    Load historical OHLCV data for training with robust data type validation and memory-efficient chunking.
+
+    This function loads historical data in chunks to prevent memory exhaustion on large datasets.
+    Each chunk is processed individually for data validation and cleaning, then concatenated.
+    This approach significantly reduces memory usage by processing data in smaller batches
+    rather than loading the entire dataset into memory at once.
 
     Args:
         data_path: Path to historical data file
         symbol: Optional symbol filter
+        chunksize: Number of rows to read per chunk. If None, uses default from config.
 
     Returns:
-        DataFrame with OHLCV data
+        DataFrame with validated OHLCV data
     """
-    logger.info(f"Loading historical data from {data_path}")
+    logger.info(f"Loading historical data from {data_path} using chunked processing")
+
+    # Use config chunksize if not provided
+    if chunksize is None:
+        chunksize = TRAINING_CONFIG['parallel_processing']['chunk_size']
 
     try:
+        processed_chunks = []
+
         if data_path.endswith('.csv'):
-            df = pd.read_csv(data_path)
+            # Use pandas chunked reading for memory efficiency
+            chunk_iter = pd.read_csv(data_path, chunksize=chunksize)
         elif data_path.endswith('.json'):
+            # For JSON, load entire file (JSON files are typically smaller)
             with open(data_path, 'r') as f:
                 data = json.load(f)
-            df = pd.DataFrame(data)
+            df_full = pd.DataFrame(data)
+            # Process as single chunk
+            chunk_iter = [df_full]
         else:
             raise ValueError(f"Unsupported file format: {data_path}")
 
-        # Ensure required columns exist
-        required_cols = ['timestamp', 'open', 'high', 'low', 'close']
-        if 'volume' in df.columns:
-            required_cols.append('volume')
+        for chunk_idx, df_chunk in enumerate(chunk_iter):
+            logger.info(f"Processing chunk {chunk_idx + 1}")
 
-        missing_cols = [col for col in required_cols if col not in df.columns]
-        if missing_cols:
-            raise ValueError(f"Missing required columns: {missing_cols}")
+            # Ensure required columns exist
+            required_cols = ['timestamp', 'open', 'high', 'low', 'close']
+            if 'volume' in df_chunk.columns:
+                required_cols.append('volume')
 
-        # Convert timestamp if needed
-        if 'timestamp' in df.columns:
-            if df['timestamp'].dtype == 'object':
-                # Try to parse timestamp
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
-            df['timestamp'] = df['timestamp'].astype('int64') // 10**9  # Convert to seconds
+            missing_cols = [col for col in required_cols if col not in df_chunk.columns]
+            if missing_cols:
+                raise ValueError(f"Missing required columns: {missing_cols}")
 
-        # Filter by symbol if specified
-        if symbol and 'symbol' in df.columns:
-            df = df[df['symbol'] == symbol].copy()
+            # Data type validation and coercion for numerical columns
+            # This ensures prices and volumes are numeric types, preventing downstream errors
+            numerical_cols = ['open', 'high', 'low', 'close']
+            if 'volume' in df_chunk.columns:
+                numerical_cols.append('volume')
 
-        # Sort by timestamp
-        df = df.sort_values('timestamp').reset_index(drop=True)
+            logger.info(f"Performing data type validation and coercion for numerical columns in chunk {chunk_idx + 1}")
+            for col in numerical_cols:
+                original_dtype = df_chunk[col].dtype
+                df_chunk[col] = pd.to_numeric(df_chunk[col], errors='coerce')
+                coerced_count = df_chunk[col].isna().sum()
+                if coerced_count > 0:
+                    logger.warning(f"Column '{col}' had {coerced_count} invalid values coerced to NaN "
+                                 f"(original dtype: {original_dtype})")
 
-        logger.info(f"Loaded {len(df)} rows of historical data")
+            # Handle NaNs introduced by coercion
+            # For essential price columns, we remove rows with NaN to maintain data integrity
+            essential_cols = ['open', 'high', 'low', 'close']
+            nan_rows_before = df_chunk[essential_cols].isna().any(axis=1).sum()
+            if nan_rows_before > 0:
+                logger.warning(f"Removing {nan_rows_before} rows with NaN values in essential columns from chunk {chunk_idx + 1}")
+                df_chunk = df_chunk.dropna(subset=essential_cols)
+
+            # Check if NaN values in essential columns exceed threshold after handling
+            # This prevents training on datasets with excessive invalid data
+            nan_threshold = TRAINING_CONFIG['data_loading']['nan_threshold']
+            for col in essential_cols:
+                if col in df_chunk.columns:
+                    nan_ratio = df_chunk[col].isna().sum() / len(df_chunk) if len(df_chunk) > 0 else 0
+                    if nan_ratio > nan_threshold:
+                        raise ValueError(f"Column '{col}' has {nan_ratio:.2%} NaN values after processing, "
+                                       f"exceeding threshold of {nan_threshold:.2%}. "
+                                       f"Dataset may be corrupted or contain too many invalid values.")
+
+            # For volume, fill NaNs with configured value (assuming no volume data means zero volume)
+            if 'volume' in df_chunk.columns:
+                nan_volume = df_chunk['volume'].isna().sum()
+                if nan_volume > 0:
+                    fill_value = TRAINING_CONFIG['data_loading']['fill_volume_na']
+                    logger.info(f"Filling {nan_volume} NaN values in volume column with {fill_value} in chunk {chunk_idx + 1}")
+                    df_chunk['volume'] = df_chunk['volume'].fillna(fill_value)
+
+            # Validate timestamp column
+            if 'timestamp' in df_chunk.columns:
+                if df_chunk['timestamp'].dtype == 'object':
+                    # Try to parse timestamp strings to datetime
+                    logger.info(f"Converting timestamp column from object to datetime in chunk {chunk_idx + 1}")
+                    df_chunk['timestamp'] = pd.to_datetime(df_chunk['timestamp'], errors='coerce')
+
+                # Check for NaN timestamps after coercion
+                nan_timestamps = df_chunk['timestamp'].isna().sum()
+                if nan_timestamps > 0:
+                    logger.warning(f"Removing {nan_timestamps} rows with invalid timestamps from chunk {chunk_idx + 1}")
+                    df_chunk = df_chunk.dropna(subset=['timestamp'])
+
+                # Convert to Unix timestamp (seconds since epoch)
+                df_chunk['timestamp'] = df_chunk['timestamp'].astype('int64') // 10**9
+
+            # Filter by symbol if specified
+            if symbol and 'symbol' in df_chunk.columns:
+                df_chunk = df_chunk[df_chunk['symbol'] == symbol].copy()
+
+            # Sort by timestamp within chunk
+            df_chunk = df_chunk.sort_values('timestamp').reset_index(drop=True)
+
+            # Append processed chunk
+            if not df_chunk.empty:
+                processed_chunks.append(df_chunk)
+
+        # Concatenate all processed chunks
+        if processed_chunks:
+            df = pd.concat(processed_chunks, ignore_index=True)
+            # Final sort across all chunks
+            df = df.sort_values('timestamp').reset_index(drop=True)
+        else:
+            df = pd.DataFrame()
+
+        logger.info(f"Loaded {len(df)} rows of validated historical data using chunked processing")
         return df
 
     except Exception as e:
@@ -75,47 +196,164 @@ def load_historical_data(data_path: str, symbol: str = None) -> pd.DataFrame:
         raise
 
 
-def prepare_training_data(df: pd.DataFrame, min_samples: int = 1000) -> pd.DataFrame:
+def _process_symbol_data(symbol_data: pd.DataFrame, outlier_threshold: float, column_map: Dict[str, str]) -> pd.DataFrame:
     """
-    Prepare and validate training data.
+    Process data for a single symbol.
+
+    This helper function performs data cleaning and validation for one symbol's data.
+    Used in parallel processing to handle multiple symbols concurrently.
 
     Args:
-        df: Raw historical data
-        min_samples: Minimum required samples
+        symbol_data: DataFrame containing data for a single symbol
+        outlier_threshold: Number of standard deviations for outlier removal
+        column_map: Column name mappings
 
     Returns:
-        Prepared DataFrame
+        Processed DataFrame for the symbol
     """
-    logger.info("Preparing training data")
+    df = symbol_data.copy()
+
+    # Data type validation and coercion for numerical columns
+    numeric_cols = [column_map['open'], column_map['high'], column_map['low'], column_map['close']]
+    if 'volume' in column_map and column_map['volume'] in df.columns:
+        numeric_cols.append(column_map['volume'])
+
+    for col in numeric_cols:
+        original_dtype = df[col].dtype
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+        coerced_count = df[col].isna().sum()
+        if coerced_count > 0:
+            logger.warning(f"Column '{col}' had {coerced_count} invalid values coerced to NaN "
+                         f"(original dtype: {original_dtype})")
+
+    # Handle NaNs introduced by coercion
+    essential_cols = [column_map['open'], column_map['high'], column_map['low'], column_map['close']]
+    nan_rows_before = df[essential_cols].isna().any(axis=1).sum()
+    if nan_rows_before > 0:
+        df = df.dropna(subset=essential_cols)
+
+    # Check if NaN values in essential columns exceed threshold after handling
+    # This prevents training on datasets with excessive invalid data for individual symbols
+    nan_threshold = TRAINING_CONFIG['data_loading']['nan_threshold']
+    for col in essential_cols:
+        if col in df.columns:
+            nan_ratio = df[col].isna().sum() / len(df) if len(df) > 0 else 0
+            if nan_ratio > nan_threshold:
+                raise ValueError(f"Column '{col}' has {nan_ratio:.2%} NaN values after processing, "
+                               f"exceeding threshold of {nan_threshold:.2%}. "
+                               f"Dataset for symbol may be corrupted or contain too many invalid values.")
+
+    # For volume, fill NaNs with configured value
+    if 'volume' in column_map and column_map['volume'] in df.columns:
+        fill_value = TRAINING_CONFIG['data_loading']['fill_volume_na']
+        df[column_map['volume']] = df[column_map['volume']].fillna(fill_value)
+
+    # Remove rows with zero or negative prices
+    invalid_price_mask = (
+        (df[column_map['open']] <= 0) |
+        (df[column_map['high']] <= 0) |
+        (df[column_map['low']] <= 0) |
+        (df[column_map['close']] <= 0)
+    )
+    df = df[~invalid_price_mask]
+
+    # Remove outliers
+    for col in [column_map['open'], column_map['high'], column_map['low'], column_map['close']]:
+        mean_val = df[col].mean()
+        std_val = df[col].std()
+        if std_val > 0:
+            lower_bound = mean_val - outlier_threshold * std_val
+            upper_bound = mean_val + outlier_threshold * std_val
+            outlier_mask = (df[col] < lower_bound) | (df[col] > upper_bound)
+            df = df[~outlier_mask]
+
+    return df
+
+
+def prepare_training_data(df: pd.DataFrame, min_samples: Optional[int] = None, outlier_threshold: Optional[float] = None, column_map: Optional[Dict[str, str]] = None) -> pd.DataFrame:
+    """
+    Prepare and validate training data with robust data type validation, NaN handling, and parallel processing.
+
+    This function performs comprehensive data preparation including:
+    - Data type validation and coercion for numerical columns
+    - NaN value handling to prevent pipeline failures
+    - Outlier removal to improve model quality
+    - Essential data integrity checks
+    - Parallel processing for multiple symbols to improve performance on large datasets
+
+    For datasets containing multiple symbols, data processing is parallelized using ProcessPoolExecutor
+    to leverage multiple CPU cores, significantly reducing processing time for large datasets.
+
+    Args:
+        df: Raw historical data (should already be loaded with basic validation)
+        min_samples: Minimum required samples for training
+        outlier_threshold: Number of standard deviations to use for outlier removal (default: 3.0).
+                          This parameter allows tuning the sensitivity of outlier detection.
+        column_map: Dictionary mapping standardized column names to actual DataFrame column names.
+                    Keys are standardized names ('open', 'high', 'low', 'close', 'volume'),
+                    values are the actual column names in the input DataFrame.
+                    Defaults to capitalized OHLCV format commonly used in financial data.
+
+    Returns:
+        Prepared DataFrame with validated and cleaned data
+    """
+    logger.info("Preparing training data with comprehensive validation and parallel processing")
+
+    # Use config values if parameters not provided
+    if min_samples is None:
+        min_samples = TRAINING_CONFIG['data_preparation']['min_samples']
+    if outlier_threshold is None:
+        outlier_threshold = TRAINING_CONFIG['data_preparation']['outlier_threshold']
+    if column_map is None:
+        column_map = TRAINING_CONFIG['data_preparation']['default_column_map']
+
+    # Validate column mappings
+    required_keys = ['open', 'high', 'low', 'close']
+    for key in required_keys:
+        if column_map[key] not in df.columns:
+            raise KeyError(f"Required column '{column_map[key]}' (mapped from '{key}') not found in DataFrame. Available columns: {list(df.columns)}")
 
     # Basic validation
     if len(df) < min_samples:
         raise ValueError(f"Insufficient training data: {len(df)} < {min_samples}")
 
-    # Ensure numeric columns
-    numeric_cols = ['open', 'high', 'low', 'close']
-    if 'volume' in df.columns:
-        numeric_cols.append('volume')
+    # Check if data contains multiple symbols for parallel processing
+    if 'symbol' in df.columns:
+        symbols = df['symbol'].unique()
+        if len(symbols) > 1:
+            logger.info(f"Processing {len(symbols)} symbols in parallel using ProcessPoolExecutor")
 
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+            # Group data by symbol
+            symbol_groups = [df[df['symbol'] == symbol].copy() for symbol in symbols]
 
-    # Remove rows with NaN values in essential columns
-    df = df.dropna(subset=['open', 'high', 'low', 'close'])
+            # Use ProcessPoolExecutor for parallel processing
+            with ProcessPoolExecutor(max_workers=min(len(symbols), multiprocessing.cpu_count())) as executor:
+                # Submit processing tasks for each symbol
+                futures = [
+                    executor.submit(_process_symbol_data, group, outlier_threshold, column_map)
+                    for group in symbol_groups
+                ]
 
-    # Remove rows with zero or negative prices
-    df = df[(df['open'] > 0) & (df['high'] > 0) & (df['low'] > 0) & (df['close'] > 0)]
+                # Collect results
+                processed_groups = []
+                for future in futures:
+                    try:
+                        processed_groups.append(future.result())
+                    except Exception as e:
+                        logger.error(f"Error processing symbol data: {e}")
+                        raise
 
-    # Remove outliers (optional)
-    for col in ['open', 'high', 'low', 'close']:
-        if col in df.columns:
-            # Remove values that are more than 3 standard deviations from mean
-            mean_val = df[col].mean()
-            std_val = df[col].std()
-            df = df[(df[col] >= mean_val - 3 * std_val) & (df[col] <= mean_val + 3 * std_val)]
+            # Concatenate processed data from all symbols
+            df = pd.concat(processed_groups, ignore_index=True)
+            logger.info(f"Parallel processing completed for {len(symbols)} symbols")
+        else:
+            # Single symbol, process directly
+            df = _process_symbol_data(df, outlier_threshold, column_map)
+    else:
+        # No symbol column, process as single dataset
+        df = _process_symbol_data(df, outlier_threshold, column_map)
 
-    logger.info(f"Prepared {len(df)} samples for training")
+    logger.info(f"Prepared {len(df)} samples for training after validation and cleaning")
     return df
 
 
@@ -136,6 +374,252 @@ def save_training_results(results: Dict[str, Any], output_path: str) -> None:
     logger.info(f"Training results saved to {output_path}")
 
 
+class ExperimentTracker:
+    """
+    Simple experiment tracking system for machine learning training runs.
+
+    This class provides comprehensive experiment tracking capabilities including:
+    - Parameter logging at the start of training
+    - Metrics logging throughout and at the end of training
+    - Artifact storage (model files, plots, configurations)
+    - Git information tracking for reproducibility
+    - JSON-based storage for easy analysis and comparison
+
+    The tracker creates a structured experiment directory with all relevant information
+    for reproducing and analyzing training runs.
+    """
+
+    def __init__(self, experiment_name: str = None, tracking_dir: str = None):
+        """
+        Initialize experiment tracker.
+
+        Args:
+            experiment_name: Name of the experiment (auto-generated if None)
+            tracking_dir: Directory to store experiments (uses config default if None)
+        """
+        if tracking_dir is None:
+            tracking_dir = EXPERIMENT_CONFIG['tracking_dir']
+
+        if experiment_name is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            experiment_name = f"experiment_{timestamp}"
+
+        self.experiment_name = experiment_name
+        self.experiment_dir = Path(tracking_dir) / experiment_name
+        self.experiment_dir.mkdir(parents=True, exist_ok=True)
+
+        # Initialize experiment metadata
+        self.metadata = {
+            'experiment_name': experiment_name,
+            'start_time': datetime.now().isoformat(),
+            'status': 'running',
+            'parameters': {},
+            'metrics': {},
+            'artifacts': {},
+            'git_info': {},
+            'system_info': {
+                'python_version': sys.version,
+                'platform': sys.platform
+            }
+        }
+
+        # Save initial metadata
+        self._save_metadata()
+
+        logger.info(f"Experiment tracking initialized: {self.experiment_name}")
+        logger.info(f"Experiment directory: {self.experiment_dir}")
+
+    def log_parameters(self, parameters: Dict[str, Any]) -> None:
+        """
+        Log training parameters at the start of the experiment.
+
+        Args:
+            parameters: Dictionary of parameters to log
+        """
+        if not EXPERIMENT_CONFIG['log_parameters']:
+            return
+
+        self.metadata['parameters'].update(parameters)
+        self._save_metadata()
+
+        logger.info(f"Logged {len(parameters)} parameters for experiment {self.experiment_name}")
+
+        # Also save parameters to a separate file for easy viewing
+        params_file = self.experiment_dir / 'parameters.json'
+        with open(params_file, 'w') as f:
+            json.dump(parameters, f, indent=2, default=str)
+
+    def log_metrics(self, metrics: Dict[str, Any], step: str = 'final') -> None:
+        """
+        Log metrics during or at the end of training.
+
+        Args:
+            metrics: Dictionary of metrics to log
+            step: Step identifier (e.g., 'epoch_1', 'validation', 'final')
+        """
+        if not EXPERIMENT_CONFIG['log_metrics']:
+            return
+
+        if step not in self.metadata['metrics']:
+            self.metadata['metrics'][step] = {}
+
+        self.metadata['metrics'][step].update(metrics)
+        self._save_metadata()
+
+        logger.info(f"Logged {len(metrics)} metrics for step '{step}' in experiment {self.experiment_name}")
+
+    def log_artifact(self, artifact_path: str, artifact_type: str = 'file') -> None:
+        """
+        Log artifacts such as model files, plots, or configurations.
+
+        Args:
+            artifact_path: Path to the artifact file
+            artifact_type: Type of artifact (e.g., 'model', 'plot', 'config')
+        """
+        if not EXPERIMENT_CONFIG['log_artifacts']:
+            return
+
+        artifact_name = Path(artifact_path).name
+
+        # Copy artifact to experiment directory if it exists
+        if os.path.exists(artifact_path):
+            dest_path = self.experiment_dir / 'artifacts' / artifact_name
+            dest_path.parent.mkdir(exist_ok=True)
+
+            try:
+                import shutil
+                if os.path.isdir(artifact_path):
+                    shutil.copytree(artifact_path, dest_path, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(artifact_path, dest_path)
+                artifact_path = str(dest_path)
+            except Exception as e:
+                logger.warning(f"Failed to copy artifact {artifact_path}: {e}")
+
+        # Log artifact metadata
+        if artifact_type not in self.metadata['artifacts']:
+            self.metadata['artifacts'][artifact_type] = []
+
+        self.metadata['artifacts'][artifact_type].append({
+            'name': artifact_name,
+            'path': artifact_path,
+            'logged_at': datetime.now().isoformat()
+        })
+
+        self._save_metadata()
+
+        logger.info(f"Logged artifact '{artifact_name}' of type '{artifact_type}' in experiment {self.experiment_name}")
+
+    def log_git_info(self) -> None:
+        """
+        Log Git repository information for reproducibility.
+        """
+        if not EXPERIMENT_CONFIG['track_git_info']:
+            return
+
+        try:
+            import subprocess
+
+            # Get current commit hash
+            result = subprocess.run(['git', 'rev-parse', 'HEAD'],
+                                  capture_output=True, text=True, cwd='.')
+            if result.returncode == 0:
+                self.metadata['git_info']['commit_hash'] = result.stdout.strip()
+
+            # Get current branch
+            result = subprocess.run(['git', 'branch', '--show-current'],
+                                  capture_output=True, text=True, cwd='.')
+            if result.returncode == 0:
+                self.metadata['git_info']['branch'] = result.stdout.strip()
+
+            # Get status (modified files)
+            result = subprocess.run(['git', 'status', '--porcelain'],
+                                  capture_output=True, text=True, cwd='.')
+            if result.returncode == 0:
+                modified_files = result.stdout.strip().split('\n') if result.stdout.strip() else []
+                self.metadata['git_info']['modified_files'] = [f for f in modified_files if f]
+
+            # Get remote URL
+            result = subprocess.run(['git', 'remote', 'get-url', 'origin'],
+                                  capture_output=True, text=True, cwd='.')
+            if result.returncode == 0:
+                self.metadata['git_info']['remote_url'] = result.stdout.strip()
+
+            self._save_metadata()
+
+            logger.info(f"Logged Git information for experiment {self.experiment_name}")
+
+        except Exception as e:
+            logger.warning(f"Failed to log Git information: {e}")
+
+    def finish_experiment(self, status: str = 'completed') -> None:
+        """
+        Mark the experiment as finished.
+
+        Args:
+            status: Final status ('completed', 'failed', 'interrupted')
+        """
+        self.metadata['status'] = status
+        self.metadata['end_time'] = datetime.now().isoformat()
+
+        if 'start_time' in self.metadata:
+            start_time = datetime.fromisoformat(self.metadata['start_time'])
+            end_time = datetime.fromisoformat(self.metadata['end_time'])
+            duration = (end_time - start_time).total_seconds()
+            self.metadata['duration_seconds'] = duration
+
+        self._save_metadata()
+
+        logger.info(f"Experiment {self.experiment_name} finished with status: {status}")
+
+    def _save_metadata(self) -> None:
+        """Save experiment metadata to file."""
+        metadata_file = self.experiment_dir / 'metadata.json'
+        with open(metadata_file, 'w') as f:
+            json.dump(self.metadata, f, indent=2, default=str)
+
+
+def initialize_experiment_tracking(args: argparse.Namespace, config: Dict[str, Any]) -> ExperimentTracker:
+    """
+    Initialize experiment tracking for the training run.
+
+    Args:
+        args: Command line arguments
+        config: Configuration dictionary
+
+    Returns:
+        ExperimentTracker instance
+    """
+    # Create experiment name based on key parameters
+    experiment_name = f"train_{args.symbol or 'all'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+    tracker = ExperimentTracker(experiment_name=experiment_name)
+
+    # Log Git information
+    tracker.log_git_info()
+
+    # Log parameters
+    parameters = {
+        'data_file': args.data,
+        'symbol': args.symbol,
+        'min_samples': args.min_samples,
+        'verbose': args.verbose,
+        'config_file': args.config,
+        'output_file': args.output
+    }
+
+    # Add predictive model config parameters
+    predictive_config = config.get('predictive_models', {})
+    parameters.update({
+        'predictive_models_enabled': predictive_config.get('enabled', False),
+        'models_config': predictive_config.get('models', {})
+    })
+
+    tracker.log_parameters(parameters)
+
+    return tracker
+
+
 def main():
     """Main training function."""
     parser = argparse.ArgumentParser(description='Train predictive models')
@@ -152,6 +636,7 @@ def main():
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='Enable verbose logging')
 
+    tracker = None
     try:
         args = parser.parse_args()
 
@@ -161,21 +646,49 @@ def main():
             level=log_level,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
+
         # Load configuration
         logger.info(f"Loading configuration from {args.config}")
         config = load_config(args.config)
+
+        # Initialize experiment tracking
+        tracker = initialize_experiment_tracking(args, config)
 
         # Check if predictive models are enabled before loading data
         predictive_config = config.get('predictive_models', {})
         if not predictive_config.get('enabled', False):
             logger.warning("Predictive models are disabled in config")
+            tracker.finish_experiment('skipped')
             return
+
+        # Log data loading start
+        tracker.log_metrics({'data_loading': 'started'}, 'data_preparation')
 
         # Load historical data
         df = load_historical_data(args.data, args.symbol)
 
+        # Log data loading completion
+        tracker.log_metrics({
+            'data_samples_loaded': len(df),
+            'data_file': args.data,
+            'symbol': args.symbol or 'all'
+        }, 'data_preparation')
+
+        # Log data preparation start
+        tracker.log_metrics({'data_preparation': 'started'}, 'data_preparation')
+
         # Prepare training data
         df = prepare_training_data(df, args.min_samples)
+
+        # Log data preparation completion
+        tracker.log_metrics({
+            'data_samples_prepared': len(df),
+            'min_samples_required': args.min_samples
+        }, 'data_preparation')
+
+        # Log artifacts (data file and config)
+        tracker.log_artifact(args.data, 'data')
+        tracker.log_artifact(args.config, 'config')
 
         manager = PredictiveModelManager(predictive_config)
 
@@ -183,10 +696,19 @@ def main():
         logger.info("Starting model training...")
         start_time = datetime.now()
 
+        # Log training start
+        tracker.log_metrics({'training': 'started'}, 'training')
+
         training_results = manager.train_models(df)
 
         end_time = datetime.now()
         training_duration = (end_time - start_time).total_seconds()
+
+        # Log training completion
+        tracker.log_metrics({
+            'training_duration_seconds': training_duration,
+            'training_status': training_results.get('status', 'unknown')
+        }, 'training')
 
         # Add metadata to results
         training_results.update({
@@ -202,6 +724,28 @@ def main():
 
         # Save results
         save_training_results(training_results, args.output)
+
+        # Log results artifact
+        tracker.log_artifact(args.output, 'results')
+
+        # Log final metrics
+        final_metrics = {
+            'total_duration_seconds': training_duration,
+            'data_samples': len(df),
+            'status': training_results.get('status', 'unknown')
+        }
+
+        # Extract model-specific metrics
+        if training_results.get('status') == 'success':
+            for model_name, results in training_results.items():
+                if model_name not in ['status', 'training_metadata']:
+                    if isinstance(results, dict):
+                        if 'final_accuracy' in results:
+                            final_metrics[f'{model_name}_accuracy'] = results['final_accuracy']
+                        elif 'final_r2' in results:
+                            final_metrics[f'{model_name}_r2'] = results['final_r2']
+
+        tracker.log_metrics(final_metrics, 'final')
 
         # Log summary
         logger.info("="*50)
@@ -223,13 +767,22 @@ def main():
                         logger.info(f"  {model_name}: {results.get('model_type', 'unknown')} configured")
 
         logger.info(f"Results saved to: {args.output}")
+        logger.info(f"Experiment logged to: {tracker.experiment_dir}")
         logger.info("="*50)
+
+        # Finish experiment successfully
+        tracker.finish_experiment('completed')
 
     except KeyboardInterrupt:
         logger.info("Training interrupted by user")
+        if tracker:
+            tracker.finish_experiment('interrupted')
         sys.exit(1)
     except Exception as e:
         logger.error(f"Training failed: {e}")
+        if tracker:
+            tracker.log_metrics({'error': str(e)}, 'error')
+            tracker.finish_experiment('failed')
         if args.verbose:
             import traceback
             traceback.print_exc()

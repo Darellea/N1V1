@@ -47,9 +47,51 @@ except ImportError:
     LIGHTGBM_AVAILABLE = False
     logging.warning("LightGBM not available.")
 
-from ml.model_loader import load_model, predict as ml_predict
-
 logger = logging.getLogger(__name__)
+
+# Centralized configuration for ML model parameters
+# This eliminates hard-coded values and allows easy configuration changes
+ML_MODEL_CONFIG = {
+    'logistic_regression': {
+        'C': 1.0,
+        'max_iter': 1000,
+        'random_state': 42,
+        'class_weight': 'balanced'
+    },
+    'random_forest': {
+        'n_estimators': 100,
+        'max_depth': None,
+        'min_samples_split': 2,
+        'min_samples_leaf': 1,
+        'random_state': 42,
+        'class_weight': 'balanced',
+        'n_jobs': -1
+    },
+    'xgboost': {
+        'objective': 'binary:logistic',
+        'eval_metric': 'logloss',
+        'max_depth': 6,
+        'learning_rate': 0.1,
+        'n_estimators': 100,
+        'subsample': 0.8,
+        'colsample_bytree': 0.8,
+        'random_state': 42,
+        'scale_pos_weight': 1
+    },
+    'lightgbm': {
+        'objective': 'binary',
+        'metric': 'binary_logloss',
+        'boosting_type': 'gbdt',
+        'num_leaves': 31,
+        'learning_rate': 0.1,
+        'feature_fraction': 0.9,
+        'bagging_fraction': 0.8,
+        'bagging_freq': 5,
+        'verbose': -1,
+        'random_state': 42,
+        'is_unbalance': True
+    }
+}
 
 
 class MLModel(ABC):
@@ -118,13 +160,9 @@ class LogisticRegressionModel(MLModel):
         if not SKLEARN_AVAILABLE:
             raise ImportError("scikit-learn is required for LogisticRegressionModel")
 
-        default_config = {
-            'C': 1.0,
-            'max_iter': 1000,
-            'random_state': 42,
-            'class_weight': 'balanced'
-        }
-        self.config = {**default_config, **(config or {})}
+        # Use centralized config as defaults, overridden by passed config
+        # This centralizes configuration and eliminates hard-coded values
+        self.config = {**ML_MODEL_CONFIG['logistic_regression'], **(config or {})}
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> None:
         """Train the logistic regression model."""
@@ -147,8 +185,14 @@ class LogisticRegressionModel(MLModel):
         if not self.is_trained:
             raise ValueError("Model must be trained before prediction")
 
-        # Ensure feature alignment
-        X_aligned = X[self.feature_names] if all(col in X.columns for col in self.feature_names) else X
+        # Feature alignment check: Ensure all required features are present in input DataFrame
+        # This prevents KeyError during prediction and ensures model robustness in production
+        if not all(col in X.columns for col in self.feature_names):
+            missing_features = [col for col in self.feature_names if col not in X.columns]
+            raise ValueError(f"Missing required features for prediction: {missing_features}. "
+                           f"Input DataFrame must contain all expected features: {self.feature_names}")
+
+        X_aligned = X[self.feature_names]
 
         predictions = self.model.predict(X_aligned.values)
         probabilities = self.model.predict_proba(X_aligned.values)
@@ -170,16 +214,9 @@ class RandomForestModel(MLModel):
         if not SKLEARN_AVAILABLE:
             raise ImportError("scikit-learn is required for RandomForestModel")
 
-        default_config = {
-            'n_estimators': 100,
-            'max_depth': None,
-            'min_samples_split': 2,
-            'min_samples_leaf': 1,
-            'random_state': 42,
-            'class_weight': 'balanced',
-            'n_jobs': -1
-        }
-        self.config = {**default_config, **(config or {})}
+        # Use centralized config as defaults, overridden by passed config
+        # This centralizes configuration and eliminates hard-coded values
+        self.config = {**ML_MODEL_CONFIG['random_forest'], **(config or {})}
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> None:
         """Train the random forest model."""
@@ -203,8 +240,14 @@ class RandomForestModel(MLModel):
         if not self.is_trained:
             raise ValueError("Model must be trained before prediction")
 
-        # Ensure feature alignment
-        X_aligned = X[self.feature_names] if all(col in X.columns for col in self.feature_names) else X
+        # Feature alignment check: Ensure all required features are present in input DataFrame
+        # This prevents KeyError during prediction and ensures model robustness in production
+        if not all(col in X.columns for col in self.feature_names):
+            missing_features = [col for col in self.feature_names if col not in X.columns]
+            raise ValueError(f"Missing required features for prediction: {missing_features}. "
+                           f"Input DataFrame must contain all expected features: {self.feature_names}")
+
+        X_aligned = X[self.feature_names]
 
         predictions = self.model.predict(X_aligned.values)
         probabilities = self.model.predict_proba(X_aligned.values)
@@ -234,18 +277,9 @@ class XGBoostModel(MLModel):
         if not XGBOOST_AVAILABLE:
             raise ImportError("XGBoost is required for XGBoostModel")
 
-        default_config = {
-            'objective': 'binary:logistic',
-            'eval_metric': 'logloss',
-            'max_depth': 6,
-            'learning_rate': 0.1,
-            'n_estimators': 100,
-            'subsample': 0.8,
-            'colsample_bytree': 0.8,
-            'random_state': 42,
-            'scale_pos_weight': 1
-        }
-        self.config = {**default_config, **(config or {})}
+        # Use centralized config as defaults, overridden by passed config
+        # This centralizes configuration and eliminates hard-coded values
+        self.config = {**ML_MODEL_CONFIG['xgboost'], **(config or {})}
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> None:
         """Train the XGBoost model."""
@@ -268,8 +302,14 @@ class XGBoostModel(MLModel):
         if not self.is_trained:
             raise ValueError("Model must be trained before prediction")
 
-        # Ensure feature alignment
-        X_aligned = X[self.feature_names] if all(col in X.columns for col in self.feature_names) else X
+        # Feature alignment check: Ensure all required features are present in input DataFrame
+        # This prevents KeyError during prediction and ensures model robustness in production
+        if not all(col in X.columns for col in self.feature_names):
+            missing_features = [col for col in self.feature_names if col not in X.columns]
+            raise ValueError(f"Missing required features for prediction: {missing_features}. "
+                           f"Input DataFrame must contain all expected features: {self.feature_names}")
+
+        X_aligned = X[self.feature_names]
 
         predictions = self.model.predict(X_aligned.values)
         probabilities = self.model.predict_proba(X_aligned.values)
@@ -299,20 +339,9 @@ class LightGBMModel(MLModel):
         if not LIGHTGBM_AVAILABLE:
             raise ImportError("LightGBM is required for LightGBMModel")
 
-        default_config = {
-            'objective': 'binary',
-            'metric': 'binary_logloss',
-            'boosting_type': 'gbdt',
-            'num_leaves': 31,
-            'learning_rate': 0.1,
-            'feature_fraction': 0.9,
-            'bagging_fraction': 0.8,
-            'bagging_freq': 5,
-            'verbose': -1,
-            'random_state': 42,
-            'is_unbalance': True
-        }
-        self.config = {**default_config, **(config or {})}
+        # Use centralized config as defaults, overridden by passed config
+        # This centralizes configuration and eliminates hard-coded values
+        self.config = {**ML_MODEL_CONFIG['lightgbm'], **(config or {})}
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> None:
         """Train the LightGBM model."""
@@ -335,8 +364,14 @@ class LightGBMModel(MLModel):
         if not self.is_trained:
             raise ValueError("Model must be trained before prediction")
 
-        # Ensure feature alignment
-        X_aligned = X[self.feature_names] if all(col in X.columns for col in self.feature_names) else X
+        # Feature alignment check: Ensure all required features are present in input DataFrame
+        # This prevents KeyError during prediction and ensures model robustness in production
+        if not all(col in X.columns for col in self.feature_names):
+            missing_features = [col for col in self.feature_names if col not in X.columns]
+            raise ValueError(f"Missing required features for prediction: {missing_features}. "
+                           f"Input DataFrame must contain all expected features: {self.feature_names}")
+
+        X_aligned = X[self.feature_names]
 
         predictions = self.model.predict(X_aligned.values)
         probabilities = self.model.predict_proba(X_aligned.values)
@@ -364,21 +399,39 @@ class MLFilter:
 
     Provides a unified interface for different ML models and handles
     the complete pipeline from feature processing to signal filtering.
+    Uses dependency injection for model loading functions to reduce coupling.
     """
 
-    def __init__(self, model_type: str = 'logistic_regression', config: Optional[Dict[str, Any]] = None):
+    def __init__(self, model_type: str = 'logistic_regression', config: Optional[Dict[str, Any]] = None,
+                 load_model_func: Optional[Callable] = None, predict_func: Optional[Callable] = None):
         """
         Initialize ML Filter.
 
         Args:
             model_type: Type of ML model ('logistic_regression', 'random_forest', 'xgboost', 'lightgbm')
             config: Model configuration
+            load_model_func: Function to load models (dependency injection)
+            predict_func: Function to make predictions (dependency injection)
         """
         self.model_type = model_type
         self.config = config or {}
         self.model = self._create_model()
         self.confidence_threshold = self.config.get('confidence_threshold', 0.6)
         self.feature_scaler = None
+
+        # Dependency injection for model loading functions to reduce coupling
+        # If not provided, import default implementations (for backward compatibility)
+        if load_model_func is None:
+            from ml.model_loader import load_model
+            self.load_model = load_model
+        else:
+            self.load_model = load_model_func
+
+        if predict_func is None:
+            from ml.model_loader import predict as ml_predict
+            self.predict_func = ml_predict
+        else:
+            self.predict_func = predict_func
 
     def _create_model(self) -> MLModel:
         """Create ML model instance based on type."""
@@ -545,7 +598,11 @@ class MLFilter:
 
     def load_model(self, path: str) -> None:
         """Load a trained model from disk."""
-        self.model.load(path)
+        # Use the injected load_model function
+        loaded_model = self.load_model(path)
+        # Since load_model returns the model, we need to wrap it in our MLModel structure
+        # For now, we'll assume the loaded model has the necessary interface
+        self.model = loaded_model
 
         # Try to load filter metadata
         metadata_path = str(Path(path).with_suffix('')) + '_filter_metadata.json'

@@ -112,21 +112,56 @@ class GeneticOptimizer(BaseOptimizer):
 
     def __init__(self, config: Dict[str, Any]):
         """
-        Initialize Genetic Algorithm Optimizer.
+        Initialize Genetic Algorithm Optimizer with Adaptive Population Sizing.
 
         Args:
             config: Configuration dictionary containing:
-                - population_size: Number of chromosomes in population
+                - initial_population_size: Starting number of chromosomes in population
+                - min_population_size: Minimum population size (default: 10)
+                - max_population_size: Maximum population size (default: 200)
                 - generations: Number of generations to evolve
                 - mutation_rate: Probability of gene mutation
                 - crossover_rate: Probability of crossover
                 - elitism_rate: Fraction of best individuals to preserve
                 - tournament_size: Size of tournament for selection
+                - adaptation_rate: How aggressively to adjust population size (default: 0.1)
         """
         super().__init__(config)
 
+        # ============================================================================
+        # ADAPTIVE POPULATION SIZING
+        # ============================================================================
+        #
+        # PROBLEM WITH FIXED POPULATION SIZE:
+        # - Fixed size can lead to premature convergence (population too small)
+        # - Fixed size can be inefficient for complex problems (population too small)
+        # - Fixed size wastes resources on simple problems (population too large)
+        #
+        # BENEFITS OF ADAPTIVE SIZING:
+        # - Dynamically adjusts to problem complexity
+        # - Prevents premature convergence by increasing size when diversity is low
+        # - Improves efficiency by reducing size when convergence is fast
+        # - Better exploration vs exploitation balance
+        # - Can find better solutions by adapting to the optimization landscape
+        #
+        # ADAPTATION LOGIC:
+        # - Monitor fitness improvement rate (convergence speed)
+        # - Monitor population diversity (standard deviation of fitness)
+        # - If convergence is too slow AND diversity is low: increase population
+        # - If convergence is too fast: decrease population
+        # - Stay within min/max bounds to prevent extreme sizes
+        # ============================================================================
+
+        # Adaptive population sizing parameters
+        self.initial_population_size = config.get('initial_population_size', 20)
+        self.min_population_size = config.get('min_population_size', 10)
+        self.max_population_size = config.get('max_population_size', 200)
+        self.adaptation_rate = config.get('adaptation_rate', 0.1)  # How aggressively to adapt
+
+        # Current population size (starts with initial, changes adaptively)
+        self.population_size = self.initial_population_size
+
         # GA specific configuration
-        self.population_size = config.get('population_size', 20)
         self.generations = config.get('generations', 10)
         self.mutation_rate = config.get('mutation_rate', 0.1)
         self.crossover_rate = config.get('crossover_rate', 0.7)
@@ -137,7 +172,12 @@ class GeneticOptimizer(BaseOptimizer):
         self.population: List[Chromosome] = []
         self.best_chromosome: Optional[Chromosome] = None
 
-        # Elitism count
+        # Adaptive sizing tracking
+        self.fitness_history: List[float] = []  # Track best fitness per generation
+        self.diversity_history: List[float] = []  # Track population diversity
+        self.population_size_history: List[int] = []  # Track population size changes
+
+        # Elitism count (will be updated when population size changes)
         self.elite_count = max(1, int(self.population_size * self.elitism_rate))
 
         # Make Chromosome accessible within the class
@@ -172,10 +212,15 @@ class GeneticOptimizer(BaseOptimizer):
     def _create_next_generation(self) -> None:
         """
         Create the next generation through selection, crossover, and mutation.
+        Includes adaptive population sizing based on convergence metrics.
         """
+        # Adaptive population sizing: adjust size based on convergence
+        self._adapt_population_size()
+
         new_population = []
 
-        # Elitism: preserve best individuals
+        # Elitism: preserve best individuals (recalculate elite count for new population size)
+        self.elite_count = max(1, int(self.population_size * self.elitism_rate))
         elite = self._select_elite()
         new_population.extend(elite)
 
@@ -199,6 +244,64 @@ class GeneticOptimizer(BaseOptimizer):
 
         # Trim population to correct size
         self.population = new_population[:self.population_size]
+
+    def _adapt_population_size(self) -> None:
+        """
+        Adapt population size based on convergence metrics.
+
+        This method implements the adaptive population sizing logic:
+        - Monitors fitness improvement rate and population diversity
+        - Increases population size when convergence is slow and diversity is low
+        - Decreases population size when convergence is fast
+        - Maintains population size within configured bounds
+        """
+        if len(self.fitness_history) < 2:
+            # Not enough history to make adaptation decisions
+            self.population_size_history.append(self.population_size)
+            return
+
+        # Get current fitness metrics
+        current_fitness = self.fitness_history[-1]
+        previous_fitness = self.fitness_history[-2]
+
+        # Calculate fitness improvement rate
+        fitness_improvement = current_fitness - previous_fitness
+
+        # Get current population diversity (standard deviation of fitness)
+        current_diversity = self.diversity_history[-1] if self.diversity_history else 0.0
+
+        # Adaptive logic
+        old_population_size = self.population_size
+        adaptation_factor = 0
+
+        # Case 1: Slow convergence with low diversity - increase population
+        if fitness_improvement < 0.01 and current_diversity < 0.1:
+            # Convergence is slow and population lacks diversity
+            adaptation_factor = self.adaptation_rate
+            self.logger.debug(".2f")
+
+        # Case 2: Fast convergence - decrease population to improve efficiency
+        elif fitness_improvement > 0.05:
+            # Convergence is fast, can reduce population size
+            adaptation_factor = -self.adaptation_rate * 0.5  # Less aggressive decrease
+            self.logger.debug(".2f")
+
+        # Apply adaptation if needed
+        if adaptation_factor != 0:
+            new_size = int(self.population_size * (1 + adaptation_factor))
+
+            # Ensure within bounds
+            new_size = max(self.min_population_size, min(self.max_population_size, new_size))
+
+            if new_size != self.population_size:
+                self.logger.info(
+                    f"Adapting population size: {self.population_size} -> {new_size} "
+                    f"(fitness_improvement: {fitness_improvement:.4f}, diversity: {current_diversity:.4f})"
+                )
+                self.population_size = new_size
+
+        # Track population size history
+        self.population_size_history.append(self.population_size)
 
     def _get_best_solution(self) -> Optional[Chromosome]:
         """
@@ -467,7 +570,7 @@ class GeneticOptimizer(BaseOptimizer):
 
     def _log_generation_stats(self, generation: int) -> None:
         """
-        Log statistics for the current generation.
+        Log statistics for the current generation and track adaptive metrics.
 
         Args:
             generation: Current generation number
@@ -487,15 +590,21 @@ class GeneticOptimizer(BaseOptimizer):
 
             self.logger.info(
                 f"Gen {generation}/{self.generations} | "
+                f"Pop: {self.population_size} | "
                 f"Best: {best_fitness:.4f} | "
                 f"Avg: {avg_fitness:.4f} | "
                 f"Std: {std_fitness:.4f} | "
                 f"Params: {self.best_params}"
             )
 
+            # Track metrics for adaptive population sizing
+            self.fitness_history.append(best_fitness)
+            self.diversity_history.append(std_fitness)
+
             # Store generation data for analysis
             self.results_history.append({
                 'generation': generation,
+                'population_size': self.population_size,
                 'best_fitness': best_fitness,
                 'avg_fitness': avg_fitness,
                 'std_fitness': std_fitness,
@@ -512,6 +621,11 @@ class GeneticOptimizer(BaseOptimizer):
         summary = self.get_optimization_summary()
         summary.update({
             'population_size': self.population_size,
+            'initial_population_size': self.initial_population_size,
+            'min_population_size': self.min_population_size,
+            'max_population_size': self.max_population_size,
+            'adaptation_rate': self.adaptation_rate,
+            'population_size_history': self.population_size_history,
             'generations': self.generations,
             'mutation_rate': self.mutation_rate,
             'crossover_rate': self.crossover_rate,

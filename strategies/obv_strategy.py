@@ -224,7 +224,12 @@ class OBVStrategy(BaseStrategy):
                 # OBV shows accumulation/bullish divergence
                 self.signal_counts["long"] += 1
                 self.signal_counts["total"] += 1
-                self.last_signal_time = pd.Timestamp.now()
+                # Note: last_signal_time is now updated deterministically in _log_signals
+
+                # Extract deterministic timestamp from the data that triggered the signal
+                signal_timestamp = None
+                if not data_with_obv.empty and isinstance(data_with_obv.index, pd.DatetimeIndex):
+                    signal_timestamp = data_with_obv.index[-1].to_pydatetime()
 
                 signals.append(
                     self.create_signal(
@@ -245,6 +250,7 @@ class OBVStrategy(BaseStrategy):
                             "crossover": obv_bullish_crossover,
                             "confirmation_bars": confirmation_period
                         },
+                        timestamp=signal_timestamp,
                     )
                 )
 
@@ -252,7 +258,12 @@ class OBVStrategy(BaseStrategy):
                 # OBV shows distribution/bearish divergence
                 self.signal_counts["short"] += 1
                 self.signal_counts["total"] += 1
-                self.last_signal_time = pd.Timestamp.now()
+                # Note: last_signal_time is now updated deterministically in _log_signals
+
+                # Extract deterministic timestamp from the data that triggered the signal
+                signal_timestamp = None
+                if not data_with_obv.empty and isinstance(data_with_obv.index, pd.DatetimeIndex):
+                    signal_timestamp = data_with_obv.index[-1].to_pydatetime()
 
                 signals.append(
                     self.create_signal(
@@ -273,6 +284,7 @@ class OBVStrategy(BaseStrategy):
                             "crossover": obv_bearish_crossover,
                             "confirmation_bars": confirmation_period
                         },
+                        timestamp=signal_timestamp,
                     )
                 )
 

@@ -25,12 +25,123 @@ from utils.adapter import signal_to_dict
 from strategies.regime.market_regime import get_market_regime_detector, MarketRegime
 from risk.anomaly_detector import get_anomaly_detector, AnomalyResponse
 from risk.adaptive_policy import get_adaptive_risk_policy, get_risk_multiplier
+from risk.utils import safe_divide, get_atr, validate_market_data, get_config_value, clamp_value, calculate_z_score, calculate_returns, enhanced_validate_market_data
 
 logger = logging.getLogger(__name__)
 trade_logger = get_trade_logger()
 
 # Set decimal precision
 getcontext().prec = 28  # keep high precision to avoid quantize errors
+
+
+class CircuitBreaker:
+    """
+    Circuit breaker pattern implementation to protect against cascading failures
+    in risk calculations. Monitors failure rates and temporarily stops operations
+    when failure thresholds are exceeded.
+    """
+
+    def __init__(self, failure_threshold: int = 5, recovery_timeout: int = 60,
+                 expected_exception: Exception = Exception):
+        """
+        Initialize the circuit breaker.
+
+        Args:
+            failure_threshold: Number of consecutive failures before opening circuit
+            recovery_timeout: Seconds to wait before attempting recovery
+            expected_exception: Type of exception to monitor
+        """
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.expected_exception = expected_exception
+
+        # Circuit states
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = "CLOSED"  # CLOSED, OPEN, HALF_OPEN
+
+        # Statistics
+        self.total_calls = 0
+        self.total_failures = 0
+        self.total_successes = 0
+
+    def call(self, func: Callable, *args, **kwargs):
+        """
+        Execute a function with circuit breaker protection.
+
+        Args:
+            func: Function to execute
+            *args: Positional arguments for the function
+            **kwargs: Keyword arguments for the function
+
+        Returns:
+            Function result
+
+        Raises:
+            CircuitBreakerOpen: If circuit is open
+            Exception: Original function exception
+        """
+        self.total_calls += 1
+
+        if self.state == "OPEN":
+            if not self._should_attempt_reset():
+                raise CircuitBreakerOpen("Circuit breaker is OPEN")
+            else:
+                self.state = "HALF_OPEN"
+                logger.info("Circuit breaker moving to HALF_OPEN state")
+
+        try:
+            result = func(*args, **kwargs)
+            self._on_success()
+            return result
+
+        except self.expected_exception as e:
+            self._on_failure()
+            raise e
+
+    def _should_attempt_reset(self) -> bool:
+        """Check if enough time has passed to attempt recovery."""
+        if self.last_failure_time is None:
+            return True
+
+        elapsed = time.time() - self.last_failure_time
+        return elapsed >= self.recovery_timeout
+
+    def _on_success(self):
+        """Handle successful function execution."""
+        self.total_successes += 1
+        self.failure_count = 0
+
+        if self.state == "HALF_OPEN":
+            self.state = "CLOSED"
+            logger.info("Circuit breaker reset to CLOSED state")
+
+    def _on_failure(self):
+        """Handle function execution failure."""
+        self.total_failures += 1
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+
+        if self.failure_count >= self.failure_threshold:
+            self.state = "OPEN"
+            logger.warning(f"Circuit breaker opened after {self.failure_count} consecutive failures")
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get circuit breaker statistics."""
+        return {
+            "state": self.state,
+            "failure_count": self.failure_count,
+            "total_calls": self.total_calls,
+            "total_failures": self.total_failures,
+            "total_successes": self.total_successes,
+            "failure_rate": self.total_failures / self.total_calls if self.total_calls > 0 else 0.0,
+            "last_failure_time": self.last_failure_time
+        }
+
+
+class CircuitBreakerOpen(Exception):
+    """Exception raised when circuit breaker is open."""
+    pass
 
 
 def _safe_quantize(value: Decimal, exp: Decimal = Decimal(".000001")) -> Decimal:
@@ -84,53 +195,52 @@ class RiskManager:
             config: Risk management configuration dictionary
         """
         self.config = config
-        self.require_stop_loss = config.get("require_stop_loss", True)
-        self.max_position_size = Decimal(
-            str(config.get("max_position_size", 0.3))
-        )  # 30%
-        self.max_daily_loss = Decimal(str(config.get("max_daily_drawdown", 0.1)))  # 10%
-        self.risk_reward_ratio = Decimal(str(config.get("risk_reward_ratio", 2.0)))
+        # Make thresholds configurable with safe defaults
+        self.require_stop_loss = get_config_value(config, "require_stop_loss", True, bool)
+        self.max_position_size = get_config_value(config, "max_position_size", Decimal("0.3"), Decimal)
+        self.max_daily_loss = get_config_value(config, "max_daily_drawdown", Decimal("0.1"), Decimal)
+        self.risk_reward_ratio = get_config_value(config, "risk_reward_ratio", Decimal("2.0"), Decimal)
         self.today_pnl = Decimal(0)
         self.today_start_balance = None
-        self.position_sizing_method = config.get("position_sizing_method", "fixed")
+        self.position_sizing_method = get_config_value(config, "position_sizing_method", "fixed", str)
         # Fixed percent sizing (fraction of account balance)
-        self.fixed_percent = Decimal(str(config.get("fixed_percent", 0.1)))
+        self.fixed_percent = get_config_value(config, "fixed_percent", Decimal("0.1"), Decimal)
         # Kelly criterion fallback assumptions
-        self.kelly_assumed_win_rate = float(config.get("kelly_assumed_win_rate", 0.55))
+        self.kelly_assumed_win_rate = get_config_value(config, "kelly_assumed_win_rate", 0.55, float)
 
         # Adaptive position sizing parameters
-        self.risk_per_trade = Decimal(str(config.get("risk_per_trade", 0.02)))
-        self.atr_k_factor = Decimal(str(config.get("atr_k_factor", 2.0)))
+        self.risk_per_trade = get_config_value(config, "risk_per_trade", Decimal("0.02"), Decimal)
+        self.atr_k_factor = get_config_value(config, "atr_k_factor", Decimal("2.0"), Decimal)
 
         # Dynamic stop loss parameters
-        self.stop_loss_method = config.get("stop_loss_method", "atr")
-        self.atr_sl_multiplier = Decimal(str(config.get("atr_sl_multiplier", 2.0)))
-        self.stop_loss_percentage = Decimal(str(config.get("stop_loss_percentage", 0.02)))
+        self.stop_loss_method = get_config_value(config, "stop_loss_method", "atr", str)
+        self.atr_sl_multiplier = get_config_value(config, "atr_sl_multiplier", Decimal("2.0"), Decimal)
+        self.stop_loss_percentage = get_config_value(config, "stop_loss_percentage", Decimal("0.02"), Decimal)
 
         # Adaptive take profit parameters
-        self.tp_base_multiplier = Decimal(str(config.get("tp_base_multiplier", 2.0)))
-        self.enable_adaptive_tp = config.get("enable_adaptive_tp", True)
+        self.tp_base_multiplier = get_config_value(config, "tp_base_multiplier", Decimal("2.0"), Decimal)
+        self.enable_adaptive_tp = get_config_value(config, "enable_adaptive_tp", True, bool)
 
         # Trailing stop parameters
-        self.enable_trailing_stop = config.get("enable_trailing_stop", True)
-        self.trailing_stop_method = config.get("trailing_stop_method", "percentage")
-        self.trailing_distance = Decimal(str(config.get("trailing_distance", 0.02)))
-        self.trailing_atr_multiplier = Decimal(str(config.get("trailing_atr_multiplier", 1.5)))
-        self.trailing_step_size = Decimal(str(config.get("trailing_step_size", 0.005)))
+        self.enable_trailing_stop = get_config_value(config, "enable_trailing_stop", True, bool)
+        self.trailing_stop_method = get_config_value(config, "trailing_stop_method", "percentage", str)
+        self.trailing_distance = get_config_value(config, "trailing_distance", Decimal("0.02"), Decimal)
+        self.trailing_atr_multiplier = get_config_value(config, "trailing_atr_multiplier", Decimal("1.5"), Decimal)
+        self.trailing_step_size = get_config_value(config, "trailing_step_size", Decimal("0.005"), Decimal)
 
         # Time-based exit parameters
-        self.enable_time_based_exit = config.get("ENABLE_TIME_EXIT", True)
-        self.max_holding_candles = config.get("MAX_BARS_IN_TRADE", 50)
-        self.timeframe = config.get("timeframe", "1h")
+        self.enable_time_based_exit = get_config_value(config, "ENABLE_TIME_EXIT", True, bool)
+        self.max_holding_candles = get_config_value(config, "MAX_BARS_IN_TRADE", 50, int)
+        self.timeframe = get_config_value(config, "timeframe", "1h", str)
 
         # Regime-based exit parameters
-        self.enable_regime_based_exit = config.get("enable_regime_based_exit", True)
-        self.exit_on_regime_change = config.get("exit_on_regime_change", True)
+        self.enable_regime_based_exit = get_config_value(config, "enable_regime_based_exit", True, bool)
+        self.exit_on_regime_change = get_config_value(config, "exit_on_regime_change", True, bool)
 
         # Enhanced logging parameters
-        self.enhanced_trade_logging = config.get("enhanced_trade_logging", True)
-        self.track_exit_reasons = config.get("track_exit_reasons", True)
-        self.log_sl_tp_details = config.get("log_sl_tp_details", True)
+        self.enhanced_trade_logging = get_config_value(config, "enhanced_trade_logging", True, bool)
+        self.track_exit_reasons = get_config_value(config, "track_exit_reasons", True, bool)
+        self.log_sl_tp_details = get_config_value(config, "log_sl_tp_details", True, bool)
 
         # Initialize volatility tracker
         self.symbol_volatility = {}
@@ -161,6 +271,28 @@ class RiskManager:
         # Track critical errors and blocking state
         self.critical_error_count = 0
         self.block_signals = False
+
+        # Initialize circuit breakers for critical risk calculations
+        self._position_size_circuit_breaker = CircuitBreaker(
+            failure_threshold=5,
+            recovery_timeout=120,  # 2 minutes
+            expected_exception=Exception
+        )
+        self._stop_loss_circuit_breaker = CircuitBreaker(
+            failure_threshold=3,
+            recovery_timeout=60,  # 1 minute
+            expected_exception=Exception
+        )
+        self._take_profit_circuit_breaker = CircuitBreaker(
+            failure_threshold=3,
+            recovery_timeout=60,  # 1 minute
+            expected_exception=Exception
+        )
+        self._adaptive_risk_circuit_breaker = CircuitBreaker(
+            failure_threshold=5,
+            recovery_timeout=180,  # 3 minutes
+            expected_exception=Exception
+        )
 
     async def evaluate_signal(
         self, signal: TradingSignal, market_data: Dict = None
@@ -304,21 +436,18 @@ class RiskManager:
             Position size in base currency
         """
         account_balance = await self._get_current_balance()
-        risk_percent = Decimal(
-            str(self.config.get("position_size", 0.1))
-        )  # Default 10%
+        risk_percent = get_config_value(self.config, "position_size", Decimal("0.1"), Decimal)
 
         if signal.stop_loss and signal.current_price:
-            stop_loss_pct = abs(
-                (Decimal(str(signal.current_price)) - Decimal(str(signal.stop_loss)))
-                / Decimal(str(signal.current_price))
-            )
+            entry_price = Decimal(str(signal.current_price))
+            stop_loss = Decimal(str(signal.stop_loss))
+            stop_loss_pct = safe_divide(abs(entry_price - stop_loss), entry_price, Decimal("0.02"))
             risk_amount = account_balance * risk_percent
-            position_size = risk_amount / stop_loss_pct
+            position_size = safe_divide(risk_amount, stop_loss_pct, risk_amount)
         else:
             position_size = account_balance * risk_percent
 
-        return _safe_quantize(Decimal(position_size))
+        return _safe_quantize(position_size)
 
     async def _volatility_based_position_size(
         self, signal: TradingSignal, market_data: Optional[Dict[str, Any]] = None
@@ -336,28 +465,32 @@ class RiskManager:
         if not market_data or "close" not in market_data:
             return await self._fixed_fractional_position_size(signal)
 
-        closes = market_data["close"]
-        if len(closes) < 20:  # Need enough data for volatility calculation
+        # Convert dict to DataFrame if needed
+        if isinstance(market_data, dict):
+            data_df = pd.DataFrame(market_data)
+        else:
+            data_df = market_data
+
+        if len(data_df) < 20:  # Need enough data for volatility calculation
             return await self._fixed_fractional_position_size(signal)
 
-        # Calculate ATR
-        high_low = closes["high"] - closes["low"]
-        high_close = np.abs(closes["high"] - closes["close"].shift())
-        low_close = np.abs(closes["low"] - closes["close"].shift())
-        true_range = np.maximum.reduce([high_low, high_close, low_close])
-        atr = true_range.mean()
+        # Use standardized ATR calculation
+        if not validate_market_data(data_df):
+            return await self._fixed_fractional_position_size(signal)
 
-        # Handle NaN or zero ATR
-        if atr <= 0 or np.isnan(atr):
+        atr = get_atr(data_df['high'], data_df['low'], data_df['close'], period=14, method='sma')
+
+        # Handle zero ATR with safe division
+        if atr <= 0:
             return await self._fixed_fractional_position_size(signal)
 
         account_balance = await self._get_current_balance()
-        risk_amount = account_balance * Decimal(
-            str(self.config.get("position_size", 0.1))
-        )
-        position_size = risk_amount / Decimal(str(atr))
+        risk_amount = account_balance * get_config_value(self.config, "position_size", Decimal("0.1"), Decimal)
 
-        return _safe_quantize(Decimal(position_size))
+        # Use safe_divide to prevent division by zero
+        position_size = safe_divide(risk_amount, Decimal(str(atr)), risk_amount)
+
+        return _safe_quantize(position_size)
 
     async def _martingale_position_size(self, signal: TradingSignal) -> Decimal:
         """
@@ -689,9 +822,12 @@ class RiskManager:
         self, signal: TradingSignal, market_data: Optional[Dict[str, Any]] = None
     ) -> Decimal:
         """
-        Calculate adaptive position size based on ATR volatility scaling.
+        Calculate adaptive position size based on ATR volatility scaling with circuit breaker protection.
 
         Formula: position_size = (account_equity * risk_per_trade) / (ATR * k_factor)
+
+        This method uses a circuit breaker to protect against cascading failures in position
+        size calculations. If the circuit breaker is open, it falls back to conservative sizing.
 
         Args:
             signal: TradingSignal to calculate for
@@ -701,36 +837,73 @@ class RiskManager:
             Position size in base currency (Decimal)
         """
         try:
+            # Use circuit breaker to protect position size calculations
+            return self._position_size_circuit_breaker.call(
+                self._calculate_adaptive_position_size_protected,
+                signal, market_data
+            )
+        except CircuitBreakerOpen:
+            logger.warning("Position size circuit breaker is OPEN - using conservative fallback")
+            # Fallback to conservative fixed percentage when circuit is open
             account_balance = await self._get_current_balance()
-            risk_per_trade = Decimal(str(self.config.get("risk_per_trade", 0.02)))  # 2% default
-
-            if not market_data or "close" not in market_data:
-                # Fallback to fixed percentage
-                return _safe_quantize(account_balance * risk_per_trade)
-
-            # Calculate ATR
-            atr = await self._calculate_atr(market_data)
-            if atr <= 0:
-                return _safe_quantize(account_balance * risk_per_trade)
-
-            # Get k-factor (volatility multiplier)
-            k_factor = Decimal(str(self.config.get("atr_k_factor", 2.0)))
-
-            # Calculate position size
-            position_size = (account_balance * risk_per_trade) / (atr * k_factor)
-
-            # Apply maximum position size constraint
-            max_allowed = account_balance * self.max_position_size
-            position_size = min(position_size, max_allowed)
-
-            return _safe_quantize(position_size)
-
+            return _safe_quantize(account_balance * self.risk_per_trade * Decimal("0.5"))  # 50% of normal risk
         except Exception as e:
-            logger.warning(f"Error calculating adaptive position size: {e}")
-            # Fallback to fixed percentage
+            logger.warning(f"Error in circuit breaker protected position size calculation: {e}")
+            # Final fallback
             account_balance = await self._get_current_balance()
-            risk_per_trade = Decimal(str(self.config.get("risk_per_trade", 0.02)))
+            return _safe_quantize(account_balance * self.risk_per_trade)
+
+    async def _calculate_adaptive_position_size_protected(
+        self, signal: TradingSignal, market_data: Optional[Dict[str, Any]] = None
+    ) -> Decimal:
+        """
+        Protected version of adaptive position size calculation (called by circuit breaker).
+
+        Args:
+            signal: TradingSignal to calculate for
+            market_data: Market data containing OHLCV data
+
+        Returns:
+            Position size in base currency (Decimal)
+
+        Raises:
+            Exception: If calculation fails (will be caught by circuit breaker)
+        """
+        account_balance = await self._get_current_balance()
+        risk_per_trade = self.risk_per_trade
+
+        if not market_data or "close" not in market_data:
+            # Fallback to fixed percentage
             return _safe_quantize(account_balance * risk_per_trade)
+
+        # Convert dict to DataFrame if needed
+        if isinstance(market_data, dict):
+            data_df = pd.DataFrame(market_data)
+        else:
+            data_df = market_data
+
+        # Use standardized ATR calculation
+        if not validate_market_data(data_df):
+            return _safe_quantize(account_balance * risk_per_trade)
+
+        atr = get_atr(data_df['high'], data_df['low'], data_df['close'], period=14, method='ema')
+
+        if atr <= 0:
+            return _safe_quantize(account_balance * risk_per_trade)
+
+        # Get k-factor (volatility multiplier)
+        k_factor = self.atr_k_factor
+
+        # Calculate position size using safe division
+        risk_amount = account_balance * risk_per_trade
+        denominator = Decimal(str(atr)) * k_factor
+        position_size = safe_divide(risk_amount, denominator, risk_amount)
+
+        # Apply maximum position size constraint
+        max_allowed = account_balance * self.max_position_size
+        position_size = min(position_size, max_allowed)
+
+        return _safe_quantize(position_size)
 
     async def calculate_dynamic_stop_loss(
         self, signal: TradingSignal, market_data: Optional[Dict[str, Any]] = None
@@ -755,12 +928,24 @@ class RiskManager:
             if sl_method == "atr":
                 if not market_data:
                     return None
-                atr = await self._calculate_atr(market_data)
+
+                # Convert dict to DataFrame if needed
+                if isinstance(market_data, dict):
+                    data_df = pd.DataFrame(market_data)
+                else:
+                    data_df = market_data
+
+                # Use standardized ATR calculation
+                if not validate_market_data(data_df):
+                    return None
+
+                atr = get_atr(data_df['high'], data_df['low'], data_df['close'], period=14, method='ema')
+
                 if atr <= 0:
                     return None
 
-                atr_multiplier = Decimal(str(self.config.get("atr_sl_multiplier", 2.0)))
-                atr_sl_distance = atr * atr_multiplier
+                atr_multiplier = self.atr_sl_multiplier
+                atr_sl_distance = Decimal(str(atr)) * atr_multiplier
 
                 if signal.signal_type.name.endswith("LONG"):
                     return _safe_quantize(entry_price - atr_sl_distance)
@@ -810,7 +995,7 @@ class RiskManager:
             risk_amount = stop_loss - entry_price
 
         # Get TP multiplier (default 2R, 3R based on trend strength)
-        base_multiplier = Decimal(str(self.config.get("tp_base_multiplier", 2.0)))
+        base_multiplier = self.tp_base_multiplier
 
         # Adjust multiplier based on trend strength (ADX)
         trend_multiplier = await self._calculate_trend_multiplier(market_data)
@@ -844,17 +1029,29 @@ class RiskManager:
         """
         try:
             trail_method = self.trailing_stop_method  # atr, percentage
-            trail_distance = Decimal(str(self.config.get("trailing_distance", 0.02)))  # 2% default
+            trail_distance = self.trailing_distance  # Use configurable value
 
             if trail_method == "atr":
                 if not market_data:
                     return None
-                atr = await self._calculate_atr(market_data)
+
+                # Convert dict to DataFrame if needed
+                if isinstance(market_data, dict):
+                    data_df = pd.DataFrame(market_data)
+                else:
+                    data_df = market_data
+
+                # Use standardized ATR calculation
+                if not validate_market_data(data_df):
+                    return None
+
+                atr = get_atr(data_df['high'], data_df['low'], data_df['close'], period=14, method='ema')
+
                 if atr <= 0:
                     return None
 
-                atr_multiplier = Decimal(str(self.config.get("TRAIL_ATR_MULTIPLIER", 2.0)))
-                trail_distance = atr * atr_multiplier
+                atr_multiplier = self.trailing_atr_multiplier
+                trail_distance = Decimal(str(atr)) * atr_multiplier
 
             # Calculate trailing stop
             if signal.signal_type.name.endswith("LONG"):
@@ -1049,29 +1246,21 @@ class RiskManager:
     # ===== HELPER METHODS =====
 
     async def _calculate_atr(self, market_data: Dict[str, Any], period: int = 14) -> Decimal:
-        """Calculate Average True Range from market data."""
+        """Calculate Average True Range from market data using standardized function."""
         try:
-            if "high" not in market_data or "low" not in market_data or "close" not in market_data:
+            # Convert dict to DataFrame if needed
+            if isinstance(market_data, dict):
+                data_df = pd.DataFrame(market_data)
+            else:
+                data_df = market_data
+
+            # Use standardized ATR calculation
+            if not validate_market_data(data_df):
                 return Decimal("0")
 
-            high = pd.Series(market_data["high"])
-            low = pd.Series(market_data["low"])
-            close = pd.Series(market_data["close"])
+            atr = get_atr(data_df['high'], data_df['low'], data_df['close'], period=period, method='ema')
 
-            if len(high) < period + 1:
-                return Decimal("0")
-
-            # Calculate True Range
-            hl = high - low
-            hc = (high - close.shift(1)).abs()
-            lc = (low - close.shift(1)).abs()
-            tr_values = np.maximum.reduce([hl.values, hc.values, lc.values])
-            tr = pd.Series(tr_values, index=high.index)
-
-            # Calculate ATR
-            atr = tr.rolling(window=period).mean().iloc[-1]
-
-            if np.isnan(atr) or atr <= 0:
+            if atr <= 0:
                 return Decimal("0")
 
             return Decimal(str(atr))
@@ -1179,7 +1368,10 @@ class RiskManager:
         self, symbol: str, market_data: Optional[Dict[str, Any]] = None
     ) -> float:
         """
-        Get adaptive risk multiplier from the adaptive risk policy.
+        Get adaptive risk multiplier from the adaptive risk policy with circuit breaker protection.
+
+        This method uses a circuit breaker to protect against cascading failures in
+        adaptive risk multiplier calculations.
 
         Args:
             symbol: Trading symbol
@@ -1189,30 +1381,72 @@ class RiskManager:
             Risk multiplier (0.1 to 1.0)
         """
         try:
-            # Convert market data to DataFrame if needed
-            if market_data and isinstance(market_data, dict):
-                # Convert dict to DataFrame for the adaptive policy
-                data_df = pd.DataFrame()
-                for key, values in market_data.items():
-                    if isinstance(values, (list, np.ndarray)):
-                        data_df[key] = values
-                    else:
-                        # Single value, create series
-                        data_df[key] = [values] * 20  # Pad with same value
-            elif market_data is not None:
-                data_df = market_data
-            else:
-                data_df = None
-
-            # Get risk multiplier from adaptive policy
-            multiplier, reasoning = get_risk_multiplier(symbol, data_df)
-
-            # Log the multiplier decision
-            logger.info(f"Adaptive risk multiplier for {symbol}: {multiplier:.2f} - {reasoning}")
-
-            return multiplier
-
+            # Use circuit breaker to protect adaptive risk calculations
+            return self._adaptive_risk_circuit_breaker.call(
+                self._get_adaptive_risk_multiplier_protected,
+                symbol, market_data
+            )
+        except CircuitBreakerOpen:
+            logger.warning("Adaptive risk circuit breaker is OPEN - using conservative fallback")
+            # Return conservative multiplier when circuit is open
+            return 0.5  # 50% of normal risk
         except Exception as e:
-            logger.warning(f"Error getting adaptive risk multiplier for {symbol}: {e}")
+            logger.warning(f"Error in circuit breaker protected adaptive risk calculation: {e}")
             # Return neutral multiplier on error
             return 1.0
+
+    async def _get_adaptive_risk_multiplier_protected(
+        self, symbol: str, market_data: Optional[Dict[str, Any]] = None
+    ) -> float:
+        """
+        Protected version of adaptive risk multiplier calculation (called by circuit breaker).
+
+        Args:
+            symbol: Trading symbol
+            market_data: Current market data
+
+        Returns:
+            Risk multiplier (0.1 to 1.0)
+
+        Raises:
+            Exception: If calculation fails (will be caught by circuit breaker)
+        """
+        # Convert market data to DataFrame if needed
+        if market_data and isinstance(market_data, dict):
+            # Convert dict to DataFrame for the adaptive policy
+            data_df = pd.DataFrame()
+            for key, values in market_data.items():
+                if isinstance(values, (list, np.ndarray)):
+                    data_df[key] = values
+                else:
+                    # Single value, create series
+                    data_df[key] = [values] * 20  # Pad with same value
+        elif market_data is not None:
+            data_df = market_data
+        else:
+            data_df = None
+
+        # Get risk multiplier from adaptive policy
+        multiplier, reasoning = get_risk_multiplier(symbol, data_df)
+
+        # Log the multiplier decision
+        logger.info(f"Adaptive risk multiplier for {symbol}: {multiplier:.2f} - {reasoning}")
+
+        return multiplier
+
+    def get_circuit_breaker_stats(self) -> Dict[str, Any]:
+        """
+        Get statistics for all circuit breakers.
+
+        This method provides visibility into the health and performance of
+        the circuit breaker pattern implementation.
+
+        Returns:
+            Dictionary containing statistics for all circuit breakers
+        """
+        return {
+            "position_size_circuit_breaker": self._position_size_circuit_breaker.get_stats(),
+            "stop_loss_circuit_breaker": self._stop_loss_circuit_breaker.get_stats(),
+            "take_profit_circuit_breaker": self._take_profit_circuit_breaker.get_stats(),
+            "adaptive_risk_circuit_breaker": self._adaptive_risk_circuit_breaker.get_stats()
+        }

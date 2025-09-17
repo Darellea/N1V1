@@ -20,6 +20,13 @@ Architecture:
 - BayesianOptimizer: Surrogate model for fitness evaluation
 - DistributedEvaluator: Parallel strategy evaluation
 - StrategyRuntime: Dynamic loading and execution system
+
+Refactored Structure:
+- strategy_factory.py: Secure strategy instantiation
+- genome.py: Genetic representation and operations
+- distributed_evaluator.py: Parallel fitness evaluation
+- bayesian_optimizer.py: Surrogate optimization
+- config.py: Centralized configuration management
 """
 
 import asyncio
@@ -57,315 +64,455 @@ except ImportError:
     PYTORCH_AVAILABLE = False
     warnings.warn("PyTorch not available, neural components disabled")
 
-from .base_optimizer import BaseOptimizer, ParameterBounds
+from .base_optimizer import BaseOptimizer
+from .genome import (
+    StrategyGenome, StrategyGene, StrategyComponent,
+    IndicatorType, SignalLogic, Species, GenomeList
+)
 from strategies.base_strategy import BaseStrategy
 from backtest.backtester import compute_backtest_metrics
 from utils.logger import get_logger
 
+# SECURITY NOTE: This module previously used dynamic code generation (type() and exec())
+# which posed significant security risks including arbitrary code execution.
+# The implementation has been refactored to use a secure factory pattern that:
+# 1. Maps predefined strategy types to safe, validated classes
+# 2. Validates all genome parameters against allowed ranges
+# 3. Prevents execution of unknown or malicious code
+# 4. Provides clear audit trails for strategy instantiation
+
 logger = get_logger(__name__)
 
-
-class StrategyComponent(Enum):
-    """Types of strategy components that can be genetically combined."""
-    INDICATOR = "indicator"
-    SIGNAL_LOGIC = "signal_logic"
-    RISK_MANAGEMENT = "risk_management"
-    TIMEFRAME = "timeframe"
-    FILTER = "filter"
+# Type aliases for complex types
+FitnessResults = List[Tuple[StrategyGenome, float]]
+StrategyConfig = Dict[str, Any]
+ParameterConstraints = Dict[str, Dict[str, Any]]
 
 
-class IndicatorType(Enum):
-    """Available technical indicators."""
-    RSI = "rsi"
-    MACD = "macd"
-    BOLLINGER_BANDS = "bollinger_bands"
-    STOCHASTIC = "stochastic"
-    MOVING_AVERAGE = "moving_average"
-    ATR = "atr"
-    VOLUME = "volume"
-    PRICE_ACTION = "price_action"
+class StrategyGenerationError(Exception):
+    """
+    Custom exception for strategy generation failures.
 
+    This exception provides detailed information about why a strategy
+    generation failed, including the specific error type and context.
+    """
 
-class SignalLogic(Enum):
-    """Types of signal generation logic."""
-    CROSSOVER = "crossover"
-    THRESHOLD = "threshold"
-    PATTERN = "pattern"
-    DIVERGENCE = "divergence"
-    MOMENTUM = "momentum"
-    MEAN_REVERSION = "mean_reversion"
+    def __init__(self, message: str, error_type: str = "unknown",
+                 genome_info: Optional[Dict[str, Any]] = None,
+                 cause: Optional[Exception] = None):
+        """
+        Initialize the exception.
 
-
-@dataclass
-class StrategyGene:
-    """Individual gene representing a strategy component."""
-    component_type: StrategyComponent
-    indicator_type: Optional[IndicatorType] = None
-    signal_logic: Optional[SignalLogic] = None
-    parameters: Dict[str, Any] = field(default_factory=dict)
-    weight: float = 1.0
-    enabled: bool = True
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for serialization."""
-        return {
-            'component_type': self.component_type.value,
-            'indicator_type': self.indicator_type.value if self.indicator_type else None,
-            'signal_logic': self.signal_logic.value if self.signal_logic else None,
-            'parameters': self.parameters,
-            'weight': self.weight,
-            'enabled': self.enabled
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'StrategyGene':
-        """Create from dictionary."""
-        return cls(
-            component_type=StrategyComponent(data['component_type']),
-            indicator_type=IndicatorType(data['indicator_type']) if data.get('indicator_type') else None,
-            signal_logic=SignalLogic(data['signal_logic']) if data.get('signal_logic') else None,
-            parameters=data.get('parameters', {}),
-            weight=data.get('weight', 1.0),
-            enabled=data.get('enabled', True)
-        )
-
-
-@dataclass
-class StrategyGenome:
-    """Complete genetic representation of a trading strategy."""
-    genes: List[StrategyGene] = field(default_factory=list)
-    fitness: float = 0.0
-    age: int = 0
-    generation: int = 0
-    species_id: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self):
-        """Validate genome after initialization."""
-        self._validate_genome()
-
-    def _validate_genome(self) -> None:
-        """Validate genome structure and completeness."""
-        if not self.genes:
-            return
-
-        # Ensure we have at least one indicator and signal logic
-        has_indicator = any(g.component_type == StrategyComponent.INDICATOR for g in self.genes)
-        has_signal = any(g.component_type == StrategyComponent.SIGNAL_LOGIC for g in self.genes)
-
-        if not (has_indicator and has_signal):
-            logger.warning("Genome missing required components (indicator or signal logic)")
-
-    def copy(self) -> 'StrategyGenome':
-        """Create a deep copy of this genome."""
-        return StrategyGenome(
-            genes=[StrategyGene(
-                component_type=g.component_type,
-                indicator_type=g.indicator_type,
-                signal_logic=g.signal_logic,
-                parameters=g.parameters.copy(),
-                weight=g.weight,
-                enabled=g.enabled
-            ) for g in self.genes],
-            fitness=self.fitness,
-            age=self.age,
-            generation=self.generation,
-            species_id=self.species_id,
-            metadata=self.metadata.copy()
-        )
-
-    def mutate(self, mutation_rate: float = 0.1) -> 'StrategyGenome':
-        """Apply mutations to this genome."""
-        for gene in self.genes:
-            if random.random() < mutation_rate:
-                self._mutate_gene(gene)
-
-        # Occasionally add or remove genes
-        if random.random() < 0.05:  # 5% chance
-            if random.random() < 0.5 and len(self.genes) < 10:
-                self._add_random_gene()
-            elif len(self.genes) > 3:
-                self._remove_random_gene()
-
-        self._validate_genome()
-        return self
-
-    def _mutate_gene(self, gene: StrategyGene) -> None:
-        """Mutate a single gene."""
-        # Mutate parameters
-        for param_name, param_value in gene.parameters.items():
-            if isinstance(param_value, (int, float)):
-                # Gaussian mutation for numeric parameters
-                if isinstance(param_value, int):
-                    mutation = random.gauss(0, max(1, abs(param_value) * 0.1))
-                    gene.parameters[param_name] = max(1, int(param_value + mutation))
-                else:
-                    mutation = random.gauss(0, max(0.01, abs(param_value) * 0.1))
-                    gene.parameters[param_name] = max(0.01, param_value + mutation)
-
-        # Mutate weight
-        if random.random() < 0.3:
-            gene.weight = max(0.1, min(2.0, gene.weight + random.gauss(0, 0.2)))
-
-        # Occasionally disable/enable gene
-        if random.random() < 0.1:
-            gene.enabled = not gene.enabled
-
-    def _add_random_gene(self) -> None:
-        """Add a random gene to the genome."""
-        component_type = random.choice(list(StrategyComponent))
-
-        gene = StrategyGene(component_type=component_type)
-
-        if component_type == StrategyComponent.INDICATOR:
-            gene.indicator_type = random.choice(list(IndicatorType))
-            gene.parameters = self._get_default_indicator_params(gene.indicator_type)
-        elif component_type == StrategyComponent.SIGNAL_LOGIC:
-            gene.signal_logic = random.choice(list(SignalLogic))
-            gene.parameters = self._get_default_signal_params(gene.signal_logic)
-
-        self.genes.append(gene)
-
-    def _remove_random_gene(self) -> None:
-        """Remove a random gene from the genome."""
-        if self.genes:
-            gene_to_remove = random.choice(self.genes)
-            self.genes.remove(gene_to_remove)
-
-    def _get_default_indicator_params(self, indicator_type: IndicatorType) -> Dict[str, Any]:
-        """Get default parameters for an indicator type."""
-        defaults = {
-            IndicatorType.RSI: {'period': 14, 'overbought': 70, 'oversold': 30},
-            IndicatorType.MACD: {'fast_period': 12, 'slow_period': 26, 'signal_period': 9},
-            IndicatorType.BOLLINGER_BANDS: {'period': 20, 'std_dev': 2.0},
-            IndicatorType.STOCHASTIC: {'k_period': 14, 'd_period': 3, 'overbought': 80, 'oversold': 20},
-            IndicatorType.MOVING_AVERAGE: {'period': 20, 'type': 'sma'},
-            IndicatorType.ATR: {'period': 14},
-            IndicatorType.VOLUME: {'period': 20},
-            IndicatorType.PRICE_ACTION: {'lookback': 5}
-        }
-        return defaults.get(indicator_type, {})
-
-    def _get_default_signal_params(self, signal_logic: SignalLogic) -> Dict[str, Any]:
-        """Get default parameters for signal logic."""
-        defaults = {
-            SignalLogic.CROSSOVER: {'fast_period': 9, 'slow_period': 21},
-            SignalLogic.THRESHOLD: {'threshold': 0.5, 'direction': 'above'},
-            SignalLogic.PATTERN: {'pattern_type': 'double_bottom', 'tolerance': 0.02},
-            SignalLogic.DIVERGENCE: {'lookback': 10, 'threshold': 0.1},
-            SignalLogic.MOMENTUM: {'period': 10, 'threshold': 0.02},
-            SignalLogic.MEAN_REVERSION: {'mean_period': 20, 'std_threshold': 2.0}
-        }
-        return defaults.get(signal_logic, {})
-
-    def crossover(self, other: 'StrategyGenome') -> Tuple['StrategyGenome', 'StrategyGenome']:
-        """Perform crossover with another genome."""
-        # Single-point crossover
-        if not self.genes or not other.genes:
-            return self.copy(), other.copy()
-
-        min_len = min(len(self.genes), len(other.genes))
-        if min_len < 2:
-            return self.copy(), other.copy()
-
-        crossover_point = random.randint(1, min_len - 1)
-
-        child1_genes = self.genes[:crossover_point] + other.genes[crossover_point:]
-        child2_genes = other.genes[:crossover_point] + self.genes[crossover_point:]
-
-        child1 = StrategyGenome(
-            genes=child1_genes,
-            generation=max(self.generation, other.generation) + 1
-        )
-        child2 = StrategyGenome(
-            genes=child2_genes,
-            generation=max(self.generation, other.generation) + 1
-        )
-
-        return child1, child2
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert genome to dictionary for serialization."""
-        return {
-            'genes': [gene.to_dict() for gene in self.genes],
-            'fitness': self.fitness,
-            'age': self.age,
-            'generation': self.generation,
-            'species_id': self.species_id,
-            'metadata': self.metadata
-        }
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'StrategyGenome':
-        """Create genome from dictionary."""
-        return cls(
-            genes=[StrategyGene.from_dict(g) for g in data.get('genes', [])],
-            fitness=data.get('fitness', float('-inf')),
-            age=data.get('age', 0),
-            generation=data.get('generation', 0),
-            species_id=data.get('species_id'),
-            metadata=data.get('metadata', {})
-        )
+        Args:
+            message: Detailed error message
+            error_type: Type of error (e.g., 'validation_failed', 'factory_error', 'missing_strategy')
+            genome_info: Information about the genome that failed
+            cause: Original exception that caused this error
+        """
+        super().__init__(message)
+        self.error_type = error_type
+        self.genome_info = genome_info or {}
+        self.cause = cause
 
     def __str__(self) -> str:
-        """String representation of the genome."""
-        return f"Genome(gen={self.generation}, fitness={self.fitness:.4f}, genes={len(self.genes)})"
-
-    @staticmethod
-    def select_best(population: List['StrategyGenome'], num_to_select: int) -> List['StrategyGenome']:
-        """Select the best N genomes by fitness."""
-        if not population:
-            return []
-
-        # Sort by fitness in descending order
-        sorted_population = sorted(population, key=lambda g: g.fitness, reverse=True)
-        return sorted_population[:num_to_select]
-
-    @staticmethod
-    def tournament_selection(population: List['StrategyGenome'], tournament_size: int) -> 'StrategyGenome':
-        """Perform tournament selection to choose a parent."""
-        if not population:
-            raise ValueError("Population cannot be empty")
-
-        if tournament_size > len(population):
-            tournament_size = len(population)
-
-        # Select random candidates for tournament
-        tournament = random.sample(population, tournament_size)
-
-        # Return the best from the tournament
-        return max(tournament, key=lambda g: g.fitness)
+        """String representation with detailed information."""
+        base_msg = f"StrategyGenerationError [{self.error_type}]: {super().__str__()}"
+        if self.genome_info:
+            base_msg += f" | Genome: {self.genome_info}"
+        if self.cause:
+            base_msg += f" | Caused by: {type(self.cause).__name__}: {str(self.cause)}"
+        return base_msg
 
 
-@dataclass
-class Species:
-    """Species for maintaining population diversity."""
-    species_id: str
-    representative: StrategyGenome
-    members: List[StrategyGenome] = field(default_factory=list)
-    fitness_history: List[float] = field(default_factory=list)
-    stagnation_counter: int = 0
+class StrategyFactory:
+    """
+    Secure factory for creating trading strategies from genomes.
 
-    def update_representative(self) -> None:
-        """Update species representative based on current members."""
-        if not self.members:
-            return
+    This factory replaces dynamic code generation with a secure mapping approach
+    that prevents arbitrary code execution and provides comprehensive validation.
 
-        # Find member with highest fitness
-        best_member = max(self.members, key=lambda g: g.fitness)
-        self.representative = best_member.copy()
+    SECURITY FEATURES:
+    - Predefined strategy mappings only
+    - Parameter validation against allowed ranges
+    - No dynamic code execution (exec/eval/type)
+    - Clear audit trail for strategy instantiation
+    """
 
-    def calculate_diversity_score(self) -> float:
-        """Calculate diversity score within species."""
-        if len(self.members) < 2:
-            return 0.0
+    # Registry of allowed strategy types and their parameter constraints
+    # SECURITY: Classes are explicitly defined to prevent dynamic code execution
+    # Only pre-approved strategy classes can be instantiated through this factory
+    STRATEGY_REGISTRY = {
+        'rsi_momentum': {
+            'class': None,  # To be registered by calling register_strategy()
+            'description': 'RSI-based momentum strategy',
+            'parameters': {
+                'rsi_period': {'min': 2, 'max': 50, 'type': int},
+                'overbought': {'min': 60, 'max': 90, 'type': int},
+                'oversold': {'min': 10, 'max': 40, 'type': int},
+                'momentum_period': {'min': 5, 'max': 30, 'type': int}
+            }
+        },
+        'macd_crossover': {
+            'class': None,  # To be registered by calling register_strategy()
+            'description': 'MACD crossover strategy',
+            'parameters': {
+                'fast_period': {'min': 5, 'max': 20, 'type': int},
+                'slow_period': {'min': 20, 'max': 50, 'type': int},
+                'signal_period': {'min': 5, 'max': 15, 'type': int}
+            }
+        },
+        'bollinger_reversion': {
+            'class': None,  # To be registered by calling register_strategy()
+            'description': 'Bollinger Bands mean reversion strategy',
+            'parameters': {
+                'period': {'min': 10, 'max': 50, 'type': int},
+                'std_dev': {'min': 1.5, 'max': 3.0, 'type': float}
+            }
+        },
+        'volume_price': {
+            'class': None,  # To be registered by calling register_strategy()
+            'description': 'Volume-weighted price action strategy',
+            'parameters': {
+                'volume_threshold': {'min': 0.5, 'max': 3.0, 'type': float},
+                'price_lookback': {'min': 3, 'max': 20, 'type': int}
+            }
+        }
+    }
 
-        # Simple diversity based on fitness variance
-        fitness_values = [g.fitness for g in self.members if g.fitness != float('-inf')]
-        if len(fitness_values) < 2:
-            return 0.0
+    @classmethod
+    def register_strategy(cls, strategy_type: str, strategy_class: type,
+                         description: str, parameters: Dict[str, Any]) -> None:
+        """
+        Register a new strategy type with the factory.
 
-        return np.std(fitness_values) / (np.mean(fitness_values) + 1e-6)
+        Args:
+            strategy_type: Unique identifier for the strategy
+            strategy_class: The actual strategy class
+            description: Human-readable description
+            parameters: Parameter constraints
+        """
+        if strategy_type in cls.STRATEGY_REGISTRY:
+            logger.warning(f"Strategy type '{strategy_type}' already registered, overwriting")
+
+        cls.STRATEGY_REGISTRY[strategy_type] = {
+            'class': strategy_class,
+            'description': description,
+            'parameters': parameters
+        }
+
+        logger.info(f"Registered strategy type: {strategy_type}")
+
+    @classmethod
+    def validate_genome(cls, genome: StrategyGenome) -> Tuple[bool, List[str]]:
+        """
+        Validate a genome against security constraints.
+
+        Args:
+            genome: The genome to validate
+
+        Returns:
+            Tuple of (is_valid, error_messages)
+        """
+        errors = []
+
+        # Check genome structure
+        if not genome.genes:
+            errors.append("Genome has no genes")
+            return False, errors
+
+        # Validate each gene
+        for i, gene in enumerate(genome.genes):
+            if not gene.enabled:
+                continue  # Skip disabled genes
+
+            # Validate component type
+            if gene.component_type not in [StrategyComponent.INDICATOR,
+                                         StrategyComponent.SIGNAL_LOGIC,
+                                         StrategyComponent.RISK_MANAGEMENT,
+                                         StrategyComponent.FILTER]:
+                errors.append(f"Gene {i}: Invalid component type {gene.component_type}")
+
+            # Validate parameters based on component type
+            param_errors = cls._validate_gene_parameters(gene)
+            errors.extend([f"Gene {i}: {err}" for err in param_errors])
+
+        return len(errors) == 0, errors
+
+    @classmethod
+    def _validate_gene_parameters(cls, gene: StrategyGene) -> List[str]:
+        """Validate parameters for a single gene."""
+        errors = []
+
+        # Get parameter constraints based on component type
+        if gene.component_type == StrategyComponent.INDICATOR and gene.indicator_type:
+            constraints = cls._get_indicator_constraints(gene.indicator_type)
+        elif gene.component_type == StrategyComponent.SIGNAL_LOGIC and gene.signal_logic:
+            constraints = cls._get_signal_constraints(gene.signal_logic)
+        else:
+            # For other component types, use generic validation
+            constraints = cls._get_generic_constraints(gene.component_type)
+
+        # Validate each parameter
+        for param_name, param_value in gene.parameters.items():
+            if param_name in constraints:
+                constraint = constraints[param_name]
+                if not cls._validate_parameter(param_value, constraint):
+                    errors.append(f"Parameter {param_name}={param_value} violates constraint {constraint}")
+            else:
+                errors.append(f"Unknown parameter {param_name}")
+
+        return errors
+
+    @classmethod
+    def _validate_parameter(cls, value: Any, constraint: Dict[str, Any]) -> bool:
+        """Validate a single parameter against its constraint."""
+        try:
+            # Type check
+            expected_type = constraint['type']
+            if not isinstance(value, expected_type):
+                return False
+
+            # Range check
+            if 'min' in constraint and value < constraint['min']:
+                return False
+            if 'max' in constraint and value > constraint['max']:
+                return False
+
+            # Enum check
+            if 'allowed_values' in constraint and value not in constraint['allowed_values']:
+                return False
+
+            return True
+        except Exception:
+            return False
+
+    @classmethod
+    def _get_indicator_constraints(cls, indicator_type: IndicatorType) -> Dict[str, Any]:
+        """Get parameter constraints for an indicator type."""
+        constraints = {
+            IndicatorType.RSI: {
+                'period': {'min': 2, 'max': 50, 'type': int},
+                'overbought': {'min': 50, 'max': 95, 'type': int},
+                'oversold': {'min': 5, 'max': 50, 'type': int}
+            },
+            IndicatorType.MACD: {
+                'fast_period': {'min': 5, 'max': 20, 'type': int},
+                'slow_period': {'min': 20, 'max': 50, 'type': int},
+                'signal_period': {'min': 5, 'max': 15, 'type': int}
+            },
+            IndicatorType.BOLLINGER_BANDS: {
+                'period': {'min': 10, 'max': 50, 'type': int},
+                'std_dev': {'min': 1.0, 'max': 3.0, 'type': float}
+            },
+            IndicatorType.STOCHASTIC: {
+                'k_period': {'min': 5, 'max': 30, 'type': int},
+                'd_period': {'min': 3, 'max': 10, 'type': int},
+                'overbought': {'min': 70, 'max': 95, 'type': int},
+                'oversold': {'min': 5, 'max': 30, 'type': int}
+            },
+            IndicatorType.MOVING_AVERAGE: {
+                'period': {'min': 5, 'max': 100, 'type': int},
+                'type': {'allowed_values': ['sma', 'ema', 'wma'], 'type': str}
+            },
+            IndicatorType.ATR: {
+                'period': {'min': 5, 'max': 30, 'type': int}
+            },
+            IndicatorType.VOLUME: {
+                'period': {'min': 5, 'max': 50, 'type': int}
+            },
+            IndicatorType.PRICE_ACTION: {
+                'lookback': {'min': 3, 'max': 20, 'type': int}
+            }
+        }
+        return constraints.get(indicator_type, {})
+
+    @classmethod
+    def _get_signal_constraints(cls, signal_logic: SignalLogic) -> Dict[str, Any]:
+        """Get parameter constraints for signal logic."""
+        constraints = {
+            SignalLogic.CROSSOVER: {
+                'fast_period': {'min': 5, 'max': 20, 'type': int},
+                'slow_period': {'min': 20, 'max': 50, 'type': int}
+            },
+            SignalLogic.THRESHOLD: {
+                'threshold': {'min': 0.1, 'max': 0.9, 'type': float},
+                'direction': {'allowed_values': ['above', 'below'], 'type': str}
+            },
+            SignalLogic.PATTERN: {
+                'pattern_type': {'allowed_values': ['double_bottom', 'double_top', 'head_shoulders'], 'type': str},
+                'tolerance': {'min': 0.01, 'max': 0.1, 'type': float}
+            },
+            SignalLogic.DIVERGENCE: {
+                'lookback': {'min': 5, 'max': 20, 'type': int},
+                'threshold': {'min': 0.05, 'max': 0.5, 'type': float}
+            },
+            SignalLogic.MOMENTUM: {
+                'period': {'min': 5, 'max': 30, 'type': int},
+                'threshold': {'min': 0.01, 'max': 0.1, 'type': float}
+            },
+            SignalLogic.MEAN_REVERSION: {
+                'mean_period': {'min': 10, 'max': 50, 'type': int},
+                'std_threshold': {'min': 1.0, 'max': 3.0, 'type': float}
+            }
+        }
+        return constraints.get(signal_logic, {})
+
+    @classmethod
+    def _get_generic_constraints(cls, component_type: StrategyComponent) -> Dict[str, Any]:
+        """Get generic parameter constraints for component types."""
+        constraints = {
+            StrategyComponent.RISK_MANAGEMENT: {
+                'stop_loss': {'min': 0.005, 'max': 0.1, 'type': float},
+                'take_profit': {'min': 0.01, 'max': 0.2, 'type': float}
+            },
+            StrategyComponent.FILTER: {
+                'volume_threshold': {'min': 0.1, 'max': 5.0, 'type': float}
+            }
+        }
+        return constraints.get(component_type, {})
+
+    @classmethod
+    def create_strategy_from_genome(cls, genome: StrategyGenome) -> Optional[BaseStrategy]:
+        """
+        Create a strategy instance from a validated genome.
+
+        Args:
+            genome: The genome to convert to a strategy
+
+        Returns:
+            Strategy instance or None if creation fails
+        """
+        try:
+            # Validate genome first
+            is_valid, errors = cls.validate_genome(genome)
+            if not is_valid:
+                logger.error(f"Genome validation failed: {errors}")
+                return None
+
+            # Determine strategy type from genome characteristics
+            strategy_type = cls._infer_strategy_type(genome)
+            if not strategy_type or strategy_type not in cls.STRATEGY_REGISTRY:
+                logger.error(f"Unknown or unsupported strategy type: {strategy_type}")
+                return None
+
+            # Get strategy class
+            strategy_info = cls.STRATEGY_REGISTRY[strategy_type]
+            strategy_class = strategy_info['class']
+
+            if strategy_class is None:
+                logger.error(f"Strategy class not registered for type: {strategy_type}")
+                return None
+
+            # Extract and validate parameters
+            strategy_params = cls._extract_strategy_parameters(genome, strategy_type)
+
+            # Create strategy configuration
+            strategy_config = {
+                'name': f'secure_generated_{strategy_type}_{id(genome)}',
+                'symbols': ['BTC/USDT'],  # Default, can be overridden
+                'timeframe': '1h',
+                'required_history': 100,
+                'params': strategy_params,
+                'genome_id': id(genome),  # For tracking
+                'strategy_type': strategy_type  # For audit trail
+            }
+
+            # Create and return strategy instance
+            strategy_instance = strategy_class(strategy_config)
+
+            logger.info(f"Successfully created strategy of type '{strategy_type}' from genome")
+            return strategy_instance
+
+        except Exception as e:
+            logger.error(f"Failed to create strategy from genome: {e}")
+            return None
+
+    @classmethod
+    def _infer_strategy_type(cls, genome: StrategyGenome) -> Optional[str]:
+        """
+        Infer the strategy type from genome characteristics.
+
+        This is a simplified inference - in practice, this could be more sophisticated
+        based on the combination of genes and their parameters.
+        """
+        # Count component types
+        component_counts = {}
+        for gene in genome.genes:
+            if gene.enabled:
+                component_type = gene.component_type.value
+                component_counts[component_type] = component_counts.get(component_type, 0) + 1
+
+        # Simple inference based on dominant components
+        if component_counts.get('indicator', 0) > 0:
+            # Look for specific indicator types
+            for gene in genome.genes:
+                if gene.enabled and gene.component_type == StrategyComponent.INDICATOR:
+                    if gene.indicator_type == IndicatorType.RSI:
+                        return 'rsi_momentum'
+                    elif gene.indicator_type == IndicatorType.MACD:
+                        return 'macd_crossover'
+                    elif gene.indicator_type == IndicatorType.BOLLINGER_BANDS:
+                        return 'bollinger_reversion'
+                    elif gene.indicator_type == IndicatorType.VOLUME:
+                        return 'volume_price'
+
+        # Default fallback
+        return 'rsi_momentum'  # Safe default
+
+    @classmethod
+    def _extract_strategy_parameters(cls, genome: StrategyGenome, strategy_type: str) -> Dict[str, Any]:
+        """Extract validated parameters for the strategy."""
+        strategy_info = cls.STRATEGY_REGISTRY[strategy_type]
+        allowed_params = strategy_info['parameters']
+
+        extracted_params = {}
+
+        # Extract parameters from genome genes
+        for gene in genome.genes:
+            if not gene.enabled:
+                continue
+
+            for param_name, param_value in gene.parameters.items():
+                if param_name in allowed_params:
+                    # Validate parameter value
+                    constraint = allowed_params[param_name]
+                    if cls._validate_parameter(param_value, constraint):
+                        extracted_params[param_name] = param_value
+
+        # Set defaults for missing parameters
+        for param_name, constraint in allowed_params.items():
+            if param_name not in extracted_params:
+                if 'default' in constraint:
+                    extracted_params[param_name] = constraint['default']
+                else:
+                    # Use midpoint of range for numeric types
+                    if 'min' in constraint and 'max' in constraint:
+                        if constraint['type'] == int:
+                            extracted_params[param_name] = (constraint['min'] + constraint['max']) // 2
+                        elif constraint['type'] == float:
+                            extracted_params[param_name] = (constraint['min'] + constraint['max']) / 2.0
+
+        return extracted_params
+
+    @classmethod
+    def get_available_strategies(cls) -> Dict[str, str]:
+        """Get list of available strategy types and their descriptions."""
+        return {name: info['description'] for name, info in cls.STRATEGY_REGISTRY.items()
+                if info['class'] is not None}
+
+    @classmethod
+    def get_strategy_info(cls, strategy_type: str) -> Optional[Dict[str, Any]]:
+        """Get information about a specific strategy type."""
+        if strategy_type not in cls.STRATEGY_REGISTRY:
+            return None
+
+        info = cls.STRATEGY_REGISTRY[strategy_type].copy()
+        # Remove the class object from the returned info for security
+        info.pop('class', None)
+        return info
+
+
+
 
 
 class BayesianOptimizer:
@@ -1035,51 +1182,123 @@ class StrategyGenerator(BaseOptimizer):
             return float('-inf')
 
     def _genome_to_strategy(self, genome: StrategyGenome) -> Optional[BaseStrategy]:
-        """Convert genome to executable strategy."""
-        # Simplified implementation - in practice this would be more sophisticated
+        """
+        Convert genome to executable strategy using secure factory pattern.
+
+        This method replaces the previous dynamic class generation approach
+        with a secure factory pattern that validates all inputs and prevents
+        arbitrary code execution. It provides comprehensive error logging and
+        fallback mechanisms for robust strategy generation.
+
+        Args:
+            genome: The genome to convert to a strategy
+
+        Returns:
+            Strategy instance or None if creation fails
+
+        Raises:
+            StrategyGenerationError: If strategy generation fails with detailed error information
+        """
         try:
-            from strategies.base_strategy import BaseStrategy
+            # Validate genome input
+            if genome is None:
+                raise StrategyGenerationError(
+                    "Genome cannot be None",
+                    error_type="invalid_input",
+                    genome_info={"genome_provided": False}
+                )
 
-            class GeneratedStrategy(BaseStrategy):
-                def __init__(self, config):
-                    super().__init__(config)
-                    self.genome = genome
+            if not genome.genes:
+                raise StrategyGenerationError(
+                    "Genome has no genes - cannot create strategy",
+                    error_type="empty_genome",
+                    genome_info={"gene_count": 0, "generation": genome.generation}
+                )
 
-                def generate_signals(self, data: pd.DataFrame) -> List[Dict[str, Any]]:
-                    signals = []
-
-                    if data.empty or len(data) < 20:
-                        return signals
-
-                    # Generate signals based on genome characteristics
-                    signal_probability = min(0.2, len(genome.genes) / 20.0)  # More genes = more signals
-
-                    for i in range(20, len(data)):
-                        if random.random() < signal_probability:
-                            signal_type = "BUY" if random.random() < 0.5 else "SELL"
-                            signals.append({
-                                'timestamp': data.index[i],
-                                'signal_type': signal_type,
-                                'symbol': self.config.get('symbols', ['BTC/USDT'])[0],
-                                'price': data.iloc[i]['close'],
-                                'metadata': {'genome_id': id(genome)}
-                            })
-
-                    return signals
-
-            strategy_config = {
-                'name': f'generated_{id(genome)}',
-                'symbols': ['BTC/USDT'],
-                'timeframe': '1h',
-                'required_history': 100,
-                'params': {}
+            # Log genome information for debugging
+            genome_info = {
+                "gene_count": len(genome.genes),
+                "generation": genome.generation,
+                "fitness": genome.fitness,
+                "enabled_genes": sum(1 for g in genome.genes if g.enabled)
             }
+            logger.debug(f"Attempting to convert genome to strategy: {genome_info}")
 
-            return GeneratedStrategy(strategy_config)
+            # Use the secure StrategyFactory to create strategy from genome
+            strategy = StrategyFactory.create_strategy_from_genome(genome)
+
+            if strategy is None:
+                # Try to get more detailed error information from factory
+                is_valid, validation_errors = StrategyFactory.validate_genome(genome)
+
+                if not is_valid:
+                    raise StrategyGenerationError(
+                        f"Genome validation failed: {validation_errors}",
+                        error_type="validation_failed",
+                        genome_info=genome_info,
+                        cause=ValueError(f"Validation errors: {validation_errors}")
+                    )
+                else:
+                    raise StrategyGenerationError(
+                        "StrategyFactory returned None despite valid genome",
+                        error_type="factory_error",
+                        genome_info=genome_info
+                    )
+
+            # Validate the created strategy
+            if not hasattr(strategy, 'generate_signals'):
+                raise StrategyGenerationError(
+                    "Created strategy missing required generate_signals method",
+                    error_type="invalid_strategy",
+                    genome_info=genome_info
+                )
+
+            logger.debug(f"Successfully created strategy from genome using factory pattern")
+            return strategy
+
+        except StrategyGenerationError:
+            # Re-raise our custom exceptions
+            raise
+
+        except ValueError as e:
+            logger.error(f"Value error in genome conversion: {str(e)}")
+            logger.error(f"Genome info: {genome_info if 'genome_info' in locals() else 'N/A'}")
+            raise StrategyGenerationError(
+                f"Invalid genome data: {str(e)}",
+                error_type="value_error",
+                genome_info=genome_info if 'genome_info' in locals() else {},
+                cause=e
+            ) from e
+
+        except ImportError as e:
+            logger.error(f"Import error during strategy creation: {str(e)}")
+            raise StrategyGenerationError(
+                f"Required module not available: {str(e)}",
+                error_type="import_error",
+                genome_info=genome_info if 'genome_info' in locals() else {},
+                cause=e
+            ) from e
+
+        except RuntimeError as e:
+            logger.error(f"Runtime error during strategy creation: {str(e)}")
+            raise StrategyGenerationError(
+                f"Strategy creation failed: {str(e)}",
+                error_type="runtime_error",
+                genome_info=genome_info if 'genome_info' in locals() else {},
+                cause=e
+            ) from e
 
         except Exception as e:
-            logger.error(f"Failed to convert genome to strategy: {e}")
-            return None
+            logger.error(f"Unexpected error in genome conversion: {str(e)}")
+            logger.error(f"Error type: {type(e).__name__}")
+            import traceback
+            logger.error(f"Stack trace: {traceback.format_exc()}")
+            raise StrategyGenerationError(
+                f"Unexpected error during genome conversion: {str(e)}",
+                error_type="unexpected_error",
+                genome_info=genome_info if 'genome_info' in locals() else {},
+                cause=e
+            ) from e
 
     def _run_backtest(self, strategy: BaseStrategy, data: pd.DataFrame) -> List[Dict[str, Any]]:
         """Run simplified backtest."""
@@ -1297,26 +1516,38 @@ class StrategyGenerator(BaseOptimizer):
 
         logger.info(f"Population loaded from {path}")
 
-    async def generate_strategy(self, genome: StrategyGenome, name: str) -> Optional[type]:
-        """Generate a strategy class from a genome."""
-        try:
-            # Use the existing _genome_to_strategy method
-            strategy_instance = self._genome_to_strategy(genome)
+    async def generate_strategy(self, genome: StrategyGenome, name: str) -> Optional[BaseStrategy]:
+        """
+        Generate a strategy instance from a genome using secure factory pattern.
 
-            if strategy_instance is None:
+        This method replaces the previous dynamic class generation (using type())
+        with a secure factory pattern that validates all inputs and prevents
+        arbitrary code execution.
+
+        Args:
+            genome: The genome to convert to a strategy
+            name: Name for the generated strategy (used for identification)
+
+        Returns:
+            Strategy instance or None if generation fails
+        """
+        try:
+            # Use the secure StrategyFactory to create strategy from genome
+            strategy = StrategyFactory.create_strategy_from_genome(genome)
+
+            if strategy is None:
+                logger.warning("StrategyFactory failed to create strategy from genome")
                 return None
 
-            # Create a class from the instance
-            strategy_class = type(name, (type(strategy_instance),), {
-                '__init__': lambda self, config: super(type(self), self).__init__(config),
-                'generate_signals': strategy_instance.generate_signals,
-                'genome': genome
-            })
+            # Update strategy name if provided
+            if hasattr(strategy, 'config') and strategy.config:
+                strategy.config['name'] = name
 
-            return strategy_class
+            logger.info(f"Successfully generated strategy '{name}' from genome using secure factory")
+            return strategy
 
         except Exception as e:
-            logger.error(f"Failed to generate strategy: {e}")
+            logger.error(f"Failed to generate strategy '{name}': {e}")
             return None
 
     async def evolve(self) -> None:

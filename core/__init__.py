@@ -11,8 +11,10 @@ import logging.config
 from typing import Dict, Any, Optional
 
 from .logging_utils import (
-    get_structured_logger,
+    LogSanitizer,
+    StructuredLogger,
     LogSensitivity,
+    get_structured_logger,
     set_global_log_sensitivity,
     create_secure_logger_config
 )
@@ -88,10 +90,27 @@ configure_core_logging()
 # Import monitoring components
 from .alert_rules_manager import AlertRulesManager
 from .dashboard_manager import DashboardManager
+from .metrics_collector import MetricsCollector, MetricSample, MetricSeries, get_metrics_collector, collect_trading_metrics, collect_risk_metrics, collect_strategy_metrics, collect_exchange_metrics
+from .metrics_endpoint import MetricsEndpoint
 
 __all__ = [
+    "LogSanitizer",
+    "StructuredLogger",
+    "LogSensitivity",
+    "get_structured_logger",
+    "set_global_log_sensitivity",
+    "create_secure_logger_config",
     "AlertRulesManager",
     "DashboardManager",
+    "MetricsCollector",
+    "MetricSample",
+    "MetricSeries",
+    "get_metrics_collector",
+    "collect_trading_metrics",
+    "collect_risk_metrics",
+    "collect_strategy_metrics",
+    "collect_exchange_metrics",
+    "MetricsEndpoint",
     "get_core_logger",
     "configure_core_logging",
 ]

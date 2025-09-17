@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from typing import Dict, List, Optional, Any, Union, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import threading
 
@@ -23,6 +23,252 @@ from .storage import KnowledgeStorage
 from .adaptive import AdaptiveWeightingEngine
 
 logger = logging.getLogger(__name__)
+
+
+class KnowledgeValidator:
+    """
+    Handles input validation and schema validation for knowledge base operations.
+
+    This class centralizes all validation logic to ensure data integrity and
+    prevent injection attacks or malformed data from corrupting the knowledge base.
+    """
+
+    def __init__(self):
+        """Initialize the knowledge validator."""
+        self.allowed_update_fields = {
+            'market_condition': dict,
+            'strategy_metadata': dict,
+            'performance': dict,
+            'outcome': str,
+            'confidence_score': (int, float),
+            'sample_size': int,
+            'last_updated': str,
+            'tags': list,
+            'notes': (str, type(None))
+        }
+
+    def validate_update_payload(self, updates: Dict[str, Any]) -> List[str]:
+        """
+        Validate the update payload against the expected schema.
+
+        This function implements robust validation to prevent data corruption and injection attacks
+        by ensuring that only expected fields with correct data types are accepted in updates.
+
+        Args:
+            updates: Dictionary containing the fields to update
+
+        Returns:
+            List of validation error messages (empty if valid)
+        """
+        errors = []
+
+        # Check for unknown fields
+        for key in updates.keys():
+            if key not in self.allowed_update_fields:
+                errors.append(f"Unknown field '{key}' not allowed in updates")
+
+        # Validate field types
+        for key, value in updates.items():
+            if key in self.allowed_update_fields:
+                expected_type = self.allowed_update_fields[key]
+                if not isinstance(value, expected_type):
+                    if isinstance(expected_type, tuple):
+                        type_names = [t.__name__ for t in expected_type]
+                        errors.append(f"Field '{key}' must be one of: {', '.join(type_names)}")
+                    else:
+                        errors.append(f"Field '{key}' must be of type {expected_type.__name__}")
+
+                # Additional validation for specific fields
+                if key == 'confidence_score' and isinstance(value, (int, float)):
+                    if not (0.0 <= value <= 1.0):
+                        errors.append("Field 'confidence_score' must be between 0.0 and 1.0")
+
+                if key == 'sample_size' and isinstance(value, int):
+                    if value < 1:
+                        errors.append("Field 'sample_size' must be a positive integer")
+
+                if key == 'outcome' and isinstance(value, str):
+                    # Validate against known outcome values if available
+                    # For now, just ensure it's a non-empty string
+                    if not value.strip():
+                        errors.append("Field 'outcome' cannot be empty")
+
+                if key == 'tags' and isinstance(value, list):
+                    # Ensure all tags are strings
+                    if not all(isinstance(tag, str) for tag in value):
+                        errors.append("All tags must be strings")
+
+        return errors
+
+    def validate_knowledge_entry(self, entry: KnowledgeEntry) -> List[str]:
+        """
+        Validate a complete knowledge entry.
+
+        Args:
+            entry: Knowledge entry to validate
+
+        Returns:
+            List of validation error messages (empty if valid)
+        """
+        errors = []
+
+        # Basic field presence validation
+        if not entry.id:
+            errors.append("Entry ID is required")
+
+        if not entry.strategy_metadata or not entry.strategy_metadata.name:
+            errors.append("Strategy metadata with name is required")
+
+        if not entry.market_condition:
+            errors.append("Market condition is required")
+
+        # Validate confidence score range
+        if not (0.0 <= entry.confidence_score <= 1.0):
+            errors.append("Confidence score must be between 0.0 and 1.0")
+
+        # Validate sample size
+        if entry.sample_size < 1:
+            errors.append("Sample size must be a positive integer")
+
+        return errors
+
+    def validate_query_parameters(self, query: KnowledgeQuery) -> List[str]:
+        """
+        Validate query parameters.
+
+        Args:
+            query: Knowledge query to validate
+
+        Returns:
+            List of validation error messages (empty if valid)
+        """
+        errors = []
+
+        # Validate confidence thresholds
+        if query.min_confidence is not None and not (0.0 <= query.min_confidence <= 1.0):
+            errors.append("Minimum confidence must be between 0.0 and 1.0")
+
+        if query.max_confidence is not None and not (0.0 <= query.max_confidence <= 1.0):
+            errors.append("Maximum confidence must be between 0.0 and 1.0")
+
+        if (query.min_confidence is not None and query.max_confidence is not None and
+            query.min_confidence > query.max_confidence):
+            errors.append("Minimum confidence cannot be greater than maximum confidence")
+
+        # Validate sample size
+        if query.min_sample_size is not None and query.min_sample_size < 1:
+            errors.append("Minimum sample size must be a positive integer")
+
+        # Validate limit
+        if query.limit is not None and query.limit < 1:
+            errors.append("Query limit must be a positive integer")
+
+        return errors
+
+
+class DataStoreInterface:
+    """
+    Abstract interface for knowledge base storage operations.
+
+    This class provides a clean abstraction layer over the storage backend,
+    allowing for easier testing and potential future storage backend changes.
+    """
+
+    def __init__(self, storage: KnowledgeStorage):
+        """
+        Initialize the data store interface.
+
+        Args:
+            storage: The underlying storage backend
+        """
+        self.storage = storage
+
+    def save_entry(self, entry: KnowledgeEntry) -> bool:
+        """
+        Save a knowledge entry.
+
+        Args:
+            entry: Knowledge entry to save
+
+        Returns:
+            Success status
+        """
+        return self.storage.save_entry(entry)
+
+    def get_entry(self, entry_id: str) -> Optional[KnowledgeEntry]:
+        """
+        Retrieve a knowledge entry by ID.
+
+        Args:
+            entry_id: Knowledge entry ID
+
+        Returns:
+            Knowledge entry or None if not found
+        """
+        return self.storage.get_entry(entry_id)
+
+    def delete_entry(self, entry_id: str) -> bool:
+        """
+        Delete a knowledge entry.
+
+        Args:
+            entry_id: Knowledge entry ID
+
+        Returns:
+            Success status
+        """
+        return self.storage.delete_entry(entry_id)
+
+    def query_entries(self, query: KnowledgeQuery) -> KnowledgeQueryResult:
+        """
+        Query knowledge entries.
+
+        Args:
+            query: Knowledge query parameters
+
+        Returns:
+            Query results
+        """
+        return self.storage.query_entries(query)
+
+    def list_entries(self, limit: Optional[int] = None) -> List[KnowledgeEntry]:
+        """
+        List knowledge entries.
+
+        Args:
+            limit: Maximum number of entries to return
+
+        Returns:
+            List of knowledge entries
+        """
+        return self.storage.list_entries(limit)
+
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        Get storage statistics.
+
+        Returns:
+            Statistics dictionary
+        """
+        return self.storage.get_stats()
+
+    def clear_all(self) -> bool:
+        """
+        Clear all knowledge entries.
+
+        Returns:
+            Success status
+        """
+        try:
+            all_entries = self.list_entries(limit=10000)
+            deleted_count = 0
+            for entry in all_entries:
+                if self.delete_entry(entry.id):
+                    deleted_count += 1
+            return deleted_count == len(all_entries)
+        except Exception as e:
+            logger.error(f"Error clearing knowledge base: {e}")
+            return False
 
 
 class KnowledgeManager:
@@ -48,18 +294,23 @@ class KnowledgeManager:
 
         if not self.enabled:
             logger.info("Knowledge base is disabled")
-            self.storage = None
+            self.data_store = None
+            self.validator = None
             self.adaptive_engine = None
             return
 
         # Initialize storage backend
         storage_config = self.config.get('storage', {})
         backend = storage_config.pop('backend', 'json')  # Remove backend from config to avoid conflict
-        self.storage = KnowledgeStorage(backend, **storage_config)
+        storage = KnowledgeStorage(backend, **storage_config)
+
+        # Initialize specialized components
+        self.data_store = DataStoreInterface(storage)
+        self.validator = KnowledgeValidator()
 
         # Initialize adaptive weighting engine
         adaptive_config = self.config.get('adaptive', {})
-        self.adaptive_engine = AdaptiveWeightingEngine(self.storage, adaptive_config)
+        self.adaptive_engine = AdaptiveWeightingEngine(storage, adaptive_config)
 
         # Thread safety
         self._lock = threading.RLock()
@@ -213,12 +464,20 @@ class KnowledgeManager:
         Returns:
             Query results
         """
-        if not self.enabled or not self.storage:
+        if not self.enabled or not self.data_store:
             return KnowledgeQueryResult([], 0, query, 0.0)
+
+        logger.info(f"Starting knowledge query with limit {query.limit}")
 
         with self._lock:
             try:
-                return self.storage.query_entries(query)
+                # Validate query parameters
+                validation_errors = self.validator.validate_query_parameters(query)
+                if validation_errors:
+                    logger.error(f"Invalid query parameters: {validation_errors}")
+                    return KnowledgeQueryResult([], 0, query, 0.0)
+
+                return self.data_store.query_entries(query)
             except Exception as e:
                 logger.error(f"Error querying knowledge: {e}")
                 return KnowledgeQueryResult([], 0, query, 0.0)
@@ -233,12 +492,12 @@ class KnowledgeManager:
         Returns:
             Knowledge entry or None
         """
-        if not self.enabled or not self.storage:
+        if not self.enabled or not self.data_store:
             return None
 
         with self._lock:
             try:
-                return self.storage.get_entry(entry_id)
+                return self.data_store.get_entry(entry_id)
             except Exception as e:
                 logger.error(f"Error retrieving knowledge entry {entry_id}: {e}")
                 return None
@@ -251,41 +510,53 @@ class KnowledgeManager:
         """
         Update an existing knowledge entry.
 
+        This method implements robust input validation for update payloads to prevent
+        data corruption, logical errors, and potential injection attacks. The validation
+        ensures that only expected fields with correct data types are accepted, providing
+        security benefits by rejecting malicious or malformed input.
+
         Args:
             entry_id: Knowledge entry ID
-            updates: Fields to update
+            updates: Fields to update (must conform to expected schema)
 
         Returns:
             Success status
         """
-        if not self.enabled or not self.storage:
+        if not self.enabled or not self.data_store:
             return False
+
+        logger.info(f"Starting update of knowledge entry {entry_id} with {len(updates)} fields")
 
         with self._lock:
             try:
-                entry = self.storage.get_entry(entry_id)
+                entry = self.data_store.get_entry(entry_id)
                 if not entry:
                     return False
 
-                # Apply updates
+                # Validate the update payload using KnowledgeValidator
+                validation_errors = self.validator.validate_update_payload(updates)
+                if validation_errors:
+                    logger.error(f"Invalid update payload for entry {entry_id}: {validation_errors}")
+                    raise ValueError(f"Update validation failed: {', '.join(validation_errors)}")
+
+                # Apply validated updates
                 for key, value in updates.items():
                     if hasattr(entry, key):
                         setattr(entry, key, value)
 
-                # Validate updated entry
-                errors = validate_knowledge_entry(entry)
+                # Validate updated entry using KnowledgeValidator
+                errors = self.validator.validate_knowledge_entry(entry)
                 if errors:
                     logger.error(f"Invalid updates for entry {entry_id}: {errors}")
                     return False
 
                 # Save updated entry
-                success = self.storage.save_entry(entry)
+                success = self.data_store.save_entry(entry)
 
                 if success:
                     # Invalidate adaptive engine cache
                     if self.adaptive_engine:
-                        self.adaptive_engine._weight_cache.clear()
-                        self.adaptive_engine._cache_timestamp = None
+                        self.adaptive_engine.cache_manager.clear_cache()
 
                 return success
 
@@ -303,17 +574,16 @@ class KnowledgeManager:
         Returns:
             Success status
         """
-        if not self.enabled or not self.storage:
+        if not self.enabled or not self.data_store:
             return False
 
         with self._lock:
             try:
-                success = self.storage.delete_entry(entry_id)
+                success = self.data_store.delete_entry(entry_id)
 
                 if success and self.adaptive_engine:
                     # Invalidate cache
-                    self.adaptive_engine._weight_cache.clear()
-                    self.adaptive_engine._cache_timestamp = None
+                    self.adaptive_engine.cache_manager.clear_cache()
 
                 return success
 
@@ -340,15 +610,15 @@ class KnowledgeManager:
 
         with self._lock:
             try:
-                if self.storage:
-                    stats['storage_stats'] = self.storage.get_stats()
+                if self.data_store:
+                    stats['storage_stats'] = self.data_store.get_stats()
 
                 if self.adaptive_engine:
                     stats['adaptive_stats'] = self.adaptive_engine.get_adaptive_statistics()
 
                 # Get knowledge summary
-                if self.storage:
-                    all_entries = self.storage.list_entries(limit=1000)
+                if self.data_store:
+                    all_entries = self.data_store.list_entries(limit=1000)
                     stats['knowledge_summary'] = self._analyze_knowledge_entries(all_entries)
 
                 return stats
@@ -356,6 +626,8 @@ class KnowledgeManager:
             except Exception as e:
                 logger.error(f"Error getting knowledge statistics: {e}")
                 return {'enabled': True, 'error': str(e)}
+
+
 
     def _analyze_knowledge_entries(self, entries: List[KnowledgeEntry]) -> Dict[str, Any]:
         """Analyze knowledge entries for summary statistics."""
@@ -425,7 +697,7 @@ class KnowledgeManager:
 
                     cutoff_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=max_age_days)
 
-                    all_entries = self.storage.list_entries(limit=10000)
+                    all_entries = self.data_store.list_entries(limit=10000)
                     removed_count = 0
 
                     for entry in all_entries:
@@ -435,7 +707,7 @@ class KnowledgeManager:
                         )
 
                         if should_remove:
-                            if self.storage.delete_entry(entry.id):
+                            if self.data_store.delete_entry(entry.id):
                                 removed_count += 1
                             else:
                                 results['errors'].append(f"Failed to remove entry {entry.id}")
@@ -448,8 +720,7 @@ class KnowledgeManager:
 
                 # Invalidate caches after maintenance
                 if self.adaptive_engine:
-                    self.adaptive_engine._weight_cache.clear()
-                    self.adaptive_engine._cache_timestamp = None
+                    self.adaptive_engine.cache_manager.clear_cache()
 
             except Exception as e:
                 logger.error(f"Error during knowledge base maintenance: {e}")
@@ -468,11 +739,11 @@ class KnowledgeManager:
         Returns:
             Success status
         """
-        if not self.enabled or not self.storage:
+        if not self.enabled or not self.data_store:
             return False
 
         try:
-            all_entries = self.storage.list_entries(limit=10000)
+            all_entries = self.data_store.list_entries(limit=10000)
 
             if format.lower() == 'json':
                 data = {
@@ -533,7 +804,7 @@ class KnowledgeManager:
         Returns:
             Import results
         """
-        if not self.enabled or not self.storage:
+        if not self.enabled or not self.data_store:
             return {'success': False, 'error': 'Knowledge base disabled'}
 
         results = {
@@ -612,14 +883,14 @@ class KnowledgeManager:
                     entry = KnowledgeEntry.from_dict(entry_data)
 
                     # Validate entry
-                    errors = validate_knowledge_entry(entry)
+                    errors = self.validator.validate_knowledge_entry(entry)
                     if errors:
                         results['entries_skipped'] += 1
                         results['errors'].append(f"Invalid entry {entry.id}: {errors}")
                         continue
 
                     # Save entry
-                    if self.storage.save_entry(entry):
+                    if self.data_store.save_entry(entry):
                         results['entries_imported'] += 1
                     else:
                         results['entries_skipped'] += 1
@@ -633,8 +904,7 @@ class KnowledgeManager:
 
             # Invalidate caches
             if self.adaptive_engine:
-                self.adaptive_engine._weight_cache.clear()
-                self.adaptive_engine._cache_timestamp = None
+                self.adaptive_engine.cache_manager.clear_cache()
 
             logger.info(f"Imported {results['entries_imported']} knowledge entries from {file_path}")
 
@@ -651,25 +921,20 @@ class KnowledgeManager:
         Returns:
             Success status
         """
-        if not self.enabled or not self.storage:
+        if not self.enabled or not self.data_store:
             return False
 
         try:
-            # Get all entries and delete them
-            all_entries = self.storage.list_entries(limit=10000)
-            deleted_count = 0
-
-            for entry in all_entries:
-                if self.storage.delete_entry(entry.id):
-                    deleted_count += 1
+            # Use DataStoreInterface's clear_all method for efficient bulk deletion
+            success = self.data_store.clear_all()
 
             # Clear adaptive engine cache
             if self.adaptive_engine:
-                self.adaptive_engine._weight_cache.clear()
-                self.adaptive_engine._cache_timestamp = None
+                self.adaptive_engine.cache_manager.clear_cache()
 
-            logger.info(f"Reset knowledge base: removed {deleted_count} entries")
-            return True
+            if success:
+                logger.info("Reset knowledge base: all entries removed")
+            return success
 
         except Exception as e:
             logger.error(f"Error resetting knowledge base: {e}")

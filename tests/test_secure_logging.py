@@ -16,7 +16,8 @@ from core.logging_utils import (
     StructuredLogger,
     LogSensitivity,
     get_structured_logger,
-    set_global_log_sensitivity
+    set_global_log_sensitivity,
+    create_secure_logger_config
 )
 from core import configure_core_logging
 

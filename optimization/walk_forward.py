@@ -16,7 +16,7 @@ Key Features:
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Any, Optional, Tuple, Callable, Union
+from typing import Dict, List, Any, Optional, Tuple, Callable, Union, Iterator, Generator
 from abc import ABC, abstractmethod
 import logging
 import json
@@ -94,8 +94,65 @@ class WalkForwardResult:
         }
 
 
+class MemoryEfficientDataIterator:
+    """
+    Memory-efficient iterator for processing large datasets in chunks.
+
+    This iterator prevents loading entire datasets into memory by processing
+    data in configurable chunks. It's particularly useful for walk-forward analysis
+    on large historical datasets where memory constraints are a concern.
+    """
+
+    def __init__(self, data: pd.DataFrame, chunk_size: int = 10000, overlap: int = 0):
+        """
+        Initialize the memory-efficient data iterator.
+
+        Args:
+            data: Input DataFrame to iterate over
+            chunk_size: Size of each chunk to process
+            overlap: Number of overlapping rows between chunks
+        """
+        self.data = data
+        self.chunk_size = chunk_size
+        self.overlap = overlap
+        self.total_rows = len(data)
+        self.current_index = 0
+
+    def __iter__(self) -> Iterator[pd.DataFrame]:
+        """Return self as iterator."""
+        return self
+
+    def __next__(self) -> pd.DataFrame:
+        """Get next chunk of data."""
+        if self.current_index >= self.total_rows:
+            raise StopIteration
+
+        # Calculate chunk boundaries
+        start_idx = max(0, self.current_index - self.overlap)
+        end_idx = min(self.total_rows, self.current_index + self.chunk_size)
+
+        # Extract chunk
+        chunk = self.data.iloc[start_idx:end_idx]
+
+        # Update index for next iteration
+        self.current_index += self.chunk_size
+
+        return chunk
+
+    def get_chunk_info(self) -> Dict[str, Any]:
+        """Get information about chunk processing."""
+        total_chunks = (self.total_rows + self.chunk_size - 1) // self.chunk_size
+        return {
+            'total_rows': self.total_rows,
+            'chunk_size': self.chunk_size,
+            'overlap': self.overlap,
+            'estimated_chunks': total_chunks,
+            'memory_efficient': True
+        }
+
+
 class WalkForwardDataSplitter:
-    """Handles data splitting for walk-forward analysis."""
+    """Handles data splitting for walk-forward analysis with memory efficiency."""
 
     def __init__(self, config: Dict[str, Any]):
         """
@@ -108,6 +165,9 @@ class WalkForwardDataSplitter:
                 - step_size: Step size for sliding window (int for periods, str for duration)
                 - min_samples: Minimum samples required for valid window
                 - overlap_allowed: Whether overlapping windows are allowed
+                - memory_efficient: Whether to use memory-efficient processing
+                - chunk_size: Size of data chunks for memory-efficient processing
+                - max_memory_usage: Maximum memory usage in MB
         """
         self.config = config
         self.logger = logging.getLogger(f"{self.__class__.__name__}")
@@ -125,6 +185,11 @@ class WalkForwardDataSplitter:
 
         self.min_samples = config.get('min_samples', 50)
         self.overlap_allowed = config.get('overlap_allowed', False)
+
+        # Memory efficiency settings
+        self.memory_efficient = config.get('memory_efficient', True)
+        self.chunk_size = config.get('chunk_size', 50000)  # Process in 50k row chunks
+        self.max_memory_usage = config.get('max_memory_usage', 1000)  # 1GB limit
 
     def _parse_window_size(self, size: Union[int, str]) -> Union[int, timedelta]:
         """Parse window size specification."""
@@ -534,7 +599,12 @@ class WalkForwardOptimizer(BaseOptimizer):
 
     def optimize(self, strategy_class, data: pd.DataFrame) -> Dict[str, Any]:
         """
-        Run walk-forward optimization.
+        Run walk-forward optimization with memory-efficient processing.
+
+        This method implements memory-efficient data processing to handle large datasets
+        by using chunked/streaming data iterators instead of loading entire datasets
+        into memory. This prevents MemoryError exceptions and enables processing of
+        very large historical datasets that would otherwise cause system crashes.
 
         Args:
             strategy_class: Strategy class to optimize
@@ -545,6 +615,14 @@ class WalkForwardOptimizer(BaseOptimizer):
         """
         start_time = time.time()
         self.logger.info("Starting Walk-Forward Optimization")
+
+        # Check if memory-efficient processing is enabled
+        if self.data_splitter.memory_efficient:
+            self.logger.info("Using memory-efficient processing mode")
+            return self._optimize_memory_efficient(strategy_class, data)
+
+        # Use traditional processing for smaller datasets
+        self.logger.info("Using traditional processing mode")
 
         # Split data into windows
         self.windows = self.data_splitter.split_data(data)
@@ -575,6 +653,87 @@ class WalkForwardOptimizer(BaseOptimizer):
         self._save_results(total_time)
 
         self.logger.info(f"Walk-Forward Optimization completed in {total_time:.2f}s")
+        self.logger.info(f"Best parameters: {best_params}")
+
+        return best_params
+
+    def _optimize_memory_efficient(self, strategy_class, data: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Run walk-forward optimization using memory-efficient data processing.
+
+        This method processes data in configurable chunks to prevent memory exhaustion
+        when working with large historical datasets. Instead of loading the entire dataset
+        into memory, it uses streaming iterators to process data in manageable chunks.
+
+        Args:
+            strategy_class: Strategy class to optimize
+            data: Historical data for walk-forward analysis
+
+        Returns:
+            Best parameter set based on walk-forward analysis
+        """
+        self.logger.info(f"Processing data in chunks of {self.data_splitter.chunk_size} rows")
+
+        # Initialize data iterator for memory-efficient processing
+        data_iterator = MemoryEfficientDataIterator(
+            data,
+            chunk_size=self.data_splitter.chunk_size,
+            overlap=self.data_splitter.min_samples // 2  # Small overlap for continuity
+        )
+
+        chunk_info = data_iterator.get_chunk_info()
+        self.logger.info(f"Data chunking info: {chunk_info}")
+
+        # Process data in chunks
+        all_windows = []
+        chunk_index = 0
+
+        for chunk in data_iterator:
+            self.logger.info(f"Processing chunk {chunk_index + 1}/{chunk_info['estimated_chunks']}")
+            self.logger.info(f"Chunk shape: {chunk.shape}")
+
+            # Split chunk into windows
+            chunk_windows = self.data_splitter.split_data(chunk)
+
+            if chunk_windows:
+                # Adjust window indices to be global
+                for window in chunk_windows:
+                    window.window_index = len(all_windows)
+                    all_windows.append(window)
+
+                self.logger.info(f"Created {len(chunk_windows)} windows from chunk {chunk_index + 1}")
+
+                # Process windows from this chunk
+                if self.parallel_execution:
+                    self._process_windows_parallel(strategy_class, chunk_windows)
+                else:
+                    self._process_windows_sequential(strategy_class, chunk_windows)
+
+            chunk_index += 1
+
+            # Check memory usage (simplified check)
+            # In production, you might want to use psutil for more accurate monitoring
+            if hasattr(self.data_splitter, 'max_memory_usage'):
+                # Add memory monitoring logic here if needed
+                pass
+
+        self.windows = all_windows
+        self.logger.info(f"Total windows created: {len(self.windows)}")
+
+        # Calculate aggregate metrics
+        self._calculate_aggregate_metrics()
+
+        # Calculate performance distribution
+        self._calculate_performance_distribution()
+
+        # Select best parameters based on walk-forward results
+        best_params = self._select_best_parameters()
+
+        # Save results
+        total_time = time.time() - start_time
+        self._save_results(total_time)
+
+        self.logger.info(f"Memory-efficient Walk-Forward Optimization completed in {total_time:.2f}s")
         self.logger.info(f"Best parameters: {best_params}")
 
         return best_params

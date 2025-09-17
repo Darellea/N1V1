@@ -92,6 +92,11 @@ class EMACrossStrategy(BaseStrategy):
                 prev_row["fast_ema"] <= prev_row["slow_ema"]
                 and last_row["fast_ema"] > last_row["slow_ema"]
             ):
+                # Extract deterministic timestamp from the data that triggered the signal
+                signal_timestamp = None
+                if not data_with_emas.empty and isinstance(data_with_emas.index, pd.DatetimeIndex):
+                    signal_timestamp = data_with_emas.index[-1].to_pydatetime()
+
                 signals.append(
                     self.create_signal(
                         symbol=symbol,
@@ -106,6 +111,7 @@ class EMACrossStrategy(BaseStrategy):
                             "fast_ema": last_row["fast_ema"],
                             "slow_ema": last_row["slow_ema"],
                         },
+                        timestamp=signal_timestamp,
                     )
                 )
 
@@ -114,6 +120,11 @@ class EMACrossStrategy(BaseStrategy):
                 prev_row["fast_ema"] >= prev_row["slow_ema"]
                 and last_row["fast_ema"] < last_row["slow_ema"]
             ):
+                # Extract deterministic timestamp from the data that triggered the signal
+                signal_timestamp = None
+                if not data_with_emas.empty and isinstance(data_with_emas.index, pd.DatetimeIndex):
+                    signal_timestamp = data_with_emas.index[-1].to_pydatetime()
+
                 signals.append(
                     self.create_signal(
                         symbol=symbol,
@@ -128,6 +139,7 @@ class EMACrossStrategy(BaseStrategy):
                             "fast_ema": last_row["fast_ema"],
                             "slow_ema": last_row["slow_ema"],
                         },
+                        timestamp=signal_timestamp,
                     )
                 )
 

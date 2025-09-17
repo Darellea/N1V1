@@ -6,46 +6,61 @@ periods of increasing volatility and generates breakout signals when price
 moves beyond ATR-based thresholds.
 """
 
+# Centralized configuration constants for robustness and maintainability
+ATR_PERIOD = 14  # ATR calculation period
+BREAKOUT_MULTIPLIER = 2.0  # ATR multiplier for breakout threshold
+POSITION_SIZE = 0.12  # 12% of portfolio (higher for breakouts)
+STOP_LOSS_PCT = 0.03  # 3% stop loss
+TAKE_PROFIT_PCT = 0.12  # 12% take profit
+VOLUME_FILTER = True  # Use volume confirmation
+VOLUME_THRESHOLD = 1.5  # Volume must be 1.5x average
+MIN_ATR = 0.005  # Minimum ATR value (0.5%)
+TREND_FILTER = True  # Use trend direction filter
+TREND_PERIOD = 20  # Period for trend calculation
+
 import numpy as np
 import pandas as pd
-from typing import List, Dict
+from typing import List, Dict, Any, Union
 
-from strategies.base_strategy import BaseStrategy, StrategyConfig
+from strategies.base_strategy import BaseStrategy, StrategyConfig, SignalGenerationMixin
 from core.contracts import TradingSignal, SignalType, SignalStrength
 
 
-class ATRBreakoutStrategy(BaseStrategy):
+class ATRBreakoutStrategy(BaseStrategy, SignalGenerationMixin):
     """ATR-based breakout trading strategy."""
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: Union[StrategyConfig, Dict[str, Any]]) -> None:
         """Initialize ATR breakout strategy.
 
         Args:
             config: StrategyConfig instance or dict with required parameters.
         """
         super().__init__(config)
-        self.default_params: Dict[str, float] = {
-            "atr_period": 14,  # ATR calculation period
-            "breakout_multiplier": 2.0,  # ATR multiplier for breakout threshold
-            "position_size": 0.12,  # 12% of portfolio (higher for breakouts)
-            "stop_loss_pct": 0.03,  # 3% stop loss
-            "take_profit_pct": 0.12,  # 12% take profit
-            "volume_filter": True,  # Use volume confirmation
-            "volume_threshold": 1.5,  # Volume must be 1.5x average
-            "min_atr": 0.005,  # Minimum ATR value (0.5%)
-            "trend_filter": True,  # Use trend direction filter
-            "trend_period": 20,  # Period for trend calculation
+        self.default_params: Dict[str, Any] = {
+            "atr_period": ATR_PERIOD,  # ATR calculation period
+            "breakout_multiplier": BREAKOUT_MULTIPLIER,  # ATR multiplier for breakout threshold
+            "position_size": POSITION_SIZE,  # 12% of portfolio (higher for breakouts)
+            "stop_loss_pct": STOP_LOSS_PCT,  # 3% stop loss
+            "take_profit_pct": TAKE_PROFIT_PCT,  # 12% take profit
+            "volume_filter": VOLUME_FILTER,  # Use volume confirmation
+            "volume_threshold": VOLUME_THRESHOLD,  # Volume must be 1.5x average
+            "min_atr": MIN_ATR,  # Minimum ATR value (0.5%)
+            "trend_filter": TREND_FILTER,  # Use trend direction filter
+            "trend_period": TREND_PERIOD,  # Period for trend calculation
         }
-        # Handle both StrategyConfig objects and dict configs
-        config_params = config.params if hasattr(config, 'params') else config.get('params', {})
-        self.params: Dict[str, float] = {**self.default_params, **(config_params or {})}
-
-        # Signal tracking
-        self.signal_counts = {"long": 0, "short": 0, "total": 0}
-        self.last_signal_time = None
+        self.params = self._merge_params(self.default_params, config)
 
     async def calculate_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         """Calculate ATR and breakout indicators for each symbol."""
+        # Input validation: Check for required columns
+        required_columns = ['open', 'high', 'low', 'close']
+        if self.params["volume_filter"]:
+            required_columns.append('volume')
+        missing_columns = [col for col in required_columns if col not in data.columns]
+        if missing_columns:
+            raise ValueError(f"Missing required columns in market data: {missing_columns}. "
+                           f"Expected columns: {required_columns}")
+
         atr_period = int(self.params["atr_period"])
         trend_period = int(self.params["trend_period"])
 
@@ -155,21 +170,6 @@ class ATRBreakoutStrategy(BaseStrategy):
             if last_row["atr"] < min_atr:
                 return signals  # ATR too low, avoid low volatility breakouts
 
-            # Check for trend filter if enabled
-            trend_confirmed = True
-            if self.params["trend_filter"] and "trend_slope" in last_row.index:
-                try:
-                    trend_slope = last_row["trend_slope"]
-                    if not pd.isna(trend_slope):
-                        # For long signals, prefer uptrend or neutral
-                        # For short signals, prefer downtrend or neutral
-                        trend_confirmed = True  # Allow all trends for now
-                except Exception:
-                    trend_confirmed = True
-
-            if not trend_confirmed:
-                return signals
-
             # Check for breakout above upper threshold
             breakout_up = (
                 last_row["high"] > last_row["breakout_upper"] and
@@ -182,11 +182,35 @@ class ATRBreakoutStrategy(BaseStrategy):
                 prev_row["low"] >= prev_row["breakout_lower"]
             )
 
+            # Check for trend filter if enabled
+            trend_confirmed = True
+            if self.params["trend_filter"] and "trend_slope" in last_row.index:
+                try:
+                    trend_slope = last_row["trend_slope"]
+                    if not pd.isna(trend_slope):
+                        # For long signals, prefer uptrend or neutral (trend_slope >= 0)
+                        # For short signals, prefer downtrend or neutral (trend_slope <= 0)
+                        if breakout_up and trend_slope < 0:
+                            trend_confirmed = False  # Strong downtrend against long breakout
+                        elif breakout_down and trend_slope > 0:
+                            trend_confirmed = False  # Strong uptrend against short breakout
+                        # Allow neutral trends (trend_slope == 0) for both directions
+                except Exception:
+                    trend_confirmed = True
+
+            if not trend_confirmed:
+                return signals
+
             if breakout_up:
                 # Price broke above ATR upper threshold
                 self.signal_counts["long"] += 1
                 self.signal_counts["total"] += 1
-                self.last_signal_time = pd.Timestamp.now()
+                # Note: last_signal_time is now updated deterministically in _log_signals
+
+                # Extract deterministic timestamp from the data that triggered the signal
+                signal_timestamp = None
+                if not data_with_atr.empty and isinstance(data_with_atr.index, pd.DatetimeIndex):
+                    signal_timestamp = data_with_atr.index[-1].to_pydatetime()
 
                 signals.append(
                     self.create_signal(
@@ -206,6 +230,7 @@ class ATRBreakoutStrategy(BaseStrategy):
                             "breakout_multiplier": self.params["breakout_multiplier"],
                             "volatility_confirmed": volume_confirmed
                         },
+                        timestamp=signal_timestamp,
                     )
                 )
 
@@ -213,7 +238,12 @@ class ATRBreakoutStrategy(BaseStrategy):
                 # Price broke below ATR lower threshold
                 self.signal_counts["short"] += 1
                 self.signal_counts["total"] += 1
-                self.last_signal_time = pd.Timestamp.now()
+                # Note: last_signal_time is now updated deterministically in _log_signals
+
+                # Extract deterministic timestamp from the data that triggered the signal
+                signal_timestamp = None
+                if not data_with_atr.empty and isinstance(data_with_atr.index, pd.DatetimeIndex):
+                    signal_timestamp = data_with_atr.index[-1].to_pydatetime()
 
                 signals.append(
                     self.create_signal(
@@ -233,6 +263,7 @@ class ATRBreakoutStrategy(BaseStrategy):
                             "breakout_multiplier": self.params["breakout_multiplier"],
                             "volatility_confirmed": volume_confirmed
                         },
+                        timestamp=signal_timestamp,
                     )
                 )
 

@@ -6,7 +6,7 @@ Defines the required interface and common functionality.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -36,7 +36,7 @@ class StrategyConfig:
     enabled: bool = True
     params: Optional[Dict[str, Any]] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate essential config fields after initialization."""
         if (
             not self.name
@@ -53,7 +53,7 @@ class BaseStrategy(ABC):
     Concrete strategies must implement the abstract methods.
     """
 
-    def __init__(self, config):
+    def __init__(self, config: Union[StrategyConfig, Dict[str, Any]]) -> None:
         """
         Initialize the strategy with its configuration.
 
@@ -70,6 +70,10 @@ class BaseStrategy(ABC):
         self.last_signal_time = 0
         self.signals_generated = 0
         self._setup_logging()
+
+        # Common signal tracking
+        self.signal_counts: Dict[str, int] = {"long": 0, "short": 0, "total": 0}
+        self.last_signal_time = None
 
     def _setup_logging(self) -> None:
         """Setup strategy-specific logging."""
@@ -241,9 +245,16 @@ class BaseStrategy(ABC):
         take_profit: Optional[float] = None,
         trailing_stop: Optional[Dict[str, Any]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        timestamp: Optional[datetime] = None,
     ) -> TradingSignal:
         """
-        Helper to create a TradingSignal with normalized types.
+        Helper to create a TradingSignal with normalized types and deterministic timestamps.
+
+        REPRODUCIBILITY: This method now accepts a timestamp parameter to ensure deterministic
+        signal creation. For backtesting and training reproducibility, the timestamp should be
+        derived from the input market data (e.g., the timestamp of the data point that triggered
+        the signal). This prevents non-deterministic behavior where signals generated at different
+        times would have different timestamps even with identical input data.
 
         Converts numeric values to Decimal for internal consistency and accepts
         OrderType enum for order_type.
@@ -260,9 +271,10 @@ class BaseStrategy(ABC):
             take_profit: Take profit price (numeric).
             trailing_stop: Trailing stop configuration.
             metadata: Additional strategy-specific data.
+            timestamp: Deterministic timestamp from market data (for reproducibility).
 
         Returns:
-            TradingSignal instance with Decimal-typed numeric fields.
+            TradingSignal instance with Decimal-typed numeric fields and deterministic timestamp.
         """
         # Normalize numeric fields to Decimal where provided
         amt_dec = Decimal(str(amount)) if amount is not None else Decimal("0")
@@ -270,6 +282,10 @@ class BaseStrategy(ABC):
         current_dec = Decimal(str(current_price)) if current_price is not None else None
         stop_dec = Decimal(str(stop_loss)) if stop_loss is not None else None
         tp_dec = Decimal(str(take_profit)) if take_profit is not None else None
+
+        # Use provided timestamp or fallback to current time (for backward compatibility)
+        # In production backtesting/training, timestamp should always be provided
+        signal_timestamp = timestamp if timestamp is not None else datetime.now()
 
         return TradingSignal(
             strategy_id=self.id,
@@ -280,6 +296,7 @@ class BaseStrategy(ABC):
             amount=amt_dec,
             price=price_dec,
             current_price=current_dec,
+            timestamp=signal_timestamp,
             stop_loss=stop_dec,
             take_profit=tp_dec,
             trailing_stop=trailing_stop,
@@ -616,3 +633,108 @@ class VolatilityAnalysisMixin:
 
         returns = np.log(prices / prices.shift(1))
         return float(returns.std() * np.sqrt(period))
+
+
+class SignalGenerationMixin:
+    """Mixin class providing common signal generation methods."""
+
+    def _merge_params(self, default_params: Dict[str, Any], config: Union[StrategyConfig, Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Merge default parameters with config parameters.
+
+        Args:
+            default_params: Default parameter dictionary
+            config: Strategy configuration
+
+        Returns:
+            Merged parameters dictionary
+        """
+        config_params = config.params if hasattr(config, 'params') else config.get('params', {})
+        return {**default_params, **(config_params or {})}
+
+    def _check_volume_confirmation(self, data: pd.DataFrame, symbol: str, volume_period: int, volume_threshold: float) -> bool:
+        """
+        Check if volume confirms the signal.
+
+        Args:
+            data: Market data DataFrame
+            symbol: Trading symbol
+            volume_period: Period for volume averaging
+            volume_threshold: Volume multiplier threshold
+
+        Returns:
+            True if volume confirms, False otherwise
+        """
+        try:
+            symbol_data = data[data["symbol"] == symbol] if "symbol" in data.columns else data
+            if len(symbol_data) < volume_period or "volume" not in symbol_data.columns:
+                return True  # Default to allowing signal if no volume data
+
+            last_row = symbol_data.iloc[-1]
+            if pd.isna(last_row["volume"]):
+                return True
+
+            avg_volume = symbol_data["volume"].tail(volume_period).mean()
+            current_volume = last_row["volume"]
+            return current_volume >= (avg_volume * volume_threshold)
+        except Exception:
+            return True  # Default to allowing signal on error
+
+    def _create_breakout_signal(
+        self,
+        symbol: str,
+        signal_type: SignalType,
+        strength: SignalStrength,
+        current_price: float,
+        position_size: float,
+        stop_loss_pct: float,
+        take_profit_pct: float,
+        metadata: Dict[str, Any]
+    ) -> TradingSignal:
+        """
+        Create a breakout trading signal.
+
+        Args:
+            symbol: Trading symbol
+            signal_type: Type of signal
+            strength: Signal strength
+            current_price: Current market price
+            position_size: Position size percentage
+            stop_loss_pct: Stop loss percentage
+            take_profit_pct: Take profit percentage
+            metadata: Additional signal metadata
+
+        Returns:
+            TradingSignal object
+        """
+        stop_loss = current_price * (1 - stop_loss_pct) if signal_type == SignalType.ENTRY_LONG else current_price * (1 + stop_loss_pct)
+        take_profit = current_price * (1 + take_profit_pct) if signal_type == SignalType.ENTRY_LONG else current_price * (1 - take_profit_pct)
+
+        return self.create_signal(
+            symbol=symbol,
+            signal_type=signal_type,
+            strength=strength,
+            order_type="market",
+            amount=position_size,
+            current_price=current_price,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            metadata=metadata,
+        )
+
+    def _update_signal_counts(self, signal_type: str) -> None:
+        """
+        Update signal tracking counts.
+
+        REPRODUCIBILITY: Removed non-deterministic timestamp update to ensure
+        that signal generation is deterministic based on input data only.
+        The last_signal_time is now updated in _log_signals using now_ms()
+        which is more appropriate for tracking purposes.
+
+        Args:
+            signal_type: Type of signal ('long', 'short', etc.)
+        """
+        if signal_type in self.signal_counts:
+            self.signal_counts[signal_type] += 1
+        self.signal_counts["total"] += 1
+        # Note: last_signal_time is now updated deterministically in _log_signals

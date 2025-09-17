@@ -139,7 +139,12 @@ class MACDStrategy(BaseStrategy):
             if macd_crossover_bullish and abs(last_row["macd_histogram"]) > histogram_threshold:
                 self.signal_counts["long"] += 1
                 self.signal_counts["total"] += 1
-                self.last_signal_time = pd.Timestamp.now()
+                # Note: last_signal_time is now updated deterministically in _log_signals
+
+                # Extract deterministic timestamp from the data that triggered the signal
+                signal_timestamp = None
+                if not data_with_macd.empty and isinstance(data_with_macd.index, pd.DatetimeIndex):
+                    signal_timestamp = data_with_macd.index[-1].to_pydatetime()
 
                 signals.append(
                     self.create_signal(
@@ -157,13 +162,19 @@ class MACDStrategy(BaseStrategy):
                             "macd_histogram": last_row["macd_histogram"],
                             "crossover_type": "bullish"
                         },
+                        timestamp=signal_timestamp,
                     )
                 )
 
             elif macd_crossover_bearish and abs(last_row["macd_histogram"]) > histogram_threshold:
                 self.signal_counts["short"] += 1
                 self.signal_counts["total"] += 1
-                self.last_signal_time = pd.Timestamp.now()
+                # Note: last_signal_time is now updated deterministically in _log_signals
+
+                # Extract deterministic timestamp from the data that triggered the signal
+                signal_timestamp = None
+                if not data_with_macd.empty and isinstance(data_with_macd.index, pd.DatetimeIndex):
+                    signal_timestamp = data_with_macd.index[-1].to_pydatetime()
 
                 signals.append(
                     self.create_signal(
@@ -181,6 +192,7 @@ class MACDStrategy(BaseStrategy):
                             "macd_histogram": last_row["macd_histogram"],
                             "crossover_type": "bearish"
                         },
+                        timestamp=signal_timestamp,
                     )
                 )
 

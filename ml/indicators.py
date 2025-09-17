@@ -21,6 +21,20 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Centralized configuration for indicator parameters
+# This eliminates hard-coded values and allows easy configuration changes
+INDICATOR_CONFIG = {
+    'rsi_period': 14,
+    'ema_period': 20,
+    'macd_fast': 12,
+    'macd_slow': 26,
+    'macd_signal': 9,
+    'bb_period': 20,
+    'bb_std_dev': 2.0,
+    'atr_period': 14,
+    'adx_period': 14
+}
+
 
 def calculate_rsi(data: pd.DataFrame, period: int = 14, column: str = 'close') -> pd.Series:
     """
@@ -319,23 +333,9 @@ def calculate_all_indicators(data: pd.DataFrame, config: Optional[Dict[str, Unio
     Returns:
         DataFrame with all indicator columns added
     """
-    if config is None:
-        config = {}
-
-    # Default parameters
-    defaults = {
-        'rsi_period': 14,
-        'ema_period': 20,
-        'macd_fast': 12,
-        'macd_slow': 26,
-        'macd_signal': 9,
-        'bb_period': 20,
-        'bb_std_dev': 2.0,
-        'atr_period': 14,
-        'adx_period': 14
-    }
-
-    params = {**defaults, **config}
+    # Use centralized config as defaults, overridden by passed config
+    # This centralizes configuration and eliminates hard-coded values
+    params = {**INDICATOR_CONFIG, **(config or {})}
 
     df = data.copy()
 

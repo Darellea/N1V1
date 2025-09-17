@@ -12,7 +12,7 @@ import tempfile
 import os
 from pathlib import Path
 from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, call
 
 from knowledge_base.schema import (
     KnowledgeEntry, KnowledgeQuery, KnowledgeQueryResult,
@@ -20,8 +20,14 @@ from knowledge_base.schema import (
     PerformanceMetrics, OutcomeTag, validate_knowledge_entry
 )
 from knowledge_base.storage import KnowledgeStorage, JSONStorage, CSVStorage, SQLiteStorage
-from knowledge_base.adaptive import AdaptiveWeightingEngine
-from knowledge_base.manager import KnowledgeManager
+from knowledge_base.adaptive import (
+    AdaptiveWeightingEngine, WeightingCalculator, CacheManager,
+    PERFORMANCE_WEIGHT_DEFAULT, REGIME_SIMILARITY_WEIGHT_DEFAULT,
+    RECENCY_WEIGHT_DEFAULT, SAMPLE_SIZE_WEIGHT_DEFAULT
+)
+from knowledge_base.manager import (
+    KnowledgeManager, KnowledgeValidator, DataStoreInterface
+)
 
 
 class TestKnowledgeSchema:
@@ -606,6 +612,791 @@ class TestIntegrationWithStrategySelector:
         # Test that knowledge base methods are called
         # (This would be tested more thoroughly in integration tests)
         assert selector is not None
+
+
+class TestWeightingCalculator:
+    """Test WeightingCalculator core logic."""
+
+    def test_calculator_initialization(self):
+        """Test WeightingCalculator initialization with default config."""
+        config = {}
+        calculator = WeightingCalculator(config)
+
+        assert calculator.performance_weight == PERFORMANCE_WEIGHT_DEFAULT
+        assert calculator.regime_similarity_weight == REGIME_SIMILARITY_WEIGHT_DEFAULT
+        assert calculator.recency_weight == RECENCY_WEIGHT_DEFAULT
+        assert calculator.sample_size_weight == SAMPLE_SIZE_WEIGHT_DEFAULT
+
+    def test_calculator_custom_config(self):
+        """Test WeightingCalculator with custom config."""
+        config = {
+            'performance_weight': 0.5,
+            'regime_similarity_weight': 0.4,
+            'recency_weight': 0.05,
+            'sample_size_weight': 0.05
+        }
+        calculator = WeightingCalculator(config)
+
+        assert calculator.performance_weight == 0.5
+        assert calculator.regime_similarity_weight == 0.4
+
+    def test_calculate_market_similarity_perfect_match(self):
+        """Test market similarity with perfect match."""
+        calculator = WeightingCalculator({})
+
+        current = MarketCondition(
+            regime=MarketRegime.TRENDING,
+            volatility=0.15,
+            trend_strength=0.8
+        )
+        historical = MarketCondition(
+            regime=MarketRegime.TRENDING,
+            volatility=0.15,
+            trend_strength=0.8
+        )
+
+        similarity = calculator.calculate_market_similarity(current, historical)
+        assert similarity == 1.0
+
+    def test_calculate_market_similarity_no_match(self):
+        """Test market similarity with no match."""
+        calculator = WeightingCalculator({})
+
+        current = MarketCondition(
+            regime=MarketRegime.TRENDING,
+            volatility=0.1,
+            trend_strength=0.9
+        )
+        historical = MarketCondition(
+            regime=MarketRegime.SIDEWAYS,
+            volatility=0.9,
+            trend_strength=0.1
+        )
+
+        similarity = calculator.calculate_market_similarity(current, historical)
+        assert similarity < 0.5
+
+    def test_calculate_market_similarity_zero_volatility(self):
+        """Test market similarity with zero volatility."""
+        calculator = WeightingCalculator({})
+
+        current = MarketCondition(
+            regime=MarketRegime.TRENDING,
+            volatility=0.0,
+            trend_strength=0.8
+        )
+        historical = MarketCondition(
+            regime=MarketRegime.TRENDING,
+            volatility=0.2,
+            trend_strength=0.8
+        )
+
+        similarity = calculator.calculate_market_similarity(current, historical)
+        # Should only consider regime match since volatility is zero
+        assert similarity == 1.0
+
+    def test_calculate_recency_weight_very_recent(self):
+        """Test recency weight for very recent entries."""
+        calculator = WeightingCalculator({})
+        recent_time = datetime.now() - timedelta(days=3)
+
+        weight = calculator.calculate_recency_weight(recent_time)
+        assert weight == 1.0  # RECENCY_MAX_WEIGHT
+
+    def test_calculate_recency_weight_old(self):
+        """Test recency weight for old entries."""
+        calculator = WeightingCalculator({})
+        old_time = datetime.now() - timedelta(days=120)
+
+        weight = calculator.calculate_recency_weight(old_time)
+        assert weight == 0.3  # RECENCY_MIN_WEIGHT
+
+    def test_calculate_sample_size_weight(self):
+        """Test sample size weight calculation."""
+        calculator = WeightingCalculator({})
+
+        # Small sample
+        weight_small = calculator.calculate_sample_size_weight(5)
+        assert weight_small < 0.5
+
+        # Large sample
+        weight_large = calculator.calculate_sample_size_weight(200)
+        assert weight_large == 1.0  # Capped at 1.0
+
+    def test_calculate_performance_score_perfect(self):
+        """Test performance score with perfect metrics."""
+        calculator = WeightingCalculator({})
+
+        perf = PerformanceMetrics(
+            total_trades=100,
+            winning_trades=100,
+            losing_trades=0,
+            win_rate=1.0,
+            profit_factor=5.0,
+            sharpe_ratio=3.0,
+            max_drawdown=0.0,
+            avg_win=100.0,
+            avg_loss=0.0,
+            total_pnl=10000.0,
+            total_returns=1.0
+        )
+
+        score = calculator.calculate_performance_score(perf)
+        assert score > 0.8
+
+    def test_calculate_performance_score_poor(self):
+        """Test performance score with poor metrics."""
+        calculator = WeightingCalculator({})
+
+        perf = PerformanceMetrics(
+            total_trades=100,
+            winning_trades=10,
+            losing_trades=90,
+            win_rate=0.1,
+            profit_factor=0.5,
+            sharpe_ratio=-1.0,
+            max_drawdown=0.8,
+            avg_win=50.0,
+            avg_loss=-200.0,
+            total_pnl=-5000.0,
+            total_returns=-0.5
+        )
+
+        score = calculator.calculate_performance_score(perf)
+        assert score < 0.3
+
+    def test_calculate_performance_score_none_values(self):
+        """Test performance score with None values."""
+        calculator = WeightingCalculator({})
+
+        perf = PerformanceMetrics(
+            total_trades=100,
+            winning_trades=50,
+            losing_trades=50,
+            win_rate=None,  # None win_rate
+            profit_factor=None,  # None profit_factor
+            sharpe_ratio=None,  # None sharpe_ratio
+            max_drawdown=None,  # None max_drawdown
+            avg_win=100.0,
+            avg_loss=-100.0,
+            total_pnl=0.0,
+            total_returns=0.0
+        )
+
+        score = calculator.calculate_performance_score(perf)
+        # Should handle None values gracefully
+        assert isinstance(score, float)
+        assert 0.0 <= score <= 1.0
+
+    def test_calculate_strategy_weight_no_knowledge(self):
+        """Test strategy weight calculation with no knowledge entries."""
+        calculator = WeightingCalculator({})
+
+        strategy_meta = StrategyMetadata(
+            name="TestStrategy",
+            category=StrategyCategory.TREND_FOLLOWING,
+            parameters={},
+            timeframe="1h",
+            indicators_used=["ema"],
+            risk_profile="medium"
+        )
+
+        current_market = MarketCondition(
+            regime=MarketRegime.TRENDING,
+            volatility=0.15,
+            trend_strength=0.8
+        )
+
+        market_similarity_cache = {}
+
+        weight = calculator.calculate_strategy_weight(
+            strategy_meta, [], current_market, market_similarity_cache
+        )
+
+        assert weight == 1.0  # NO_KNOWLEDGE_DEFAULT_WEIGHT
+
+    def test_calculate_strategy_weight_with_knowledge(self):
+        """Test strategy weight calculation with knowledge entries."""
+        calculator = WeightingCalculator({})
+
+        strategy_meta = StrategyMetadata(
+            name="TestStrategy",
+            category=StrategyCategory.TREND_FOLLOWING,
+            parameters={},
+            timeframe="1h",
+            indicators_used=["ema"],
+            risk_profile="medium"
+        )
+
+        current_market = MarketCondition(
+            regime=MarketRegime.TRENDING,
+            volatility=0.15,
+            trend_strength=0.8
+        )
+
+        # Create knowledge entry
+        perf = PerformanceMetrics(
+            total_trades=100,
+            winning_trades=70,
+            losing_trades=30,
+            win_rate=0.7,
+            profit_factor=1.8,
+            sharpe_ratio=1.5,
+            max_drawdown=0.1,
+            avg_win=200.0,
+            avg_loss=-150.0,
+            total_pnl=5000.0,
+            total_returns=0.5
+        )
+
+        entry = KnowledgeEntry(
+            id="test_entry",
+            market_condition=current_market,
+            strategy_metadata=strategy_meta,
+            performance=perf,
+            outcome=OutcomeTag.SUCCESS,
+            confidence_score=0.8,
+            sample_size=100,
+            last_updated=datetime.now() - timedelta(days=10)
+        )
+
+        knowledge_entries = [entry]
+        market_similarity_cache = {current_market: 1.0}
+
+        weight = calculator.calculate_strategy_weight(
+            strategy_meta, knowledge_entries, current_market, market_similarity_cache
+        )
+
+        assert weight > 1.0  # Should boost weight for good performance
+
+    def test_normalize_weights_empty(self):
+        """Test weight normalization with empty weights."""
+        calculator = WeightingCalculator({})
+
+        normalized = calculator.normalize_weights({})
+        assert normalized == {}
+
+    def test_normalize_weights_normal(self):
+        """Test weight normalization with normal weights."""
+        calculator = WeightingCalculator({})
+
+        weights = {"A": 2.0, "B": 4.0, "C": 4.0}
+        normalized = calculator.normalize_weights(weights)
+
+        total = sum(normalized.values())
+        assert abs(total - 1.0) < 1e-6
+
+        # Check relative relationships preserved
+        assert normalized["B"] == normalized["C"]
+        assert normalized["B"] > normalized["A"]
+
+    def test_normalize_weights_zero_sum(self):
+        """Test weight normalization with zero sum."""
+        calculator = WeightingCalculator({})
+
+        weights = {"A": 0.0, "B": 0.0, "C": 0.0}
+        normalized = calculator.normalize_weights(weights)
+
+        # Should distribute equally
+        expected = 1.0 / 3
+        assert all(abs(v - expected) < 1e-6 for v in normalized.values())
+
+    def test_clamp_weight(self):
+        """Test weight clamping."""
+        calculator = WeightingCalculator({})
+
+        # Test within bounds
+        assert calculator._clamp_weight(1.5) == 1.5
+
+        # Test below min
+        assert calculator._clamp_weight(0.05) == 0.1
+
+        # Test above max
+        assert calculator._clamp_weight(4.0) == 3.0
+
+
+class TestCacheManager:
+    """Test CacheManager functionality."""
+
+    def test_cache_manager_initialization(self):
+        """Test CacheManager initialization."""
+        cache_manager = CacheManager()
+
+        assert cache_manager._weight_cache == {}
+        assert cache_manager._cache_timestamp is None
+        assert cache_manager._cache_ttl == timedelta(minutes=5)
+
+    def test_get_cache_key(self):
+        """Test cache key generation."""
+        cache_manager = CacheManager()
+
+        market_condition = MarketCondition(
+            regime=MarketRegime.TRENDING,
+            volatility=0.15,
+            trend_strength=0.8,
+            timestamp=datetime(2023, 1, 1)
+        )
+
+        strategies = [
+            StrategyMetadata(name="StrategyA", category=StrategyCategory.TREND_FOLLOWING,
+                           parameters={}, timeframe="1h", indicators_used=[], risk_profile="medium"),
+            StrategyMetadata(name="StrategyB", category=StrategyCategory.MEAN_REVERSION,
+                           parameters={}, timeframe="1h", indicators_used=[], risk_profile="medium")
+        ]
+
+        key = cache_manager.get_cache_key(market_condition, strategies)
+        expected_key = "trending:StrategyA_StrategyB:2023-01-01"
+        assert key == expected_key
+
+    def test_cache_operations(self):
+        """Test basic cache operations."""
+        cache_manager = CacheManager()
+
+        key = "test_key"
+        weights = {"A": 1.2, "B": 0.8}
+
+        # Test cache miss
+        assert cache_manager.get_cached_weights(key) is None
+
+        # Test cache set and get
+        cache_manager.cache_weights(key, weights)
+        cached = cache_manager.get_cached_weights(key)
+        assert cached == weights
+
+        # Test cache invalidation
+        cache_manager.clear_cache()
+        assert cache_manager.get_cached_weights(key) is None
+
+    def test_cache_validity(self):
+        """Test cache validity checks."""
+        cache_manager = CacheManager(ttl_minutes=1)
+
+        # Fresh cache
+        cache_manager._cache_timestamp = datetime.now()
+        assert cache_manager.is_cache_valid()
+
+        # Expired cache
+        cache_manager._cache_timestamp = datetime.now() - timedelta(minutes=2)
+        assert not cache_manager.is_cache_valid()
+
+        # No timestamp
+        cache_manager._cache_timestamp = None
+        assert not cache_manager.is_cache_valid()
+
+    def test_get_cache_stats(self):
+        """Test cache statistics."""
+        cache_manager = CacheManager()
+
+        # Empty cache
+        stats = cache_manager.get_cache_stats()
+        assert stats['cache_size'] == 0
+        assert stats['cache_age_minutes'] is None
+
+        # With data
+        cache_manager.cache_weights("key1", {"A": 1.0})
+        cache_manager.cache_weights("key2", {"B": 1.0})
+
+        stats = cache_manager.get_cache_stats()
+        assert stats['cache_size'] == 2
+        assert stats['cache_age_minutes'] is not None
+        assert stats['cache_ttl_minutes'] == 5
+
+
+class TestKnowledgeValidator:
+    """Test KnowledgeValidator functionality."""
+
+    def test_validator_initialization(self):
+        """Test KnowledgeValidator initialization."""
+        validator = KnowledgeValidator()
+        assert 'confidence_score' in validator.allowed_update_fields
+        assert 'sample_size' in validator.allowed_update_fields
+
+    def test_validate_update_payload_valid(self):
+        """Test validation of valid update payload."""
+        validator = KnowledgeValidator()
+
+        updates = {
+            'confidence_score': 0.8,
+            'sample_size': 100,
+            'notes': 'Test update'
+        }
+
+        errors = validator.validate_update_payload(updates)
+        assert len(errors) == 0
+
+    def test_validate_update_payload_invalid_field(self):
+        """Test validation with invalid field."""
+        validator = KnowledgeValidator()
+
+        updates = {
+            'invalid_field': 'value',
+            'confidence_score': 0.8
+        }
+
+        errors = validator.validate_update_payload(updates)
+        assert len(errors) == 1
+        assert 'Unknown field' in errors[0]
+
+    def test_validate_update_payload_invalid_type(self):
+        """Test validation with invalid type."""
+        validator = KnowledgeValidator()
+
+        updates = {
+            'confidence_score': '0.8',  # Should be int/float
+            'sample_size': '100'  # Should be int
+        }
+
+        errors = validator.validate_update_payload(updates)
+        assert len(errors) == 2
+        assert any('confidence_score' in error for error in errors)
+        assert any('sample_size' in error for error in errors)
+
+    def test_validate_update_payload_invalid_values(self):
+        """Test validation with invalid values."""
+        validator = KnowledgeValidator()
+
+        updates = {
+            'confidence_score': 1.5,  # > 1.0
+            'sample_size': 0  # < 1
+        }
+
+        errors = validator.validate_update_payload(updates)
+        assert len(errors) == 2
+        assert any('confidence' in error.lower() for error in errors)
+        assert any('sample' in error.lower() for error in errors)
+
+    def test_validate_knowledge_entry_valid(self):
+        """Test validation of valid knowledge entry."""
+        validator = KnowledgeValidator()
+
+        entry = KnowledgeEntry(
+            id="test_001",
+            market_condition=MarketCondition(regime=MarketRegime.TRENDING, volatility=0.1, trend_strength=0.5),
+            strategy_metadata=StrategyMetadata(
+                name="TestStrategy", category=StrategyCategory.TREND_FOLLOWING,
+                parameters={}, timeframe="1h", indicators_used=[], risk_profile="medium"
+            ),
+            performance=PerformanceMetrics(
+                total_trades=10, winning_trades=5, losing_trades=5, win_rate=0.5,
+                profit_factor=1.0, sharpe_ratio=0.0, max_drawdown=0.0,
+                avg_win=0.0, avg_loss=0.0, total_pnl=0.0, total_returns=0.0
+            ),
+            outcome=OutcomeTag.SUCCESS,
+            confidence_score=0.8,
+            sample_size=10,
+            last_updated=datetime.now()
+        )
+
+        errors = validator.validate_knowledge_entry(entry)
+        assert len(errors) == 0
+
+    def test_validate_knowledge_entry_invalid(self):
+        """Test validation of invalid knowledge entry."""
+        validator = KnowledgeValidator()
+
+        entry = KnowledgeEntry(
+            id="",  # Empty ID
+            market_condition=MarketCondition(regime=MarketRegime.TRENDING, volatility=0.1, trend_strength=0.5),
+            strategy_metadata=StrategyMetadata(
+                name="", category=StrategyCategory.TREND_FOLLOWING,  # Empty name
+                parameters={}, timeframe="1h", indicators_used=[], risk_profile="medium"
+            ),
+            performance=PerformanceMetrics(
+                total_trades=10, winning_trades=5, losing_trades=5, win_rate=0.5,
+                profit_factor=1.0, sharpe_ratio=0.0, max_drawdown=0.0,
+                avg_win=0.0, avg_loss=0.0, total_pnl=0.0, total_returns=0.0
+            ),
+            outcome=OutcomeTag.SUCCESS,
+            confidence_score=1.2,  # > 1.0
+            sample_size=0,  # < 1
+            last_updated=datetime.now()
+        )
+
+        errors = validator.validate_knowledge_entry(entry)
+        assert len(errors) > 0
+        assert any('ID' in error for error in errors)
+        assert any('name' in error for error in errors)
+        assert any('confidence' in error.lower() for error in errors)
+        assert any('sample' in error.lower() for error in errors)
+
+    def test_validate_query_parameters_valid(self):
+        """Test validation of valid query parameters."""
+        validator = KnowledgeValidator()
+
+        query = KnowledgeQuery(
+            market_regime=MarketRegime.TRENDING,
+            min_confidence=0.5,
+            max_confidence=0.9,
+            min_sample_size=10,
+            limit=100
+        )
+
+        errors = validator.validate_query_parameters(query)
+        assert len(errors) == 0
+
+    def test_validate_query_parameters_invalid(self):
+        """Test validation of invalid query parameters."""
+        validator = KnowledgeValidator()
+
+        query = KnowledgeQuery(
+            min_confidence=0.8,
+            max_confidence=0.5,  # min > max
+            min_sample_size=0,  # < 1
+            limit=0  # < 1
+        )
+
+        errors = validator.validate_query_parameters(query)
+        assert len(errors) == 3
+        assert any('confidence' in error.lower() for error in errors)
+        assert any('sample' in error.lower() for error in errors)
+        assert any('limit' in error.lower() for error in errors)
+
+
+class TestDataStoreInterface:
+    """Test DataStoreInterface functionality."""
+
+    def test_data_store_interface_initialization(self):
+        """Test DataStoreInterface initialization."""
+        mock_storage = Mock()
+        data_store = DataStoreInterface(mock_storage)
+
+        assert data_store.storage == mock_storage
+
+    @patch('tests.test_knowledge_base.DataStoreInterface.save_entry')
+    def test_save_entry(self, mock_save):
+        """Test save_entry method."""
+        mock_storage = Mock()
+        data_store = DataStoreInterface(mock_storage)
+
+        entry = Mock()
+        mock_storage.save_entry.return_value = True
+
+        result = data_store.save_entry(entry)
+        assert result is True
+        mock_storage.save_entry.assert_called_once_with(entry)
+
+    @patch('tests.test_knowledge_base.DataStoreInterface.get_entry')
+    def test_get_entry(self, mock_get):
+        """Test get_entry method."""
+        mock_storage = Mock()
+        data_store = DataStoreInterface(mock_storage)
+
+        mock_storage.get_entry.return_value = Mock()
+
+        result = data_store.get_entry("test_id")
+        assert result is not None
+        mock_storage.get_entry.assert_called_once_with("test_id")
+
+    @patch('tests.test_knowledge_base.DataStoreInterface.query_entries')
+    def test_query_entries(self, mock_query):
+        """Test query_entries method."""
+        mock_storage = Mock()
+        data_store = DataStoreInterface(mock_storage)
+
+        query = Mock()
+        mock_storage.query_entries.return_value = Mock()
+
+        result = data_store.query_entries(query)
+        assert result is not None
+        mock_storage.query_entries.assert_called_once_with(query)
+
+    @patch('tests.test_knowledge_base.DataStoreInterface.list_entries')
+    def test_list_entries(self, mock_list):
+        """Test list_entries method."""
+        mock_storage = Mock()
+        data_store = DataStoreInterface(mock_storage)
+
+        mock_list.return_value = []
+
+        result = data_store.list_entries(10)
+        assert result == []
+        mock_storage.list_entries.assert_called_once_with(10)
+
+    @patch('tests.test_knowledge_base.DataStoreInterface.get_stats')
+    def test_get_stats(self, mock_stats):
+        """Test get_stats method."""
+        mock_storage = Mock()
+        data_store = DataStoreInterface(mock_storage)
+
+        mock_stats.return_value = {"total": 5}
+
+        result = data_store.get_stats()
+        assert result == {"total": 5}
+        mock_storage.get_stats.assert_called_once()
+
+    @patch('tests.test_knowledge_base.DataStoreInterface.clear_all')
+    def test_clear_all_success(self, mock_clear):
+        """Test clear_all method success."""
+        mock_storage = Mock()
+        data_store = DataStoreInterface(mock_storage)
+
+        mock_clear.return_value = True
+
+        result = data_store.clear_all()
+        assert result is True
+
+    @patch('tests.test_knowledge_base.DataStoreInterface.list_entries')
+    @patch('tests.test_knowledge_base.DataStoreInterface.delete_entry')
+    def test_clear_all_with_entries(self, mock_delete, mock_list):
+        """Test clear_all method with entries."""
+        mock_storage = Mock()
+        data_store = DataStoreInterface(mock_storage)
+
+        # Mock entries
+        mock_entries = [Mock(id="1"), Mock(id="2")]
+        mock_list.return_value = mock_entries
+        mock_delete.return_value = True
+
+        result = data_store.clear_all()
+        assert result is True
+        assert mock_delete.call_count == 2
+
+
+class TestAdaptiveWeightingEngine:
+    """Test AdaptiveWeightingEngine functionality."""
+
+    def test_engine_initialization(self):
+        """Test AdaptiveWeightingEngine initialization."""
+        mock_storage = Mock()
+        config = {'performance_weight': 0.5}
+
+        engine = AdaptiveWeightingEngine(mock_storage, config)
+
+        assert engine.storage == mock_storage
+        assert engine.performance_weight == 0.5
+        assert engine.calculator is not None
+        assert engine.cache_manager is not None
+
+    def test_calculate_adaptive_weights_empty_knowledge(self):
+        """Test adaptive weights calculation with empty knowledge."""
+        mock_storage = Mock()
+        mock_storage.query_entries.return_value = KnowledgeQueryResult([], 0, KnowledgeQuery(), 0.0)
+
+        engine = AdaptiveWeightingEngine(mock_storage)
+
+        market_condition = MarketCondition(
+            regime=MarketRegime.TRENDING,
+            volatility=0.15,
+            trend_strength=0.8
+        )
+
+        strategies = [
+            StrategyMetadata(
+                name="StrategyA",
+                category=StrategyCategory.TREND_FOLLOWING,
+                parameters={},
+                timeframe="1h",
+                indicators_used=[],
+                risk_profile="medium"
+            )
+        ]
+
+        weights = engine.calculate_adaptive_weights(market_condition, strategies)
+
+        assert weights == {"StrategyA": 1.0}
+
+    def test_get_strategy_recommendations(self):
+        """Test strategy recommendations."""
+        mock_storage = Mock()
+        mock_storage.query_entries.return_value = KnowledgeQueryResult([], 0, KnowledgeQuery(), 0.0)
+
+        engine = AdaptiveWeightingEngine(mock_storage)
+
+        market_condition = MarketCondition(
+            regime=MarketRegime.TRENDING,
+            volatility=0.15,
+            trend_strength=0.8
+        )
+
+        strategies = [
+            StrategyMetadata(
+                name="StrategyA",
+                category=StrategyCategory.TREND_FOLLOWING,
+                parameters={},
+                timeframe="1h",
+                indicators_used=[],
+                risk_profile="medium"
+            ),
+            StrategyMetadata(
+                name="StrategyB",
+                category=StrategyCategory.MEAN_REVERSION,
+                parameters={},
+                timeframe="1h",
+                indicators_used=[],
+                risk_profile="medium"
+            )
+        ]
+
+        recommendations = engine.get_strategy_recommendations(market_condition, strategies, top_n=1)
+
+        assert len(recommendations) == 1
+        assert recommendations[0][0] in ["StrategyA", "StrategyB"]
+
+    def test_update_knowledge_from_trade_success(self):
+        """Test successful knowledge update from trade."""
+        mock_storage = Mock()
+        mock_storage.get_entry.return_value = None  # No existing entry
+        mock_storage.save_entry.return_value = True
+
+        engine = AdaptiveWeightingEngine(mock_storage)
+
+        market_condition = MarketCondition(
+            regime=MarketRegime.TRENDING,
+            volatility=0.15,
+            trend_strength=0.8
+        )
+
+        trade_result = {
+            'pnl': 250.0,
+            'returns': 0.025,
+            'entry_price': 10000.0,
+            'exit_price': 10250.0
+        }
+
+        success = engine.update_knowledge_from_trade("TestStrategy", market_condition, trade_result)
+
+        assert success
+        mock_storage.save_entry.assert_called_once()
+
+    def test_update_knowledge_from_trade_existing_entry(self):
+        """Test knowledge update with existing entry."""
+        mock_existing_entry = Mock()
+        mock_storage = Mock()
+        mock_storage.get_entry.return_value = mock_existing_entry
+        mock_storage.save_entry.return_value = True
+
+        engine = AdaptiveWeightingEngine(mock_storage)
+
+        market_condition = MarketCondition(
+            regime=MarketRegime.TRENDING,
+            volatility=0.15,
+            trend_strength=0.8
+        )
+
+        trade_result = {'pnl': 150.0}
+
+        success = engine.update_knowledge_from_trade("TestStrategy", market_condition, trade_result)
+
+        assert success
+        mock_existing_entry.update_performance.assert_called_once()
+
+    def test_update_knowledge_from_trade_error_handling(self):
+        """Test error handling in knowledge update."""
+        mock_storage = Mock()
+        mock_storage.get_entry.side_effect = ValueError("Storage error")
+
+        engine = AdaptiveWeightingEngine(mock_storage)
+
+        market_condition = MarketCondition(
+            regime=MarketRegime.TRENDING,
+            volatility=0.15,
+            trend_strength=0.8
+        )
+
+        trade_result = {'pnl': 100.0}
+
+        with pytest.raises(ValueError):
+            engine.update_knowledge_from_trade("TestStrategy", market_condition, trade_result)
 
 
 class TestEdgeCases:

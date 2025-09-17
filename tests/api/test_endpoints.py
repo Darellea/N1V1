@@ -577,6 +577,339 @@ class TestGlobalExceptionHandler:
         set_bot_engine(original_engine)
 
 
+class TestCustomExceptionMiddleware:
+    """Test custom exception middleware."""
+
+    def test_custom_exception_middleware_handles_exceptions(self, client):
+        """Test that custom exception middleware catches and handles exceptions."""
+        # This test is tricky to trigger directly, but we can test by ensuring the middleware is added
+        from api.app import app
+        middleware_classes = [type(mw.app) if hasattr(mw, 'app') else type(mw) for mw in app.user_middleware]
+        assert any('CustomExceptionMiddleware' in str(cls) for cls in middleware_classes)
+
+
+class TestRateLimitJSONMiddleware:
+    """Test rate limit JSON middleware."""
+
+    def test_rate_limit_middleware_converts_429_to_json(self, client):
+        """Test that rate limit middleware converts 429 responses to JSON."""
+        # Make many requests to trigger rate limit
+        for i in range(65):
+            response = client.get("/api/v1/health")
+
+        # Check that the response is JSON even for 429
+        assert response.status_code == 429
+        data = response.json()
+        assert "error" in data
+        assert data["error"]["code"] == "rate_limit_exceeded"
+
+
+class TestBotEngineUnavailable:
+    """Test behavior when bot engine is unavailable."""
+
+    def test_status_endpoint_bot_unavailable(self, client):
+        """Test status endpoint when bot engine is None."""
+        from api.app import set_bot_engine
+        original_engine = client._test_bot_engine
+        set_bot_engine(None)
+
+        response = client.get("/api/v1/status")
+        assert response.status_code == 503
+
+        data = response.json()
+        assert "error" in data
+        assert data["error"]["code"] == 503
+
+        set_bot_engine(original_engine)
+
+    def test_pause_endpoint_bot_unavailable(self, client):
+        """Test pause endpoint when bot engine is None."""
+        from api.app import set_bot_engine
+        original_engine = client._test_bot_engine
+        set_bot_engine(None)
+
+        response = client.post("/api/v1/pause")
+        assert response.status_code == 503
+
+        set_bot_engine(original_engine)
+
+    def test_resume_endpoint_bot_unavailable(self, client):
+        """Test resume endpoint when bot engine is None."""
+        from api.app import set_bot_engine
+        original_engine = client._test_bot_engine
+        set_bot_engine(None)
+
+        response = client.post("/api/v1/resume")
+        assert response.status_code == 503
+
+        set_bot_engine(original_engine)
+
+    def test_performance_endpoint_bot_unavailable(self, client):
+        """Test performance endpoint when bot engine is None."""
+        from api.app import set_bot_engine
+        original_engine = client._test_bot_engine
+        set_bot_engine(None)
+
+        response = client.get("/api/v1/performance")
+        assert response.status_code == 503
+
+        set_bot_engine(original_engine)
+
+
+class TestDatabaseInteractions:
+    """Test database interaction edge cases."""
+
+    def test_orders_endpoint_empty_database(self, client):
+        """Test orders endpoint with empty database."""
+        if "API_KEY" in os.environ:
+            del os.environ["API_KEY"]
+
+        response = client.get("/api/v1/orders")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert "orders" in data
+        # Assuming test database is empty or has no orders
+        assert isinstance(data["orders"], list)
+
+    def test_signals_endpoint_empty_database(self, client):
+        """Test signals endpoint with empty database."""
+        if "API_KEY" in os.environ:
+            del os.environ["API_KEY"]
+
+        response = client.get("/api/v1/signals")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert "signals" in data
+        assert isinstance(data["signals"], list)
+
+    def test_equity_endpoint_empty_database(self, client):
+        """Test equity endpoint with empty database."""
+        if "API_KEY" in os.environ:
+            del os.environ["API_KEY"]
+
+        response = client.get("/api/v1/equity")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert "equity_curve" in data
+        assert isinstance(data["equity_curve"], list)
+
+
+class TestTemplateRendering:
+    """Test template rendering for dashboard."""
+
+    def test_dashboard_template_not_found(self, client):
+        """Test dashboard endpoint when template is missing."""
+        # This would require mocking the template directory or file system
+        # For now, just ensure the endpoint works as expected
+        response = client.get("/dashboard")
+        assert response.status_code == 200
+        # In a real scenario, if template is missing, it would raise an exception
+        # But since templates directory exists, this should work
+
+
+class TestPrometheusMetrics:
+    """Test Prometheus metrics updates."""
+
+    def test_api_requests_counter_incremented(self, client):
+        """Test that API requests counter is incremented."""
+        initial_response = client.get("/api/v1/health")
+        assert initial_response.status_code == 200
+
+        # Check metrics endpoint
+        metrics_response = client.get("/metrics")
+        assert metrics_response.status_code == 200
+        metrics_text = metrics_response.text
+        # Should contain api_requests_total metric
+        assert "api_requests_total" in metrics_text
+
+    def test_trades_counter_accessible(self, client):
+        """Test that trades counter is accessible."""
+        metrics_response = client.get("/metrics")
+        assert metrics_response.status_code == 200
+        metrics_text = metrics_response.text
+        # These counters might not be incremented in tests, but should be present
+        assert "trades_total" in metrics_text or metrics_text.strip() == ""
+
+
+class TestAuthenticationEdgeCases:
+    """Test authentication edge cases."""
+
+    def test_verify_api_key_with_none_credentials(self, client):
+        """Test verify_api_key with None credentials."""
+        os.environ["API_KEY"] = "test_key"
+        # This is tested indirectly through endpoint tests
+        response = client.get("/api/v1/orders")
+        assert response.status_code == 401
+
+    def test_verify_api_key_with_invalid_credentials(self, client):
+        """Test verify_api_key with invalid credentials."""
+        os.environ["API_KEY"] = "test_key"
+        response = client.get("/api/v1/orders", headers={"Authorization": "Bearer invalid"})
+        assert response.status_code == 401
+
+    def test_verify_api_key_no_env_var(self, client):
+        """Test verify_api_key when no API_KEY env var is set."""
+        if "API_KEY" in os.environ:
+            del os.environ["API_KEY"]
+        response = client.get("/api/v1/orders")
+        assert response.status_code == 200  # Should allow access
+
+
+class TestHTTPExceptionHandler:
+    """Test HTTP exception handler."""
+
+    def test_http_exception_handler_formats_error(self, client):
+        """Test that HTTP exception handler formats errors properly."""
+        # Trigger an HTTPException indirectly
+        os.environ["API_KEY"] = "test_key"
+        response = client.get("/api/v1/orders", headers={"Authorization": "Bearer invalid"})
+        assert response.status_code == 401
+
+        data = response.json()
+        assert "error" in data
+        assert "code" in data["error"]
+        assert "message" in data["error"]
+
+
+class TestGlobalExceptionHandlerEdgeCases:
+    """Test global exception handler edge cases."""
+
+    def test_global_exception_handler_with_different_exceptions(self, client):
+        """Test global exception handler with different exception types."""
+        from api.app import set_bot_engine
+        original_engine = client._test_bot_engine
+
+        class TestException(Exception):
+            pass
+
+        class BrokenEngine:
+            def __getattr__(self, name):
+                raise TestException("Custom test exception")
+
+        set_bot_engine(BrokenEngine())
+
+        response = client.get("/api/v1/status")
+        assert response.status_code == 500
+
+        data = response.json()
+        assert "error" in data
+        assert data["error"]["code"] == 500
+
+        set_bot_engine(original_engine)
+
+
+class TestRateLimitingEdgeCases:
+    """Test rate limiting edge cases."""
+
+    def test_rate_limit_with_redis_fallback(self, client):
+        """Test rate limiting with Redis fallback."""
+        # This is hard to test directly, but we can check that limiter is configured
+        from api.app import limiter
+        assert limiter is not None
+
+    def test_get_remote_address_exempt_function(self, client):
+        """Test get_remote_address_exempt function."""
+        from api.app import get_remote_address_exempt
+        # Create a mock request
+        class MockRequest:
+            def __init__(self, path):
+                self.url = type('obj', (object,), {'path': path})()
+
+        exempt_request = MockRequest("/")
+        non_exempt_request = MockRequest("/api/v1/status")
+
+        assert get_remote_address_exempt(exempt_request) is None
+        assert get_remote_address_exempt(non_exempt_request) is not None
+
+
+class TestFormatErrorFunction:
+    """Test format_error function."""
+
+    def test_format_error_with_details(self, client):
+        """Test format_error function with details."""
+        from api.app import format_error
+        error = format_error(400, "Bad Request", {"field": "required"})
+        assert "error" in error
+        assert error["error"]["code"] == 400
+        assert error["error"]["message"] == "Bad Request"
+        assert error["error"]["details"] == {"field": "required"}
+
+    def test_format_error_without_details(self, client):
+        """Test format_error function without details."""
+        from api.app import format_error
+        error = format_error(404, "Not Found")
+        assert "error" in error
+        assert error["error"]["code"] == 404
+        assert error["error"]["message"] == "Not Found"
+        assert error["error"]["details"] is None
+
+
+class TestSetBotEngineFunction:
+    """Test set_bot_engine function."""
+
+    def test_set_bot_engine_updates_global(self, client):
+        """Test that set_bot_engine updates the global bot_engine."""
+        from api.app import set_bot_engine, bot_engine
+        original_engine = bot_engine
+
+        mock_engine = {"test": "engine"}
+        set_bot_engine(mock_engine)
+        # Note: This tests the function, but global state might not be directly accessible
+        # In practice, the function sets the global variable
+
+        # Restore original
+        set_bot_engine(original_engine)
+
+
+class TestMiddlewareOrder:
+    """Test middleware order and configuration."""
+
+    def test_cors_middleware_configured(self, client):
+        """Test that CORS middleware is properly configured."""
+        from api.app import app
+        cors_found = False
+        for middleware in app.user_middleware:
+            if hasattr(middleware, 'app') and hasattr(middleware.app, 'allow_origins'):
+                cors_found = True
+                assert middleware.app.allow_origins is not None
+                break
+        assert cors_found
+
+    def test_rate_limit_middleware_configured(self, client):
+        """Test that rate limit middleware is configured."""
+        from api.app import app
+        rate_limit_found = False
+        for middleware in app.user_middleware:
+            if 'SlowAPIMiddleware' in str(type(middleware)):
+                rate_limit_found = True
+                break
+        assert rate_limit_found
+
+
+class TestEndpointDependencies:
+    """Test endpoint dependencies."""
+
+    def test_endpoints_with_dependencies(self, client):
+        """Test that endpoints with dependencies work correctly."""
+        # Most endpoints have verify_api_key dependency
+        # Test with and without API key
+        if "API_KEY" in os.environ:
+            del os.environ["API_KEY"]
+
+        response = client.get("/api/v1/status")
+        assert response.status_code == 200
+
+        os.environ["API_KEY"] = "test_key"
+        response = client.get("/api/v1/status")
+        assert response.status_code == 401
+
+        response = client.get("/api/v1/status", headers={"Authorization": "Bearer test_key"})
+        assert response.status_code == 200
+
+
 # Clean up environment after tests
 @pytest.fixture(autouse=True)
 def cleanup_env():

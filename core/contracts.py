@@ -43,15 +43,21 @@ class TradingSignal:
     """
     Dataclass representing a trading signal.
 
+    REPRODUCIBILITY: The timestamp field no longer uses datetime.now() as default.
+    Instead, strategies must provide deterministic timestamps derived from market data
+    to ensure backtesting and training reproducibility. This prevents non-deterministic
+    behavior where signals generated at different times would have different timestamps
+    even with identical input data.
+
     Attributes:
         strategy_id: ID of the strategy that generated the signal
         symbol: Trading pair symbol (e.g., 'BTC/USDT')
         signal_type: Type of signal (entry/exit/etc.)
         signal_strength: Strength of the signal
         order_type: Type of order to execute
+        timestamp: Time when signal was generated (MUST be provided for reproducibility)
         amount: Size of the position (in base currency) - optional, defaults to quantity if provided
         current_price: Current market price when signal was generated - optional, defaults to price if provided
-        timestamp: Time when signal was generated
         side: Trading side ("buy" or "sell") - deprecated, use signal_type instead
         price: Target price for limit orders - deprecated, use order_type and current_price
         quantity: Size of the position (in base currency) - deprecated, use amount instead
@@ -66,9 +72,9 @@ class TradingSignal:
     signal_type: SignalType
     signal_strength: SignalStrength
     order_type: str
+    timestamp: datetime  # No default_factory - must be provided for reproducibility
     amount: Optional[float] = None
     current_price: Optional[float] = None
-    timestamp: datetime = field(default_factory=datetime.now)
 
     # Deprecated fields - kept for backward compatibility
     side: Optional[str] = None

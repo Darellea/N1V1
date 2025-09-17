@@ -3,9 +3,12 @@ optimization/rl_optimizer.py
 
 Reinforcement Learning implementation for strategy selection optimization.
 Uses Q-learning to learn optimal strategy selection based on market conditions.
+
+This module provides comprehensive type hints for all complex methods,
+improving code clarity, IDE support, and static analysis capabilities.
 """
 
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Tuple, Union, DefaultDict
 import ast
 import logging
 import time
@@ -13,11 +16,25 @@ import random
 import json
 from collections import defaultdict
 from dataclasses import dataclass
+import asyncio
 
 import pandas as pd
 import numpy as np
 
+try:
+    import aiofiles
+except ImportError:
+    # Fallback if aiofiles is not available
+    aiofiles = None
+
 from .base_optimizer import BaseOptimizer
+
+# Type aliases for complex types
+QTable = DefaultDict[Tuple[float, str, str, float], DefaultDict[str, float]]
+MarketData = pd.DataFrame
+StrategyParams = Dict[str, Any]
+BacktestResults = Dict[str, Any]
+PolicyDict = Dict[str, Dict[str, Union[str, float, Dict[str, Any]]]]
 
 
 @dataclass
@@ -191,39 +208,43 @@ class RLOptimizer(BaseOptimizer):
 
         self.logger.info(f"Initialized {len(self.strategy_actions)} strategy actions: {self.strategy_actions}")
 
-    def _run_episode(self, data: pd.DataFrame) -> float:
+    def _run_episode(self, data: MarketData) -> float:
         """
         Run a single training episode.
 
+        This method simulates a complete trading episode by iterating through
+        market data, making decisions, and learning from the outcomes.
+
         Args:
-            data: Historical data for the episode
+            data: Historical market data for the episode
 
         Returns:
-            Total reward for the episode
+            Total reward accumulated during the episode
         """
-        total_reward = 0.0
-        steps = 0
+        total_reward: float = 0.0
+        steps: int = 0
 
         # Start from a random position in the data
-        current_idx = random.randint(100, len(data) - self.max_steps_per_episode - 100)
+        current_idx: int = random.randint(100, len(data) - self.max_steps_per_episode - 100)
 
         while steps < self.max_steps_per_episode and current_idx < len(data) - 50:
             # Get current market state
-            window_data = data.iloc[current_idx:current_idx + 50]
-            current_state = MarketState.from_data(window_data)
+            window_data: MarketData = data.iloc[current_idx:current_idx + 50]
+            current_state: MarketState = MarketState.from_data(window_data)
 
             # Choose action (strategy) using epsilon-greedy policy
-            action = self._choose_action(current_state)
+            action: str = self._choose_action(current_state)
 
             # Execute action and get reward
+            reward: float
+            next_idx: int
             reward, next_idx = self._execute_action(action, data, current_idx)
 
             # Get next state
+            next_state: Optional[MarketState] = None
             if next_idx < len(data) - 50:
-                next_window = data.iloc[next_idx:next_idx + 50]
+                next_window: MarketData = data.iloc[next_idx:next_idx + 50]
                 next_state = MarketState.from_data(next_window)
-            else:
-                next_state = None
 
             # Update Q-table
             self._update_q_table(current_state, action, reward, next_state)
@@ -261,44 +282,50 @@ class RLOptimizer(BaseOptimizer):
         # If no Q-values exist, choose randomly
         return random.choice(self.strategy_actions)
 
-    def _execute_action(self, action: str, data: pd.DataFrame, current_idx: int) -> Tuple[float, int]:
+    def _execute_action(self, action: str, data: MarketData, current_idx: int) -> Tuple[float, int]:
         """
         Execute an action and calculate reward.
 
+        This method simulates the execution of a trading strategy action
+        on a segment of market data and calculates the resulting reward.
+
         Args:
             action: Strategy action to execute
-            data: Historical data
+            data: Historical market data
             current_idx: Current position in data
 
         Returns:
-            Tuple of (reward, next_index)
+            Tuple of (reward_value, next_index)
         """
         # Define action-specific parameters
-        strategy_params = self._get_strategy_params_for_action(action)
+        strategy_params: StrategyParams = self._get_strategy_params_for_action(action)
 
         # Simulate strategy execution on next segment
-        segment_length = 20  # Look ahead 20 periods
-        next_idx = min(current_idx + segment_length, len(data) - 1)
+        segment_length: int = 20  # Look ahead 20 periods
+        next_idx: int = min(current_idx + segment_length, len(data) - 1)
 
-        segment_data = data.iloc[current_idx:next_idx]
+        segment_data: MarketData = data.iloc[current_idx:next_idx]
 
         # Calculate reward based on simulated performance
-        reward = self._calculate_action_reward(action, segment_data, strategy_params)
+        reward: float = self._calculate_action_reward(action, segment_data, strategy_params)
 
         return reward, next_idx
 
-    def _get_strategy_params_for_action(self, action: str) -> Dict[str, Any]:
+    def _get_strategy_params_for_action(self, action: str) -> StrategyParams:
         """
         Get strategy parameters for a given action.
+
+        This method provides predefined parameter sets for different trading strategies,
+        enabling consistent and reproducible strategy execution.
 
         Args:
             action: Strategy action name
 
         Returns:
-            Strategy parameters dictionary
+            Dictionary containing strategy parameters
         """
         # Action-specific parameter mappings
-        action_params = {
+        action_params: Dict[str, StrategyParams] = {
             'trend_following': {
                 'rsi_period': 14,
                 'ema_fast': 9,
@@ -333,10 +360,13 @@ class RLOptimizer(BaseOptimizer):
 
         return action_params.get(action, {})
 
-    def _calculate_action_reward(self, action: str, data: pd.DataFrame,
-                               params: Dict[str, Any]) -> float:
+    def _calculate_action_reward(self, action: str, data: MarketData,
+                               params: StrategyParams) -> float:
         """
         Calculate reward for executing an action.
+
+        This method computes a reward based on the performance of a strategy
+        action over a segment of market data, considering various market factors.
 
         Args:
             action: Strategy action executed
@@ -344,40 +374,41 @@ class RLOptimizer(BaseOptimizer):
             params: Strategy parameters
 
         Returns:
-            Reward value
+            Calculated reward value
         """
         if len(data) < 10:
             return 0.0
 
         try:
             # Simple reward calculation based on price movement and action type
-            start_price = data['close'].iloc[0]
-            end_price = data['close'].iloc[-1]
-            price_return = (end_price - start_price) / start_price
+            start_price: float = data['close'].iloc[0]
+            end_price: float = data['close'].iloc[-1]
+            price_return: float = (end_price - start_price) / start_price
 
             # Action-specific reward modifiers
-            action_modifier = {
+            action_modifier: Dict[str, float] = {
                 'trend_following': 1.0,  # Standard reward
                 'mean_reversion': 1.2,  # Bonus for mean reversion in ranging markets
                 'breakout': 1.5,        # Bonus for breakout strategies
                 'scalping': 0.8,        # Penalty for frequent trading
                 'swing': 1.1           # Slight bonus for swing trading
-            }.get(action, 1.0)
+            }
+            modifier: float = action_modifier.get(action, 1.0)
 
             # Volatility adjustment
-            volatility = data['close'].pct_change().std()
-            vol_modifier = 1.0 - (volatility * 2)  # Reduce reward in high volatility
+            returns = data['close'].pct_change().dropna()
+            volatility: float = returns.std()
+            vol_modifier: float = 1.0 - (volatility * 2)  # Reduce reward in high volatility
 
             # Volume confirmation
-            avg_volume = data['volume'].mean()
-            volume_modifier = 1.0 if avg_volume > data['volume'].quantile(0.5) else 0.8
+            avg_volume: float = data['volume'].mean()
+            volume_modifier: float = 1.0 if avg_volume > data['volume'].quantile(0.5) else 0.8
 
-            base_reward = price_return * action_modifier * vol_modifier * volume_modifier
+            base_reward: float = price_return * modifier * vol_modifier * volume_modifier
 
             # Add Sharpe-like component
-            returns = data['close'].pct_change().dropna()
             if len(returns) > 1 and returns.std() > 0:
-                sharpe_component = returns.mean() / returns.std() * np.sqrt(252)
+                sharpe_component: float = returns.mean() / returns.std() * np.sqrt(252)
                 base_reward += sharpe_component * 0.1  # Small weight
 
             return base_reward
@@ -391,27 +422,29 @@ class RLOptimizer(BaseOptimizer):
         """
         Update Q-table using Q-learning update rule.
 
+        This method implements the core Q-learning algorithm, updating the
+        Q-values based on the observed reward and expected future rewards.
+
         Args:
-            state: Current state
+            state: Current market state
             action: Action taken
             reward: Reward received
             next_state: Next state (None if terminal)
         """
-        state_tuple = state.to_tuple()
+        state_tuple: Tuple[float, str, str, float] = state.to_tuple()
 
         # Get current Q-value
-        current_q = self.q_table[state_tuple][action]
+        current_q: float = self.q_table[state_tuple][action]
 
         # Calculate max Q-value for next state
+        max_next_q: float = 0.0
         if next_state is not None:
-            next_state_tuple = next_state.to_tuple()
-            next_q_values = self.q_table[next_state_tuple]
+            next_state_tuple: Tuple[float, str, str, float] = next_state.to_tuple()
+            next_q_values: DefaultDict[str, float] = self.q_table[next_state_tuple]
             max_next_q = max(next_q_values.values()) if next_q_values else 0.0
-        else:
-            max_next_q = 0.0
 
         # Q-learning update
-        new_q = current_q + self.alpha * (reward + self.gamma * max_next_q - current_q)
+        new_q: float = current_q + self.alpha * (reward + self.gamma * max_next_q - current_q)
 
         # Update Q-table
         self.q_table[state_tuple][action] = new_q
@@ -443,31 +476,108 @@ class RLOptimizer(BaseOptimizer):
             'strategy_actions': self.strategy_actions
         }
 
-    def predict_action(self, market_data: pd.DataFrame) -> str:
+    def predict_action(self, market_data: MarketData) -> str:
         """
         Predict the best action for current market conditions.
 
+        This method uses the learned Q-table to recommend the optimal trading
+        strategy action based on the current market state.
+
         Args:
-            market_data: Current market data
+            market_data: Current market data for state assessment
 
         Returns:
-            Recommended strategy action
+            Recommended strategy action name
         """
-        current_state = MarketState.from_data(market_data)
-        state_tuple = current_state.to_tuple()
+        current_state: MarketState = MarketState.from_data(market_data)
+        state_tuple: Tuple[float, str, str, float] = current_state.to_tuple()
 
         # Get Q-values for current state
         if state_tuple in self.q_table:
-            action_values = self.q_table[state_tuple]
+            action_values: DefaultDict[str, float] = self.q_table[state_tuple]
             if action_values:
                 return max(action_values, key=action_values.get)
 
         # Fallback to random action if state not seen
         return random.choice(self.strategy_actions)
 
-    def save_policy(self, filepath: str) -> None:
+    async def save_policy(self, filepath: str) -> None:
         """
-        Save the learned policy to file.
+        Save the learned policy to file asynchronously.
+
+        This method uses aiofiles for non-blocking I/O operations, which is crucial
+        when called within an async event loop. Synchronous file operations would
+        block the entire event loop, degrading performance and responsiveness of
+        the trading system. The async approach ensures the event loop remains
+        responsive while file operations are performed in the background.
+
+        Args:
+            filepath: Path to save policy
+        """
+        # Convert tuple keys to strings for JSON serialization
+        q_table_serializable = {}
+        for state_tuple, actions in self.q_table.items():
+            state_str = str(state_tuple)
+            q_table_serializable[state_str] = dict(actions)
+
+        policy_data = {
+            'q_table': q_table_serializable,
+            'strategy_actions': self.strategy_actions,
+            'config': self.config,
+            'total_episodes': self.episodes,
+            'total_steps': self.total_steps
+        }
+
+        if aiofiles is not None:
+            # Use aiofiles for async I/O
+            async with aiofiles.open(filepath, 'w') as f:
+                await f.write(json.dumps(policy_data, indent=2))
+        else:
+            # Fallback to synchronous I/O if aiofiles not available
+            self.logger.warning("aiofiles not available, using synchronous I/O")
+            with open(filepath, 'w') as f:
+                json.dump(policy_data, f, indent=2)
+
+        self.logger.info(f"Policy saved to {filepath}")
+
+    async def load_policy(self, filepath: str) -> None:
+        """
+        Load a learned policy from file asynchronously.
+
+        This method uses aiofiles for non-blocking I/O operations, ensuring
+        that policy loading doesn't block the async event loop. This is particularly
+        important in high-frequency trading systems where responsiveness is critical.
+
+        Args:
+            filepath: Path to load policy from
+        """
+        if aiofiles is not None:
+            # Use aiofiles for async I/O
+            async with aiofiles.open(filepath, 'r') as f:
+                content = await f.read()
+                policy_data = json.loads(content)
+        else:
+            # Fallback to synchronous I/O if aiofiles not available
+            self.logger.warning("aiofiles not available, using synchronous I/O")
+            with open(filepath, 'r') as f:
+                policy_data = json.load(f)
+
+        # Restore Q-table
+        self.q_table = defaultdict(lambda: defaultdict(float))
+        for state_str, actions in policy_data.get('q_table', {}).items():
+            # Convert string keys back to tuples if needed
+            try:
+                state_tuple = ast.literal_eval(state_str) if isinstance(state_str, str) else state_str
+            except (ValueError, SyntaxError):
+                state_tuple = state_str
+            self.q_table[state_tuple] = defaultdict(float, actions)
+
+        self.strategy_actions = policy_data.get('strategy_actions', [])
+        self.logger.info(f"Policy loaded from {filepath}")
+
+    def save_policy_sync(self, filepath: str) -> None:
+        """
+        Synchronous version of save_policy for backward compatibility.
 
         Args:
             filepath: Path to save policy
@@ -491,9 +601,9 @@ class RLOptimizer(BaseOptimizer):
 
         self.logger.info(f"Policy saved to {filepath}")
 
-    def load_policy(self, filepath: str) -> None:
+    def load_policy_sync(self, filepath: str) -> None:
         """
-        Load a learned policy from file.
+        Synchronous version of load_policy for backward compatibility.
 
         Args:
             filepath: Path to load policy from

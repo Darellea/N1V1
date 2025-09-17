@@ -14,16 +14,12 @@ Key features:
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Union, Tuple, Any
+from typing import Dict, List, Optional, Union, Tuple, Any, Callable
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
+from sklearn.exceptions import NotFittedError
 import logging
 from datetime import datetime, timedelta
-
-from ml.indicators import (
-    calculate_all_indicators,
-    get_indicator_names,
-    validate_ohlcv_data
-)
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -33,19 +29,46 @@ class FeatureExtractor:
     Feature extraction pipeline for trading data.
 
     Handles the complete pipeline from raw OHLCV data to ML-ready features.
+    Uses dependency injection for indicator functions to reduce coupling.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None,
+                 calculate_all_indicators_func: Optional[Callable] = None,
+                 get_indicator_names_func: Optional[Callable] = None,
+                 validate_ohlcv_data_func: Optional[Callable] = None):
         """
         Initialize the feature extractor.
 
         Args:
             config: Configuration dictionary for feature extraction
+            calculate_all_indicators_func: Function to calculate indicators (dependency injection)
+            get_indicator_names_func: Function to get indicator names (dependency injection)
+            validate_ohlcv_data_func: Function to validate OHLCV data (dependency injection)
         """
         self.config = config or self._get_default_config()
         self.scaler = None
         self.feature_columns = []
         self.is_fitted = False
+
+        # Dependency injection for indicator functions to reduce coupling
+        # If not provided, import default implementations (for backward compatibility)
+        if calculate_all_indicators_func is None:
+            from ml.indicators import calculate_all_indicators
+            self.calculate_all_indicators = calculate_all_indicators
+        else:
+            self.calculate_all_indicators = calculate_all_indicators_func
+
+        if get_indicator_names_func is None:
+            from ml.indicators import get_indicator_names
+            self.get_indicator_names = get_indicator_names
+        else:
+            self.get_indicator_names = get_indicator_names_func
+
+        if validate_ohlcv_data_func is None:
+            from ml.indicators import validate_ohlcv_data
+            self.validate_ohlcv_data = validate_ohlcv_data
+        else:
+            self.validate_ohlcv_data = validate_ohlcv_data_func
 
         # Initialize scaler based on config
         self._init_scaler()
@@ -70,7 +93,8 @@ class FeatureExtractor:
             },
             'lagged_features': {
                 'enabled': True,
-                'periods': [1, 2, 3, 5, 10]  # periods to lag
+                'periods': [1, 2, 3, 5, 10],  # periods to lag
+                'key_features': ['close', 'rsi', 'ema', 'macd', 'bb_upper', 'bb_lower', 'atr', 'adx']  # features to create lags for
             },
             'price_features': {
                 'returns': True,
@@ -79,7 +103,8 @@ class FeatureExtractor:
             },
             'volume_features': {
                 'volume_sma': True,
-                'volume_ratio': True
+                'volume_ratio': True,
+                'window_size': 20  # Configurable window size for volume-based features
             },
             'validation': {
                 'require_min_rows': 50,
@@ -122,7 +147,7 @@ class FeatureExtractor:
             logger.warning("Input data is empty, returning empty feature DataFrame")
             return pd.DataFrame()
 
-        if not validate_ohlcv_data(data):
+        if not self.validate_ohlcv_data(data):
             raise ValueError("Data must contain OHLCV columns: open, high, low, close, volume")
 
         if len(data) < self.config['validation']['require_min_rows']:
@@ -151,17 +176,23 @@ class FeatureExtractor:
             logger.info(f"Extracted {len(df_scaled.columns)} features from {len(data)} data points")
             return df_scaled
 
+        except (ValueError, TypeError) as e:
+            logger.error(f"Data validation error in feature extraction: {e}")
+            raise
+        except (KeyError, AttributeError) as e:
+            logger.error(f"Data structure error in feature extraction: {e}")
+            raise
         except Exception as e:
-            logger.error(f"Error in feature extraction: {e}")
-            return pd.DataFrame()
+            logger.error(f"Unexpected error in feature extraction: {e}")
+            raise
 
     def _calculate_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
         """Calculate technical indicators."""
         indicator_params = self.config.get('indicator_params', {})
-        df = calculate_all_indicators(data, indicator_params)
+        df = self.calculate_all_indicators(data, indicator_params)
 
         # Store feature columns for later use
-        indicator_names = get_indicator_names()
+        indicator_names = self.get_indicator_names()
         self.feature_columns.extend([col for col in indicator_names if col in df.columns])
 
         return df
@@ -196,13 +227,19 @@ class FeatureExtractor:
         return df
 
     def _add_volume_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Add volume-based features."""
+        """
+        Add volume-based features.
+
+        Uses a configurable window size for rolling calculations to allow tuning
+        for different market conditions and strategies, improving feature flexibility.
+        """
         df = data.copy()
         volume_config = self.config.get('volume_features', {})
+        window_size = volume_config.get('window_size', 20)  # Configurable window size for volume features
 
         if volume_config.get('volume_sma', True):
-            df['volume_sma_20'] = df['volume'].rolling(window=20).mean()
-            self.feature_columns.append('volume_sma_20')
+            df[f'volume_sma_{window_size}'] = df['volume'].rolling(window=window_size).mean()
+            self.feature_columns.append(f'volume_sma_{window_size}')
 
         if volume_config.get('volume_ratio', True):
             df['volume_ratio'] = df['volume'] / df['volume'].shift(1)
@@ -210,7 +247,7 @@ class FeatureExtractor:
 
         # Additional volume features
         df['volume_change'] = df['volume'].pct_change()
-        df['volume_ma_ratio'] = df['volume'] / df['volume'].rolling(window=20).mean()
+        df['volume_ma_ratio'] = df['volume'] / df['volume'].rolling(window=window_size).mean()
 
         new_volume_features = ['volume_change', 'volume_ma_ratio']
         self.feature_columns.extend(new_volume_features)
@@ -227,8 +264,8 @@ class FeatureExtractor:
 
         periods = lagged_config.get('periods', [1, 2, 3])
 
-        # Create lagged versions of key features
-        key_features = ['close', 'rsi', 'ema', 'macd', 'bb_upper', 'bb_lower', 'atr', 'adx']
+        # Create lagged versions of key features (configurable for flexibility)
+        key_features = lagged_config.get('key_features', ['close', 'rsi', 'ema', 'macd', 'bb_upper', 'bb_lower', 'atr', 'adx'])
 
         for feature in key_features:
             if feature in df.columns:
@@ -297,6 +334,10 @@ class FeatureExtractor:
                 self.scaler.fit(df[feature_cols])
                 self.is_fitted = True
 
+            # Check if scaler is fitted before transforming (prevents NotFittedError in production)
+            if not self.is_fitted:
+                raise RuntimeError("Scaler is not fitted. Please fit the scaler first by calling extract_features with fit_scaler=True or load a pre-fitted scaler.")
+
             scaled_features = self.scaler.transform(df[feature_cols])
             scaled_df = pd.DataFrame(
                 scaled_features,
@@ -311,6 +352,8 @@ class FeatureExtractor:
 
             return scaled_df
 
+        except NotFittedError:
+            raise RuntimeError("Scaler is not fitted. Please fit the scaler first by calling extract_features with fit_scaler=True or load a pre-fitted scaler.")
         except Exception as e:
             logger.error(f"Error scaling features: {e}")
             return data
@@ -416,7 +459,11 @@ def batch_extract_features(data_dict: Dict[str, pd.DataFrame],
             features = extractor.extract_features(data, fit_scaler=False)  # Use same scaler
             if not features.empty:
                 results[symbol] = features
+        except (ValueError, TypeError) as e:
+            logger.error(f"Data validation error extracting features for {symbol}: {e}")
+        except (KeyError, AttributeError) as e:
+            logger.error(f"Data structure error extracting features for {symbol}: {e}")
         except Exception as e:
-            logger.error(f"Error extracting features for {symbol}: {e}")
+            logger.error(f"Unexpected error extracting features for {symbol}: {e}")
 
     return results

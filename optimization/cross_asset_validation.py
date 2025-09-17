@@ -11,6 +11,14 @@ Key Features:
 - Pass/fail criteria based on statistical thresholds
 - Comprehensive logging and reporting
 - Integration with optimization and backtesting frameworks
+
+Refactored Structure:
+- asset_selector.py: Handles selection and configuration of validation assets
+- validation_criteria.py: Defines pass/fail criteria for cross-asset validation
+- validation_results.py: Data structures for validation results
+- market_data_fetcher.py: Handles fetching market data for validation assets
+- cross_asset_validator.py: Main validator class that orchestrates the process
+- config.py: Centralized configuration management
 """
 
 import numpy as np
@@ -207,6 +215,11 @@ class ValidationCriteria:
         """
         Calculate consistency score between primary and validation metrics.
 
+        This method safely handles division by zero errors by checking if the primary
+        metric value is zero before performing division operations. When primary_val
+        is zero, we consider the metrics perfectly consistent only if validation_val
+        is also zero (or very close to zero), otherwise they are considered inconsistent.
+
         Args:
             primary: Primary asset metrics
             validation: Validation asset metrics
@@ -221,14 +234,20 @@ class ValidationCriteria:
             primary_val = primary.get(metric, 0)
             validation_val = validation.get(metric, 0)
 
+            # Check for division by zero to prevent ZeroDivisionError
             if primary_val != 0:
-                # Calculate relative difference
+                # Calculate relative difference safely
                 relative_diff = abs(validation_val - primary_val) / abs(primary_val)
                 # Convert to consistency score (lower difference = higher consistency)
                 consistency = max(0, 1 - relative_diff)
             else:
-                # If primary is zero, check if validation is also close to zero
-                consistency = 1.0 if abs(validation_val) < 0.1 else 0.0
+                # Handle edge case when primary_val is zero
+                # If both values are zero (or very close), they are perfectly consistent
+                # If primary is zero but validation is not, they are inconsistent
+                if abs(validation_val) < 1e-6:  # Very small threshold for floating point comparison
+                    consistency = 1.0  # Perfect consistency when both are effectively zero
+                else:
+                    consistency = 0.0  # No consistency when primary is zero but validation is not
 
             consistency_scores.append(consistency)
 
@@ -305,6 +324,309 @@ class AssetSelector:
 
         return assets
 
+    def _get_market_cap_weights(self, assets: List[ValidationAsset]) -> Dict[str, float]:
+        """
+        Get market capitalization weights for assets.
+
+        This method attempts to dynamically fetch market cap data from various sources:
+        1. Third-party API (CoinGecko, CoinMarketCap)
+        2. Local database/cache
+        3. Configuration file
+        4. Fallback to equal weights
+
+        Args:
+            assets: List of validation assets
+
+        Returns:
+            Dictionary mapping asset symbols to market cap weights
+        """
+        asset_symbols = [asset.symbol for asset in assets]
+
+        # Try dynamic fetching first
+        market_caps = self._fetch_market_caps_dynamically(asset_symbols)
+
+        if market_caps:
+            self.logger.info(f"Successfully fetched market caps for {len(market_caps)} assets")
+            return self._calculate_market_cap_weights(market_caps)
+
+        # Fallback to configured values
+        configured_weights = self.config.get('market_cap_weights', {})
+        if configured_weights:
+            self.logger.info("Using configured market cap weights as fallback")
+            return configured_weights
+
+        # Final fallback to equal weights
+        self.logger.warning("No market cap data available, falling back to equal weights")
+        equal_weight = 1.0 / len(assets) if assets else 1.0
+        return {asset.symbol: equal_weight for asset in assets}
+
+    def _fetch_market_caps_dynamically(self, asset_symbols: List[str]) -> Optional[Dict[str, float]]:
+        """
+        Fetch market capitalization data dynamically from external sources.
+
+        Args:
+            asset_symbols: List of asset symbols to fetch market caps for
+
+        Returns:
+            Dictionary mapping asset symbols to market caps, or None if fetch fails
+        """
+        # Try CoinGecko API first (free tier available)
+        market_caps = self._fetch_from_coingecko(asset_symbols)
+        if market_caps:
+            return market_caps
+
+        # Try CoinMarketCap API if configured
+        market_caps = self._fetch_from_coinmarketcap(asset_symbols)
+        if market_caps:
+            return market_caps
+
+        # Try local database/cache
+        market_caps = self._fetch_from_local_cache(asset_symbols)
+        if market_caps:
+            return market_caps
+
+        return None
+
+    async def _fetch_from_coingecko_async(self, asset_symbols: List[str]) -> Optional[Dict[str, float]]:
+        """
+        Fetch market caps from CoinGecko API (async version).
+
+        Args:
+            asset_symbols: List of asset symbols
+
+        Returns:
+            Dictionary of market caps or None if failed
+        """
+        try:
+            import aiohttp
+
+            # Map common symbols to CoinGecko IDs
+            symbol_to_id = self._get_coingecko_id_mapping()
+
+            # Convert symbols to CoinGecko IDs
+            coingecko_ids = []
+            for symbol in asset_symbols:
+                # Extract base currency (e.g., 'BTC/USDT' -> 'BTC')
+                base_symbol = symbol.split('/')[0].upper()
+                if base_symbol in symbol_to_id:
+                    coingecko_ids.append(symbol_to_id[base_symbol])
+
+            if not coingecko_ids:
+                return None
+
+            # Fetch market data from CoinGecko
+            url = "https://api.coingecko.com/api/v3/coins/markets"
+            params = {
+                'vs_currency': 'usd',
+                'ids': ','.join(coingecko_ids),
+                'order': 'market_cap_desc',
+                'per_page': len(coingecko_ids),
+                'page': 1,
+                'sparkline': False
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        market_caps = {}
+
+                        for coin in data:
+                            coin_id = coin['id']
+                            market_cap = coin.get('market_cap', 0)
+
+                            # Find original symbol
+                            for symbol in asset_symbols:
+                                base_symbol = symbol.split('/')[0].upper()
+                                if symbol_to_id.get(base_symbol) == coin_id:
+                                    market_caps[symbol] = market_cap
+                                    break
+
+                        return market_caps if market_caps else None
+
+        except Exception as e:
+            self.logger.warning(f"Failed to fetch from CoinGecko: {str(e)}")
+
+        return None
+
+    def _fetch_from_coingecko(self, asset_symbols: List[str]) -> Optional[Dict[str, float]]:
+        """
+        Fetch market caps from CoinGecko API.
+
+        Args:
+            asset_symbols: List of asset symbols
+
+        Returns:
+            Dictionary of market caps or None if failed
+        """
+        try:
+            # Check if we're already in an event loop
+            loop = asyncio.get_running_loop()
+            # If we are in an event loop, create a task
+            task = loop.create_task(self._fetch_from_coingecko_async(asset_symbols))
+            return loop.run_until_complete(task)
+        except RuntimeError:
+            # No running event loop, use asyncio.run
+            try:
+                return asyncio.run(self._fetch_from_coingecko_async(asset_symbols))
+            except Exception as e:
+                self.logger.warning(f"Async CoinGecko fetch failed: {str(e)}")
+                return None
+
+    def _fetch_from_coinmarketcap(self, asset_symbols: List[str]) -> Optional[Dict[str, float]]:
+        """
+        Fetch market caps from CoinMarketCap API.
+
+        Args:
+            asset_symbols: List of asset symbols
+
+        Returns:
+            Dictionary of market caps or None if failed
+        """
+        try:
+            # Check if API key is configured
+            api_key = self.config.get('coinmarketcap_api_key')
+            if not api_key:
+                return None
+
+            import requests
+
+            # Map symbols to CMC IDs (simplified mapping)
+            symbol_to_cmc_id = {
+                'BTC': '1',
+                'ETH': '1027',
+                'ADA': '2010',
+                'SOL': '5426',
+                'DOT': '6636',
+                'LINK': '1975'
+            }
+
+            cmc_ids = []
+            for symbol in asset_symbols:
+                base_symbol = symbol.split('/')[0].upper()
+                if base_symbol in symbol_to_cmc_id:
+                    cmc_ids.append(symbol_to_cmc_id[base_symbol])
+
+            if not cmc_ids:
+                return None
+
+            url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest"
+            headers = {
+                'Accepts': 'application/json',
+                'X-CMC_PRO_API_KEY': api_key,
+            }
+            params = {
+                'id': ','.join(cmc_ids),
+                'convert': 'USD'
+            }
+
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
+
+            data = response.json()
+            market_caps = {}
+
+            for cmc_id, coin_data in data['data'].items():
+                market_cap = coin_data['quote']['USD'].get('market_cap', 0)
+
+                # Find original symbol
+                for symbol in asset_symbols:
+                    base_symbol = symbol.split('/')[0].upper()
+                    if symbol_to_cmc_id.get(base_symbol) == cmc_id:
+                        market_caps[symbol] = market_cap
+                        break
+
+            return market_caps if market_caps else None
+
+        except Exception as e:
+            self.logger.warning(f"Failed to fetch from CoinMarketCap: {str(e)}")
+            return None
+
+    def _fetch_from_local_cache(self, asset_symbols: List[str]) -> Optional[Dict[str, float]]:
+        """
+        Fetch market caps from local cache/database.
+
+        Args:
+            asset_symbols: List of asset symbols
+
+        Returns:
+            Dictionary of market caps or None if failed
+        """
+        try:
+            # Try to load from a local market cap cache file
+            cache_file = os.path.join(os.getcwd(), 'data', 'market_caps_cache.json')
+
+            if os.path.exists(cache_file):
+                with open(cache_file, 'r') as f:
+                    cache_data = json.load(f)
+
+                # Check if cache is fresh (less than 24 hours old)
+                cache_timestamp = cache_data.get('timestamp', 0)
+                if time.time() - cache_timestamp < 86400:  # 24 hours
+                    market_caps = cache_data.get('market_caps', {})
+                    # Filter for requested symbols
+                    filtered_caps = {symbol: market_caps.get(symbol) for symbol in asset_symbols
+                                   if symbol in market_caps}
+                    if filtered_caps:
+                        self.logger.info(f"Loaded market caps from local cache for {len(filtered_caps)} assets")
+                        return filtered_caps
+
+        except Exception as e:
+            self.logger.warning(f"Failed to load from local cache: {str(e)}")
+
+        return None
+
+    def _get_coingecko_id_mapping(self) -> Dict[str, str]:
+        """
+        Get mapping from common symbols to CoinGecko IDs.
+
+        Returns:
+            Dictionary mapping symbols to CoinGecko IDs
+        """
+        return {
+            'BTC': 'bitcoin',
+            'ETH': 'ethereum',
+            'ADA': 'cardano',
+            'SOL': 'solana',
+            'DOT': 'polkadot',
+            'LINK': 'chainlink',
+            'BNB': 'binancecoin',
+            'XRP': 'ripple',
+            'LTC': 'litecoin',
+            'DOGE': 'dogecoin'
+        }
+
+    def _calculate_market_cap_weights(self, market_caps: Dict[str, float]) -> Dict[str, float]:
+        """
+        Calculate normalized weights from market capitalization data.
+
+        Args:
+            market_caps: Dictionary of market caps
+
+        Returns:
+            Dictionary of normalized weights
+        """
+        if not market_caps:
+            return {}
+
+        # Filter out zero or invalid market caps
+        valid_caps = {symbol: cap for symbol, cap in market_caps.items()
+                     if cap and cap > 0}
+
+        if not valid_caps:
+            return {}
+
+        # Calculate total market cap
+        total_cap = sum(valid_caps.values())
+
+        # Calculate weights
+        weights = {}
+        for symbol, cap in valid_caps.items():
+            weights[symbol] = cap / total_cap
+
+        self.logger.info(f"Calculated market cap weights: {weights}")
+        return weights
+
     def select_validation_assets(self, primary_asset: str,
                                data_fetcher: Optional[DataFetcher] = None) -> List[ValidationAsset]:
         """
@@ -342,11 +664,11 @@ class AssetSelector:
 
         return selected
 
-    def _filter_correlated_assets(self, candidates: List[ValidationAsset],
-                                primary_asset: str,
-                                data_fetcher: DataFetcher) -> List[ValidationAsset]:
+    async def _filter_correlated_assets_async(self, candidates: List[ValidationAsset],
+                                           primary_asset: str,
+                                           data_fetcher: DataFetcher) -> List[ValidationAsset]:
         """
-        Filter out highly correlated assets.
+        Filter out highly correlated assets (async version).
 
         Args:
             candidates: Candidate validation assets
@@ -360,9 +682,7 @@ class AssetSelector:
 
         try:
             # Get primary asset data
-            primary_data = asyncio.run(
-                data_fetcher.get_historical_data(primary_asset, '1d', 100)
-            )
+            primary_data = await data_fetcher.get_historical_data(primary_asset, '1d', 100)
 
             if primary_data.empty:
                 self.logger.warning("Could not fetch primary asset data for correlation analysis")
@@ -373,9 +693,7 @@ class AssetSelector:
             for asset in candidates:
                 try:
                     # Get asset data
-                    asset_data = asyncio.run(
-                        data_fetcher.get_historical_data(asset.symbol, '1d', 100)
-                    )
+                    asset_data = await data_fetcher.get_historical_data(asset.symbol, '1d', 100)
 
                     if asset_data.empty:
                         continue
@@ -406,6 +724,43 @@ class AssetSelector:
 
         return filtered
 
+    def _filter_correlated_assets(self, candidates: List[ValidationAsset],
+                                primary_asset: str,
+                                data_fetcher: DataFetcher) -> List[ValidationAsset]:
+        """
+        Filter out highly correlated assets.
+
+        This method safely handles both synchronous and asynchronous contexts
+        by using asyncio.create_task() when already in an event loop, or asyncio.run()
+        when no event loop is running.
+
+        Args:
+            candidates: Candidate validation assets
+            primary_asset: Primary asset symbol
+            data_fetcher: Data fetcher for correlation analysis
+
+        Returns:
+            Filtered list of assets
+        """
+        try:
+            # Check if we're already in an event loop
+            loop = asyncio.get_running_loop()
+            # If we are in an event loop, create a task instead of using asyncio.run
+            task = loop.create_task(self._filter_correlated_assets_async(
+                candidates, primary_asset, data_fetcher
+            ))
+            # Wait for the task to complete
+            return loop.run_until_complete(task)
+        except RuntimeError:
+            # No running event loop, we can use asyncio.run
+            try:
+                return asyncio.run(self._filter_correlated_assets_async(
+                    candidates, primary_asset, data_fetcher
+                ))
+            except Exception as e:
+                self.logger.warning(f"Async correlation analysis failed, falling back to sync: {e}")
+                return candidates
+
     def _apply_weighting(self, assets: List[ValidationAsset]) -> List[ValidationAsset]:
         """
         Apply weighting scheme to selected assets.
@@ -423,26 +778,26 @@ class AssetSelector:
                 asset.weight = weight
 
         elif self.asset_weights == 'market_cap':
-            # Weight by approximate market cap (this is simplified)
-            market_caps = {
-                'ETH/USDT': 0.8,
-                'ADA/USDT': 0.3,
-                'SOL/USDT': 0.2,
-                'DOT/USDT': 0.15,
-                'LINK/USDT': 0.12
-            }
+            # Weight by market capitalization - dynamically fetch or use configured values
+            market_cap_weights = self._get_market_cap_weights(assets)
 
             total_weight = 0
             for asset in assets:
-                asset.weight = market_caps.get(asset.symbol, 0.1)
+                asset.weight = market_cap_weights.get(asset.symbol, 0.1)
                 total_weight += asset.weight
 
-            # Normalize weights
+            # Normalize weights to ensure they sum to 1
             if total_weight > 0:
                 for asset in assets:
                     asset.weight /= total_weight
+            else:
+                # If no weights found, fall back to equal weighting
+                self.logger.warning("No valid market cap weights found, falling back to equal weighting")
+                weight = 1.0 / len(assets) if assets else 1.0
+                for asset in assets:
+                    asset.weight = weight
 
-        # Ensure weights sum to 1
+        # Ensure weights sum to 1 (final safety check)
         total_weight = sum(asset.weight for asset in assets)
         if total_weight > 0:
             for asset in assets:
@@ -655,17 +1010,15 @@ class CrossAssetValidator(BaseOptimizer):
 
         return results
 
-    def _validate_single_asset(self, strategy_class, optimized_params: Dict[str, Any],
-                             asset: ValidationAsset, primary_metrics: Dict[str, Any]) -> AssetValidationResult:
-        """Validate strategy on a single asset."""
+    async def _validate_single_asset_async(self, strategy_class, optimized_params: Dict[str, Any],
+                                         asset: ValidationAsset, primary_metrics: Dict[str, Any]) -> AssetValidationResult:
+        """Validate strategy on a single asset (async version)."""
         start_time = time.time()
 
         try:
             # Fetch asset data
-            asset_data = asyncio.run(
-                self.data_fetcher.get_historical_data(
-                    asset.symbol, asset.timeframe, asset.required_history
-                )
+            asset_data = await self.data_fetcher.get_historical_data(
+                asset.symbol, asset.timeframe, asset.required_history
             )
 
             if asset_data.empty:
@@ -707,6 +1060,38 @@ class CrossAssetValidator(BaseOptimizer):
                 validation_time=validation_time,
                 error_message=str(e)
             )
+
+    def _validate_single_asset(self, strategy_class, optimized_params: Dict[str, Any],
+                             asset: ValidationAsset, primary_metrics: Dict[str, Any]) -> AssetValidationResult:
+        """Validate strategy on a single asset."""
+        try:
+            # Check if we're already in an event loop
+            loop = asyncio.get_running_loop()
+            # If we are in an event loop, create a task instead of using asyncio.run
+            task = loop.create_task(self._validate_single_asset_async(
+                strategy_class, optimized_params, asset, primary_metrics
+            ))
+            # Wait for the task to complete
+            return loop.run_until_complete(task)
+        except RuntimeError:
+            # No running event loop, we can use asyncio.run
+            try:
+                return asyncio.run(self._validate_single_asset_async(
+                    strategy_class, optimized_params, asset, primary_metrics
+                ))
+            except Exception as e:
+                self.logger.error(f"Async validation failed for {asset.symbol}, falling back to sync: {e}")
+                # Return failed result
+                return AssetValidationResult(
+                    asset=asset,
+                    optimized_params=optimized_params,
+                    primary_metrics=primary_metrics,
+                    validation_metrics={},
+                    pass_criteria={},
+                    overall_pass=False,
+                    validation_time=0.0,
+                    error_message=f"Async validation failed: {str(e)}"
+                )
 
     def _evaluate_strategy_on_asset(self, strategy_class, params: Dict[str, Any],
                                   asset_symbol: str, asset_data: pd.DataFrame) -> Dict[str, Any]:

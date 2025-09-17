@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 import json
+import logging
 
 
 class MarketRegime(Enum):
@@ -49,6 +50,11 @@ class OutcomeTag(Enum):
     TIMEOUT = "timeout"
     LIQUIDATION = "liquidation"
     MANUAL_CLOSE = "manual_close"
+
+
+class ValidationError(Exception):
+    """Custom exception for knowledge entry validation failures."""
+    pass
 
 
 @dataclass
@@ -352,22 +358,38 @@ class KnowledgeQueryResult:
 
 
 def validate_knowledge_entry(entry: KnowledgeEntry) -> List[str]:
-    """Validate a knowledge entry and return list of validation errors."""
+    """
+    Validate a knowledge entry and return a list of validation errors.
+
+    This function performs comprehensive validation of knowledge entry data to ensure
+    data integrity and prevent corrupted entries from being stored. Validation failures
+    are logged with detailed error information for debugging and audit trails.
+
+    Args:
+        entry: The KnowledgeEntry to validate.
+
+    Returns:
+        List of validation error messages (empty if valid).
+    """
     errors = []
 
     if not entry.id:
         errors.append("Entry ID cannot be empty")
 
     if entry.confidence_score < 0 or entry.confidence_score > 1:
-        errors.append("Confidence score must be between 0 and 1")
+        errors.append(f"Confidence score {entry.confidence_score} must be between 0 and 1")
 
     if entry.sample_size < 1:
-        errors.append("Sample size must be at least 1")
+        errors.append(f"Sample size {entry.sample_size} must be at least 1")
 
     if entry.performance.total_trades < 0:
-        errors.append("Total trades cannot be negative")
+        errors.append(f"Total trades {entry.performance.total_trades} cannot be negative")
 
     if entry.performance.win_rate < 0 or entry.performance.win_rate > 1:
-        errors.append("Win rate must be between 0 and 1")
+        errors.append(f"Win rate {entry.performance.win_rate} must be between 0 and 1")
+
+    if errors:
+        error_message = f"Validation failed for entry '{entry.id}': {'; '.join(errors)}"
+        logging.error(error_message)
 
     return errors
