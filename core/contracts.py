@@ -28,6 +28,10 @@ class SignalType(Enum):
     TAKE_PROFIT = auto()
     TRAILING_STOP = auto()
 
+    # Backward compatibility aliases
+    BUY = ENTRY_LONG
+    SELL = ENTRY_SHORT
+
 
 class SignalStrength(Enum):
     """Signal strength levels."""
@@ -72,7 +76,7 @@ class TradingSignal:
     signal_type: SignalType
     signal_strength: SignalStrength
     order_type: str
-    timestamp: datetime  # No default_factory - must be provided for reproducibility
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     amount: Optional[float] = None
     current_price: Optional[float] = None
 

@@ -57,6 +57,7 @@ class CircuitBreakerConfig:
     monitoring_window_minutes: int = 60
     cooling_period_minutes: int = 5
     recovery_period_minutes: int = 10
+    max_history_size: int = 1000
 
     def __post_init__(self):
         """Validate configuration parameters."""
@@ -393,6 +394,11 @@ class CircuitBreaker:
             **kwargs
         }
         self.event_history.append(event)
+
+        # Maintain max history size
+        if len(self.event_history) > self.config.max_history_size:
+            self.event_history = self.event_history[-self.config.max_history_size:]
+
         self.logger.info(f"Circuit breaker event: {event_type} - {previous_state.value} -> {new_state.value} ({reason})")
 
     def _check_equity_drawdown(self, peak_equity: float, current_equity: float) -> bool:
@@ -463,6 +469,11 @@ class CircuitBreaker:
                 continue
 
         if triggered_strategies:
+            # Check for deduplication - don't trigger if already in TRIGGERED state
+            if self.state == CircuitBreakerState.TRIGGERED:
+                self.logger.debug("Circuit breaker already triggered, skipping duplicate trigger")
+                return False
+
             self.logger.info(f"Trigger conditions met: {triggered_strategies}")
 
             # Use state machine to transition to triggered state with timeout

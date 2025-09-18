@@ -29,23 +29,26 @@ class LogSanitizer:
 
     # Patterns for sensitive data that should be masked
     SENSITIVE_PATTERNS = [
-        # API keys and secrets
+        # API keys and secrets (more flexible patterns)
         (r'api[_-]?key["\']?\s*[:=]\s*["\']?([a-zA-Z0-9_-]{20,})["\']?', '***API_KEY_MASKED***'),
         (r'secret["\']?\s*[:=]\s*["\']?([a-zA-Z0-9_-]{20,})["\']?', '***SECRET_MASKED***'),
         (r'token["\']?\s*[:=]\s*["\']?([a-zA-Z0-9_-]{20,})["\']?', '***TOKEN_MASKED***'),
         (r'password["\']?\s*[:=]\s*["\']?([a-zA-Z0-9_-]{8,})["\']?', '***PASSWORD_MASKED***'),
 
-        # Financial amounts (balance, equity, PnL)
-        (r'balance["\']?\s*[:=]\s*["\']?(-?[\d,]+\.?\d*)["\']?', '***BALANCE_MASKED***'),
-        (r'equity["\']?\s*[:=]\s*["\']?(-?[\d,]+\.?\d*)["\']?', '***EQUITY_MASKED***'),
-        (r'pnl["\']?\s*[:=]\s*["\']?(-?[\d,]+\.?\d*)["\']?', '***PNL_MASKED***'),
-        (r'profit["\']?\s*[:=]\s*["\']?(-?[\d,]+\.?\d*)["\']?', '***PROFIT_MASKED***'),
-        (r'loss["\']?\s*[:=]\s*["\']?(-?[\d,]+\.?\d*)["\']?', '***LOSS_MASKED***'),
+        # Direct API key patterns (like sk-1234567890abcdef)
+        (r'\b(sk|pk|rk|xoxb)-[a-zA-Z0-9_-]{20,}\b', '***API_KEY_MASKED***'),
+
+        # Bearer tokens
+        (r'\bBearer\s+[a-zA-Z0-9_.-]{20,}\b', '***TOKEN_MASKED***'),
+
+        # Financial amounts (balance, equity, PnL) - more flexible
+        (r'\b(?:balance|equity|pnl|profit|loss)[\'"]?\s*[:=]\s*[\'"]?(-?[\d,]+\.?\d*)[\'"]?', lambda m: f"***{m.group(1).upper()}_MASKED***"),
+        (r'\b\d{1,3}(?:,\d{3})*\.\d{2}\b', '***AMOUNT_MASKED***'),  # Currency amounts like 12345.67
 
         # Personal information
-        (r'email["\']?\s*[:=]\s*["\']?([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})["\']?', '***EMAIL_MASKED***'),
-        (r'phone["\']?\s*[:=]\s*["\']?(\+?[\d\s\-\(\)]{10,})["\']?', '***PHONE_MASKED***'),
-        (r'ssn["\']?\s*[:=]\s*["\']?(\d{3}-?\d{2}-?\d{4})["\']?', '***SSN_MASKED***'),
+        (r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b', '***EMAIL_MASKED***'),
+        (r'\b\+?[\d\s\-\(\)]{10,}\b', '***PHONE_MASKED***'),
+        (r'\b\d{3}-?\d{2}-?\d{4}\b', '***SSN_MASKED***'),
 
         # Generic sensitive patterns
         (r'"[a-zA-Z0-9_-]{32,}"', '***SENSITIVE_DATA_MASKED***'),  # Long alphanumeric strings
@@ -194,6 +197,7 @@ class StructuredLogger:
 
 # Global logger factory
 _loggers: Dict[str, StructuredLogger] = {}
+_global_sensitivity: Optional[LogSensitivity] = None
 
 def get_structured_logger(name: str, sensitivity: LogSensitivity = LogSensitivity.INFO) -> StructuredLogger:
     """
@@ -207,11 +211,17 @@ def get_structured_logger(name: str, sensitivity: LogSensitivity = LogSensitivit
         StructuredLogger instance
     """
     if name not in _loggers:
-        _loggers[name] = StructuredLogger(name, sensitivity)
+        # Use global sensitivity if set, otherwise use provided sensitivity
+        effective_sensitivity = _global_sensitivity if _global_sensitivity is not None else sensitivity
+        _loggers[name] = StructuredLogger(name, effective_sensitivity)
     return _loggers[name]
 
 def set_global_log_sensitivity(sensitivity: LogSensitivity):
     """Set the sensitivity level for all structured loggers."""
+    global _global_sensitivity
+    _global_sensitivity = sensitivity
+
+    # Update all existing loggers
     for logger in _loggers.values():
         logger.set_sensitivity(sensitivity)
 

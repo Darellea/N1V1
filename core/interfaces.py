@@ -19,6 +19,18 @@ class EvictionPolicy(Enum):
     TTL = "ttl"  # Time To Live based
 
 
+@dataclass
+class MemoryConfig:
+    """Configuration for memory management."""
+    max_memory_mb: float = 500.0
+    warning_memory_mb: float = 400.0
+    cleanup_memory_mb: float = 350.0
+    eviction_batch_size: int = 100
+    memory_check_interval: float = 60.0
+    enable_monitoring: bool = True
+    cleanup_interval: float = 300.0
+
+
 # Configuration Protocol
 class ConfigProvider(Protocol):
     """Protocol for configuration providers."""
@@ -289,6 +301,7 @@ class CacheConfig:
     ttl_config: Dict[str, int] = None
     max_cache_size: int = 10000
     eviction_policy: EvictionPolicy = EvictionPolicy.TTL
+    memory_config: Optional[MemoryConfig] = None
 
     def __post_init__(self):
         if self.ttl_config is None:
@@ -303,18 +316,8 @@ class CacheConfig:
                 "mark_price": 10,
                 "default": 30
             }
-
-
-@dataclass
-class MemoryConfig:
-    """Configuration for memory management."""
-    max_memory_mb: float = 500.0
-    warning_memory_mb: float = 400.0
-    cleanup_memory_mb: float = 350.0
-    eviction_batch_size: int = 100
-    memory_check_interval: float = 60.0
-    enable_monitoring: bool = True
-    cleanup_interval: float = 300.0
+        if self.memory_config is None:
+            self.memory_config = MemoryConfig()
 
 
 @dataclass

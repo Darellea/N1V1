@@ -8,6 +8,7 @@ while internally using decomposed components for better architecture.
 import asyncio
 import logging
 import time
+import numpy as np
 import pandas as pd
 from typing import Dict, Optional, List, Any, Union
 from dataclasses import dataclass

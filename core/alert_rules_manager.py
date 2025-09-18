@@ -46,23 +46,59 @@ class AlertRule:
                 metric_name, operator, threshold_str = parts
                 if metric_name in metrics_data:
                     value = metrics_data[metric_name]
-                    threshold = float(threshold_str)
-                    if operator == ">":
-                        return value > threshold
-                    elif operator == "<":
-                        return value < threshold
-                    elif operator == ">=":
-                        return value >= threshold
-                    elif operator == "<=":
-                        return value <= threshold
-                    elif operator == "==":
-                        return value == threshold
+
+                    # Handle different data types
+                    if operator == "==":
+                        # String comparison - keep threshold as string
+                        triggered = str(value) == threshold_str
                     else:
-                        return False
-        except (ValueError, KeyError):
+                        # Numeric comparison - convert threshold to float
+                        try:
+                            threshold = float(threshold_str)
+                            if not isinstance(value, (int, float)):
+                                return False
+
+                            if operator == ">":
+                                triggered = value > threshold
+                            elif operator == "<":
+                                triggered = value < threshold
+                            elif operator == ">=":
+                                triggered = value >= threshold
+                            elif operator == "<=":
+                                triggered = value <= threshold
+                            else:
+                                return False
+                        except (ValueError, TypeError):
+                            return False
+
+                    return triggered
+        except (KeyError, TypeError):
             pass
 
         return False
+
+    async def evaluate_with_deduplication(self, metrics_data: Dict[str, Any]) -> bool:
+        """Evaluate the alert rule with deduplication logic."""
+        # Check if this alert should be deduplicated
+        if self._is_deduplicated():
+            logger.debug(f"Alert {self.name} deduplicated")
+            return False
+
+        # Evaluate the rule
+        triggered = await self.evaluate(metrics_data)
+
+        # Record the alert if triggered
+        if triggered:
+            alert = {
+                'rule_name': self.name,
+                'severity': self.severity,
+                'description': self.description,
+                'timestamp': time.time(),
+                'metrics_data': metrics_data
+            }
+            self._record_alert(alert)
+
+        return triggered
 
     def _is_deduplicated(self) -> bool:
         """Check if an alert should be deduplicated."""

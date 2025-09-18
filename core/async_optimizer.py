@@ -583,7 +583,7 @@ class AsyncOptimizer:
         """
         health = {
             "thread_pool_active": not self._thread_pool._shutdown,
-            "process_pool_active": not self._process_pool._shutdown,
+            "process_pool_active": not getattr(self._process_pool, '_shutdown', False),
             "threads_alive": len(self._thread_pool._threads) if hasattr(self._thread_pool, '_threads') else 0,
             "processes_alive": self._process_pool._processes if hasattr(self._process_pool, '_processes') else 0,
             "queued_tasks": getattr(self._thread_pool, '_work_queue', None).qsize() if hasattr(self._thread_pool, '_work_queue') else 0
@@ -616,9 +616,15 @@ class AsyncOptimizer:
                 if not task.done() and task != current_task:
                     task.cancel()
 
-            # Wait for tasks to cancel
+            # Wait for tasks to cancel with timeout
             if optimizer_tasks:
-                await asyncio.gather(*optimizer_tasks, return_exceptions=True)
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(*optimizer_tasks, return_exceptions=True),
+                        timeout=5.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("Some tasks did not cancel within timeout")
 
         # Shutdown thread pools with proper cleanup
         self._thread_pool.shutdown(wait=True)

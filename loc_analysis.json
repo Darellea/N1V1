@@ -1,63 +1,63 @@
 {
-  "timestamp": "2025-09-15T17:20:47.121002",
+  "timestamp": "2025-09-18T10:01:53.139019",
   "summary": {
-    "total_files": 515,
-    "total_lines": 288033,
-    "code_lines": 227880,
-    "comment_lines": 23648,
-    "comment_ratio_percent": 10.38,
-    "avg_lines_per_file": 559.29
+    "total_files": 589,
+    "total_lines": 344528,
+    "code_lines": 270548,
+    "comment_lines": 29421,
+    "comment_ratio_percent": 10.87,
+    "avg_lines_per_file": 584.94
   },
   "by_type": {
     "other": {
-      "files": 135,
-      "total_lines": 142980,
-      "code_lines": 124553,
-      "comment_lines": 6474
-    },
-    "docs": {
-      "files": 22,
-      "total_lines": 9914,
-      "code_lines": 6635,
-      "comment_lines": 1493
-    },
-    "config": {
-      "files": 99,
-      "total_lines": 14152,
-      "code_lines": 13976,
-      "comment_lines": 72
+      "files": 145,
+      "total_lines": 157680,
+      "code_lines": 138986,
+      "comment_lines": 6587
     },
     "code": {
-      "files": 259,
-      "total_lines": 120987,
-      "code_lines": 82716,
-      "comment_lines": 15609
+      "files": 306,
+      "total_lines": 157684,
+      "code_lines": 106862,
+      "comment_lines": 20790
+    },
+    "docs": {
+      "files": 27,
+      "total_lines": 13405,
+      "code_lines": 9155,
+      "comment_lines": 1972
+    },
+    "config": {
+      "files": 111,
+      "total_lines": 15759,
+      "code_lines": 15545,
+      "comment_lines": 72
     }
   },
   "by_language": {
     "Other": {
-      "files": 135,
-      "lines": 142980
-    },
-    "Markdown": {
-      "files": 15,
-      "lines": 8425
-    },
-    "JSON": {
-      "files": 94,
-      "lines": 13395
+      "files": 145,
+      "lines": 157680
     },
     "Python": {
-      "files": 259,
-      "lines": 120987
+      "files": 306,
+      "lines": 157684
+    },
+    "Markdown": {
+      "files": 16,
+      "lines": 11583
+    },
+    "JSON": {
+      "files": 106,
+      "lines": 14953
     },
     "Text": {
-      "files": 6,
-      "lines": 1183
+      "files": 10,
+      "lines": 1516
     },
     "TOML": {
       "files": 1,
-      "lines": 23
+      "lines": 72
     },
     "INI": {
       "files": 1,
@@ -74,21 +74,21 @@
   },
   "by_component": {
     "other": {
-      "files": 484,
-      "total_lines": 277885,
-      "code_lines": 221005,
-      "comment_lines": 22155
+      "files": 555,
+      "total_lines": 330211,
+      "code_lines": 260511,
+      "comment_lines": 27449
     },
     "docs": {
-      "files": 15,
-      "total_lines": 8425,
-      "code_lines": 5201,
-      "comment_lines": 1476
+      "files": 16,
+      "total_lines": 11583,
+      "code_lines": 7390,
+      "comment_lines": 1955
     },
     "config": {
-      "files": 16,
-      "total_lines": 1723,
-      "code_lines": 1674,
+      "files": 18,
+      "total_lines": 2734,
+      "code_lines": 2647,
       "comment_lines": 17
     }
   },
@@ -100,12 +100,17 @@
     },
     {
       "path": "logs\\crypto_bot.log",
-      "lines": 26268,
+      "lines": 26755,
+      "extension": ".log"
+    },
+    {
+      "path": "logs\\core.log",
+      "lines": 13592,
       "extension": ".log"
     },
     {
       "path": "htmlcov\\function_index.html",
-      "lines": 19091,
+      "lines": 9963,
       "extension": ".html"
     },
     {
@@ -115,7 +120,7 @@
     },
     {
       "path": "logs\\anomalies.json",
-      "lines": 5940,
+      "lines": 6078,
       "extension": ".json"
     },
     {
@@ -124,9 +129,9 @@
       "extension": ""
     },
     {
-      "path": "htmlcov\\class_index.html",
-      "lines": 3659,
-      "extension": ".html"
+      "path": "md\\RAW.md",
+      "lines": 2539,
+      "extension": ".md"
     },
     {
       "path": ".ruff_cache\\content\\17941625260945127573",
@@ -134,30 +139,25 @@
       "extension": ""
     },
     {
-      "path": "htmlcov\\z_a44f0ac069e85531_test_signal_router_py.html",
-      "lines": 2112,
+      "path": "htmlcov\\class_index.html",
+      "lines": 2163,
       "extension": ".html"
-    },
-    {
-      "path": "models\\currency_model.pkl",
-      "lines": 2091,
-      "extension": ".pkl"
     }
   ],
   "quality_metrics": {
     "test_to_production_ratio": 0.0,
     "component_distribution": {
       "other": {
-        "lines": 221005,
-        "percentage": 267.19
+        "lines": 260511,
+        "percentage": 243.78
       },
       "docs": {
-        "lines": 5201,
-        "percentage": 6.29
+        "lines": 7390,
+        "percentage": 6.92
       },
       "config": {
-        "lines": 1674,
-        "percentage": 2.02
+        "lines": 2647,
+        "percentage": 2.48
       }
     }
   }

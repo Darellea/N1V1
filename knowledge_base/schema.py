@@ -29,6 +29,10 @@ class MarketRegime(Enum):
     VOLATILE_SPIKE = "volatile_spike"
     UNKNOWN = "unknown"
 
+    # Backward compatibility aliases
+    BULLISH = TREND_UP
+    BEARISH = TREND_DOWN
+
 
 class StrategyCategory(Enum):
     """Strategy category classifications."""

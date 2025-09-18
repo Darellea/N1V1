@@ -1,0 +1,13 @@
+[report]
+omit =
+    tests/*
+    env/*
+    venv/*
+    docs/*
+    */__init__.py
+    demo/*
+    scripts/*
+    examples/*
+    */__pycache__/*
+    test_units/*
+fail_under = 90

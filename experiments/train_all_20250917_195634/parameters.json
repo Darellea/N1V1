@@ -1,0 +1,12 @@
+{
+  "data_file": "data.csv",
+  "symbol": null,
+  "min_samples": 100,
+  "verbose": false,
+  "config_file": "config.json",
+  "output_file": "results.json",
+  "predictive_models_enabled": true,
+  "models_config": [
+    "price_predictor"
+  ]
+}

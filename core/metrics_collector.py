@@ -117,6 +117,11 @@ class MetricSeries:
             help_text=self.help_text
         )
 
+        # Always add to samples list for compatibility with existing code
+        self.samples.append(sample)
+        if len(self.samples) > self.max_samples:
+            self.samples = self.samples[-self.max_samples:]
+
         # Use efficient numpy storage for large datasets
         if self._values is not None:
             self._values[self._current_index] = value
@@ -131,11 +136,6 @@ class MetricSeries:
             # Keep labels list in sync with numpy arrays
             if len(self._labels_list) > self.max_samples:
                 self._labels_list = self._labels_list[-self.max_samples:]
-        else:
-            # Fallback to list storage for smaller datasets
-            self.samples.append(sample)
-            if len(self.samples) > self.max_samples:
-                self.samples = self.samples[-self.max_samples:]
 
     def get_latest_sample(self) -> Optional[MetricSample]:
         """Get the most recent sample with efficient lookup."""

@@ -1,0 +1,84 @@
+{
+  "experiment_name": "train_all_20250917_195634",
+  "start_time": "2025-09-17T19:56:34.456573",
+  "status": "completed",
+  "parameters": {
+    "data_file": "data.csv",
+    "symbol": null,
+    "min_samples": 100,
+    "verbose": false,
+    "config_file": "config.json",
+    "output_file": "results.json",
+    "predictive_models_enabled": true,
+    "models_config": [
+      "price_predictor"
+    ]
+  },
+  "metrics": {
+    "data_preparation": {
+      "data_loading": "started",
+      "data_samples_loaded": 100,
+      "data_file": "data.csv",
+      "symbol": "all",
+      "data_preparation": "started",
+      "data_samples_prepared": 100,
+      "min_samples_required": 100
+    },
+    "training": {
+      "training": "started",
+      "training_duration_seconds": 0.00284,
+      "training_status": "success"
+    },
+    "final": {
+      "total_duration_seconds": 0.00284,
+      "data_samples": 100,
+      "status": "success",
+      "price_predictor_accuracy": 0.85
+    }
+  },
+  "artifacts": {
+    "data": [
+      {
+        "name": "data.csv",
+        "path": "data.csv",
+        "logged_at": "2025-09-17T19:56:34.656135"
+      }
+    ],
+    "config": [
+      {
+        "name": "config.json",
+        "path": "experiments\\train_all_20250917_195634\\artifacts\\config.json",
+        "logged_at": "2025-09-17T19:56:34.659117"
+      }
+    ],
+    "results": [
+      {
+        "name": "results.json",
+        "path": "results.json",
+        "logged_at": "2025-09-17T19:56:34.666963"
+      }
+    ]
+  },
+  "git_info": {
+    "commit_hash": "15f05ffcd4b69730f2c7df8dc2ad071365cc9332",
+    "branch": "main",
+    "modified_files": [
+      "M .coverage",
+      " M TODO.md",
+      " M core/contracts.py",
+      " M md/LAST.md",
+      " M risk/anomaly_detector.py",
+      " M tests/test_data_fixes.py",
+      "?? experiments/train_all_20250917_195634/",
+      "?? logs/anomalies/",
+      "?? reports/metrics/metrics_test_strategy_20250917_195014.json"
+    ],
+    "remote_url": "https://github.com/Darellea/N1V1.git"
+  },
+  "system_info": {
+    "python_version": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
+    "platform": "win32"
+  },
+  "end_time": "2025-09-17T19:56:34.674242",
+  "duration_seconds": 0.217669
+}

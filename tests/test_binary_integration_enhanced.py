@@ -20,7 +20,7 @@ from core.binary_model_integration import (
     get_binary_integration,
     integrate_binary_model
 )
-from strategies.regime.market_regime import MarketRegime
+from knowledge_base.schema import MarketRegime
 
 
 class TestBinaryModelIntegrationConfiguration:

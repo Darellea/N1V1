@@ -1292,9 +1292,23 @@ class AnomalyDetector:
         Returns:
             Tuple of (should_proceed, response_type, anomaly_result)
         """
-        # Log the anomaly asynchronously
+        # Log the anomaly asynchronously if event loop is available, otherwise synchronously
         if self.log_anomalies:
-            asyncio.create_task(self._log_anomaly_async(symbol, anomaly, data, signal, response))
+            try:
+                # Check if there's a running event loop
+                loop = asyncio.get_running_loop()
+                asyncio.create_task(self._log_anomaly_async(symbol, anomaly, data, signal, response))
+            except RuntimeError:
+                # No event loop running, log synchronously
+                logger.warning("No event loop running, logging anomaly synchronously")
+                try:
+                    # Create a new event loop for this operation
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(self._log_anomaly_async(symbol, anomaly, data, signal, response))
+                    loop.close()
+                except Exception as e:
+                    logger.error(f"Failed to log anomaly even synchronously: {e}")
 
         should_proceed = response != AnomalyResponse.SKIP_TRADE
         return should_proceed, response, anomaly

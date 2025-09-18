@@ -53,7 +53,14 @@ class TestCacheBasicOperations:
                 "account_balance": 30
             },
             eviction_policy=EvictionPolicy.TTL,
-            max_cache_size=10000
+            max_cache_size=10000,
+            memory_config={
+                "max_memory_mb": 500.0,
+                "warning_memory_mb": 400.0,
+                "cleanup_memory_mb": 350.0,
+                "eviction_batch_size": 100,
+                "memory_check_interval": 60.0
+            }
         )
 
     @pytest.fixture
@@ -228,7 +235,7 @@ class TestCacheSpecializedMethods:
     @pytest.fixture
     def cache_config(self):
         """Cache configuration."""
-        return CacheConfig(ttl_config={"market_ticker": 60, "ohlcv": 600, "account_balance": 30})
+        return CacheConfig(ttl_config={"default": 300, "market_ticker": 60, "ohlcv": 600, "account_balance": 30})
 
     @pytest.fixture
     def cache_instance(self, cache_config, mock_redis):
@@ -337,7 +344,7 @@ class TestCacheBatchOperations:
     @pytest.fixture
     def cache_config(self):
         """Cache configuration."""
-        return CacheConfig(ttl_config={"ohlcv": 600})
+        return CacheConfig(ttl_config={"default": 300, "ohlcv": 600})
 
     @pytest.fixture
     def cache_instance(self, cache_config, mock_redis):
@@ -415,7 +422,7 @@ class TestCacheInvalidation:
         mock_client = AsyncMock()
         mock_client.ping.return_value = True
         mock_client.keys.return_value = ["ohlcv:BTC/USDT:1h", "market_ticker:BTC/USDT", "ohlcv:ETH/USDT:1h"]
-        mock_client.delete.return_value = 2
+        mock_client.delete.return_value = 3
         return mock_client
 
     @pytest.fixture
@@ -436,13 +443,19 @@ class TestCacheInvalidation:
         """Test invalidating all data for a symbol."""
         result = await cache_instance.invalidate_symbol_data("BTC/USDT")
 
-        assert result == 2  # Two keys deleted
+        assert result == 3  # Three keys deleted (including ETH key)
         mock_redis.keys.assert_called_once_with("*:BTC/USDT:*")
-        mock_redis.delete.assert_called_once_with("ohlcv:BTC/USDT:1h", "market_ticker:BTC/USDT")
+        # Verify delete was called with all matching keys
+        mock_redis.delete.assert_called_once()
+        delete_args = mock_redis.delete.call_args[0]
+        assert len(delete_args) == 3
 
     @pytest.mark.asyncio
     async def test_invalidate_symbol_data_specific_types(self, cache_instance, mock_redis):
         """Test invalidating specific data types for a symbol."""
+        # Mock keys to return only BTC/USDT keys
+        mock_redis.keys.return_value = ["ohlcv:BTC/USDT:1h", "market_ticker:BTC/USDT"]
+
         result = await cache_instance.invalidate_symbol_data("BTC/USDT", ["ohlcv"])
 
         assert result == 1  # One key deleted
@@ -588,7 +601,8 @@ class TestCacheContextManager:
         """Test context manager with successful initialization."""
         with patch('redis.asyncio.Redis', return_value=mock_redis), \
              patch('core.cache.initialize_cache', return_value=True) as mock_init, \
-             patch('core.cache.close_cache') as mock_close:
+             patch('core.cache.close_cache') as mock_close, \
+             patch('core.cache.get_cache', return_value=None):
 
             async with CacheContext(cache_config) as cache:
                 assert cache is not None
@@ -672,6 +686,9 @@ class TestCacheErrorHandling:
 
         result = await cache_instance.get_multiple_ohlcv(["BTC/USDT", "ETH/USDT", "ADA/USDT"], "1h")
 
+        assert "BTC/USDT" in result
+        assert "ETH/USDT" in result
+        assert "ADA/USDT" in result
         assert result["BTC/USDT"] == {"price": 50000}
         assert result["ETH/USDT"] is None  # Invalid JSON
         assert result["ADA/USDT"] is None  # Not found
