@@ -3,7 +3,7 @@
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-95%2B%25%20Coverage-success)](tests/)
-[![Lines of Code](https://img.shields.io/badge/LOC-100,000+-orange)](scripts/count_loc.py)
+[![Lines of Code](https://img.shields.io/badge/LOC-155,000+-orange)](scripts/count_loc.py)
 [![Framework Grade](https://img.shields.io/badge/Grade-A--8.5/10-brightgreen)](#framework-readiness-assessment)
 
 > **Enterprise-Grade Automated Trading Framework** - A comprehensive, production-ready cryptocurrency trading system with advanced risk management, real-time monitoring, and AI-powered optimization.
@@ -23,7 +23,8 @@
 
 ### 💎 **Production Readiness**
 - **Framework Grade: A- (8.5/10)**
-- **Lines of Code: 100,000+** across core, strategies, and testing
+- **Lines of Code: 155,000+ Python lines** across 304 files
+- **Total Files: 590** with comprehensive module coverage
 - **Test Coverage: 95%+** with comprehensive integration tests
 - **Performance: <50ms latency, <100ms order execution**
 - **Uptime: Enterprise-grade reliability with circuit breaker protection**
@@ -69,6 +70,159 @@
 └── 📁 scripts/               # Utilities, LOC counter, deployment
     └── count_loc.py         # Codebase analysis tool
 ```
+
+---
+
+## 📋 Module Descriptions
+
+### Core Framework (`core/`)
+The core framework consists of 25+ modules that form the backbone of the trading system:
+
+- **`bot_engine.py`**: Main trading engine with async processing and event-driven architecture
+- **`circuit_breaker.py`**: Advanced circuit breaker system for automatic trading suspension
+- **`performance_profiler.py`**: Real-time performance profiling and bottleneck identification
+- **`performance_monitor.py`**: System performance monitoring with metrics collection
+- **`metrics_collector.py`**: Prometheus metrics collection and exposure
+- **`trading_coordinator.py`**: Coordinates multiple trading strategies and execution
+- **`signal_processor.py`**: Processes and routes trading signals across strategies
+- **`order_manager.py`**: Manages order lifecycle from creation to execution
+- **`state_manager.py`**: Maintains system state and configuration persistence
+- **`task_manager.py`**: Asynchronous task scheduling and execution
+- **`memory_manager.py`**: Memory optimization and leak prevention
+- **`cache.py`**: High-performance caching system for market data
+- **`config_manager.py`**: Configuration management with validation
+- **`dashboard_manager.py`**: Web dashboard management and real-time updates
+- **`diagnostics.py`**: System diagnostics and health monitoring
+- **`interfaces.py`**: Abstract interfaces and contracts for extensibility
+- **`logging_utils.py`**: Structured logging with multiple output formats
+- **`self_healing_engine.py`**: Automatic error recovery and system stabilization
+- **`timeframe_manager.py`**: Multi-timeframe data management and synchronization
+- **`types.py`**: Type definitions and data structures
+- **`watchdog.py`**: System watchdog for process monitoring and restart
+
+### Trading Strategies (`strategies/`)
+13 comprehensive trading strategy implementations:
+
+- **`base_strategy.py`**: Abstract base class defining strategy interface
+- **`ema_cross_strategy.py`**: Exponential moving average crossover strategy
+- **`rsi_strategy.py`**: Relative strength index mean-reversion strategy
+- **`macd_strategy.py`**: Moving average convergence divergence momentum strategy
+- **`bollinger_reversion_strategy.py`**: Bollinger bands mean-reversion strategy
+- **`stochastic_strategy.py`**: Stochastic oscillator momentum strategy
+- **`keltner_channel_strategy.py`**: Keltner channel volatility breakout strategy
+- **`donchian_breakout_strategy.py`**: Donchian channel breakout strategy
+- **`atr_breakout_strategy.py`**: Average true range volatility breakout strategy
+- **`vwap_pullback_strategy.py`**: Volume weighted average price pullback strategy
+- **`obv_strategy.py`**: On-balance volume momentum strategy
+- **`indicators_cache.py`**: Technical indicator caching and optimization
+- **`mixins.py`**: Strategy mixins for common functionality
+
+### Risk Management (`risk/`)
+4 modules providing comprehensive risk controls:
+
+- **`risk_manager.py`**: Multi-layered risk management with position sizing and drawdown limits
+- **`anomaly_detector.py`**: Market anomaly detection using statistical methods
+- **`adaptive_policy.py`**: Adaptive risk policies based on market conditions
+- **`utils.py`**: Risk calculation utilities and helper functions
+
+### Machine Learning (`ml/`)
+6 modules for AI-powered trading features:
+
+- **`features.py`**: Technical indicator calculations and feature engineering
+- **`indicators.py`**: Advanced technical indicators and signal processing
+- **`ml_filter.py`**: Machine learning-based signal filtering and validation
+- **`model_loader.py`**: ML model loading, versioning, and management
+- **`train.py`**: Model training pipeline with cross-validation
+- **`trainer.py`**: Advanced training utilities and hyperparameter optimization
+
+### API & Web Interface (`api/`)
+3 modules for REST API and web services:
+
+- **`app.py`**: FastAPI application with authentication and routing
+- **`models.py`**: Pydantic data models for API requests/responses
+- **`schemas.py`**: API schema definitions and validation
+
+### Data Management (`data/`)
+6 modules for data acquisition and processing:
+
+- **`data_fetcher.py`**: Multi-exchange data fetching with rate limiting
+- **`historical_loader.py`**: Historical data loading and preprocessing
+- **`dataset_versioning.py`**: Data versioning and integrity checking
+- **`interfaces.py`**: Data provider interfaces for extensibility
+- **`constants.py`**: Data-related constants and configurations
+
+### Portfolio Management (`portfolio/`)
+7 modules for portfolio optimization and management:
+
+- **`portfolio_manager.py`**: Portfolio-level position management and rebalancing
+- **`allocation_engine.py`**: Asset allocation algorithms and optimization
+- **`allocator.py`**: Position sizing and capital allocation
+- **`hedging.py`**: Portfolio hedging strategies and execution
+- **`performance_aggregator.py`**: Portfolio performance aggregation and reporting
+- **`strategy_ensemble.py`**: Strategy ensemble management and weighting
+
+### Optimization (`optimization/`)
+18 modules for strategy and portfolio optimization:
+
+- **`optimizer_factory.py`**: Factory pattern for optimizer instantiation
+- **`genetic_optimizer.py`**: Genetic algorithm-based parameter optimization
+- **`bayesian_optimizer.py`**: Bayesian optimization for hyperparameter tuning
+- **`cross_asset_validation.py`**: Cross-asset validation and overfitting prevention
+- **`distributed_evaluator.py`**: Distributed evaluation for parallel processing
+- **`asset_selector.py`**: Asset selection and universe optimization
+- **`base_optimizer.py`**: Abstract base class for optimization algorithms
+- **`config.py`**: Optimization configuration management
+- **`cross_asset_validator.py`**: Cross-market validation utilities
+- **`genome.py`**: Genetic algorithm genome representation
+- **`market_data_fetcher.py`**: Market data fetching for optimization
+- **`rl_optimizer.py`**: Reinforcement learning-based optimization
+- **`strategy_factory.py`**: Strategy factory for optimization
+- **`strategy_generator.py`**: Automated strategy generation
+- **`validation_criteria.py`**: Validation criteria and metrics
+- **`validation_results.py`**: Validation result processing and analysis
+- **`walk_forward.py`**: Walk-forward analysis for strategy validation
+
+### Utilities (`utils/`)
+20+ utility modules providing common functionality:
+
+- **`config_factory.py`**: Configuration file generation and management
+- **`config_generator.py`**: Dynamic configuration generation
+- **`config_loader.py`**: Configuration loading with validation
+- **`constants.py`**: Application-wide constants and enumerations
+- **`dependency_manager.py`**: Dependency injection and management
+- **`docstring_standardizer.py`**: Documentation standardization
+- **`duplication_analyzer.py`**: Code duplication analysis and reporting
+- **`error_handler.py`**: Centralized error handling and logging
+- **`error_handling_utils.py`**: Error handling utilities and decorators
+- **`final_auditor.py`**: Final audit and validation utilities
+- **`logger.py`**: Logging configuration and management
+- **`logging_manager.py`**: Advanced logging with rotation and filtering
+- **`logging_utils.py`**: Logging utilities and formatters
+- **`retry.py`**: Retry decorators with exponential backoff
+- **`security.py`**: Security utilities and encryption
+- **`time.py`**: Time utilities and timezone handling
+- **`adapter.py`**: Adapter pattern implementations
+
+### Knowledge Base (`knowledge_base/`)
+5 modules for adaptive learning and knowledge management:
+
+- **`adaptive.py`**: Adaptive learning algorithms and model updates
+- **`manager.py`**: Knowledge base management and querying
+- **`schema.py`**: Knowledge schema definitions and validation
+- **`storage.py`**: Knowledge persistence and retrieval
+
+### Scheduler (`scheduler/`)
+2 modules for task scheduling and automation:
+
+- **`diagnostic_scheduler.py`**: Diagnostic task scheduling and monitoring
+- **`retraining_scheduler.py`**: ML model retraining scheduling
+
+### Monitoring (`monitoring/`)
+Configuration files for enterprise monitoring:
+
+- **`prometheus.yml`**: Prometheus configuration for metrics collection
+- **`alert_rules.yml`**: Alert rules and notification policies
+- **`dashboards/`**: Grafana dashboard templates and configurations
 
 ---
 
@@ -151,14 +305,21 @@
 ## 📊 Technical Specifications
 
 ### Codebase Metrics
-- **Total Lines of Code**: 45,000+ lines
-- **Core Framework**: 15,000+ lines (Python)
-- **Trading Strategies**: 8,000+ lines (10+ strategies)
-- **Risk Management**: 6,000+ lines (Circuit breaker, anomaly detection)
-- **ML Components**: 5,000+ lines (Feature engineering, model training)
-- **API & Web Interface**: 4,000+ lines (FastAPI, dashboard)
-- **Monitoring System**: 3,000+ lines (Prometheus, Grafana, alerting)
-- **Testing Infrastructure**: 4,000+ lines (95%+ coverage)
+- **Total Files**: 590 files
+- **Total Lines of Code**: 345,088 lines
+- **Python Code Lines**: 155,482 lines (304 Python files)
+- **Comment Lines**: 29,119 lines (10.7% comment ratio)
+- **Average Lines per File**: 585 lines
+- **Core Framework**: 25+ modules (bot_engine, circuit_breaker, performance_monitor, etc.)
+- **Trading Strategies**: 13 strategy implementations (EMA, RSI, MACD, Bollinger, etc.)
+- **Risk Management**: 4 modules (risk_manager, anomaly_detector, adaptive_policy, utils)
+- **ML Components**: 6 modules (features, indicators, model_loader, train, trainer, ml_filter)
+- **API & Web Interface**: 3 modules (app, models, schemas)
+- **Data Management**: 6 modules (data_fetcher, historical_loader, dataset_versioning, etc.)
+- **Portfolio Management**: 7 modules (portfolio_manager, allocation_engine, hedging, etc.)
+- **Optimization**: 18 modules (genetic_optimizer, bayesian_optimizer, cross_asset_validation, etc.)
+- **Utilities**: 20+ utility modules (logging, error handling, configuration, etc.)
+- **Testing Infrastructure**: Comprehensive test suite with 95%+ coverage
 
 ### Performance Characteristics
 - **Signal Processing**: <50ms latency for signal generation
