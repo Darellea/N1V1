@@ -329,6 +329,17 @@ def mock_signal_router():
 
 
 @pytest.fixture
+def mock_notifier():
+    """Mock Discord notifier for testing."""
+    notifier = Mock()
+    notifier.send_alert = AsyncMock()
+    notifier.initialize = AsyncMock()
+    notifier.send_message = AsyncMock()
+
+    return notifier
+
+
+@pytest.fixture
 async def mock_timeframe_manager(mock_data_fetcher, multi_timeframe_data):
     """Mock timeframe manager for testing."""
     tf_manager = Mock(spec=TimeframeManager)
@@ -423,12 +434,37 @@ def mock_self_healing_engine():
 
 
 @pytest.fixture
-async def mock_bot_engine(test_config, mock_data_fetcher, mock_risk_manager,
-                         mock_order_manager, mock_signal_router, mock_timeframe_manager,
-                         mock_regime_detector, mock_strategy_selector,
-                         mock_regime_forecaster, mock_strategy_generator,
-                         mock_self_healing_engine):
-    """Mock bot engine with all dependencies."""
+def mock_bot_engine_simple(test_config, mock_data_fetcher, mock_order_manager):
+    """Simplified mock bot engine with essential dependencies."""
+    bot_engine = Mock(spec=BotEngine)
+    bot_engine.config = test_config
+    bot_engine.data_fetcher = mock_data_fetcher
+    bot_engine.order_manager = mock_order_manager
+
+    # Mock essential state
+    bot_engine.state = Mock()
+    bot_engine.state.running = True
+    bot_engine.state.paused = False
+    bot_engine.state.balance = 10000.0
+    bot_engine.state.equity = 10000.0
+
+    # Mock essential methods
+    bot_engine.initialize = AsyncMock()
+    bot_engine.start = AsyncMock()
+    bot_engine.stop = AsyncMock()
+    bot_engine.shutdown = AsyncMock()
+    bot_engine._trading_cycle = AsyncMock()
+
+    return bot_engine
+
+
+@pytest.fixture
+async def mock_bot_engine_full(test_config, mock_data_fetcher, mock_risk_manager,
+                              mock_order_manager, mock_signal_router, mock_timeframe_manager,
+                              mock_regime_detector, mock_strategy_selector,
+                              mock_regime_forecaster, mock_strategy_generator,
+                              mock_self_healing_engine):
+    """Full mock bot engine with all dependencies for comprehensive tests."""
     bot_engine = Mock(spec=BotEngine)
     bot_engine.config = test_config
     bot_engine.data_fetcher = mock_data_fetcher
@@ -768,3 +804,121 @@ def allocation_config() -> Dict[str, Any]:
         'performance_window_days': 30,
         'rebalance_threshold': 0.05
     }
+
+
+# Common mock fixtures to reduce duplication
+@pytest.fixture
+def mock_component():
+    """Generic mock component for testing."""
+    return Mock()
+
+
+@pytest.fixture
+def mock_component_registry():
+    """Mock component registry for testing."""
+    registry = Mock()
+    registry.register_component = Mock()
+    registry.get_component = Mock(return_value=Mock())
+    registry.get_components_by_type = Mock(return_value=[])
+    registry.get_critical_components = Mock(return_value=[])
+    registry.update_component_status = Mock()
+    registry.get_registry_stats = Mock(return_value={
+        'total_components': 5,
+        'critical_components': 2,
+        'healthy_components': 5,
+        'failing_components': 0
+    })
+    return registry
+
+
+@pytest.fixture
+def mock_heartbeat_message():
+    """Mock heartbeat message for testing."""
+    from datetime import datetime
+    message = Mock()
+    message.component_id = "test_comp"
+    message.component_type = "test_type"
+    message.status = Mock()  # ComponentStatus.HEALTHY
+    message.timestamp = datetime.now()
+    message.latency_ms = 50.0
+    message.error_count = 0
+    return message
+
+
+@pytest.fixture
+def mock_failure_diagnosis():
+    """Mock failure diagnosis for testing."""
+    diagnosis = Mock()
+    diagnosis.component_id = "test_comp"
+    diagnosis.failure_type = Mock()  # FailureType.PERFORMANCE
+    diagnosis.severity = Mock()  # FailureSeverity.MEDIUM
+    diagnosis.estimated_recovery_time = 60
+    diagnosis.to_dict = Mock(return_value={})
+    return diagnosis
+
+
+@pytest.fixture
+def mock_trading_signal():
+    """Mock trading signal for testing."""
+    from decimal import Decimal
+    signal = Mock()
+    signal.symbol = "BTC/USDT"
+    signal.signal_type = Mock()  # SignalType.BUY
+    signal.amount = Decimal("1.0")
+    signal.price = Decimal("50000")
+    signal.stop_loss = Decimal("49000")
+    signal.take_profit = Decimal("52000")
+    signal.timestamp = 1234567890000
+    return signal
+
+
+@pytest.fixture
+def mock_order_result():
+    """Mock order execution result for testing."""
+    result = {
+        "id": "test_order_123",
+        "symbol": "BTC/USDT",
+        "status": "filled",
+        "amount": 0.001,
+        "price": 50000.0,
+        "pnl": 50.0,
+        "timestamp": 1234567890000
+    }
+    return result
+
+
+@pytest.fixture
+def mock_dataframe():
+    """Mock pandas DataFrame for testing."""
+    import pandas as pd
+    from datetime import datetime, timedelta
+
+    timestamps = pd.date_range(
+        start=datetime(2024, 1, 1),
+        periods=100,
+        freq='1H'
+    )
+
+    df = pd.DataFrame({
+        'open': [50000 + i for i in range(100)],
+        'high': [50100 + i for i in range(100)],
+        'low': [49900 + i for i in range(100)],
+        'close': [50050 + i for i in range(100)],
+        'volume': [1000 + i * 10 for i in range(100)]
+    }, index=timestamps)
+
+    return df
+
+
+@pytest.fixture
+def mock_config_loader():
+    """Mock configuration loader for testing."""
+    loader = Mock()
+    loader.load_config = Mock(return_value={
+        "environment": {"mode": "paper"},
+        "trading": {"initial_balance": 10000.0},
+        "exchange": {"name": "binance", "markets": ["BTC/USDT"]},
+        "strategies": {"active_strategies": []},
+        "notifications": {"discord": {"enabled": False}}
+    })
+    return loader

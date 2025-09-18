@@ -1,0 +1,80 @@
+{
+  "experiment_name": "train_all_20250918_105733",
+  "start_time": "2025-09-18T10:57:33.849478",
+  "status": "completed",
+  "parameters": {
+    "data_file": "data.csv",
+    "symbol": null,
+    "min_samples": 100,
+    "verbose": false,
+    "config_file": "config.json",
+    "output_file": "results.json",
+    "predictive_models_enabled": true,
+    "models_config": [
+      "price_predictor"
+    ]
+  },
+  "metrics": {
+    "data_preparation": {
+      "data_loading": "started",
+      "data_samples_loaded": 100,
+      "data_file": "data.csv",
+      "symbol": "all",
+      "data_preparation": "started",
+      "data_samples_prepared": 100,
+      "min_samples_required": 100
+    },
+    "training": {
+      "training": "started",
+      "training_duration_seconds": 0.003999,
+      "training_status": "success"
+    },
+    "final": {
+      "total_duration_seconds": 0.003999,
+      "data_samples": 100,
+      "status": "success",
+      "price_predictor_accuracy": 0.85
+    }
+  },
+  "artifacts": {
+    "data": [
+      {
+        "name": "data.csv",
+        "path": "data.csv",
+        "logged_at": "2025-09-18T10:57:34.115536"
+      }
+    ],
+    "config": [
+      {
+        "name": "config.json",
+        "path": "experiments\\train_all_20250918_105733\\artifacts\\config.json",
+        "logged_at": "2025-09-18T10:57:34.132527"
+      }
+    ],
+    "results": [
+      {
+        "name": "results.json",
+        "path": "results.json",
+        "logged_at": "2025-09-18T10:57:34.147517"
+      }
+    ]
+  },
+  "git_info": {
+    "commit_hash": "cb0957a251d62779c69d99d1dd955fdad8f98d6e",
+    "branch": "main",
+    "modified_files": [
+      "M core/bot_engine.py",
+      " M tests/conftest.py",
+      " M tests/core/test_bot_engine.py",
+      " D tests/test_alert_rules_manager.py",
+      "?? experiments/train_all_20250918_105733/"
+    ],
+    "remote_url": "https://github.com/Darellea/N1V1.git"
+  },
+  "system_info": {
+    "python_version": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
+    "platform": "win32"
+  },
+  "end_time": "2025-09-18T10:57:34.156512",
+  "duration_seconds": 0.307034
+}

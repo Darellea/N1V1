@@ -88,11 +88,13 @@ class BotEngine:
 
         # Starting balance (present here for type clarity; initialize() may overwrite)
         try:
-            self.starting_balance: float = float(
+            balance = float(
                 self.config.get("trading", {}).get("initial_balance", 1000.0)
             )
+            # Validate that balance is positive
+            self.starting_balance: float = balance if balance > 0 else 10000.0
         except Exception:
-            self.starting_balance = 1000.0
+            self.starting_balance = 10000.0
 
         # Core modules
         self.data_fetcher: Optional[DataFetcher] = None
@@ -255,11 +257,13 @@ class BotEngine:
 
         # Set starting balance
         try:
-            self.starting_balance = float(
+            balance = float(
                 self.config.get("trading", {}).get("initial_balance", 1000.0)
             )
+            # Validate that balance is positive
+            self.starting_balance = balance if balance > 0 else 10000.0
         except Exception:
-            self.starting_balance = 1000.0
+            self.starting_balance = 10000.0
 
     async def _initialize_notifications(self) -> None:
         """Initialize notification system if enabled."""

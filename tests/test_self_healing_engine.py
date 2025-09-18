@@ -44,12 +44,11 @@ class TestComponentRegistry:
         assert len(registry.components) == 0
         assert len(registry.component_types) == 0
 
-    def test_register_component(self):
+    def test_register_component(self, mock_component):
         """Test component registration."""
         registry = ComponentRegistry()
 
-        # Mock component
-        mock_component = Mock()
+        # Use shared mock component fixture
         mock_component.component_id = "test_component"
 
         info = registry.register_component(
