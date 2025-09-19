@@ -5,8 +5,23 @@ from typing import Tuple, Dict, Any, Optional
 import pandas as pd
 import numpy as np
 import json
+import requests
+import time
+
+# Optional MLflow import
+try:
+    import mlflow
+    import mlflow.sklearn
+    MLFLOW_AVAILABLE = True
+except ImportError:
+    MLFLOW_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+# Configuration for remote inference
+REMOTE_INFERENCE_ENABLED = os.getenv("REMOTE_INFERENCE_ENABLED", "false").lower() == "true"
+REMOTE_INFERENCE_URL = os.getenv("REMOTE_INFERENCE_URL", "http://localhost:8000")
+REMOTE_INFERENCE_TIMEOUT = int(os.getenv("REMOTE_INFERENCE_TIMEOUT", "30"))  # seconds
 
 
 def load_model(path: str):
@@ -88,9 +103,64 @@ def _align_features(model, features: pd.DataFrame) -> pd.DataFrame:
     return features
 
 
-def predict(model, features: pd.DataFrame) -> pd.DataFrame:
+def remote_predict(model_name: str, features: pd.DataFrame) -> pd.DataFrame:
     """
-    Make predictions using the loaded model.
+    Make predictions using remote inference server.
+
+    Args:
+        model_name: Name of the model to use
+        features: Feature DataFrame
+
+    Returns:
+        DataFrame with predictions
+    """
+    try:
+        # Convert features to dict format for API
+        features_dict = {col: features[col].tolist() for col in features.columns}
+
+        payload = {
+            "model_name": model_name,
+            "features": features_dict,
+            "correlation_id": str(np.random.randint(1000000))  # Simple correlation ID
+        }
+
+        start_time = time.time()
+        response = requests.post(
+            f"{REMOTE_INFERENCE_URL}/predict",
+            json=payload,
+            timeout=REMOTE_INFERENCE_TIMEOUT
+        )
+        latency = time.time() - start_time
+
+        if response.status_code == 200:
+            result = response.json()
+            logger.info(f"Remote prediction successful for {model_name}, latency: {latency:.3f}s")
+
+            # Convert response back to DataFrame
+            out = pd.DataFrame(index=features.index)
+            out["prediction"] = result["prediction"]
+            out["confidence"] = result["confidence"]
+
+            if result.get("probabilities"):
+                for prob_key, prob_values in result["probabilities"].items():
+                    out[prob_key] = prob_values
+
+            return out
+        else:
+            logger.warning(f"Remote prediction failed with status {response.status_code}: {response.text}")
+            raise Exception(f"Remote inference failed: {response.status_code}")
+
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"Remote inference request failed: {e}")
+        raise Exception(f"Remote inference unavailable: {e}")
+
+
+def predict(model, features: pd.DataFrame, model_name: Optional[str] = None) -> pd.DataFrame:
+    """
+    Make predictions using the loaded model or remote inference.
+
+    If REMOTE_INFERENCE_ENABLED is True and model_name is provided,
+    uses remote inference with fallback to local inference.
 
     Returns a DataFrame with columns:
       - prediction: predicted class label
@@ -102,6 +172,14 @@ def predict(model, features: pd.DataFrame) -> pd.DataFrame:
     if not isinstance(features, pd.DataFrame):
         raise ValueError("features must be a pandas DataFrame")
 
+    # Try remote inference first if enabled and model_name provided
+    if REMOTE_INFERENCE_ENABLED and model_name:
+        try:
+            return remote_predict(model_name, features)
+        except Exception as e:
+            logger.warning(f"Remote inference failed, falling back to local: {e}")
+
+    # Local inference fallback
     X = features.copy()
     X = _align_features(model, X)
 
@@ -155,3 +233,110 @@ def predict(model, features: pd.DataFrame) -> pd.DataFrame:
         out["confidence"] = 1.0
 
     return out
+
+
+def load_model_from_registry(model_name: str, version: str = None, experiment_name: str = None) -> Tuple[Any, Optional[Dict[str, Any]]]:
+    """
+    Load a model from MLflow model registry with fallback to local files.
+
+    Args:
+        model_name: Name of the model in registry
+        version: Specific version to load (latest if None)
+        experiment_name: Experiment name to search in
+
+    Returns:
+        Tuple of (model, model_card_dict)
+    """
+    if not MLFLOW_AVAILABLE:
+        logger.warning("MLflow not available, cannot load from registry")
+        raise ImportError("MLflow not available for model registry loading")
+
+    try:
+        # Try to load from MLflow model registry first
+        if version:
+            model_uri = f"models:/{model_name}/{version}"
+        else:
+            model_uri = f"models:/{model_name}/latest"
+
+        logger.info(f"Attempting to load model from MLflow registry: {model_uri}")
+        model = mlflow.sklearn.load_model(model_uri)
+
+        # Try to get model card from run artifacts
+        model_card = None
+        try:
+            # Get the run that created this model version
+            client = mlflow.tracking.MlflowClient()
+            if version:
+                mv = client.get_model_version(model_name, version)
+                run_id = mv.run_id
+            else:
+                # Get latest version
+                latest_version = client.get_latest_versions(model_name, stages=["Production", "Staging", "None"])[0]
+                run_id = latest_version.run_id
+
+            # Try to download environment snapshot artifact
+            if run_id:
+                artifacts = client.list_artifacts(run_id)
+                for artifact in artifacts:
+                    if artifact.path == "environment_snapshot.json":
+                        client.download_artifacts(run_id, artifact.path, ".")
+                        with open("environment_snapshot.json", "r") as f:
+                            model_card = json.load(f)
+                        os.remove("environment_snapshot.json")  # Clean up
+                        break
+
+        except Exception as e:
+            logger.debug(f"Could not load model card from registry: {e}")
+
+        logger.info(f"Successfully loaded model {model_name} from MLflow registry")
+        return model, model_card
+
+    except Exception as e:
+        logger.warning(f"Failed to load model {model_name} from MLflow registry: {e}")
+
+        # Fallback: try to find local model file
+        logger.info(f"Attempting fallback to local model file for {model_name}")
+        local_paths = [
+            f"models/{model_name}.pkl",
+            f"models/{model_name}.joblib",
+            f"models/{model_name}.model",
+            f"{model_name}.pkl",
+            f"{model_name}.joblib",
+            f"{model_name}.model"
+        ]
+
+        for path in local_paths:
+            if os.path.exists(path):
+                logger.info(f"Loading local model from {path}")
+                return load_model_with_card(path)
+
+        # If no local file found, re-raise the original error
+        raise FileNotFoundError(f"Model {model_name} not found in registry or locally")
+
+
+def load_model_with_fallback(model_path_or_name: str, use_registry: bool = True) -> Tuple[Any, Optional[Dict[str, Any]]]:
+    """
+    Load a model with intelligent fallback: registry first, then local files.
+
+    Args:
+        model_path_or_name: Either a file path or model name (for registry lookup)
+        use_registry: Whether to try registry first
+
+    Returns:
+        Tuple of (model, model_card_dict)
+    """
+    # If it's a file path, try loading directly
+    if os.path.exists(model_path_or_name):
+        logger.info(f"Loading model from file path: {model_path_or_name}")
+        return load_model_with_card(model_path_or_name)
+
+    # If registry is enabled and available, try registry first
+    if use_registry and MLFLOW_AVAILABLE:
+        try:
+            return load_model_from_registry(model_path_or_name)
+        except Exception as e:
+            logger.warning(f"Registry loading failed for {model_path_or_name}: {e}")
+
+    # Fallback to local file search
+    logger.info(f"Attempting local file loading for {model_path_or_name}")
+    return load_model_with_card(model_path_or_name)

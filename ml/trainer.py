@@ -25,12 +25,29 @@ from sklearn.metrics import (
 from sklearn.calibration import CalibratedClassifierCV, calibration_curve
 from sklearn.isotonic import IsotonicRegression
 from sklearn.preprocessing import StandardScaler, RobustScaler
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.neural_network import MLPClassifier
 import joblib
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
+
+# Try to import XGBoost
+try:
+    import xgboost as xgb
+    XGBOOST_AVAILABLE = True
+except ImportError:
+    XGBOOST_AVAILABLE = False
+    logging.warning("XGBoost not available. XGBoost will be skipped in ensemble.")
+
+# Try to import CatBoost
+try:
+    import catboost as cb
+    CATBOOST_AVAILABLE = True
+except ImportError:
+    CATBOOST_AVAILABLE = False
+    logging.warning("CatBoost not available. CatBoost will be skipped in ensemble.")
 
 # Try to import optional dependencies
 try:
@@ -1823,6 +1840,421 @@ def main():
         early_stopping_rounds=args.early_stopping_rounds,
         eval_economic=args.eval_profit,  # Map eval_profit to eval_economic
     )
+
+
+class EnsembleModel:
+    """
+    Ensemble model combining multiple algorithms for improved performance and uncertainty estimation.
+    """
+
+    def __init__(self, models: Optional[Dict[str, Any]] = None, meta_model: Optional[Any] = None):
+        """
+        Initialize ensemble model.
+
+        Args:
+            models: Dictionary of base models
+            meta_model: Meta-model for stacking
+        """
+        self.models = models or {}
+        self.meta_model = meta_model
+        self.is_trained = False
+        self.feature_columns = []
+        self.model_weights = {}
+
+    def add_model(self, name: str, model: Any, weight: float = 1.0):
+        """Add a base model to the ensemble."""
+        self.models[name] = model
+        self.model_weights[name] = weight
+        logger.info(f"Added model '{name}' to ensemble with weight {weight}")
+
+    def set_meta_model(self, meta_model: Any):
+        """Set the meta-model for stacking."""
+        self.meta_model = meta_model
+        logger.info("Set meta-model for stacking")
+
+    def fit(self, X: pd.DataFrame, y: pd.Series, sample_weight: Optional[np.ndarray] = None):
+        """
+        Fit the ensemble model.
+
+        Args:
+            X: Feature DataFrame
+            y: Target labels
+            sample_weight: Sample weights
+        """
+        logger.info(f"Fitting ensemble with {len(self.models)} base models")
+
+        # Store feature columns
+        self.feature_columns = list(X.columns)
+
+        # Fit base models
+        for name, model in self.models.items():
+            logger.info(f"Fitting base model: {name}")
+            try:
+                if sample_weight is not None:
+                    model.fit(X, y, sample_weight=sample_weight)
+                else:
+                    model.fit(X, y)
+                logger.info(f"Successfully fitted {name}")
+            except Exception as e:
+                logger.error(f"Failed to fit {name}: {e}")
+                raise
+
+        # Fit meta-model if provided (stacking)
+        if self.meta_model is not None:
+            logger.info("Fitting meta-model for stacking")
+            # Generate predictions from base models
+            base_predictions = self._get_base_predictions(X)
+            self.meta_model.fit(base_predictions, y)
+            logger.info("Successfully fitted meta-model")
+
+        self.is_trained = True
+        logger.info("Ensemble fitting completed")
+
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        """
+        Predict probabilities using ensemble.
+
+        Args:
+            X: Feature DataFrame
+
+        Returns:
+            Probability predictions
+        """
+        if not self.is_trained:
+            raise ValueError("Ensemble model must be fitted before prediction")
+
+        if self.meta_model is not None:
+            # Stacking approach
+            base_predictions = self._get_base_predictions(X)
+            return self.meta_model.predict_proba(base_predictions)
+        else:
+            # Weighted averaging approach
+            all_probabilities = []
+
+            for name, model in self.models.items():
+                try:
+                    proba = model.predict_proba(X)
+                    # Ensure we get probabilities for positive class
+                    if proba.shape[1] > 1:
+                        pos_proba = proba[:, 1]
+                    else:
+                        pos_proba = proba.ravel()
+
+                    # Weight the predictions
+                    weight = self.model_weights.get(name, 1.0)
+                    all_probabilities.append(pos_proba * weight)
+
+                except Exception as e:
+                    logger.warning(f"Failed to get predictions from {name}: {e}")
+                    continue
+
+            if not all_probabilities:
+                raise ValueError("No valid predictions from base models")
+
+            # Average the weighted predictions
+            ensemble_proba = np.mean(all_probabilities, axis=0)
+
+            # Ensure probabilities are within [0, 1]
+            ensemble_proba = np.clip(ensemble_proba, 0, 1)
+
+            return np.column_stack([1 - ensemble_proba, ensemble_proba])
+
+    def predict(self, X: pd.DataFrame, threshold: float = 0.5) -> np.ndarray:
+        """
+        Predict binary labels using ensemble.
+
+        Args:
+            X: Feature DataFrame
+            threshold: Decision threshold
+
+        Returns:
+            Binary predictions
+        """
+        proba = self.predict_proba(X)
+        return (proba[:, 1] >= threshold).astype(int)
+
+    def _get_base_predictions(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Get predictions from all base models."""
+        predictions = {}
+
+        for name, model in self.models.items():
+            try:
+                proba = model.predict_proba(X)
+                if proba.shape[1] > 1:
+                    predictions[f"{name}_proba"] = proba[:, 1]
+                else:
+                    predictions[f"{name}_proba"] = proba.ravel()
+            except Exception as e:
+                logger.warning(f"Failed to get predictions from {name}: {e}")
+                predictions[f"{name}_proba"] = np.zeros(len(X))
+
+        return pd.DataFrame(predictions)
+
+    def get_feature_importance(self) -> Dict[str, float]:
+        """Get average feature importance across models."""
+        importance_scores = {}
+
+        for name, model in self.models.items():
+            try:
+                if hasattr(model, 'feature_importances_'):
+                    for i, importance in enumerate(model.feature_importances_):
+                        feature = self.feature_columns[i]
+                        if feature not in importance_scores:
+                            importance_scores[feature] = []
+                        importance_scores[feature].append(importance)
+            except Exception as e:
+                logger.debug(f"Could not get feature importance from {name}: {e}")
+
+        # Average importance scores
+        avg_importance = {}
+        for feature, scores in importance_scores.items():
+            avg_importance[feature] = np.mean(scores)
+
+        return avg_importance
+
+    def estimate_uncertainty(self, X: pd.DataFrame) -> Dict[str, np.ndarray]:
+        """
+        Estimate prediction uncertainty using ensemble disagreement.
+
+        Args:
+            X: Feature DataFrame
+
+        Returns:
+            Dictionary with uncertainty metrics
+        """
+        if not self.is_trained:
+            raise ValueError("Ensemble model must be fitted before uncertainty estimation")
+
+        individual_predictions = []
+
+        # Get predictions from each base model
+        for name, model in self.models.items():
+            try:
+                proba = model.predict_proba(X)
+                if proba.shape[1] > 1:
+                    individual_predictions.append(proba[:, 1])
+                else:
+                    individual_predictions.append(proba.ravel())
+            except Exception as e:
+                logger.debug(f"Skipping {name} for uncertainty estimation: {e}")
+
+        if len(individual_predictions) < 2:
+            # Not enough models for meaningful uncertainty estimation
+            return {
+                'mean_proba': np.zeros(len(X)),
+                'uncertainty': np.ones(len(X)),
+                'confidence': np.zeros(len(X))
+            }
+
+        individual_predictions = np.array(individual_predictions)
+
+        # Calculate uncertainty metrics
+        mean_proba = np.mean(individual_predictions, axis=0)
+        std_proba = np.std(individual_predictions, axis=0)
+
+        # Uncertainty as coefficient of variation
+        uncertainty = np.divide(std_proba, np.abs(mean_proba),
+                              out=np.ones_like(std_proba),
+                              where=mean_proba != 0)
+
+        # Confidence as 1 - uncertainty (normalized)
+        confidence = 1 / (1 + uncertainty)
+        confidence = (confidence - confidence.min()) / (confidence.max() - confidence.min())
+
+        return {
+            'mean_proba': mean_proba,
+            'uncertainty': uncertainty,
+            'confidence': confidence,
+            'std_proba': std_proba
+        }
+
+
+def create_ensemble_model(model_configs: Optional[Dict[str, Dict]] = None) -> EnsembleModel:
+    """
+    Create an ensemble model with specified configurations.
+
+    Args:
+        model_configs: Dictionary of model configurations
+
+    Returns:
+        Configured EnsembleModel
+    """
+    ensemble = EnsembleModel()
+
+    if model_configs is None:
+        # Default ensemble configuration
+        model_configs = {
+            'lightgbm': {
+                'model': lgb.LGBMClassifier(
+                    objective='binary',
+                    metric='binary_logloss',
+                    boosting_type='gbdt',
+                    num_leaves=31,
+                    learning_rate=0.05,
+                    feature_fraction=0.9,
+                    bagging_fraction=0.8,
+                    bagging_freq=5,
+                    verbose=-1,
+                    random_state=42,
+                    n_estimators=100
+                ),
+                'weight': 1.0
+            },
+            'random_forest': {
+                'model': RandomForestClassifier(
+                    n_estimators=100,
+                    max_depth=10,
+                    random_state=42,
+                    n_jobs=-1
+                ),
+                'weight': 0.8
+            },
+            'extra_trees': {
+                'model': ExtraTreesClassifier(
+                    n_estimators=100,
+                    max_depth=10,
+                    random_state=42,
+                    n_jobs=-1
+                ),
+                'weight': 0.6
+            },
+            'logistic_regression': {
+                'model': LogisticRegression(
+                    random_state=42,
+                    max_iter=1000
+                ),
+                'weight': 0.4
+            }
+        }
+
+        # Add XGBoost if available
+        if XGBOOST_AVAILABLE:
+            model_configs['xgboost'] = {
+                'model': xgb.XGBClassifier(
+                    objective='binary:logistic',
+                    eval_metric='logloss',
+                    max_depth=6,
+                    learning_rate=0.1,
+                    n_estimators=100,
+                    random_state=42
+                ),
+                'weight': 0.9
+            }
+
+        # Add CatBoost if available
+        if CATBOOST_AVAILABLE:
+            model_configs['catboost'] = {
+                'model': cb.CatBoostClassifier(
+                    iterations=100,
+                    depth=6,
+                    learning_rate=0.1,
+                    random_state=42,
+                    verbose=False
+                ),
+                'weight': 0.9
+            }
+
+    # Add models to ensemble
+    for name, config in model_configs.items():
+        ensemble.add_model(name, config['model'], config.get('weight', 1.0))
+
+    # Set meta-model for stacking (optional)
+    meta_model = LogisticRegression(random_state=42, max_iter=1000)
+    ensemble.set_meta_model(meta_model)
+
+    return ensemble
+
+
+def train_ensemble_model(df: pd.DataFrame, save_path: str = 'models/ensemble_model.pkl',
+                        results_path: str = 'training_results_ensemble.json',
+                        feature_columns: Optional[List[str]] = None,
+                        n_splits: int = 5, tune: bool = False) -> Dict[str, Any]:
+    """
+    Train an ensemble model for trading decisions.
+
+    Args:
+        df: DataFrame with features and labels
+        save_path: Path to save ensemble model
+        results_path: Path to save results
+        feature_columns: Feature columns to use
+        n_splits: Number of validation splits
+        tune: Whether to perform hyperparameter tuning
+
+    Returns:
+        Training results dictionary
+    """
+    logger.info("Starting ensemble model training")
+
+    # Validate inputs
+    label_col, feature_columns = validate_inputs(df, feature_columns)
+
+    # Prepare data
+    X, y, sample_weights, n_splits = prepare_data(df, feature_columns, label_col, n_splits)
+
+    # Create ensemble
+    ensemble = create_ensemble_model()
+
+    # Train ensemble
+    logger.info("Training ensemble model...")
+    ensemble.fit(X, y, sample_weight=sample_weights)
+
+    # Cross-validation
+    logger.info("Performing cross-validation...")
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+
+    cv_scores = []
+    for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X)):
+        X_train_fold, X_test_fold = X.iloc[train_idx], X.iloc[test_idx]
+        y_train_fold, y_test_fold = y.iloc[train_idx], y.iloc[test_idx]
+
+        # Fit fold model
+        fold_ensemble = create_ensemble_model()
+        fold_sample_weights = sample_weights[train_idx] if sample_weights is not None else None
+        fold_ensemble.fit(X_train_fold, y_train_fold, sample_weight=fold_sample_weights)
+
+        # Evaluate
+        y_pred_proba = fold_ensemble.predict_proba(X_test_fold)[:, 1]
+        auc = roc_auc_score(y_test_fold, y_pred_proba)
+        f1 = f1_score(y_test_fold, (y_pred_proba >= 0.5).astype(int))
+
+        cv_scores.append({'fold': fold_idx + 1, 'auc': auc, 'f1': f1})
+        logger.info(f"Fold {fold_idx + 1}: AUC={auc:.4f}, F1={f1:.4f}")
+
+    # Calculate overall metrics
+    overall_auc = np.mean([score['auc'] for score in cv_scores])
+    overall_f1 = np.mean([score['f1'] for score in cv_scores])
+
+    # Get feature importance
+    feature_importance = ensemble.get_feature_importance()
+
+    # Save model
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    joblib.dump(ensemble, save_path)
+    logger.info(f"Ensemble model saved to {save_path}")
+
+    # Prepare results
+    results = {
+        'model_type': 'ensemble',
+        'n_base_models': len(ensemble.models),
+        'base_models': list(ensemble.models.keys()),
+        'overall_metrics': {
+            'auc': float(overall_auc),
+            'f1': float(overall_f1)
+        },
+        'cv_scores': cv_scores,
+        'feature_importance': feature_importance,
+        'training_samples': len(X),
+        'feature_columns': feature_columns
+    }
+
+    # Save results
+    with open(results_path, 'w') as f:
+        json.dump(results, f, indent=2, default=str)
+    logger.info(f"Training results saved to {results_path}")
+
+    logger.info(f"Ensemble training completed. Overall AUC: {overall_auc:.4f}, F1: {overall_f1:.4f}")
+
+    return results
 
 
 if __name__ == "__main__":

@@ -406,3 +406,7 @@ def get_signal_logic_params(signal_type: str) -> Dict[str, Any]:
     if hasattr(config.signal_logic, signal_type):
         return getattr(config.signal_logic, signal_type)
     return {}
+
+def get_distributed_evaluation_config() -> DistributedEvaluationConfig:
+    """Get distributed evaluation configuration."""
+    return get_default_config().distributed_evaluation

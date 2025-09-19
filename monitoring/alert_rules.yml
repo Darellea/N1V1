@@ -288,6 +288,114 @@ groups:
           description: "Prediction stability coefficient: {{ $value }} (high variance detected)"
           runbook_url: "https://docs.n1v1.com/runbooks/binary-model-stability"
 
+      # Model Drift Detection
+      - alert: ModelDriftDetected
+        expr: model_drift_score > 0.2
+        for: 30m
+        labels:
+          severity: warning
+          category: model
+        annotations:
+          summary: "Model drift detected"
+          description: "Model drift score: {{ $value }} (threshold: 0.2)"
+          runbook_url: "https://docs.n1v1.com/runbooks/model-drift"
+
+      # Feature Drift Detection
+      - alert: FeatureDriftDetected
+        expr: feature_drift_score > 0.15
+        for: 1h
+        labels:
+          severity: warning
+          category: model
+        annotations:
+          summary: "Feature drift detected"
+          description: "Feature drift score: {{ $value }} (threshold: 0.15)"
+          runbook_url: "https://docs.n1v1.com/runbooks/feature-drift"
+
+      # Model Performance Degradation
+      - alert: ModelPerformanceDegraded
+        expr: model_performance_score < 0.6
+        for: 2h
+        labels:
+          severity: warning
+          category: model
+        annotations:
+          summary: "Model performance degraded"
+          description: "Model performance score: {{ $value }} (threshold: 0.6)"
+          runbook_url: "https://docs.n1v1.com/runbooks/model-performance"
+
+      # Model Calibration Error High
+      - alert: ModelCalibrationErrorHigh
+        expr: model_calibration_error > 0.3
+        for: 1h
+        labels:
+          severity: warning
+          category: model
+        annotations:
+          summary: "Model calibration error too high"
+          description: "Model calibration error: {{ $value }} (threshold: 0.3)"
+          runbook_url: "https://docs.n1v1.com/runbooks/model-calibration"
+
+      # Ensemble Model Disagreement
+      - alert: EnsembleModelDisagreement
+        expr: ensemble_model_disagreement > 0.8
+        for: 30m
+        labels:
+          severity: info
+          category: model
+        annotations:
+          summary: "Ensemble model disagreement detected"
+          description: "Ensemble model disagreement score: {{ $value }} (high uncertainty)"
+          runbook_url: "https://docs.n1v1.com/runbooks/ensemble-disagreement"
+
+      # Model Retraining Required
+      - alert: ModelRetrainingRequired
+        expr: model_retraining_required == 1
+        for: 10m
+        labels:
+          severity: critical
+          category: model
+        annotations:
+          summary: "Model retraining required"
+          description: "Model health assessment indicates retraining is required"
+          runbook_url: "https://docs.n1v1.com/runbooks/model-retraining"
+
+      # Dataset Drift Detection
+      - alert: DatasetDriftDetected
+        expr: dataset_drift_score > 0.25
+        for: 1h
+        labels:
+          severity: warning
+          category: data
+        annotations:
+          summary: "Dataset drift detected"
+          description: "Dataset drift score: {{ $value }} (threshold: 0.25)"
+          runbook_url: "https://docs.n1v1.com/runbooks/dataset-drift"
+
+      # Model Serving Latency High
+      - alert: ModelServingLatencyHigh
+        expr: histogram_quantile(0.95, rate(model_serving_latency_seconds_bucket[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          category: serving
+        annotations:
+          summary: "Model serving latency too high"
+          description: "95th percentile serving latency exceeded 500ms"
+          runbook_url: "https://docs.n1v1.com/runbooks/model-serving-latency"
+
+      # Model Serving Error Rate High
+      - alert: ModelServingErrorRateHigh
+        expr: rate(model_serving_requests_total{status="error"}[5m]) / rate(model_serving_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          category: serving
+        annotations:
+          summary: "Model serving error rate too high"
+          description: "Model serving error rate exceeded 5%"
+          runbook_url: "https://docs.n1v1.com/runbooks/model-serving-errors"
+
       # System Resource Trends
       - alert: MemoryUsageTrend
         expr: predict_linear(system_memory_usage_bytes[1h], 3600) > system_memory_total_bytes * 0.9
@@ -413,3 +521,354 @@ groups:
           summary: "API rate limit trending to limit"
           description: "API rate limit usage projected to reach 95% in 1 hour"
           runbook_url: "https://docs.n1v1.com/runbooks/api-rate-limit-trend"
+
+  # ML Serving Infrastructure Alerts
+  - name: n1v1_ml_serving
+    rules:
+      # ML Serving Service Down
+      - alert: MLServingServiceDown
+        expr: up{job="n1v1-ml-serving"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          category: ml-serving
+        annotations:
+          summary: "ML serving service is down"
+          description: "ML serving infrastructure has been down for more than 30 seconds"
+          runbook_url: "https://docs.n1v1.com/runbooks/ml-serving-down"
+
+      # High ML Inference Latency
+      - alert: MLInferenceHighLatency
+        expr: histogram_quantile(0.95, rate(inference_latency_seconds_bucket[5m])) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          category: ml-serving
+        annotations:
+          summary: "ML inference latency too high"
+          description: "95th percentile inference latency exceeded 100ms for 2 minutes"
+          runbook_url: "https://docs.n1v1.com/runbooks/ml-high-latency"
+
+      # ML Inference Error Rate High
+      - alert: MLInferenceHighErrorRate
+        expr: rate(inference_requests_total{status="error"}[5m]) / rate(inference_requests_total[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          category: ml-serving
+        annotations:
+          summary: "ML inference error rate too high"
+          description: "ML inference error rate exceeded 1% for 5 minutes"
+          runbook_url: "https://docs.n1v1.com/runbooks/ml-high-error-rate"
+
+      # ML Serving High Memory Usage
+      - alert: MLServingHighMemoryUsage
+        expr: container_memory_usage_bytes{pod=~"n1v1-ml-serving-.*"} / container_spec_memory_limit_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          category: ml-serving
+        annotations:
+          summary: "ML serving high memory usage"
+          description: "ML serving pod memory usage above 90%"
+          runbook_url: "https://docs.n1v1.com/runbooks/ml-high-memory"
+
+      # ML Serving High CPU Usage
+      - alert: MLServingHighCpuUsage
+        expr: rate(container_cpu_usage_seconds_total{pod=~"n1v1-ml-serving-.*"}[5m]) / container_spec_cpu_limit_cores > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: ml-serving
+        annotations:
+          summary: "ML serving high CPU usage"
+          description: "ML serving pod CPU usage above 80%"
+          runbook_url: "https://docs.n1v1.com/runbooks/ml-high-cpu"
+
+      # ML Model Loading Failed
+      - alert: MLModelLoadingFailed
+        expr: increase(ml_model_load_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          category: ml-serving
+        annotations:
+          summary: "ML model loading failed"
+          description: "Failed to load ML model in serving infrastructure"
+          runbook_url: "https://docs.n1v1.com/runbooks/ml-model-load-failure"
+
+      # ML Serving Queue Backlog
+      - alert: MLServingQueueBacklog
+        expr: ml_serving_queue_length > 100
+        for: 2m
+        labels:
+          severity: warning
+          category: ml-serving
+        annotations:
+          summary: "ML serving queue backlog"
+          description: "ML serving request queue length exceeded 100"
+          runbook_url: "https://docs.n1v1.com/runbooks/ml-queue-backlog"
+
+      # ML Serving Recovery
+      - alert: MLServingServiceRecovered
+        expr: up{job="n1v1-ml-serving"} == 1
+        for: 30s
+        labels:
+          severity: info
+          category: ml-serving
+        annotations:
+          summary: "ML serving service recovered"
+          description: "ML serving infrastructure has recovered and is running"
+          runbook_url: "https://docs.n1v1.com/runbooks/ml-serving-recovery"
+
+  # Security Alerts - Critical Security Events
+  - name: n1v1_security_critical
+    rules:
+      # Security Violation Detected
+      - alert: SecurityViolationDetected
+        expr: security_violation_total > 0
+        for: 10s
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Security violation detected"
+          description: "A security violation has been detected in the trading system"
+          runbook_url: "https://docs.n1v1.com/runbooks/security-violation"
+
+      # Key Management Service Down
+      - alert: KeyManagementServiceDown
+        expr: key_management_service_status == 0
+        for: 30s
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Key management service is down"
+          description: "Vault/KMS service is unavailable - credential access may be compromised"
+          runbook_url: "https://docs.n1v1.com/runbooks/key-management-down"
+
+      # Invalid API Key Detected
+      - alert: InvalidApiKeyDetected
+        expr: increase(invalid_api_key_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Invalid API key detected"
+          description: "Invalid or expired API key detected in authentication attempts"
+          runbook_url: "https://docs.n1v1.com/runbooks/invalid-api-key"
+
+      # Expired Key Detected
+      - alert: ExpiredKeyDetected
+        expr: increase(expired_key_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Expired key detected"
+          description: "Expired cryptographic key detected in the system"
+          runbook_url: "https://docs.n1v1.com/runbooks/expired-key"
+
+      # Multiple Failed Authentication Attempts
+      - alert: MultipleFailedAuthAttempts
+        expr: increase(failed_auth_attempts_total[5m]) > 5
+        for: 2m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Multiple failed authentication attempts"
+          description: "Multiple failed authentication attempts detected - potential brute force attack"
+          runbook_url: "https://docs.n1v1.com/runbooks/failed-auth-attempts"
+
+      # Invalid Order Schema Detected
+      - alert: InvalidOrderSchemaDetected
+        expr: increase(order_schema_validation_errors_total[5m]) > 5
+        for: 2m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Invalid order schemas detected"
+          description: "Multiple orders with invalid schemas detected in the last 5 minutes"
+          runbook_url: "https://docs.n1v1.com/runbooks/invalid-order-schema"
+
+      # Duplicate Order ID Detected
+      - alert: DuplicateOrderIdDetected
+        expr: increase(duplicate_order_id_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Duplicate order ID detected"
+          description: "Duplicate order IDs detected - potential replay attack or system error"
+          runbook_url: "https://docs.n1v1.com/runbooks/duplicate-order-id"
+
+      # Rate Limit Exceeded
+      - alert: RateLimitExceeded
+        expr: increase(rate_limit_exceeded_total[1m]) > 10
+        for: 2m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Rate limit exceeded multiple times"
+          description: "Rate limits have been exceeded more than 10 times in the last minute"
+          runbook_url: "https://docs.n1v1.com/runbooks/rate-limit-exceeded"
+
+  # Security Alerts - High Priority
+  - name: n1v1_security_high
+    rules:
+      # Abnormal Order Cancellation Rate
+      - alert: AbnormalOrderCancellationRate
+        expr: rate(order_cancellation_total[5m]) / rate(order_execution_total[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Abnormal order cancellation rate"
+          description: "Order cancellation rate exceeds 50% of total orders"
+          runbook_url: "https://docs.n1v1.com/runbooks/abnormal-cancellation-rate"
+
+      # API Key Usage Spike
+      - alert: ApiKeyUsageSpike
+        expr: increase(api_key_usage_total[5m]) > 100
+        for: 3m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "API key usage spike detected"
+          description: "API key usage has increased by more than 100 requests in 5 minutes"
+          runbook_url: "https://docs.n1v1.com/runbooks/api-key-usage-spike"
+
+      # Unauthorized Access Attempts
+      - alert: UnauthorizedAccessAttempts
+        expr: increase(unauthorized_access_total[5m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Unauthorized access attempts detected"
+          description: "Multiple unauthorized access attempts detected"
+          runbook_url: "https://docs.n1v1.com/runbooks/unauthorized-access"
+
+      # Order State Inconsistency
+      - alert: OrderStateInconsistency
+        expr: order_state_inconsistencies_total > 0
+        for: 5m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Order state inconsistency detected"
+          description: "Order state inconsistencies detected in the system"
+          runbook_url: "https://docs.n1v1.com/runbooks/order-state-inconsistency"
+
+      # Stale Orders Detected
+      - alert: StaleOrdersDetected
+        expr: stale_orders_total > 10
+        for: 10m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Stale orders detected"
+          description: "More than 10 orders have been pending for over 24 hours"
+          runbook_url: "https://docs.n1v1.com/runbooks/stale-orders"
+
+  # Security Alerts - Medium Priority
+  - name: n1v1_security_medium
+    rules:
+      # Key Rotation Overdue
+      - alert: KeyRotationOverdue
+        expr: key_rotation_overdue_days > 30
+        for: 1h
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Key rotation overdue"
+          description: "API keys or credentials have not been rotated for more than 30 days"
+          runbook_url: "https://docs.n1v1.com/runbooks/key-rotation-overdue"
+
+      # Security Event Rate Increase
+      - alert: SecurityEventRateIncrease
+        expr: increase(security_events_total[10m]) > 20
+        for: 5m
+        labels:
+          severity: info
+          category: security
+        annotations:
+          summary: "Security event rate increased"
+          description: "Security event rate has increased significantly"
+          runbook_url: "https://docs.n1v1.com/runbooks/security-event-rate"
+
+      # Credential Access Audit Alert
+      - alert: CredentialAccessAuditAlert
+        expr: increase(credential_access_total[1h]) > 1000
+        for: 10m
+        labels:
+          severity: info
+          category: security
+        annotations:
+          summary: "High credential access rate"
+          description: "Credential access rate exceeds normal thresholds"
+          runbook_url: "https://docs.n1v1.com/runbooks/credential-access-rate"
+
+      # Signal Validation Failure Rate
+      - alert: SignalValidationFailureRate
+        expr: rate(signal_validation_failures_total[5m]) / rate(signal_validation_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Signal validation failure rate high"
+          description: "Signal validation failure rate exceeds 10%"
+          runbook_url: "https://docs.n1v1.com/runbooks/signal-validation-failure"
+
+  # Security Recovery Alerts
+  - name: n1v1_security_recovery
+    rules:
+      # Key Management Service Recovered
+      - alert: KeyManagementServiceRecovered
+        expr: key_management_service_status == 1
+        for: 30s
+        labels:
+          severity: info
+          category: security
+        annotations:
+          summary: "Key management service recovered"
+          description: "Vault/KMS service has recovered and is operational"
+          runbook_url: "https://docs.n1v1.com/runbooks/key-management-recovered"
+
+      # Security Violation Resolved
+      - alert: SecurityViolationResolved
+        expr: security_violation_total == 0
+        for: 5m
+        labels:
+          severity: info
+          category: security
+        annotations:
+          summary: "Security violations resolved"
+          description: "All security violations have been resolved"
+          runbook_url: "https://docs.n1v1.com/runbooks/security-violation-resolved"
+
+      # Order Flow Consistency Restored
+      - alert: OrderFlowConsistencyRestored
+        expr: order_state_inconsistencies_total == 0
+        for: 2m
+        labels:
+          severity: info
+          category: security
+        annotations:
+          summary: "Order flow consistency restored"
+          description: "Order flow consistency has been restored"
+          runbook_url: "https://docs.n1v1.com/runbooks/order-consistency-restored"

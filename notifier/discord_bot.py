@@ -703,6 +703,68 @@ class DiscordNotifier:
             message="Daily performance report generated", embed_data=embed
         )
 
+    async def send_order_failure_alert(self, failure_data: Dict) -> bool:
+        """
+        Send an order failure alert notification.
+
+        Args:
+            failure_data: Dictionary containing order failure information
+
+        Returns:
+            True if notification was sent successfully
+        """
+        if not self.alerts_enabled:
+            return False
+
+        embed = {
+            "title": "🚨 Order Execution Failure",
+            "color": 0xFF0000,
+            "fields": [
+                {
+                    "name": "Strategy ID",
+                    "value": failure_data.get("strategy_id", "Unknown"),
+                    "inline": True,
+                },
+                {
+                    "name": "Symbol",
+                    "value": failure_data.get("symbol", "Unknown"),
+                    "inline": True,
+                },
+                {
+                    "name": "Exchange",
+                    "value": failure_data.get("exchange", "Unknown"),
+                    "inline": True,
+                },
+                {
+                    "name": "Error Message",
+                    "value": failure_data.get("error_message", "Unknown error")[:1024],  # Discord field limit
+                    "inline": False,
+                },
+                {
+                    "name": "Retry Count",
+                    "value": failure_data.get("retry_count", 0),
+                    "inline": True,
+                },
+                {
+                    "name": "Order ID",
+                    "value": failure_data.get("order_id", "N/A"),
+                    "inline": True,
+                },
+                {
+                    "name": "Correlation ID",
+                    "value": failure_data.get("correlation_id", "N/A"),
+                    "inline": True,
+                },
+            ],
+            "timestamp": to_iso(now_ms()),
+            "footer": {"text": "Crypto Trading Bot - Order Failure Alert"},
+        }
+
+        return await self.send_notification(
+            message=f"🚨 Order execution failed for {failure_data.get('symbol', 'Unknown')} after {failure_data.get('retry_count', 0)} retries",
+            embed_data=embed
+        )
+
     async def __aenter__(self):
         """Async context manager entry."""
         await self.initialize()

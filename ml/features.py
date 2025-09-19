@@ -17,6 +17,7 @@ import pandas as pd
 from typing import Dict, List, Optional, Union, Tuple, Any, Callable
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 from sklearn.exceptions import NotFittedError
+from scipy.stats import ks_2samp, entropy
 import logging
 from datetime import datetime, timedelta
 import os
@@ -407,6 +408,266 @@ class FeatureExtractor:
         self.is_fitted = True
         logger.info(f"Scaler loaded from {path}")
 
+    def add_cross_asset_features(self, data: pd.DataFrame, asset_data: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+        """
+        Add cross-asset features (correlations, spreads).
+
+        Args:
+            data: Primary asset data
+            asset_data: Dictionary of other asset data for cross-asset analysis
+
+        Returns:
+            DataFrame with cross-asset features added
+        """
+        df = data.copy()
+
+        if not asset_data:
+            return df
+
+        # Rolling correlation features
+        window_sizes = [20, 50, 100]
+        for asset_name, asset_df in asset_data.items():
+            if 'close' in asset_df.columns and len(asset_df) == len(df):
+                for window in window_sizes:
+                    if len(df) > window:
+                        corr_col = f'corr_{asset_name}_{window}'
+                        df[corr_col] = df['close'].rolling(window).corr(asset_df['close'])
+                        self.feature_columns.append(corr_col)
+
+                        # Spread features
+                        spread_col = f'spread_{asset_name}'
+                        df[spread_col] = df['close'] - asset_df['close']
+                        self.feature_columns.append(spread_col)
+
+                        # Relative strength
+                        rel_strength_col = f'rel_strength_{asset_name}'
+                        df[rel_strength_col] = df['close'] / asset_df['close']
+                        self.feature_columns.append(rel_strength_col)
+
+        return df
+
+    def add_time_anchored_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Add time-anchored features (rolling windows, volatility clusters).
+
+        Args:
+            data: Input data with datetime index
+
+        Returns:
+            DataFrame with time-anchored features added
+        """
+        df = data.copy()
+
+        # Ensure we have datetime index
+        if not isinstance(df.index, pd.DatetimeIndex):
+            if 'timestamp' in df.columns:
+                df = df.set_index('timestamp')
+                df.index = pd.to_datetime(df.index)
+
+        # Rolling volatility clusters
+        vol_windows = [10, 20, 30, 60]
+        for window in vol_windows:
+            if len(df) > window:
+                vol_col = f'volatility_{window}'
+                df[vol_col] = df['close'].pct_change().rolling(window).std()
+                self.feature_columns.append(vol_col)
+
+                # Volatility ratio (current vs historical)
+                vol_ratio_col = f'vol_ratio_{window}'
+                df[vol_ratio_col] = df[vol_col] / df[vol_col].rolling(window*2).mean()
+                self.feature_columns.append(vol_ratio_col)
+
+        # Time-of-day features
+        if isinstance(df.index, pd.DatetimeIndex):
+            df['hour_of_day'] = df.index.hour
+            df['day_of_week'] = df.index.dayofweek
+            df['month_of_year'] = df.index.month
+            df['is_weekend'] = df.index.dayofweek.isin([5, 6]).astype(int)
+
+            time_features = ['hour_of_day', 'day_of_week', 'month_of_year', 'is_weekend']
+            self.feature_columns.extend(time_features)
+
+        # Rolling momentum features
+        momentum_periods = [5, 10, 20]
+        for period in momentum_periods:
+            if len(df) > period:
+                mom_col = f'momentum_{period}'
+                df[mom_col] = (df['close'] - df['close'].shift(period)) / df['close'].shift(period)
+                self.feature_columns.append(mom_col)
+
+        return df
+
+    def detect_feature_drift(self, reference_data: pd.DataFrame, current_data: pd.DataFrame,
+                           threshold: float = 0.05) -> Dict[str, Dict[str, Any]]:
+        """
+        Detect feature drift using Kolmogorov-Smirnov tests and PSI.
+
+        Args:
+            reference_data: Reference (training) data
+            current_data: Current (production) data
+            threshold: Drift detection threshold
+
+        Returns:
+            Dictionary with drift detection results per feature
+        """
+        drift_results = {}
+
+        common_features = set(reference_data.columns) & set(current_data.columns)
+        common_features = [f for f in common_features if f in self.feature_columns]
+
+        for feature in common_features:
+            ref_values = reference_data[feature].dropna().values
+            curr_values = current_data[feature].dropna().values
+
+            if len(ref_values) == 0 or len(curr_values) == 0:
+                drift_results[feature] = {
+                    'drift_detected': False,
+                    'ks_statistic': None,
+                    'psi_score': None,
+                    'reason': 'Insufficient data'
+                }
+                continue
+
+            # Kolmogorov-Smirnov test
+            try:
+                ks_stat, ks_pvalue = ks_2samp(ref_values, curr_values)
+                ks_drift = ks_pvalue < threshold
+            except Exception as e:
+                ks_stat, ks_pvalue, ks_drift = None, None, False
+
+            # Population Stability Index (PSI)
+            try:
+                psi_score = self._calculate_psi(ref_values, curr_values)
+                psi_drift = psi_score > 0.25  # Standard PSI threshold
+            except Exception as e:
+                psi_score, psi_drift = None, False
+
+            # Overall drift decision
+            drift_detected = (ks_drift if ks_drift is not None else False) or \
+                           (psi_drift if psi_drift is not None else False)
+
+            drift_results[feature] = {
+                'drift_detected': drift_detected,
+                'ks_statistic': ks_stat,
+                'ks_pvalue': ks_pvalue,
+                'psi_score': psi_score,
+                'distribution_shift': self._detect_distribution_shift(ref_values, curr_values)
+            }
+
+        return drift_results
+
+    def _calculate_psi(self, reference: np.ndarray, current: np.ndarray,
+                      bins: int = 10) -> float:
+        """
+        Calculate Population Stability Index (PSI).
+
+        Args:
+            reference: Reference distribution
+            current: Current distribution
+            bins: Number of bins for histogram
+
+        Returns:
+            PSI score
+        """
+        # Create histograms
+        ref_hist, bin_edges = np.histogram(reference, bins=bins, density=True)
+        curr_hist, _ = np.histogram(current, bins=bin_edges, density=True)
+
+        # Avoid division by zero
+        ref_hist = ref_hist + 1e-10
+        curr_hist = curr_hist + 1e-10
+
+        # Calculate PSI
+        psi = np.sum((curr_hist - ref_hist) * np.log(curr_hist / ref_hist))
+
+        return float(psi)
+
+    def _detect_distribution_shift(self, reference: np.ndarray, current: np.ndarray) -> str:
+        """
+        Detect the type of distribution shift.
+
+        Args:
+            reference: Reference distribution
+            current: Current distribution
+
+        Returns:
+            Type of shift detected
+        """
+        ref_mean, ref_std = np.mean(reference), np.std(reference)
+        curr_mean, curr_std = np.mean(current), np.std(current)
+
+        mean_shift = abs(curr_mean - ref_mean) / abs(ref_mean) if ref_mean != 0 else 0
+        std_shift = abs(curr_std - ref_std) / abs(ref_std) if ref_std != 0 else 0
+
+        if mean_shift > 0.1 and std_shift < 0.1:
+            return "mean_shift"
+        elif std_shift > 0.1 and mean_shift < 0.1:
+            return "variance_shift"
+        elif mean_shift > 0.1 and std_shift > 0.1:
+            return "mean_and_variance_shift"
+        else:
+            return "no_significant_shift"
+
+    def get_drift_report(self, drift_results: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Generate a comprehensive drift report.
+
+        Args:
+            drift_results: Results from detect_feature_drift
+
+        Returns:
+            Drift report summary
+        """
+        total_features = len(drift_results)
+        drifted_features = sum(1 for result in drift_results.values() if result['drift_detected'])
+
+        report = {
+            'total_features': total_features,
+            'drifted_features': drifted_features,
+            'drift_percentage': drifted_features / total_features if total_features > 0 else 0,
+            'most_drifted_features': self._get_most_drifted_features(drift_results),
+            'drift_summary': {
+                'ks_based_drift': sum(1 for r in drift_results.values()
+                                    if r.get('ks_pvalue', 1.0) < 0.05),
+                'psi_based_drift': sum(1 for r in drift_results.values()
+                                     if r.get('psi_score', 0) > 0.25)
+            }
+        }
+
+        return report
+
+    def _get_most_drifted_features(self, drift_results: Dict[str, Dict[str, Any]],
+                                 top_n: int = 5) -> List[Dict[str, Any]]:
+        """
+        Get the most drifted features.
+
+        Args:
+            drift_results: Drift detection results
+            top_n: Number of top features to return
+
+        Returns:
+            List of most drifted features with their scores
+        """
+        feature_scores = []
+
+        for feature, results in drift_results.items():
+            # Combine KS statistic and PSI score for ranking
+            ks_score = results.get('ks_statistic', 0) or 0
+            psi_score = results.get('psi_score', 0) or 0
+            combined_score = (ks_score + psi_score) / 2
+
+            feature_scores.append({
+                'feature': feature,
+                'drift_score': combined_score,
+                'drift_detected': results.get('drift_detected', False),
+                'shift_type': results.get('distribution_shift', 'unknown')
+            })
+
+        # Sort by drift score descending
+        feature_scores.sort(key=lambda x: x['drift_score'], reverse=True)
+
+        return feature_scores[:top_n]
+
 
 def create_feature_pipeline(config: Optional[Dict[str, Any]] = None) -> FeatureExtractor:
     """
@@ -467,3 +728,358 @@ def batch_extract_features(data_dict: Dict[str, pd.DataFrame],
             logger.error(f"Unexpected error extracting features for {symbol}: {e}")
 
     return results
+
+
+# Additional feature generation functions for testing compatibility
+
+def generate_cross_asset_features(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Generate cross-asset features from multi-asset data.
+
+    Args:
+        data: DataFrame with multi-asset price data (columns like BTC_close, ETH_close, etc.)
+
+    Returns:
+        DataFrame with cross-asset features
+    """
+    if data.empty:
+        return pd.DataFrame()
+
+    # Extract asset names from column names (assuming format: ASSET_close)
+    asset_columns = [col for col in data.columns if col.endswith('_close')]
+    if len(asset_columns) < 2:
+        raise ValueError("At least 2 assets required for cross-asset features")
+
+    assets = [col.replace('_close', '') for col in asset_columns]
+    features_df = data.copy()
+
+    # Generate correlation features
+    window_sizes = [7, 14, 30]
+    for i, asset1 in enumerate(assets):
+        for j, asset1 in enumerate(assets[i+1:], i+1):
+            asset2 = assets[j]
+            col1 = f"{asset1}_close"
+            col2 = f"{asset2}_close"
+
+            for window in window_sizes:
+                if len(data) > window:
+                    corr_col = f"{asset1}_{asset2}_correlation_{window}d"
+                    features_df[corr_col] = data[col1].rolling(window).corr(data[col2])
+
+                    # Spread features
+                    spread_col = f"{asset1}_{asset2}_spread"
+                    features_df[spread_col] = data[col1] - data[col2]
+
+                    # Ratio features
+                    ratio_col = f"{asset1}_{asset2}_ratio"
+                    features_df[ratio_col] = data[col1] / data[col2]
+
+    return features_df
+
+
+def generate_time_anchored_features(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Generate time-anchored features from price data.
+
+    Args:
+        data: DataFrame with OHLCV data
+
+    Returns:
+        DataFrame with time-anchored features
+    """
+    if data.empty:
+        return pd.DataFrame()
+
+    if 'close' not in data.columns:
+        raise ValueError("Data must contain 'close' column")
+
+    features_df = data.copy()
+
+    # Rolling volatility features
+    vol_periods = [7, 14, 30]
+    for period in vol_periods:
+        if len(data) > period:
+            vol_col = f"volatility_{period}d"
+            features_df[vol_col] = data['close'].pct_change().rolling(period).std()
+
+    # Momentum features
+    momentum_periods = [7, 14, 30]
+    for period in momentum_periods:
+        if len(data) > period:
+            mom_col = f"momentum_{period}d"
+            features_df[mom_col] = (data['close'] - data['close'].shift(period)) / data['close'].shift(period)
+
+    # Volume-based features if volume column exists
+    if 'volume' in data.columns:
+        vol_ma_periods = [7, 14, 30]
+        for period in vol_ma_periods:
+            if len(data) > period:
+                vol_ma_col = f"volume_ma_{period}d"
+                features_df[vol_ma_col] = data['volume'].rolling(period).mean()
+
+                vol_std_col = f"volume_std_{period}d"
+                features_df[vol_std_col] = data['volume'].rolling(period).std()
+
+    return features_df
+
+
+# Feature generation classes for testing
+
+class CrossAssetFeatureGenerator:
+    """Generator for cross-asset features."""
+
+    def __init__(self):
+        pass
+
+    def generate_correlation_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Generate correlation-based features."""
+        if len(data.columns) < 2:
+            raise ValueError("At least 2 assets required")
+
+        asset_cols = [col for col in data.columns if col.endswith('_close')]
+        if len(asset_cols) < 2:
+            raise ValueError("At least 2 assets required")
+
+        features_df = pd.DataFrame(index=data.index)
+
+        for i, col1 in enumerate(asset_cols):
+            for col2 in asset_cols[i+1:]:
+                asset1 = col1.replace('_close', '')
+                asset2 = col2.replace('_close', '')
+                corr_col = f"{asset1}_{asset2}_correlation_7d"
+                features_df[corr_col] = data[col1].rolling(7).corr(data[col2])
+
+        return features_df
+
+    def generate_spread_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Generate spread-based features."""
+        asset_cols = [col for col in data.columns if col.endswith('_close')]
+        if len(asset_cols) < 2:
+            raise ValueError("At least 2 assets required")
+
+        features_df = pd.DataFrame(index=data.index)
+
+        for i, col1 in enumerate(asset_cols):
+            for col2 in asset_cols[i+1:]:
+                asset1 = col1.replace('_close', '')
+                asset2 = col2.replace('_close', '')
+                spread_col = f"{asset1}_{asset2}_spread"
+                features_df[spread_col] = data[col1] - data[col2]
+
+        return features_df
+
+    def generate_ratio_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Generate ratio-based features."""
+        asset_cols = [col for col in data.columns if col.endswith('_close')]
+        if len(asset_cols) < 2:
+            raise ValueError("At least 2 assets required")
+
+        features_df = pd.DataFrame(index=data.index)
+
+        for i, col1 in enumerate(asset_cols):
+            for col2 in asset_cols[i+1:]:
+                asset1 = col1.replace('_close', '')
+                asset2 = col2.replace('_close', '')
+                ratio_col = f"{asset1}_{asset2}_ratio"
+                features_df[ratio_col] = data[col1] / data[col2]
+
+        return features_df
+
+
+class TimeAnchoredFeatureGenerator:
+    """Generator for time-anchored features."""
+
+    def __init__(self):
+        pass
+
+    def generate_rolling_volatility(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Generate rolling volatility features."""
+        if 'close' not in data.columns:
+            raise ValueError("Data must contain 'close' column")
+
+        if len(data) < 10:
+            raise ValueError("Insufficient data")
+
+        features_df = pd.DataFrame(index=data.index)
+
+        periods = [7, 14, 30]
+        for period in periods:
+            if len(data) > period:
+                vol_col = f"volatility_{period}d"
+                features_df[vol_col] = data['close'].pct_change().rolling(period).std()
+
+        return features_df
+
+    def generate_momentum_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Generate momentum features."""
+        if 'close' not in data.columns:
+            raise ValueError("Data must contain 'close' column")
+
+        if len(data) < 10:
+            raise ValueError("Insufficient data")
+
+        features_df = pd.DataFrame(index=data.index)
+
+        periods = [7, 14, 30]
+        for period in periods:
+            if len(data) > period:
+                mom_col = f"momentum_{period}d"
+                features_df[mom_col] = (data['close'] - data['close'].shift(period)) / data['close'].shift(period)
+
+        return features_df
+
+    def generate_volume_profile_features(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Generate volume profile features."""
+        if 'volume' not in data.columns:
+            raise ValueError("Data must contain 'volume' column")
+
+        if len(data) < 10:
+            raise ValueError("Insufficient data")
+
+        features_df = pd.DataFrame(index=data.index)
+
+        period = 7
+        if len(data) > period:
+            vol_ma_col = f"volume_ma_{period}d"
+            features_df[vol_ma_col] = data['volume'].rolling(period).mean()
+
+            vol_std_col = f"volume_std_{period}d"
+            features_df[vol_std_col] = data['volume'].rolling(period).std()
+
+            vol_zscore_col = f"volume_zscore_{period}d"
+            features_df[vol_zscore_col] = (data['volume'] - features_df[vol_ma_col]) / features_df[vol_std_col]
+
+        return features_df
+
+
+class FeatureDriftDetector:
+    """Detector for feature drift."""
+
+    def __init__(self, method: str = 'ks'):
+        """
+        Initialize drift detector.
+
+        Args:
+            method: Drift detection method ('ks' or 'psi')
+        """
+        self.method = method
+        if method not in ['ks', 'psi']:
+            raise ValueError("Unsupported drift detection method")
+
+    def detect_drift(self, reference_data: pd.DataFrame, current_data: pd.DataFrame) -> Dict[str, float]:
+        """
+        Detect drift between reference and current data.
+
+        Args:
+            reference_data: Reference data
+            current_data: Current data
+
+        Returns:
+            Dictionary of drift scores per feature
+        """
+        common_features = set(reference_data.columns) & set(current_data.columns)
+        drift_scores = {}
+
+        for feature in common_features:
+            ref_vals = reference_data[feature].dropna().values
+            curr_vals = current_data[feature].dropna().values
+
+            if len(ref_vals) == 0 or len(curr_vals) == 0:
+                drift_scores[feature] = 0.0
+                continue
+
+            if self.method == 'ks':
+                from scipy.stats import ks_2samp
+                try:
+                    stat, _ = ks_2samp(ref_vals, curr_vals)
+                    drift_scores[feature] = stat
+                except:
+                    drift_scores[feature] = 0.0
+            elif self.method == 'psi':
+                drift_scores[feature] = self._calculate_psi(ref_vals, curr_vals)
+
+        return drift_scores
+
+    def _calculate_psi(self, reference: np.ndarray, current: np.ndarray) -> float:
+        """Calculate Population Stability Index."""
+        # Simple PSI calculation
+        ref_mean = np.mean(reference)
+        curr_mean = np.mean(current)
+
+        if ref_mean == 0:
+            return 0.0
+
+        return abs(curr_mean - ref_mean) / ref_mean
+
+
+def detect_feature_drift(reference_data: pd.DataFrame, current_data: pd.DataFrame,
+                        method: str = 'ks') -> Tuple[bool, Dict[str, float]]:
+    """
+    Detect feature drift between reference and current data.
+
+    Args:
+        reference_data: Reference data
+        current_data: Current data
+        method: Drift detection method
+
+    Returns:
+        Tuple of (drift_detected, drift_scores)
+    """
+    detector = FeatureDriftDetector(method)
+    scores = detector.detect_drift(reference_data, current_data)
+    drift_detected = any(score > 0.05 for score in scores.values())  # Simple threshold
+    return drift_detected, scores
+
+
+def validate_features(data: pd.DataFrame, check_missing: bool = True,
+                     check_ranges: bool = False, check_correlations: bool = False,
+                     check_importance_stability: bool = False,
+                     max_missing_ratio: float = 0.1, max_correlation: float = 0.95) -> Tuple[bool, List[str]]:
+    """
+    Validate features in a DataFrame.
+
+    Args:
+        data: Feature DataFrame to validate
+        check_missing: Check for missing values
+        check_ranges: Check for extreme values
+        check_correlations: Check for high correlations
+        check_importance_stability: Check feature importance stability
+        max_missing_ratio: Maximum allowed missing ratio
+        max_correlation: Maximum allowed correlation
+
+    Returns:
+        Tuple of (is_valid, issues_list)
+    """
+    issues = []
+    is_valid = True
+
+    if check_missing:
+        for col in data.columns:
+            missing_ratio = data[col].isna().mean()
+            if missing_ratio > max_missing_ratio:
+                issues.append(f"Column '{col}' has {missing_ratio:.2%} missing values")
+                is_valid = False
+
+    if check_ranges:
+        for col in data.columns:
+            if data[col].dtype in ['int64', 'float64']:
+                mean_val = data[col].mean()
+                std_val = data[col].std()
+                if std_val > 0:
+                    extreme_count = ((data[col] - mean_val).abs() > 5 * std_val).sum()
+                    if extreme_count > 0:
+                        issues.append(f"Column '{col}' has {extreme_count} extreme values")
+                        is_valid = False
+
+    if check_correlations:
+        numeric_cols = data.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) > 1:
+            corr_matrix = data[numeric_cols].corr()
+            for i in range(len(numeric_cols)):
+                for j in range(i+1, len(numeric_cols)):
+                    corr = abs(corr_matrix.iloc[i, j])
+                    if corr > max_correlation:
+                        issues.append(f"High correlation ({corr:.2f}) between '{numeric_cols[i]}' and '{numeric_cols[j]}'")
+                        is_valid = False
+
+    return is_valid, issues

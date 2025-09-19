@@ -32,7 +32,7 @@ class TestBinaryModelIntegration:
     @pytest.fixture
     def sample_market_data(self):
         """Create sample market data for testing."""
-        dates = pd.date_range(start='2023-01-01', periods=100, freq='1H')
+        dates = pd.date_range(start='2023-01-01', periods=100, freq='h')
         np.random.seed(42)
 
         data = {
@@ -218,7 +218,7 @@ class TestBotEngineIntegration:
     @pytest.fixture
     def sample_market_data_dict(self):
         """Create sample market data dictionary."""
-        dates = pd.date_range(start='2023-01-01', periods=50, freq='1H')
+        dates = pd.date_range(start='2023-01-01', periods=50, freq='h')
         np.random.seed(42)
 
         data = {
@@ -358,7 +358,7 @@ class TestEndToEndIntegration:
         # and verifies the complete data flow through the system
 
         # Create mock market data with sufficient rows for feature extraction
-        dates = pd.date_range(start='2023-01-01', periods=50, freq='1H')
+        dates = pd.date_range(start='2023-01-01', periods=50, freq='h')
         np.random.seed(42)
 
         data = {
@@ -442,7 +442,7 @@ class TestEndToEndIntegration:
         """Test processing multiple symbols simultaneously."""
         # Create sample data for multiple symbols with sufficient rows
         symbols_data = {}
-        dates = pd.date_range(start='2023-01-01', periods=50, freq='1H')
+        dates = pd.date_range(start='2023-01-01', periods=50, freq='h')
         np.random.seed(42)
 
         for i, symbol in enumerate(["BTC/USDT", "ETH/USDT", "ADA/USDT"]):

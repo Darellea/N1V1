@@ -51,9 +51,11 @@ try:
     from tensorflow import keras
     TENSORFLOW_AVAILABLE = True
 except ImportError:
+    import warnings
+    warnings.filterwarnings("ignore", message="TensorFlow not available")
     TENSORFLOW_AVAILABLE = False
     keras = None  # Define keras as None when not available
-    warnings.warn("TensorFlow not available, neural network models disabled")
+    tf = None
 
 try:
     import torch

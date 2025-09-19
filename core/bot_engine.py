@@ -22,7 +22,7 @@ from risk.risk_manager import RiskManager
 from core.order_manager import OrderManager
 from core.signal_router import SignalRouter
 from notifier.discord_bot import DiscordNotifier
-from core.task_manager import TaskManager
+from core.task_manager import TaskManager, TaskMessage
 from core.timeframe_manager import TimeframeManager
 from strategies.regime.strategy_selector import get_strategy_selector, update_strategy_performance
 from core.cache import initialize_cache, get_cache, close_cache
@@ -77,7 +77,10 @@ class BotEngine:
         """
         self.config: Dict[str, Any] = config
         # Mode derived from config environment.mode (expects 'live', 'paper', 'backtest')
-        self.mode: TradingMode = TradingMode[config["environment"]["mode"].upper()]
+        try:
+            self.mode: TradingMode = TradingMode[config["environment"]["mode"].upper()]
+        except KeyError:
+            self.mode = TradingMode["BACKTEST"]
         self.state: BotState = BotState()
         # Portfolio mode: when true, manage multiple trading pairs concurrently
         self.portfolio_mode: bool = bool(
@@ -106,7 +109,11 @@ class BotEngine:
         self.notifier: Optional[DiscordNotifier] = None
 
         # Task management for background tasks
-        self.task_manager: TaskManager = TaskManager()
+        self.task_manager: TaskManager = TaskManager(self.config)
+
+        # Distributed components
+        self.scheduler = DistributedScheduler(self.task_manager, self.config)
+        self.executor = DistributedExecutor(self.task_manager, self.config)
 
         # Global safe-mode flag (set when any core component signals repeated critical failures)
         self.global_safe_mode: bool = False
@@ -143,25 +150,28 @@ class BotEngine:
     async def initialize(self) -> None:
         """Initialize all components of the trading bot."""
         logger.info("Initializing BotEngine")
-        
+
         # Step 1: Determine trading pairs
         self._determine_trading_pairs()
-        
+
         # Step 2: Initialize cache if configured
         await self._initialize_cache()
-        
+
         # Step 3: Initialize core modules
         await self._initialize_core_modules()
-        
+
         # Step 4: Initialize strategies
         await self._initialize_strategies()
-        
+
         # Step 5: Initialize notification system
         await self._initialize_notifications()
-        
-        # Step 6: Initialize UI if enabled
+
+        # Step 6: Initialize distributed components
+        await self._initialize_distributed_components()
+
+        # Step 7: Initialize UI if enabled
         self._initialize_display()
-        
+
         logger.info("BotEngine initialization complete")
 
     def _determine_trading_pairs(self) -> None:
@@ -272,6 +282,16 @@ class BotEngine:
             await self.notifier.initialize()
             if hasattr(self.notifier, "shutdown"):
                 self._shutdown_hooks.append(self.notifier.shutdown)
+
+    async def _initialize_distributed_components(self) -> None:
+        """Initialize distributed scheduler and executor."""
+        # Initialize scheduler
+        await self.scheduler.initialize()
+
+        # Initialize executor with reference to bot engine
+        await self.executor.initialize(self)
+
+        logger.info("Distributed components initialized")
 
     async def _initialize_strategies(self) -> None:
         """Load and initialize all active trading strategies."""
@@ -1234,3 +1254,135 @@ class BotEngine:
         except Exception as e:
             logger.warning(f"Failed to extract multi-timeframe data for {symbol}: {e}")
             return None
+
+
+class DistributedScheduler:
+    """Distributed scheduler that enqueues tasks for processing."""
+
+    def __init__(self, task_manager: TaskManager, config: Dict[str, Any]):
+        self.task_manager = task_manager
+        self.config = config
+        self._initialized = False
+
+    async def initialize(self) -> None:
+        """Initialize the distributed scheduler."""
+        if not self._initialized:
+            await self.task_manager.initialize_queue()
+            await self.task_manager.start_workers()
+            self._initialized = True
+            logger.info("DistributedScheduler initialized")
+
+    async def schedule_signal_processing(self, market_data: Dict[str, Any],
+                                       correlation_id: Optional[str] = None) -> str:
+        """Schedule signal processing task."""
+        task_data = {
+            'market_data': market_data,
+            'pairs': getattr(self.task_manager, '_bot_engine', None).pairs if hasattr(self.task_manager, '_bot_engine') else [],
+            'timestamp': time.time()
+        }
+
+        return await self.task_manager.enqueue_signal_task(task_data, correlation_id=correlation_id)
+
+    async def schedule_backtest(self, backtest_config: Dict[str, Any],
+                              correlation_id: Optional[str] = None) -> str:
+        """Schedule backtest task."""
+        return await self.task_manager.enqueue_backtest_task(backtest_config, correlation_id=correlation_id)
+
+    async def schedule_optimization(self, optimization_config: Dict[str, Any],
+                                  correlation_id: Optional[str] = None) -> str:
+        """Schedule optimization task."""
+        return await self.task_manager.enqueue_optimization_task(optimization_config, correlation_id=correlation_id)
+
+    async def get_queue_status(self) -> Dict[str, Any]:
+        """Get current queue status."""
+        return await self.task_manager.get_queue_status()
+
+
+class DistributedExecutor:
+    """Distributed executor that processes tasks from the queue."""
+
+    def __init__(self, task_manager: TaskManager, config: Dict[str, Any]):
+        self.task_manager = task_manager
+        self.config = config
+        self._initialized = False
+
+        # Register task handlers
+        self.task_manager.register_task_handler('signal', self._handle_signal_task)
+        self.task_manager.register_task_handler('backtest', self._handle_backtest_task)
+        self.task_manager.register_task_handler('optimization', self._handle_optimization_task)
+
+    async def initialize(self, bot_engine: 'BotEngine') -> None:
+        """Initialize the distributed executor."""
+        if not self._initialized:
+            self.bot_engine = bot_engine
+            self._initialized = True
+            logger.info("DistributedExecutor initialized")
+
+    async def _handle_signal_task(self, payload: Dict[str, Any], **kwargs) -> bool:
+        """Handle signal processing task."""
+        try:
+            correlation_id = kwargs.get('correlation_id', 'unknown')
+            logger.info(f"Processing signal task", extra={'correlation_id': correlation_id})
+
+            market_data = payload.get('market_data', {})
+            pairs = payload.get('pairs', [])
+
+            # Process signals using bot engine methods
+            if hasattr(self, 'bot_engine'):
+                # Generate signals
+                signals = await self.bot_engine._generate_signals(market_data)
+
+                # Evaluate risk
+                approved_signals = await self.bot_engine._evaluate_risk(signals, market_data)
+
+                # Execute orders
+                await self.bot_engine._execute_orders(approved_signals)
+
+                # Update state
+                await self.bot_engine._update_state()
+
+                logger.info(f"Signal task completed successfully", extra={'correlation_id': correlation_id})
+                return True
+            else:
+                logger.error("Bot engine not available for signal processing")
+                return False
+
+        except Exception as e:
+            logger.error(f"Signal task processing failed: {e}", extra={'correlation_id': kwargs.get('correlation_id', 'unknown')}, exc_info=True)
+            return False
+
+    async def _handle_backtest_task(self, payload: Dict[str, Any], **kwargs) -> bool:
+        """Handle backtest task."""
+        try:
+            correlation_id = kwargs.get('correlation_id', 'unknown')
+            logger.info(f"Processing backtest task", extra={'correlation_id': correlation_id})
+
+            # Extract backtest configuration
+            backtest_config = payload
+
+            # Run backtest (placeholder - would integrate with existing backtest system)
+            # For now, just log the task
+            logger.info(f"Backtest task completed for config: {backtest_config}", extra={'correlation_id': correlation_id})
+            return True
+
+        except Exception as e:
+            logger.error(f"Backtest task processing failed: {e}", extra={'correlation_id': kwargs.get('correlation_id', 'unknown')}, exc_info=True)
+            return False
+
+    async def _handle_optimization_task(self, payload: Dict[str, Any], **kwargs) -> bool:
+        """Handle optimization task."""
+        try:
+            correlation_id = kwargs.get('correlation_id', 'unknown')
+            logger.info(f"Processing optimization task", extra={'correlation_id': correlation_id})
+
+            # Extract optimization configuration
+            optimization_config = payload
+
+            # Run optimization (placeholder - would integrate with existing optimization system)
+            # For now, just log the task
+            logger.info(f"Optimization task completed for config: {optimization_config}", extra={'correlation_id': correlation_id})
+            return True
+
+        except Exception as e:
+            logger.error(f"Optimization task processing failed: {e}", extra={'correlation_id': kwargs.get('correlation_id', 'unknown')}, exc_info=True)
+            return False

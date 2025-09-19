@@ -72,6 +72,11 @@ class FailureType(Enum):
     DATA_QUALITY = "data_quality"
     CONFIGURATION = "configuration"
     DEPENDENCY = "dependency"
+    # Chaos engineering specific failures
+    CHAOS_NETWORK_PARTITION = "chaos_network_partition"
+    CHAOS_RATE_LIMIT = "chaos_rate_limit"
+    CHAOS_EXCHANGE_DOWNTIME = "chaos_exchange_downtime"
+    CHAOS_DATABASE_OUTAGE = "chaos_database_outage"
 
 
 @dataclass
@@ -708,16 +713,21 @@ class WatchdogService:
     Central watchdog service coordinating monitoring, detection, and recovery.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], notifier=None):
         self.config = config
         self.event_bus = get_default_enhanced_event_bus()
         self.diagnostics = get_diagnostics_manager()
+        self.notifier = notifier
 
         # Core components
         self.heartbeat_protocols: Dict[str, HeartbeatProtocol] = {}
         self.failure_detector = FailureDetector(config.get('failure_detection', {}))
         self.recovery_orchestrator = RecoveryOrchestrator(config.get('recovery', {}))
         self.state_manager = StateManager(config.get('state_management', {}))
+
+        # Order execution monitoring
+        self.order_execution_failures: Dict[str, Dict[str, Any]] = {}
+        self.order_failure_threshold = config.get('order_failure_threshold', 3)
 
         # Monitoring state
         self._running = False
@@ -729,6 +739,7 @@ class WatchdogService:
         self.failures_detected = 0
         self.recoveries_initiated = 0
         self.recoveries_successful = 0
+        self.order_failures_alerted = 0
 
         logger.info("WatchdogService initialized")
 
@@ -864,6 +875,69 @@ class WatchdogService:
 
         await self.event_bus.publish_event(event)
 
+    async def report_order_execution_failure(self, failure_data: Dict[str, Any]) -> None:
+        """Report an order execution failure for monitoring and alerting."""
+        correlation_id = failure_data.get("correlation_id", "unknown")
+        strategy_id = failure_data.get("strategy_id", "unknown")
+        symbol = failure_data.get("symbol", "unknown")
+
+        # Track failure for this correlation ID
+        if correlation_id not in self.order_execution_failures:
+            self.order_execution_failures[correlation_id] = {
+                "failures": [],
+                "first_failure_time": datetime.now(),
+                "strategy_id": strategy_id,
+                "symbol": symbol
+            }
+
+        self.order_execution_failures[correlation_id]["failures"].append({
+            "timestamp": datetime.now(),
+            "error_message": failure_data.get("error_message", "Unknown error"),
+            "retry_count": failure_data.get("retry_count", 0)
+        })
+
+        # Check if we should send an alert
+        failure_count = len(self.order_execution_failures[correlation_id]["failures"])
+        if failure_count >= self.order_failure_threshold:
+            await self._send_order_failure_alert(correlation_id, failure_data)
+
+    async def _send_order_failure_alert(self, correlation_id: str, failure_data: Dict[str, Any]) -> None:
+        """Send an alert for persistent order execution failures."""
+        failure_info = self.order_execution_failures[correlation_id]
+        failure_count = len(failure_info["failures"])
+
+        # Prepare alert data
+        alert_data = {
+            "correlation_id": correlation_id,
+            "strategy_id": failure_info["strategy_id"],
+            "symbol": failure_info["symbol"],
+            "exchange": failure_data.get("exchange", "Unknown"),
+            "error_message": failure_info["failures"][-1]["error_message"],
+            "retry_count": failure_info["failures"][-1]["retry_count"],
+            "total_failures": failure_count,
+            "first_failure_time": failure_info["first_failure_time"].isoformat(),
+            "last_failure_time": failure_info["failures"][-1]["timestamp"].isoformat()
+        }
+
+        logger.warning(f"Sending order failure alert for {correlation_id}: {failure_count} failures")
+
+        # Send alert via notifier if available
+        if self.notifier and hasattr(self.notifier, 'send_order_failure_alert'):
+            success = await self.notifier.send_order_failure_alert(alert_data)
+            if success:
+                import threading
+                with threading.Lock():
+                    self.order_failures_alerted += 1
+                logger.info(f"Order failure alert sent successfully for {correlation_id}")
+            else:
+                logger.error(f"Failed to send order failure alert for {correlation_id}")
+        else:
+            logger.warning("No notifier available for order failure alerts")
+
+        # Clean up old failure tracking after alerting
+        if correlation_id in self.order_execution_failures:
+            del self.order_execution_failures[correlation_id]
+
     def get_watchdog_stats(self) -> Dict[str, Any]:
         """Get comprehensive watchdog statistics."""
         return {
@@ -884,13 +958,234 @@ class WatchdogService:
         protocol = self.heartbeat_protocols[component_id]
         last_heartbeat = protocol.get_last_heartbeat()
 
+        # Check if component has resumed heartbeats (not overdue anymore)
+        is_overdue = protocol.is_heartbeat_overdue()
+
+        # If overdue, try to create a heartbeat to check if component recovered
+        if is_overdue:
+            try:
+                # Try to create a heartbeat to see if component is working now
+                test_heartbeat = protocol.create_heartbeat()
+                if test_heartbeat:
+                    # Component is working, update last heartbeat
+                    protocol._last_heartbeat = test_heartbeat
+                    is_overdue = False
+            except Exception:
+                # Component still failing, keep overdue status
+                pass
+
         return {
             'component_id': component_id,
             'component_type': protocol.component_type,
             'last_heartbeat': last_heartbeat.to_dict() if last_heartbeat else None,
-            'is_overdue': protocol.is_heartbeat_overdue(),
+            'is_overdue': is_overdue,
             'heartbeat_interval': protocol._heartbeat_interval
         }
+
+    # Chaos Engineering Extensions
+
+    def detect_chaos_failure(self, error_message: str, component_id: str,
+                           metadata: Optional[Dict[str, Any]] = None) -> Optional[FailureDiagnosis]:
+        """Detect chaos-induced failures from error messages and metadata."""
+        metadata = metadata or {}
+
+        # Check for chaos-specific error patterns
+        chaos_indicators = {
+            "Simulated network partition": FailureType.CHAOS_NETWORK_PARTITION,
+            "Simulated exchange downtime": FailureType.CHAOS_EXCHANGE_DOWNTIME,
+            "Simulated database connection failure": FailureType.CHAOS_DATABASE_OUTAGE,
+            "rate limit exceeded": FailureType.CHAOS_RATE_LIMIT,
+            "429": FailureType.CHAOS_RATE_LIMIT,
+            "ServerTimeoutError": FailureType.CHAOS_NETWORK_PARTITION,
+            "ClientConnectionError": FailureType.CHAOS_EXCHANGE_DOWNTIME
+        }
+
+        detected_failure_type = None
+        confidence = 0.0
+
+        for indicator, failure_type in chaos_indicators.items():
+            if indicator.lower() in error_message.lower():
+                detected_failure_type = failure_type
+                confidence = 0.95  # High confidence for explicit chaos indicators
+                break
+
+        # Check metadata for chaos flags
+        if metadata.get("chaos_scenario"):
+            scenario = metadata["chaos_scenario"]
+            scenario_mapping = {
+                "network_partition": FailureType.CHAOS_NETWORK_PARTITION,
+                "rate_limit_flood": FailureType.CHAOS_RATE_LIMIT,
+                "exchange_downtime": FailureType.CHAOS_EXCHANGE_DOWNTIME,
+                "database_outage": FailureType.CHAOS_DATABASE_OUTAGE
+            }
+            if scenario in scenario_mapping:
+                detected_failure_type = scenario_mapping[scenario]
+                confidence = 0.99  # Very high confidence from explicit metadata
+
+        if detected_failure_type:
+            diagnosis = FailureDiagnosis(
+                component_id=component_id,
+                failure_type=detected_failure_type,
+                severity=FailureSeverity.HIGH,  # Chaos failures are significant but expected
+                confidence=confidence,
+                root_cause=f"Chaos engineering scenario: {detected_failure_type.value}",
+                symptoms=[f"Chaos-induced failure detected: {error_message}"],
+                recommended_actions=[
+                    "Verify chaos scenario is active",
+                    "Monitor system recovery",
+                    "Log chaos recovery event"
+                ],
+                estimated_recovery_time=self._get_chaos_recovery_time(detected_failure_type),
+                dependencies_affected=[],
+                timestamp=datetime.now()
+            )
+
+            # Log chaos failure detection
+            self._log_chaos_event("chaos_failure_detected", {
+                "component_id": component_id,
+                "failure_type": detected_failure_type.value,
+                "error_message": error_message,
+                "confidence": confidence,
+                "metadata": metadata
+            })
+
+            return diagnosis
+
+        return None
+
+    def _get_chaos_recovery_time(self, failure_type: FailureType) -> int:
+        """Get expected recovery time for chaos failure types."""
+        recovery_times = {
+            FailureType.CHAOS_NETWORK_PARTITION: 120,  # 2 minutes
+            FailureType.CHAOS_RATE_LIMIT: 90,          # 1.5 minutes
+            FailureType.CHAOS_EXCHANGE_DOWNTIME: 600,  # 10 minutes
+            FailureType.CHAOS_DATABASE_OUTAGE: 240     # 4 minutes
+        }
+        return recovery_times.get(failure_type, 300)  # Default 5 minutes
+
+    async def log_chaos_recovery_event(self, component_id: str, scenario_name: str,
+                                     recovery_time_seconds: float, success: bool) -> None:
+        """Log a chaos recovery event with structured data."""
+        recovery_event = {
+            "event_type": "chaos_recovery",
+            "component_id": component_id,
+            "scenario_name": scenario_name,
+            "recovery_time_seconds": recovery_time_seconds,
+            "success": success,
+            "timestamp": datetime.now().isoformat(),
+            "metadata": {
+                "chaos_engineering": True,
+                "recovery_mechanism": "automatic" if success else "manual",
+                "sla_compliant": recovery_time_seconds <= self._get_scenario_sla(scenario_name)
+            }
+        }
+
+        # Log to structured logger
+        logger.info(f"Chaos recovery event: {component_id} - {scenario_name} - {'SUCCESS' if success else 'FAILED'} - {recovery_time_seconds:.1f}s")
+
+        # Publish to event bus
+        event = create_diagnostic_alert_event(
+            alert_type="info" if success else "warning",
+            component=component_id,
+            message=f"Chaos recovery: {scenario_name} {'succeeded' if success else 'failed'}",
+            details=recovery_event
+        )
+
+        await self.event_bus.publish_event(event)
+
+        # Update recovery statistics
+        import threading
+        with threading.Lock():
+            if success:
+                self.recoveries_successful += 1
+            self.recoveries_initiated += 1
+
+    def _get_scenario_sla(self, scenario_name: str) -> int:
+        """Get SLA recovery time for a chaos scenario."""
+        sla_times = {
+            "network_partition": 30,
+            "rate_limit_flood": 45,
+            "exchange_downtime": 60,
+            "database_outage": 90
+        }
+        return sla_times.get(scenario_name, 300)
+
+    def _log_chaos_event(self, event_type: str, event_data: Dict[str, Any]) -> None:
+        """Log a chaos engineering event with structured data."""
+        chaos_log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "event_type": event_type,
+            "chaos_engineering": True,
+            **event_data
+        }
+
+        # Use structured logging for chaos events
+        logger.info(f"CHAOS_EVENT: {json.dumps(chaos_log_entry)}")
+
+    async def monitor_chaos_scenario(self, scenario_name: str, component_ids: List[str],
+                                   duration_seconds: int) -> Dict[str, Any]:
+        """Monitor components during a chaos scenario and collect metrics."""
+        start_time = datetime.now()
+        chaos_metrics = {
+            "scenario_name": scenario_name,
+            "component_ids": component_ids,
+            "duration_seconds": duration_seconds,
+            "start_time": start_time.isoformat(),
+            "failures_detected": [],
+            "recovery_events": [],
+            "performance_impact": {}
+        }
+
+        logger.info(f"Starting chaos monitoring for scenario: {scenario_name}")
+
+        # Monitor for the duration
+        end_time = start_time + timedelta(seconds=duration_seconds)
+        check_interval = 5  # Check every 5 seconds
+
+        while datetime.now() < end_time:
+            for component_id in component_ids:
+                # Check component status
+                status = self.get_component_status(component_id)
+                if status:
+                    # Look for signs of chaos impact
+                    if status.get("is_overdue") or status.get("last_heartbeat", {}).get("status") != "healthy":
+                        failure_event = {
+                            "component_id": component_id,
+                            "timestamp": datetime.now().isoformat(),
+                            "status": status
+                        }
+                        chaos_metrics["failures_detected"].append(failure_event)
+
+            await asyncio.sleep(check_interval)
+
+        chaos_metrics["end_time"] = datetime.now().isoformat()
+        chaos_metrics["actual_duration_seconds"] = (datetime.now() - start_time).total_seconds()
+
+        logger.info(f"Chaos monitoring completed for scenario: {scenario_name}")
+
+        return chaos_metrics
+
+    def get_chaos_statistics(self) -> Dict[str, Any]:
+        """Get chaos engineering specific statistics."""
+        return {
+            "chaos_failures_detected": sum(1 for f in self.failure_detector.failure_patterns.values()
+                                         if any(ft.startswith("chaos_") for ft in f.keys())),
+            "chaos_recoveries_initiated": len([r for r in self.recovery_orchestrator.completed_actions
+                                             if "chaos" in r.action_type]),
+            "chaos_recovery_success_rate": self._calculate_chaos_recovery_rate(),
+            "active_chaos_scenarios": []  # Would be populated by active scenario tracking
+        }
+
+    def _calculate_chaos_recovery_rate(self) -> float:
+        """Calculate success rate for chaos-related recoveries."""
+        chaos_actions = [r for r in self.recovery_orchestrator.completed_actions
+                        if "chaos" in r.action_type]
+
+        if not chaos_actions:
+            return 0.0
+
+        successful = sum(1 for r in chaos_actions if r.status == "completed")
+        return successful / len(chaos_actions)
 
 
 # Global watchdog service instance

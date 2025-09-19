@@ -17,6 +17,8 @@ from utils.time import now_ms, to_ms
 from typing import Callable
 import os
 from abc import ABC, abstractmethod
+import json
+import jsonschema
 
 import ccxt.async_support as ccxt
 from ccxt.base.errors import NetworkError, ExchangeError
@@ -38,6 +40,28 @@ from .logging_utils import get_structured_logger, LogSensitivity
 
 logger = get_structured_logger("core.order_manager", LogSensitivity.SECURE)
 trade_logger = get_trade_logger()
+
+
+class MockLiveExecutor:
+    """Mock live executor for testing and non-live modes."""
+
+    def __init__(self):
+        self.exchange = None
+
+    async def execute_live_order(self, signal):
+        """Mock live order execution."""
+        # Return a mock successful response
+        return {
+            'id': f'mock_order_{random.randint(1000, 9999)}',
+            'status': 'filled',
+            'amount': getattr(signal, 'amount', 0.001),
+            'price': 50000.0,
+            'symbol': getattr(signal, 'symbol', 'BTC/USDT')
+        }
+
+    async def shutdown(self):
+        """Mock shutdown."""
+        pass
 
 
 class OrderExecutionStrategy(ABC):
@@ -291,7 +315,7 @@ class OrderManager:
         self.mode_name: str = getattr(self.mode, "value", str(self.mode)).lower()
 
         # Initialize specialized managers
-        self.live_executor = LiveOrderExecutor(self.config) if self.mode == TradingMode.LIVE else None
+        self.live_executor = LiveOrderExecutor(self.config) if self.mode == TradingMode.LIVE else MockLiveExecutor()
         self.paper_executor = PaperOrderExecutor(self.config)
         self.backtest_executor = BacktestOrderExecutor(self.config)
         self.order_processor = OrderProcessor()
@@ -375,14 +399,110 @@ class OrderManager:
         """Compatibility shim: expose paper_balances from PortfolioManager for existing callers/tests."""
         return getattr(self.portfolio_manager, "paper_balances", {})
 
+    def _get_order_schema(self) -> Dict[str, Any]:
+        """Get JSON schema for order payload validation."""
+        return {
+            "type": "object",
+            "properties": {
+                "strategy_id": {"type": "string", "minLength": 1},
+                "symbol": {"type": "string", "pattern": r"^[A-Z]+/[A-Z]+$"},
+                "signal_type": {"type": "string", "enum": ["ENTRY_LONG", "ENTRY_SHORT", "EXIT_LONG", "EXIT_SHORT"]},
+                "signal_strength": {"type": "string", "enum": ["WEAK", "MODERATE", "STRONG"]},
+                "order_type": {"type": "string", "enum": ["MARKET", "LIMIT", "STOP", "STOP_LIMIT"]},
+                "amount": {"type": "number", "minimum": 0.00000001},
+                "price": {"type": "number", "minimum": 0},
+                "stop_loss": {"type": "number", "minimum": 0},
+                "take_profit": {"type": "number", "minimum": 0},
+                "timestamp": {"type": "number", "minimum": 0}
+            },
+            "required": ["strategy_id", "symbol", "signal_type", "order_type", "amount"],
+            "additionalProperties": True
+        }
+
+    def _validate_order_payload(self, signal: Any) -> None:
+        """Validate order payload against schema and business rules."""
+        try:
+            # Convert signal to dict for validation
+            signal_dict = signal_to_dict(signal)
+
+            # Validate against JSON schema
+            schema = self._get_order_schema()
+            jsonschema.validate(instance=signal_dict, schema=schema)
+
+            # Additional business rule validations
+            self._validate_business_rules(signal_dict)
+
+            logger.debug(f"Order payload validation passed for {signal_dict.get('symbol', 'unknown')}")
+
+        except jsonschema.ValidationError as e:
+            error_msg = f"Schema validation failed: {e.message}"
+            logger.error(f"Order payload validation failed: {error_msg}")
+            raise ValueError(f"Invalid order payload: {error_msg}") from e
+        except jsonschema.SchemaError as e:
+            error_msg = f"Schema error: {e.message}"
+            logger.error(f"Schema validation error: {error_msg}")
+            raise ValueError(f"Schema validation error: {error_msg}") from e
+        except Exception as e:
+            error_msg = f"Unexpected validation error: {str(e)}"
+            logger.error(f"Order payload validation error: {error_msg}")
+            raise ValueError(f"Order validation error: {error_msg}") from e
+
+    def _validate_business_rules(self, signal_dict: Dict[str, Any]) -> None:
+        """Validate business rules for order payload."""
+        # Check for unsafe defaults
+        if signal_dict.get("amount", 0) <= 0:
+            raise ValueError("Order amount must be positive")
+
+        if signal_dict.get("price", 0) < 0:
+            raise ValueError("Order price cannot be negative")
+
+        # Validate stop loss and take profit for limit orders
+        order_type = signal_dict.get("order_type", "").upper()
+        if order_type in ["STOP", "STOP_LIMIT"]:
+            if "stop_loss" not in signal_dict:
+                raise ValueError("Stop orders must include stop_loss price")
+
+        # Validate signal type consistency
+        signal_type = signal_dict.get("signal_type", "")
+        if signal_type.startswith("ENTRY_"):
+            if order_type not in ["MARKET", "LIMIT"]:
+                raise ValueError("Entry signals should use MARKET or LIMIT orders")
+        elif signal_type.startswith("EXIT_"):
+            if order_type not in ["MARKET", "LIMIT", "STOP", "STOP_LIMIT"]:
+                raise ValueError("Exit signals can use any order type")
+
+        # Check for missing critical fields with defaults that could be unsafe
+        if signal_dict.get("amount") is None:
+            raise ValueError("Order amount is required and cannot be None")
+
+        if signal_dict.get("symbol") is None or signal_dict.get("symbol") == "":
+            raise ValueError("Trading symbol is required")
+
+        # Validate symbol format
+        symbol = signal_dict.get("symbol", "")
+        if "/" not in symbol:
+            raise ValueError("Symbol must be in format BASE/QUOTE (e.g., BTC/USDT)")
+
+        base, quote = symbol.split("/", 1)
+        if not base or not quote:
+            raise ValueError("Symbol must have both base and quote currencies")
+
     async def execute_order(self, signal: Any) -> Optional[Dict[str, Any]]:
         """
         Execute an order based on the trading signal.
 
-        This wrapper adds safe-mode checks and retry/backoff handling for
+        This wrapper adds schema validation, safe-mode checks and retry/backoff handling for
         external exchange operations. Paper/backtest modes retain existing
         behavior (no external retries required).
         """
+        # Validate order payload first
+        try:
+            self._validate_order_payload(signal)
+        except ValueError as e:
+            logger.error(f"Order validation failed: {str(e)}")
+            trade_logger.log_failed_order(signal_to_dict(signal), f"validation_error: {str(e)}")
+            return None
+
         # Safe mode: if activated, do not open new positions
         if self.reliability_manager.safe_mode_active:
             # Increment safe mode trigger counter

@@ -1,0 +1,77 @@
+{
+  "timestamp": 1758250236.3197353,
+  "system_info": {
+    "cpu_count": 4,
+    "memory_total": 16994783232,
+    "python_version": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
+    "platform": "win32"
+  },
+  "profiling_config": {
+    "enabled": true,
+    "mode": "development",
+    "sampling_interval": 0.01,
+    "max_history": 1000,
+    "output_dir": "performance_reports",
+    "tools": {
+      "py_spy": {
+        "enabled": true,
+        "duration": 60,
+        "format": "speedscope"
+      },
+      "scalene": {
+        "enabled": true,
+        "cpu_profiling": true,
+        "memory_profiling": true,
+        "html_output": true
+      },
+      "memory_profiler": {
+        "enabled": true,
+        "interval": 0.1,
+        "timeout": 60
+      },
+      "flamegraph": {
+        "enabled": true,
+        "output_format": "svg"
+      }
+    },
+    "regression_detection": {
+      "enabled": true,
+      "baselines_file": "performance_baselines.json",
+      "thresholds": {
+        "latency_increase": 0.2,
+        "memory_increase": 0.3,
+        "cpu_increase": 0.25
+      },
+      "min_samples": 10,
+      "max_samples": 100
+    },
+    "automated_profiling": {
+      "during_tests": true,
+      "during_ci": true,
+      "high_load_scenarios": true,
+      "artifact_storage": true
+    },
+    "alerting": {
+      "on_regression": true,
+      "threshold_violations": true,
+      "memory_leaks": true,
+      "performance_degradation": true
+    }
+  },
+  "performance_report": {
+    "error": "No metrics available"
+  },
+  "tool_availability": {
+    "py_spy": false,
+    "scalene": false,
+    "memory_profiler": false,
+    "flamegraph": false
+  },
+  "profiling_status": {},
+  "regression_analysis": {
+    "timestamp": 1758250236.3197353,
+    "total_functions": 0,
+    "regressions_detected": 0,
+    "functions": {}
+  }
+}

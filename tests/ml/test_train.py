@@ -9,15 +9,18 @@ import json
 import tempfile
 import os
 from pathlib import Path
-from unittest.mock import patch, mock_open, MagicMock
+from unittest.mock import patch, mock_open, MagicMock, call
 import argparse
 
 from ml.train import (
     load_historical_data,
     prepare_training_data,
     save_training_results,
+    set_deterministic_seeds,
+    capture_environment_snapshot,
     main
 )
+from ml.model_loader import load_model_from_registry
 
 
 class TestLoadHistoricalData:
@@ -461,6 +464,157 @@ class TestConfusionMatrixGeneration:
         plt.close()
 
         assert confusion_matrix_path.exists(), "Perfect confusion matrix file should be created"
+
+
+class TestReproducibility:
+    """Test reproducibility features."""
+
+    @patch('random.seed')
+    @patch('numpy.random.seed')
+    @patch('pandas.core.common.random_state')
+    def test_set_deterministic_seeds_basic(self, mock_pandas_random, mock_numpy_seed, mock_random_seed):
+        """Test that set_deterministic_seeds calls all expected seed functions."""
+        set_deterministic_seeds(seed=123)
+
+        # Verify all seed functions were called with correct seed
+        mock_random_seed.assert_called_once_with(123)
+        mock_numpy_seed.assert_called_once_with(123)
+        mock_pandas_random.assert_called_once_with(123)
+
+    @patch('ml.train.logger')
+    def test_set_deterministic_seeds_with_libs(self, mock_logger):
+        """Test set_deterministic_seeds with optional libraries available."""
+        with patch.dict('sys.modules', {'sklearn': MagicMock(), 'torch': MagicMock(), 'tensorflow': MagicMock()}):
+            with patch('sklearn.utils.check_random_state') as mock_sklearn_seed:
+                with patch('torch.manual_seed') as mock_torch_seed:
+                    with patch('tensorflow.random.set_seed') as mock_tf_seed:
+                        set_deterministic_seeds(seed=456)
+
+                        # Verify optional libraries were seeded
+                        mock_sklearn_seed.assert_called()
+                        mock_torch_seed.assert_called_with(456)
+                        mock_tf_seed.assert_called_with(456)
+
+    @patch('ml.train.logger')
+    def test_set_deterministic_seeds_libs_unavailable(self, mock_logger):
+        """Test set_deterministic_seeds when optional libraries are not available."""
+        with patch.dict('sys.modules', {'sklearn': None, 'torch': None, 'tensorflow': None}):
+            # Should not raise any exceptions
+            set_deterministic_seeds(seed=789)
+
+            # Verify warning was logged for sklearn
+            mock_logger.warning.assert_called()
+
+    @patch('platform.platform')
+    @patch('platform.processor')
+    @patch('sys.version', '3.10.11')
+    @patch('os.environ', {'PATH': '/usr/bin', 'PYTHONPATH': '/app'})
+    def test_capture_environment_snapshot(self, mock_platform, mock_processor):
+        """Test environment snapshot capture."""
+        mock_platform.return_value = 'Linux-5.4.0'
+        mock_processor.return_value = 'x86_64'
+
+        with patch('pkg_resources.working_set', []):  # No packages
+            with patch('psutil.cpu_count', return_value=8):
+                with patch('psutil.virtual_memory') as mock_mem:
+                    mock_mem.total = 16 * 1024**3  # 16GB
+                    mock_mem.available = 8 * 1024**3  # 8GB
+
+                    snapshot = capture_environment_snapshot()
+
+                    # Verify basic system info
+                    assert snapshot['python_version'] == '3.10.11'
+                    assert snapshot['platform'] == 'Linux-5.4.0'
+                    assert snapshot['processor'] == 'x86_64'
+
+                    # Verify environment variables (filtered)
+                    assert 'PATH' in snapshot['environment_variables']
+                    assert 'PYTHONPATH' in snapshot['environment_variables']
+
+                    # Verify hardware info
+                    assert snapshot['hardware']['cpu_count'] == 8
+                    assert snapshot['hardware']['memory_total_gb'] == 16.0
+
+    @patch('subprocess.run')
+    def test_capture_environment_snapshot_git_info(self, mock_subprocess):
+        """Test Git information capture in environment snapshot."""
+        # Mock successful git commands
+        mock_subprocess.side_effect = [
+            MagicMock(returncode=0, stdout='abc123\n'),  # git rev-parse HEAD
+            MagicMock(returncode=0, stdout='main\n'),    # git branch --show-current
+            MagicMock(returncode=0, stdout='https://github.com/user/repo.git\n')  # git remote get-url
+        ]
+
+        snapshot = capture_environment_snapshot()
+
+        # Verify Git info was captured
+        assert snapshot['git_info']['commit_hash'] == 'abc123'
+        assert snapshot['git_info']['branch'] == 'main'
+        assert snapshot['git_info']['remote_url'] == 'https://github.com/user/repo.git'
+
+    @patch('subprocess.run')
+    def test_capture_environment_snapshot_git_failure(self, mock_subprocess):
+        """Test environment snapshot when Git commands fail."""
+        mock_subprocess.side_effect = Exception("Git not available")
+
+        snapshot = capture_environment_snapshot()
+
+        # Should have error in git_info
+        assert 'error' in snapshot['git_info']
+
+
+class TestModelLoaderReproducibility:
+    """Test model loader reproducibility features."""
+
+    @patch('ml.model_loader.MLFLOW_AVAILABLE', True)
+    @patch('mlflow.sklearn.load_model')
+    def test_load_model_from_registry_success(self, mock_load_model):
+        """Test successful model loading from registry."""
+        mock_model = MagicMock()
+        mock_load_model.return_value = mock_model
+
+        with patch('mlflow.tracking.MlflowClient') as mock_client_class:
+            mock_client = MagicMock()
+            mock_client_class.return_value = mock_client
+
+            # Mock model version
+            mock_mv = MagicMock()
+            mock_mv.run_id = 'test_run_id'
+            mock_client.get_model_version.return_value = mock_mv
+
+            # Mock artifacts
+            mock_artifact = MagicMock()
+            mock_artifact.path = 'environment_snapshot.json'
+            mock_client.list_artifacts.return_value = [mock_artifact]
+
+            with patch('builtins.open', mock_open(read_data='{"test": "data"}')):
+                model, card = load_model_from_registry('test_model', version='1')
+
+                assert model == mock_model
+                assert card == {"test": "data"}
+
+    @patch('ml.model_loader.MLFLOW_AVAILABLE', False)
+    def test_load_model_from_registry_no_mlflow(self):
+        """Test model loading from registry when MLflow is not available."""
+        with pytest.raises(ImportError, match="MLflow not available"):
+            load_model_from_registry('test_model')
+
+    @patch('ml.model_loader.MLFLOW_AVAILABLE', True)
+    @patch('mlflow.sklearn.load_model', side_effect=Exception("Registry error"))
+    @patch('os.path.exists', return_value=True)
+    @patch('ml.model_loader.load_model_with_card')
+    def test_load_model_from_registry_fallback(self, mock_load_with_card, mock_exists, mock_load_model):
+        """Test registry loading with fallback to local file."""
+        mock_model = MagicMock()
+        mock_card = {"fallback": True}
+        mock_load_with_card.return_value = (mock_model, mock_card)
+
+        model, card = load_model_from_registry('test_model')
+
+        # Should have called fallback loading
+        mock_load_with_card.assert_called_once_with('models/test_model.pkl')
+        assert model == mock_model
+        assert card == mock_card
 
 
 if __name__ == '__main__':

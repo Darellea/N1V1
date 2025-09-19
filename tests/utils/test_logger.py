@@ -23,9 +23,12 @@ from utils.logger import (
     setup_logging,
     get_trade_logger,
     generate_correlation_id,
+    generate_request_id,
     get_logger_with_context,
     log_to_file,
     ColorFormatter,
+    JSONFormatter,
+    PrettyFormatter,
     LOGS_DIR,
     TRADE_LEVEL,
     PERF_LEVEL
@@ -793,6 +796,299 @@ class TestLogToFile:
             assert os.path.exists(test_file)
 
 
+class TestJSONFormatter:
+    """Test cases for JSONFormatter class."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.formatter = JSONFormatter()
+
+    def test_format_basic_record(self):
+        """Test formatting basic log record as JSON."""
+        record = logging.LogRecord(
+            name="test_logger",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=10,
+            msg="Test message",
+            args=(),
+            exc_info=None
+        )
+
+        formatted = self.formatter.format(record)
+        parsed = json.loads(formatted)
+
+        assert parsed["timestamp"].endswith("Z")
+        assert parsed["level"] == "INFO"
+        assert parsed["module"] == "test_logger"
+        assert parsed["message"] == "Test message"
+        assert parsed["correlation_id"] is None
+        assert parsed["request_id"] is None
+        assert parsed["strategy_id"] is None
+
+    def test_format_record_with_context(self):
+        """Test formatting log record with context fields."""
+        record = logging.LogRecord(
+            name="test_logger",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=10,
+            msg="Test message with context",
+            args=(),
+            exc_info=None
+        )
+
+        # Add context fields
+        record.correlation_id = "corr_123"
+        record.request_id = "req_456"
+        record.strategy_id = "momentum_v1"
+        record.component = "order_manager"
+        record.symbol = "BTC/USDT"
+
+        formatted = self.formatter.format(record)
+        parsed = json.loads(formatted)
+
+        assert parsed["correlation_id"] == "corr_123"
+        assert parsed["request_id"] == "req_456"
+        assert parsed["strategy_id"] == "momentum_v1"
+        assert parsed["component"] == "order_manager"
+        assert parsed["symbol"] == "BTC/USDT"
+
+    def test_format_record_with_exception(self):
+        """Test formatting log record with exception info."""
+        try:
+            raise ValueError("Test exception")
+        except ValueError:
+            exc_info = sys.exc_info()
+
+        record = logging.LogRecord(
+            name="test_logger",
+            level=logging.ERROR,
+            pathname="test.py",
+            lineno=10,
+            msg="Error occurred",
+            args=(),
+            exc_info=exc_info
+        )
+
+        formatted = self.formatter.format(record)
+        parsed = json.loads(formatted)
+
+        assert "exception" in parsed
+        assert "ValueError" in parsed["exception"]
+        assert "Test exception" in parsed["exception"]
+
+
+class TestPrettyFormatter:
+    """Test cases for PrettyFormatter class."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.formatter = PrettyFormatter()
+
+    def test_format_basic_record(self):
+        """Test formatting basic log record with pretty format."""
+        record = logging.LogRecord(
+            name="test_logger",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=10,
+            msg="Test message",
+            args=(),
+            exc_info=None
+        )
+
+        formatted = self.formatter.format(record)
+
+        assert "Test message" in formatted
+        assert "[INFO]" in formatted
+        assert "test_logger:" in formatted
+
+    def test_format_record_with_context(self):
+        """Test formatting log record with context fields."""
+        record = logging.LogRecord(
+            name="test_logger",
+            level=logging.INFO,
+            pathname="test.py",
+            lineno=10,
+            msg="Test message",
+            args=(),
+            exc_info=None
+        )
+
+        # Add context fields
+        record.correlation_id = "corr_123"
+        record.request_id = "req_456"
+        record.strategy_id = "momentum_v1"
+        record.component = "order_manager"
+
+        formatted = self.formatter.format(record)
+
+        assert "Test message" in formatted
+        assert "corr_id=corr_123" in formatted
+        assert "req_id=req_456" in formatted
+        assert "strategy=momentum_v1" in formatted
+        assert "component=order_manager" in formatted
+
+
+class TestEnvironmentVariables:
+    """Test cases for environment variable support."""
+
+    def teardown_method(self):
+        """Clean up after each test."""
+        # Reset global logger
+        import utils.logger
+        utils.logger._GLOBAL_TRADE_LOGGER = None
+
+        # Clear environment variables
+        for var in ["LOG_LEVEL", "LOG_FILE", "LOG_FORMAT"]:
+            os.environ.pop(var, None)
+
+    def test_setup_logging_with_env_log_level(self):
+        """Test setup_logging uses LOG_LEVEL environment variable."""
+        os.environ["LOG_LEVEL"] = "DEBUG"
+
+        logger = setup_logging()
+
+        assert logger.level == logging.DEBUG
+
+    def test_setup_logging_with_invalid_env_log_level(self):
+        """Test setup_logging handles invalid LOG_LEVEL gracefully."""
+        os.environ["LOG_LEVEL"] = "INVALID"
+
+        with patch('builtins.print') as mock_print:
+            logger = setup_logging()
+
+            # Should default to INFO
+            assert logger.level == logging.INFO
+            mock_print.assert_called_once()
+
+    def test_setup_logging_with_env_log_file(self):
+        """Test setup_logging uses LOG_FILE environment variable."""
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as temp_file:
+            log_file = temp_file.name
+
+        try:
+            os.environ["LOG_FILE"] = log_file
+
+            logger = setup_logging()
+
+            # Should have file handler with correct path
+            file_handlers = [h for h in logger.handlers if isinstance(h, logging.handlers.RotatingFileHandler)]
+            assert len(file_handlers) == 1
+            assert file_handlers[0].baseFilename == log_file
+        finally:
+            try:
+                os.unlink(log_file)
+            except:
+                pass
+
+    def test_setup_logging_with_env_log_format_json(self):
+        """Test setup_logging uses LOG_FORMAT=json environment variable."""
+        os.environ["LOG_FORMAT"] = "json"
+
+        logger = setup_logging()
+
+        # Console handler should use JSONFormatter
+        console_handlers = [h for h in logger.handlers if isinstance(h, logging.StreamHandler)]
+        assert len(console_handlers) == 1
+        assert isinstance(console_handlers[0].formatter, JSONFormatter)
+
+    def test_setup_logging_with_env_log_format_pretty(self):
+        """Test setup_logging uses LOG_FORMAT=pretty environment variable."""
+        os.environ["LOG_FORMAT"] = "pretty"
+
+        logger = setup_logging()
+
+        # Console handler should use PrettyFormatter
+        console_handlers = [h for h in logger.handlers if isinstance(h, logging.StreamHandler)]
+        assert len(console_handlers) == 1
+        assert isinstance(console_handlers[0].formatter, PrettyFormatter)
+
+    def test_setup_logging_with_env_log_format_color(self):
+        """Test setup_logging uses LOG_FORMAT=color environment variable."""
+        os.environ["LOG_FORMAT"] = "color"
+
+        logger = setup_logging()
+
+        # Console handler should use ColorFormatter
+        console_handlers = [h for h in logger.handlers if isinstance(h, logging.StreamHandler)]
+        assert len(console_handlers) == 1
+        assert isinstance(console_handlers[0].formatter, ColorFormatter)
+
+
+class TestCorrelationIdSupport:
+    """Test cases for correlation_id and request_id support."""
+
+    def test_generate_request_id_format(self):
+        """Test generate_request_id returns properly formatted ID."""
+        request_id = generate_request_id()
+
+        assert isinstance(request_id, str)
+        assert request_id.startswith("req_")
+        assert len(request_id) == 21  # "req_" + 16 hex chars
+
+    def test_generate_request_id_uniqueness(self):
+        """Test generate_request_id generates unique IDs."""
+        ids = {generate_request_id() for _ in range(100)}
+
+        assert len(ids) == 100  # All should be unique
+
+    def test_get_logger_with_context_full_args(self):
+        """Test get_logger_with_context with all arguments."""
+        adapter = get_logger_with_context(
+            symbol="BTC/USDT",
+            component="order_manager",
+            correlation_id="corr_123",
+            request_id="req_456",
+            strategy_id="momentum_v1"
+        )
+
+        expected_extra = {
+            "symbol": "BTC/USDT",
+            "component": "order_manager",
+            "correlation_id": "corr_123",
+            "request_id": "req_456",
+            "strategy_id": "momentum_v1"
+        }
+
+        assert adapter.extra == expected_extra
+
+    def test_get_logger_with_context_partial_args(self):
+        """Test get_logger_with_context with partial arguments."""
+        adapter = get_logger_with_context(
+            correlation_id="corr_123",
+            request_id="req_456"
+        )
+
+        expected_extra = {
+            "correlation_id": "corr_123",
+            "request_id": "req_456"
+        }
+
+        assert adapter.extra == expected_extra
+
+    def test_logger_adapter_preserves_context(self):
+        """Test that LoggerAdapter preserves context across log calls."""
+        adapter = get_logger_with_context(
+            symbol="BTC/USDT",
+            correlation_id="corr_123"
+        )
+
+        with patch.object(adapter.logger, 'log') as mock_log:
+            adapter.info("First message")
+            adapter.warning("Second message")
+
+            # Both calls should have the same context
+            first_call = mock_log.call_args_list[0]
+            second_call = mock_log.call_args_list[1]
+
+            assert first_call[1]['extra']['symbol'] == "BTC/USDT"
+            assert first_call[1]['extra']['correlation_id'] == "corr_123"
+            assert second_call[1]['extra']['symbol'] == "BTC/USDT"
+            assert second_call[1]['extra']['correlation_id'] == "corr_123"
+
+
 class TestLoggerIntegration:
     """Integration tests for logger functionality."""
 
@@ -891,3 +1187,42 @@ class TestLoggerIntegration:
             assert call_args[1]['extra']['symbol'] == "BTC/USDT"
             assert call_args[1]['extra']['component'] == "test_component"
             assert call_args[1]['extra']['correlation_id'] == "test123"
+
+    def test_structured_logging_integration(self):
+        """Test structured logging with JSON output."""
+        # Create logger with JSON format
+        config = {"format": "json", "console": True, "file_logging": False}
+        logger = setup_logging(config)
+
+        # Create adapter with context
+        adapter = get_logger_with_context(
+            symbol="BTC/USDT",
+            component="order_executor",
+            correlation_id="corr_123",
+            request_id="req_456",
+            strategy_id="momentum_v1"
+        )
+
+        # Capture console output
+        import io
+        from contextlib import redirect_stdout
+
+        captured_output = io.StringIO()
+        with redirect_stdout(captured_output):
+            adapter.info("Order execution started")
+
+        output = captured_output.getvalue()
+
+        # Parse JSON output
+        parsed = json.loads(output.strip())
+
+        # Verify structured fields
+        assert parsed["level"] == "INFO"
+        assert parsed["module"] == "crypto_bot"
+        assert parsed["message"] == "Order execution started"
+        assert parsed["correlation_id"] == "corr_123"
+        assert parsed["request_id"] == "req_456"
+        assert parsed["strategy_id"] == "momentum_v1"
+        assert parsed["symbol"] == "BTC/USDT"
+        assert parsed["component"] == "order_executor"
+        assert "timestamp" in parsed

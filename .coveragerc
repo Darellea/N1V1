@@ -6,8 +6,13 @@ omit =
     docs/*
     */__init__.py
     demo/*
-    scripts/*
     examples/*
     */__pycache__/*
     test_units/*
-fail_under = 90
+    .env
+    __pycache__
+    *.pyc
+fail_under = 95
+
+[run]
+source = core, api, notifier, utils, ml, backtest, data, optimization, portfolio, scripts

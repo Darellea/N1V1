@@ -623,3 +623,142 @@ class TestOrderManager:
 
         expected_allocation = {"BTC/USDT": 0.5, "ETH/USDT": 0.5}
         assert om.pair_allocation == expected_allocation
+
+    def test_validate_order_payload_valid(self, config, mock_executors, mock_managers):
+        """Test order payload validation with valid data."""
+        om = OrderManager(config, TradingMode.PAPER)
+
+        valid_signal = TradingSignal(
+            strategy_id="test_strategy",
+            symbol="BTC/USDT",
+            signal_type="ENTRY_LONG",
+            signal_strength="STRONG",
+            order_type="MARKET",
+            amount=Decimal("1.0"),
+            price=Decimal("50000")
+        )
+
+        # Should not raise any exception
+        om._validate_order_payload(valid_signal)
+
+    def test_validate_order_payload_invalid_schema(self, config, mock_executors, mock_managers):
+        """Test order payload validation with invalid schema."""
+        om = OrderManager(config, TradingMode.PAPER)
+
+        # Create invalid signal (missing required field)
+        invalid_signal = TradingSignal(
+            strategy_id="",  # Empty string violates minLength
+            symbol="BTC/USDT",
+            signal_type="ENTRY_LONG",
+            signal_strength="STRONG",
+            order_type="MARKET",
+            amount=Decimal("1.0")
+        )
+
+        with pytest.raises(ValueError, match="Invalid order payload"):
+            om._validate_order_payload(invalid_signal)
+
+    def test_validate_order_payload_invalid_symbol_format(self, config, mock_executors, mock_managers):
+        """Test order payload validation with invalid symbol format."""
+        om = OrderManager(config, TradingMode.PAPER)
+
+        invalid_signal = TradingSignal(
+            strategy_id="test_strategy",
+            symbol="BTCUSDT",  # Missing slash
+            signal_type="ENTRY_LONG",
+            signal_strength="STRONG",
+            order_type="MARKET",
+            amount=Decimal("1.0")
+        )
+
+        with pytest.raises(ValueError, match="Symbol must be in format"):
+            om._validate_order_payload(invalid_signal)
+
+    def test_validate_order_payload_business_rules_negative_amount(self, config, mock_executors, mock_managers):
+        """Test order payload validation with negative amount."""
+        om = OrderManager(config, TradingMode.PAPER)
+
+        invalid_signal = TradingSignal(
+            strategy_id="test_strategy",
+            symbol="BTC/USDT",
+            signal_type="ENTRY_LONG",
+            signal_strength="STRONG",
+            order_type="MARKET",
+            amount=Decimal("-1.0")  # Negative amount
+        )
+
+        with pytest.raises(ValueError, match="Order amount must be positive"):
+            om._validate_order_payload(invalid_signal)
+
+    def test_validate_order_payload_business_rules_stop_without_loss(self, config, mock_executors, mock_managers):
+        """Test order payload validation with stop order missing stop_loss."""
+        om = OrderManager(config, TradingMode.PAPER)
+
+        invalid_signal = TradingSignal(
+            strategy_id="test_strategy",
+            symbol="BTC/USDT",
+            signal_type="EXIT_LONG",
+            signal_strength="STRONG",
+            order_type="STOP",  # Stop order without stop_loss
+            amount=Decimal("1.0")
+        )
+
+        with pytest.raises(ValueError, match="Stop orders must include stop_loss"):
+            om._validate_order_payload(invalid_signal)
+
+    def test_validate_order_payload_business_rules_invalid_signal_order_combo(self, config, mock_executors, mock_managers):
+        """Test order payload validation with invalid signal-order type combination."""
+        om = OrderManager(config, TradingMode.PAPER)
+
+        invalid_signal = TradingSignal(
+            strategy_id="test_strategy",
+            symbol="BTC/USDT",
+            signal_type="ENTRY_LONG",
+            signal_strength="STRONG",
+            order_type="STOP",  # Entry signal with stop order
+            amount=Decimal("1.0")
+        )
+
+        with pytest.raises(ValueError, match="Entry signals should use MARKET or LIMIT"):
+            om._validate_order_payload(invalid_signal)
+
+    @pytest.mark.asyncio
+    async def test_execute_order_with_validation_failure(self, config, mock_executors, mock_managers):
+        """Test order execution with validation failure."""
+        om = OrderManager(config, TradingMode.PAPER)
+
+        invalid_signal = TradingSignal(
+            strategy_id="",  # Invalid: empty strategy_id
+            symbol="BTC/USDT",
+            signal_type="ENTRY_LONG",
+            signal_strength="STRONG",
+            order_type="MARKET",
+            amount=Decimal("1.0")
+        )
+
+        result = await om.execute_order(invalid_signal)
+
+        assert result is None
+        # Verify that execution was not attempted
+        mock_executors['paper'].execute_paper_order.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_execute_order_with_valid_payload(self, config, mock_executors, mock_managers):
+        """Test order execution with valid payload after validation."""
+        om = OrderManager(config, TradingMode.PAPER)
+
+        valid_signal = TradingSignal(
+            strategy_id="test_strategy",
+            symbol="BTC/USDT",
+            signal_type="ENTRY_LONG",
+            signal_strength="STRONG",
+            order_type="MARKET",
+            amount=Decimal("1.0"),
+            price=Decimal("50000")
+        )
+
+        result = await om.execute_order(valid_signal)
+
+        assert result is not None
+        # Verify that execution was attempted
+        mock_executors['paper'].execute_paper_order.assert_called_once_with(valid_signal)

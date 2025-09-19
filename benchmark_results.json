@@ -1,0 +1,214 @@
+{
+  "timestamp": "2025-09-19T17:07:54.245013",
+  "summary": {
+    "total_models": 28,
+    "successful_benchmarks": 0,
+    "failed_benchmarks": 28,
+    "models_with_regressions": 0
+  },
+  "benchmarks": [
+    {
+      "model_name": "demo_calibrated_model",
+      "model_path": "demo_calibrated_model.pkl",
+      "status": "failed",
+      "error": "Number of features of the model must match the input. Model n_features_ is 7 and input n_features is 5",
+      "timestamp": "2025-09-19T17:07:53.657320"
+    },
+    {
+      "model_name": "test_model",
+      "model_path": "test_model.pkl",
+      "status": "failed",
+      "error": "Model file at test_model.pkl is corrupted or of wrong format: Can't get attribute 'CalibratedModel' on <module '__main__' from 'C:\\\\Users\\\\TU\\\\Desktop\\\\new project\\\\N1V1\\\\scripts\\\\run_model_benchmarks.py'>",
+      "timestamp": "2025-09-19T17:07:53.660318"
+    },
+    {
+      "model_name": "test_model_new",
+      "model_path": "test_model_new.pkl",
+      "status": "failed",
+      "error": "Model file at test_model_new.pkl is corrupted or of wrong format: Can't get attribute 'CalibratedModel' on <module '__main__' from 'C:\\\\Users\\\\TU\\\\Desktop\\\\new project\\\\N1V1\\\\scripts\\\\run_model_benchmarks.py'>",
+      "timestamp": "2025-09-19T17:07:53.679308"
+    },
+    {
+      "model_name": "backtest_with_costs",
+      "model_path": "models\\backtest_with_costs.pkl",
+      "status": "failed",
+      "error": "Number of features of the model must match the input. Model n_features_ is 12 and input n_features is 5",
+      "timestamp": "2025-09-19T17:07:53.700295"
+    },
+    {
+      "model_name": "compare_unbalance",
+      "model_path": "models\\compare_unbalance.pkl",
+      "status": "failed",
+      "error": "Number of features of the model must match the input. Model n_features_ is 12 and input n_features is 5",
+      "timestamp": "2025-09-19T17:07:53.717635"
+    },
+    {
+      "model_name": "compare_weights",
+      "model_path": "models\\compare_weights.pkl",
+      "status": "failed",
+      "error": "Number of features of the model must match the input. Model n_features_ is 12 and input n_features is 5",
+      "timestamp": "2025-09-19T17:07:53.740622"
+    },
+    {
+      "model_name": "currency_model",
+      "model_path": "models\\currency_model.pkl",
+      "status": "failed",
+      "error": "Model file at models\\currency_model.pkl is corrupted or of wrong format: Can't get attribute 'CalibratedModel' on <module '__main__' from 'C:\\\\Users\\\\TU\\\\Desktop\\\\new project\\\\N1V1\\\\scripts\\\\run_model_benchmarks.py'>",
+      "timestamp": "2025-09-19T17:07:53.743620"
+    },
+    {
+      "model_name": "enhanced_binary_model",
+      "model_path": "models\\enhanced_binary_model.pkl",
+      "status": "failed",
+      "error": "Model file at models\\enhanced_binary_model.pkl is corrupted or of wrong format: Can't get attribute 'CalibratedModel' on <module '__main__' from 'C:\\\\Users\\\\TU\\\\Desktop\\\\new project\\\\N1V1\\\\scripts\\\\run_model_benchmarks.py'>",
+      "timestamp": "2025-09-19T17:07:53.745618"
+    },
+    {
+      "model_name": "enhanced_model",
+      "model_path": "models\\enhanced_model.pkl",
+      "status": "failed",
+      "error": "Model file at models\\enhanced_model.pkl is corrupted or of wrong format: Can't get attribute 'CalibratedModel' on <module '__main__' from 'C:\\\\Users\\\\TU\\\\Desktop\\\\new project\\\\N1V1\\\\scripts\\\\run_model_benchmarks.py'>",
+      "timestamp": "2025-09-19T17:07:53.747617"
+    },
+    {
+      "model_name": "enhanced_model_shap12",
+      "model_path": "models\\enhanced_model_shap12.pkl",
+      "status": "failed",
+      "error": "Number of features of the model must match the input. Model n_features_ is 12 and input n_features is 5",
+      "timestamp": "2025-09-19T17:07:53.762609"
+    },
+    {
+      "model_name": "enhanced_model_top12",
+      "model_path": "models\\enhanced_model_top12.pkl",
+      "status": "failed",
+      "error": "Model file at models\\enhanced_model_top12.pkl is corrupted or of wrong format: Can't get attribute 'CalibratedModel' on <module '__main__' from 'C:\\\\Users\\\\TU\\\\Desktop\\\\new project\\\\N1V1\\\\scripts\\\\run_model_benchmarks.py'>",
+      "timestamp": "2025-09-19T17:07:53.764607"
+    },
+    {
+      "model_name": "stress_test",
+      "model_path": "models\\stress_test.pkl",
+      "status": "failed",
+      "error": "Number of features of the model must match the input. Model n_features_ is 12 and input n_features is 5",
+      "timestamp": "2025-09-19T17:07:53.788594"
+    },
+    {
+      "model_name": "vlen_string_dset",
+      "model_path": "venv\\Lib\\site-packages\\h5py\\tests\\data_files\\vlen_string_dset.h5",
+      "status": "failed",
+      "error": "Model file at venv\\Lib\\site-packages\\h5py\\tests\\data_files\\vlen_string_dset.h5 is corrupted or of wrong format: 72",
+      "timestamp": "2025-09-19T17:07:53.792592"
+    },
+    {
+      "model_name": "vlen_string_dset_utc",
+      "model_path": "venv\\Lib\\site-packages\\h5py\\tests\\data_files\\vlen_string_dset_utc.h5",
+      "status": "failed",
+      "error": "Model file at venv\\Lib\\site-packages\\h5py\\tests\\data_files\\vlen_string_dset_utc.h5 is corrupted or of wrong format: 72",
+      "timestamp": "2025-09-19T17:07:53.794591"
+    },
+    {
+      "model_name": "vlen_string_s390x",
+      "model_path": "venv\\Lib\\site-packages\\h5py\\tests\\data_files\\vlen_string_s390x.h5",
+      "status": "failed",
+      "error": "Model file at venv\\Lib\\site-packages\\h5py\\tests\\data_files\\vlen_string_s390x.h5 is corrupted or of wrong format: 72",
+      "timestamp": "2025-09-19T17:07:53.795590"
+    },
+    {
+      "model_name": "joblib_0.10.0_pickle_py27_np17",
+      "model_path": "venv\\Lib\\site-packages\\joblib\\test\\data\\joblib_0.10.0_pickle_py27_np17.pkl",
+      "status": "failed",
+      "error": "Model file at venv\\Lib\\site-packages\\joblib\\test\\data\\joblib_0.10.0_pickle_py27_np17.pkl is corrupted or of wrong format: You may be trying to read with python 3 a joblib pickle generated with python 2. This feature is not supported by joblib.",
+      "timestamp": "2025-09-19T17:07:53.798589"
+    },
+    {
+      "model_name": "joblib_0.10.0_pickle_py33_np18",
+      "model_path": "venv\\Lib\\site-packages\\joblib\\test\\data\\joblib_0.10.0_pickle_py33_np18.pkl",
+      "status": "failed",
+      "error": "'list' object has no attribute 'predict'",
+      "timestamp": "2025-09-19T17:07:53.832569"
+    },
+    {
+      "model_name": "joblib_0.10.0_pickle_py34_np19",
+      "model_path": "venv\\Lib\\site-packages\\joblib\\test\\data\\joblib_0.10.0_pickle_py34_np19.pkl",
+      "status": "failed",
+      "error": "'list' object has no attribute 'predict'",
+      "timestamp": "2025-09-19T17:07:53.837566"
+    },
+    {
+      "model_name": "joblib_0.10.0_pickle_py35_np19",
+      "model_path": "venv\\Lib\\site-packages\\joblib\\test\\data\\joblib_0.10.0_pickle_py35_np19.pkl",
+      "status": "failed",
+      "error": "'list' object has no attribute 'predict'",
+      "timestamp": "2025-09-19T17:07:53.842562"
+    },
+    {
+      "model_name": "joblib_0.11.0_pickle_py36_np111",
+      "model_path": "venv\\Lib\\site-packages\\joblib\\test\\data\\joblib_0.11.0_pickle_py36_np111.pkl",
+      "status": "failed",
+      "error": "'list' object has no attribute 'predict'",
+      "timestamp": "2025-09-19T17:07:53.846561"
+    },
+    {
+      "model_name": "joblib_0.9.2_pickle_py27_np16",
+      "model_path": "venv\\Lib\\site-packages\\joblib\\test\\data\\joblib_0.9.2_pickle_py27_np16.pkl",
+      "status": "failed",
+      "error": "Model file at venv\\Lib\\site-packages\\joblib\\test\\data\\joblib_0.9.2_pickle_py27_np16.pkl is corrupted or of wrong format: You may be trying to read with python 3 a joblib pickle generated with python 2. This feature is not supported by joblib.",
+      "timestamp": "2025-09-19T17:07:53.856556"
+    },
+    {
+      "model_name": "joblib_0.9.2_pickle_py27_np17",
+      "model_path": "venv\\Lib\\site-packages\\joblib\\test\\data\\joblib_0.9.2_pickle_py27_np17.pkl",
+      "status": "failed",
+      "error": "Model file at venv\\Lib\\site-packages\\joblib\\test\\data\\joblib_0.9.2_pickle_py27_np17.pkl is corrupted or of wrong format: You may be trying to read with python 3 a joblib pickle generated with python 2. This feature is not supported by joblib.",
+      "timestamp": "2025-09-19T17:07:53.861552"
+    },
+    {
+      "model_name": "joblib_0.9.2_pickle_py33_np18",
+      "model_path": "venv\\Lib\\site-packages\\joblib\\test\\data\\joblib_0.9.2_pickle_py33_np18.pkl",
+      "status": "failed",
+      "error": "'list' object has no attribute 'predict'",
+      "timestamp": "2025-09-19T17:07:53.867549"
+    },
+    {
+      "model_name": "joblib_0.9.2_pickle_py34_np19",
+      "model_path": "venv\\Lib\\site-packages\\joblib\\test\\data\\joblib_0.9.2_pickle_py34_np19.pkl",
+      "status": "failed",
+      "error": "'list' object has no attribute 'predict'",
+      "timestamp": "2025-09-19T17:07:53.877748"
+    },
+    {
+      "model_name": "joblib_0.9.2_pickle_py35_np19",
+      "model_path": "venv\\Lib\\site-packages\\joblib\\test\\data\\joblib_0.9.2_pickle_py35_np19.pkl",
+      "status": "failed",
+      "error": "'list' object has no attribute 'predict'",
+      "timestamp": "2025-09-19T17:07:53.890726"
+    },
+    {
+      "model_name": "astype_copy",
+      "model_path": "venv\\Lib\\site-packages\\numpy\\core\\tests\\data\\astype_copy.pkl",
+      "status": "failed",
+      "error": "Model file at venv\\Lib\\site-packages\\numpy\\core\\tests\\data\\astype_copy.pkl is corrupted or of wrong format: You may be trying to read with python 3 a joblib pickle generated with python 2. This feature is not supported by joblib.",
+      "timestamp": "2025-09-19T17:07:53.892725"
+    },
+    {
+      "model_name": "numpy_2_0_array",
+      "model_path": "venv\\Lib\\site-packages\\numpy\\core\\tests\\data\\numpy_2_0_array.pkl",
+      "status": "failed",
+      "error": "Model file at venv\\Lib\\site-packages\\numpy\\core\\tests\\data\\numpy_2_0_array.pkl is corrupted or of wrong format: You may be trying to read with python 3 a joblib pickle generated with python 2. This feature is not supported by joblib.",
+      "timestamp": "2025-09-19T17:07:53.898722"
+    },
+    {
+      "model_name": "sm-0.9-sarimax",
+      "model_path": "venv\\Lib\\site-packages\\statsmodels\\tsa\\statespace\\tests\\results\\sm-0.9-sarimax.pkl",
+      "status": "failed",
+      "error": "object of type 'NoneType' has no len()",
+      "timestamp": "2025-09-19T17:07:54.245013"
+    }
+  ],
+  "regressions": {},
+  "targets": {
+    "f1_buy_target": 0.7,
+    "f1_sell_target": 0.65,
+    "max_latency_ms": 100,
+    "regression_threshold": 0.05
+  }
+}

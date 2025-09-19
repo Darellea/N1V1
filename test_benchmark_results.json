@@ -1,0 +1,81 @@
+{
+  "timestamp": "2025-09-19T16:45:16.427569",
+  "summary": {
+    "total_models": 9,
+    "successful_benchmarks": 0,
+    "failed_benchmarks": 9,
+    "models_with_regressions": 0
+  },
+  "benchmarks": [
+    {
+      "model_name": "backtest_with_costs",
+      "model_path": "models\\backtest_with_costs.pkl",
+      "status": "failed",
+      "error": "Number of features of the model must match the input. Model n_features_ is 12 and input n_features is 5",
+      "timestamp": "2025-09-19T16:45:16.309926"
+    },
+    {
+      "model_name": "compare_unbalance",
+      "model_path": "models\\compare_unbalance.pkl",
+      "status": "failed",
+      "error": "Number of features of the model must match the input. Model n_features_ is 12 and input n_features is 5",
+      "timestamp": "2025-09-19T16:45:16.341251"
+    },
+    {
+      "model_name": "compare_weights",
+      "model_path": "models\\compare_weights.pkl",
+      "status": "failed",
+      "error": "Number of features of the model must match the input. Model n_features_ is 12 and input n_features is 5",
+      "timestamp": "2025-09-19T16:45:16.359242"
+    },
+    {
+      "model_name": "currency_model",
+      "model_path": "models\\currency_model.pkl",
+      "status": "failed",
+      "error": "Model file at models\\currency_model.pkl is corrupted or of wrong format: Can't get attribute 'CalibratedModel' on <module '__main__' from 'C:\\\\Users\\\\TU\\\\Desktop\\\\new project\\\\N1V1\\\\scripts\\\\run_model_benchmarks.py'>",
+      "timestamp": "2025-09-19T16:45:16.361239"
+    },
+    {
+      "model_name": "enhanced_binary_model",
+      "model_path": "models\\enhanced_binary_model.pkl",
+      "status": "failed",
+      "error": "Model file at models\\enhanced_binary_model.pkl is corrupted or of wrong format: Can't get attribute 'CalibratedModel' on <module '__main__' from 'C:\\\\Users\\\\TU\\\\Desktop\\\\new project\\\\N1V1\\\\scripts\\\\run_model_benchmarks.py'>",
+      "timestamp": "2025-09-19T16:45:16.367384"
+    },
+    {
+      "model_name": "enhanced_model",
+      "model_path": "models\\enhanced_model.pkl",
+      "status": "failed",
+      "error": "Model file at models\\enhanced_model.pkl is corrupted or of wrong format: Can't get attribute 'CalibratedModel' on <module '__main__' from 'C:\\\\Users\\\\TU\\\\Desktop\\\\new project\\\\N1V1\\\\scripts\\\\run_model_benchmarks.py'>",
+      "timestamp": "2025-09-19T16:45:16.371369"
+    },
+    {
+      "model_name": "enhanced_model_shap12",
+      "model_path": "models\\enhanced_model_shap12.pkl",
+      "status": "failed",
+      "error": "Number of features of the model must match the input. Model n_features_ is 12 and input n_features is 5",
+      "timestamp": "2025-09-19T16:45:16.401585"
+    },
+    {
+      "model_name": "enhanced_model_top12",
+      "model_path": "models\\enhanced_model_top12.pkl",
+      "status": "failed",
+      "error": "Model file at models\\enhanced_model_top12.pkl is corrupted or of wrong format: Can't get attribute 'CalibratedModel' on <module '__main__' from 'C:\\\\Users\\\\TU\\\\Desktop\\\\new project\\\\N1V1\\\\scripts\\\\run_model_benchmarks.py'>",
+      "timestamp": "2025-09-19T16:45:16.405582"
+    },
+    {
+      "model_name": "stress_test",
+      "model_path": "models\\stress_test.pkl",
+      "status": "failed",
+      "error": "Number of features of the model must match the input. Model n_features_ is 12 and input n_features is 5",
+      "timestamp": "2025-09-19T16:45:16.427569"
+    }
+  ],
+  "regressions": {},
+  "targets": {
+    "f1_buy_target": 0.7,
+    "f1_sell_target": 0.65,
+    "max_latency_ms": 100,
+    "regression_threshold": 0.05
+  }
+}

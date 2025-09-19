@@ -1,0 +1,145 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: n1v1-ml-serving
+  namespace: n1v1
+  labels:
+    app: n1v1-ml-serving
+    component: ml-serving
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: n1v1-ml-serving
+  template:
+    metadata:
+      labels:
+        app: n1v1-ml-serving
+        component: ml-serving
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: ml-serving
+        image: n1v1-ml-serving:latest
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        - name: CONFIG_FILE
+          value: "/app/config.json"
+        - name: REMOTE_INFERENCE_ENABLED
+          value: "false"
+        - name: PRELOAD_MODELS
+          value: "enhanced_binary_model"  # Preload common models
+        - name: PYTHONPATH
+          value: "/app"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config.json
+          subPath: config.json
+        - name: models-storage
+          mountPath: /app/models
+          readOnly: true
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: config-volume
+        configMap:
+          name: n1v1-config
+      - name: models-storage
+        persistentVolumeClaim:
+          claimName: models-storage
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: n1v1-ml-serving
+  namespace: n1v1
+  labels:
+    app: n1v1-ml-serving
+    component: ml-serving
+spec:
+  selector:
+    app: n1v1-ml-serving
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: n1v1-ml-serving-hpa
+  namespace: n1v1
+  labels:
+    app: n1v1-ml-serving
+    component: ml-serving
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: n1v1-ml-serving
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: inference_latency_seconds
+        selector:
+          matchLabels:
+            app: n1v1-ml-serving
+      target:
+        type: AverageValue
+        averageValue: "0.05"  # Target 50ms average latency
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60

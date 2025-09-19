@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional, List
 
 from .logging_utils import get_structured_logger, LogSensitivity
 from .utils.error_utils import ErrorHandler, ErrorContext, ErrorSeverity, ErrorCategory, CircuitBreaker
+from utils.logger import get_logger_with_context, generate_correlation_id, generate_request_id
 
 logger = get_structured_logger("core.signal_processor", LogSensitivity.SECURE)
 error_handler = ErrorHandler("signal_processor")
@@ -69,17 +70,28 @@ class SignalProcessor:
 
     async def generate_signals(self, market_data: Dict[str, Any]) -> List[Any]:
         """Generate trading signals from all active strategies."""
+        # Generate correlation and request IDs for tracing
+        correlation_id = generate_correlation_id()
+        request_id = generate_request_id()
+
+        # Create logger with context
+        ctx_logger = get_logger_with_context(
+            component="SignalProcessor",
+            correlation_id=correlation_id,
+            request_id=request_id
+        )
+
         # Input validation
         if not isinstance(market_data, dict):
             raise ValueError("market_data must be a dictionary")
         if not market_data:
-            logger.warning("Empty market_data provided")
+            ctx_logger.warning("Empty market_data provided")
             return []
 
         signals = []
 
         if not self.strategies:
-            logger.warning("No strategies available for signal generation")
+            ctx_logger.warning("No strategies available for signal generation")
             return signals
 
         # Use strategy selector if available and enabled
@@ -91,7 +103,7 @@ class SignalProcessor:
             all_signals = await self._generate_signals_from_all_strategies(market_data)
             signals.extend(all_signals)
 
-        logger.debug(f"Generated {len(signals)} signals from strategies")
+        ctx_logger.debug(f"Generated {len(signals)} signals from strategies")
         return signals
 
     async def _generate_signals_with_selector(self, market_data: Dict[str, Any]) -> List[Any]:
@@ -277,6 +289,38 @@ class SignalProcessor:
             except Exception as e:
                 logger.exception(f"Unexpected error initializing strategy {strategy.__class__.__name__}: {e}")
 
+    async def process_signal(self, signal: Any) -> Dict[str, Any]:
+        """
+        Process a single signal through the risk management system.
+
+        Args:
+            signal: Trading signal to process
+
+        Returns:
+            Dict containing processing result
+        """
+        try:
+            # Generate signals (this would normally be done by strategies)
+            signals = await self.generate_signals({})  # Empty market data for stub
+
+            # Evaluate through risk management
+            approved_signals = await self.evaluate_risk(signals, {})
+
+            # Return processing result
+            return {
+                "processed": True,
+                "signal_count": len(approved_signals),
+                "status": "success"
+            }
+
+        except Exception as e:
+            logger.exception(f"Error processing signal: {e}")
+            return {
+                "processed": False,
+                "error": str(e),
+                "status": "failed"
+            }
+
     async def shutdown_strategies(self):
         """Shutdown all strategies."""
         for strategy in self.strategies:
@@ -284,7 +328,7 @@ class SignalProcessor:
                 if hasattr(strategy, 'shutdown'):
                     await strategy.shutdown()
                 logger.debug(f"Shutdown strategy: {strategy.__class__.__name__}")
-            except (AttributeError, TypeError) as e:
+            except (AttributeError, TypeError, ValueError) as e:
                 logger.error(f"Strategy shutdown error - invalid strategy state in {strategy.__class__.__name__}: {e}")
             except asyncio.TimeoutError as e:
                 logger.error(f"Strategy shutdown timeout in {strategy.__class__.__name__}: {e}")

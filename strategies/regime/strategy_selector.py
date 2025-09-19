@@ -53,9 +53,11 @@ try:
     KNOWLEDGE_BASE_AVAILABLE = True
 except ImportError:
     KNOWLEDGE_BASE_AVAILABLE = False
-    logger.warning("Knowledge base not available, running without adaptive learning")
 
 logger = logging.getLogger(__name__)
+
+if not KNOWLEDGE_BASE_AVAILABLE:
+    logger.warning("Knowledge base not available, running without adaptive learning")
 
 
 
@@ -633,8 +635,17 @@ class StrategySelector:
             logger.warning(f"KNOWLEDGE_ERROR: Failed to apply knowledge base weighting: {e}")
             return initial_selection
 
-    def _extract_market_condition(self, market_data: pd.DataFrame) -> MarketCondition:
+    def _extract_market_condition(self, market_data: pd.DataFrame) -> Any:
         """Extract market condition from market data."""
+        if not KNOWLEDGE_BASE_AVAILABLE:
+            # Return a simple dict when knowledge base is not available
+            return {
+                'regime': 'unknown',
+                'volatility': 0.0,
+                'trend_strength': 0.0,
+                'timestamp': datetime.now()
+            }
+
         if market_data.empty:
             return MarketCondition(
                 regime=KBMarketRegime.UNKNOWN,
@@ -677,8 +688,19 @@ class StrategySelector:
                 trend_strength=0.0
             )
 
-    def _create_strategy_metadata(self, strategy_class: type) -> StrategyMetadata:
+    def _create_strategy_metadata(self, strategy_class: type) -> Any:
         """Create strategy metadata from strategy class."""
+        if not KNOWLEDGE_BASE_AVAILABLE:
+            # Return a simple dict when knowledge base is not available
+            return {
+                'name': strategy_class.__name__,
+                'category': 'unknown',
+                'parameters': {},
+                'timeframe': '1h',
+                'indicators_used': ['price'],
+                'risk_profile': 'medium'
+            }
+
         strategy_name = strategy_class.__name__
 
         # Map strategy names to categories (simplified mapping)

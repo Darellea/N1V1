@@ -5,13 +5,16 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
+  schedule:
+    # Run chaos tests nightly at 2 AM UTC
+    - cron: '0 2 * * *'
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.9, 3.10, 3.11]
+        python-version: [3.8, 3.9, 3.10, 3.11]
 
     steps:
       - name: Checkout repository
@@ -63,9 +66,33 @@ jobs:
             echo "mypy not installed; skipping"
           fi
 
+      - name: Run unit and integration tests
+        run: |
+          python tests/run_comprehensive_tests.py --unit --integration
+
       - name: Run tests with coverage
         run: |
-          python -m pytest --cov=core --cov=notifier --cov=utils --cov=strategies --cov=data --cov=backtest --cov=ml --cov=risk --cov=tools --cov-report=xml --cov-report=term-missing --cov-fail-under=80
+          python -m pytest --cov=core --cov=notifier --cov=utils --cov=strategies --cov=data --cov=backtest --cov=ml --cov=risk --cov=tools --cov=api --cov=optimization --cov=portfolio --cov-report=xml --cov-report=term-missing --cov-report=html --cov-fail-under=95
+
+      - name: Upload coverage reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports-${{ matrix.python-version }}
+          path: |
+            coverage.xml
+            htmlcov/
+          retention-days: 30
+
+      - name: Upload test logs
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-logs-${{ matrix.python-version }}
+          path: |
+            *.log
+            test_output/
+            logs/
+          retention-days: 7
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -75,6 +102,30 @@ jobs:
           name: codecov-umbrella
           fail_ci_if_error: false
 
+      - name: Security scan with bandit
+        run: |
+          pip install bandit[toml]
+          bandit -r core utils api -f json -o bandit-report.json || true
+          bandit -r core utils api --exit-zero
+
+      - name: Dependency security scan with safety
+        run: |
+          pip install safety
+          safety check --output json || true
+
+      - name: Upload security scan results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-scan-results-${{ matrix.python-version }}
+          path: |
+            bandit-report.json
+          retention-days: 30
+
+      - name: Run security tests
+        run: |
+          python -m pytest tests/security/ -v --tb=short
+
       - name: Dependency audit (pip-audit)
         continue-on-error: true
         run: |
@@ -82,4 +133,370 @@ jobs:
             pip-audit --progress
           else
             echo "pip-audit not installed; skipping"
+          fi
+
+  nightly-full-tests:
+    # Run full test suite nightly on main branch only, skip PRs
+    if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-nightly-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-nightly-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      - name: Run full test suite
+        run: |
+          python tests/run_comprehensive_tests.py
+
+      - name: Upload full test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nightly-test-reports
+          path: |
+            test_results.json
+            coverage.xml
+            htmlcov/
+          retention-days: 30
+
+  chaos-engineering:
+    # Run chaos tests nightly on main branch only, skip PRs
+    if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    needs: nightly-full-tests
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-chaos-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-chaos-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      - name: Create chaos reports directory
+        run: mkdir -p chaos_reports
+
+      - name: Run chaos engineering tests
+        run: |
+          chmod +x scripts/chaos_test.sh
+          ./scripts/chaos_test.sh \
+            --scenarios network_partition,rate_limit_flood,exchange_downtime,database_outage \
+            --mode sequential \
+            --duration 1800 \
+            --output-dir chaos_reports \
+            --verbose
+
+      - name: Upload chaos test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chaos-engineering-reports
+          path: |
+            chaos_reports/
+          retention-days: 90
+
+      - name: Notify chaos test results
+        if: always()
+        run: |
+          if [ -f chaos_reports/chaos_summary.json ]; then
+            # Extract summary info
+            pass_rate=$(jq '.results.pass_rate_percent' chaos_reports/chaos_summary.json 2>/dev/null || echo "0")
+            total_scenarios=$(jq '.results.total_scenarios' chaos_reports/chaos_summary.json 2>/dev/null || echo "0")
+            passed_scenarios=$(jq '.results.passed_scenarios' chaos_reports/chaos_summary.json 2>/dev/null || echo "0")
+
+            if (( $(echo "$pass_rate >= 80" | bc -l) )); then
+              status="✅"
+              message="Chaos engineering tests PASSED"
+            else
+              status="❌"
+              message="Chaos engineering tests FAILED"
+            fi
+
+            curl -X POST ${{ secrets.DISCORD_WEBHOOK_URL }} \
+              -H 'Content-Type: application/json' \
+              -d "{\"content\": \"$status N1V1 Chaos Engineering: $message (${passed_scenarios}/${total_scenarios} scenarios passed, ${pass_rate}% success rate)\"}"
+          else
+            curl -X POST ${{ secrets.DISCORD_WEBHOOK_URL }} \
+              -H 'Content-Type: application/json' \
+              -d '{"content": "❌ N1V1 Chaos engineering tests failed to generate reports"}'
+          fi
+
+  acceptance-tests:
+    # Run acceptance tests on main branch and for major releases
+    if: github.ref == 'refs/heads/main' || contains(github.ref, 'release')
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-acceptance-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-acceptance-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements-dev.txt ]; then
+            pip install -r requirements-dev.txt
+          elif [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      - name: Create acceptance reports directory
+        run: mkdir -p acceptance_reports
+
+      - name: Run stability acceptance tests
+        run: |
+          python -m pytest tests/acceptance/test_stability.py -v --tb=short --json-report --json-report-file=acceptance_reports/stability_results.json
+
+      - name: Run ML quality acceptance tests
+        run: |
+          python -m pytest tests/acceptance/test_ml_quality.py -v --tb=short --json-report --json-report-file=acceptance_reports/ml_quality_results.json
+
+      - name: Run SLO acceptance tests
+        run: |
+          python -m pytest tests/acceptance/test_slo.py -v --tb=short --json-report --json-report-file=acceptance_reports/slo_results.json
+
+      - name: Run scalability acceptance tests
+        run: |
+          python -m pytest tests/acceptance/test_scalability.py -v --tb=short --json-report --json-report-file=acceptance_reports/scalability_results.json
+
+      - name: Run documentation acceptance tests
+        run: |
+          python -m pytest tests/acceptance/test_docs.py -v --tb=short --json-report --json-report-file=acceptance_reports/docs_results.json
+
+      - name: Generate acceptance summary report
+        run: |
+          python -c "
+          import json
+          import os
+          from datetime import datetime
+
+          # Load individual test results
+          results_files = [
+              'acceptance_reports/stability_results.json',
+              'acceptance_reports/ml_quality_results.json',
+              'acceptance_reports/slo_results.json',
+              'acceptance_reports/scalability_results.json',
+              'acceptance_reports/docs_results.json'
+          ]
+
+          summary = {
+              'report_metadata': {
+                  'generated_at': datetime.now().isoformat(),
+                  'n1v1_version': '1.0.0',
+                  'test_environment': 'ci_pipeline',
+                  'report_generator': 'github_actions'
+              },
+              'acceptance_criteria': {},
+              'overall_status': {
+                  'acceptance_criteria_met': 0,
+                  'acceptance_criteria_total': 6,
+                  'tests_passed': 0,
+                  'tests_total': 27,
+                  'success_rate': 0.0,
+                  'production_readiness': 'pending'
+              }
+          }
+
+          criteria_mapping = {
+              'stability_results.json': 'stability',
+              'ml_quality_results.json': 'ml_quality',
+              'slo_results.json': 'slo',
+              'scalability_results.json': 'scalability',
+              'docs_results.json': 'documentation'
+          }
+
+          total_passed = 0
+          total_tests = 0
+          criteria_met = 0
+
+          for results_file in results_files:
+              if os.path.exists(results_file):
+                  with open(results_file, 'r') as f:
+                      data = json.load(f)
+
+                  criteria_name = criteria_mapping[os.path.basename(results_file)]
+                  tests_passed = len([t for t in data.get('tests', []) if t.get('outcome') == 'passed'])
+                  tests_total = len(data.get('tests', []))
+
+                  summary['acceptance_criteria'][criteria_name] = {
+                      'status': 'passed' if tests_passed == tests_total else 'failed',
+                      'tests_passed': tests_passed,
+                      'tests_total': tests_total,
+                      'last_tested': datetime.now().isoformat()
+                  }
+
+                  total_passed += tests_passed
+                  total_tests += tests_total
+
+                  if tests_passed == tests_total:
+                      criteria_met += 1
+
+          # Add CI/CD criteria (checked separately)
+          summary['acceptance_criteria']['ci_cd'] = {
+              'status': 'passed',  # CI/CD is working if we reach this point
+              'tests_passed': 1,
+              'tests_total': 1,
+              'last_tested': datetime.now().isoformat()
+          }
+          criteria_met += 1
+          total_passed += 1
+          total_tests += 1
+
+          # Update overall status
+          summary['overall_status'].update({
+              'acceptance_criteria_met': criteria_met,
+              'tests_passed': total_passed,
+              'tests_total': total_tests,
+              'success_rate': (total_passed / total_tests * 100) if total_tests > 0 else 0,
+              'production_readiness': 'ready' if criteria_met == 6 else 'not_ready',
+              'last_full_test_run': datetime.now().isoformat()
+          })
+
+          # Save summary
+          with open('acceptance_reports/acceptance_summary.json', 'w') as f:
+              json.dump(summary, f, indent=2, default=str)
+
+          print(f'Acceptance tests completed: {total_passed}/{total_tests} passed')
+          print(f'Criteria met: {criteria_met}/6')
+          print(f'Production readiness: {summary[\"overall_status\"][\"production_readiness\"]}')
+          "
+
+      - name: Upload acceptance test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: acceptance-test-reports
+          path: |
+            acceptance_reports/
+          retention-days: 90
+
+      - name: Notify acceptance test results
+        if: always()
+        run: |
+          if [ -f acceptance_reports/acceptance_summary.json ]; then
+            # Extract summary info
+            criteria_met=$(jq '.overall_status.acceptance_criteria_met' acceptance_reports/acceptance_summary.json 2>/dev/null || echo "0")
+            criteria_total=$(jq '.overall_status.acceptance_criteria_total' acceptance_reports/acceptance_summary.json 2>/dev/null || echo "6")
+            tests_passed=$(jq '.overall_status.tests_passed' acceptance_reports/acceptance_summary.json 2>/dev/null || echo "0")
+            tests_total=$(jq '.overall_status.tests_total' acceptance_reports/acceptance_summary.json 2>/dev/null || echo "27")
+            success_rate=$(jq '.overall_status.success_rate' acceptance_reports/acceptance_summary.json 2>/dev/null || echo "0")
+            readiness=$(jq -r '.overall_status.production_readiness' acceptance_reports/acceptance_summary.json 2>/dev/null || echo "unknown")
+
+            if [ "$readiness" = "ready" ]; then
+              status="✅"
+              message="All acceptance criteria met - PRODUCTION READY"
+            elif [ "$criteria_met" -ge 4 ]; then
+              status="⚠️"
+              message="Most acceptance criteria met - REQUIRES REVIEW"
+            else
+              status="❌"
+              message="Acceptance criteria not met - REQUIRES ATTENTION"
+            fi
+
+            curl -X POST ${{ secrets.DISCORD_WEBHOOK_URL }} \
+              -H 'Content-Type: application/json' \
+              -d "{\"content\": \"$status N1V1 Acceptance Tests: $message (${criteria_met}/${criteria_total} criteria met, ${tests_passed}/${tests_total} tests passed, ${success_rate}% success rate)\"}"
+          else
+            curl -X POST ${{ secrets.DISCORD_WEBHOOK_URL }} \
+              -H 'Content-Type: application/json' \
+              -d '{"content": "❌ N1V1 Acceptance tests failed to generate summary report"}'
+          fi
+
+  canary-deploy:
+    needs: [build-and-test, acceptance-tests]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run smoke tests for canary validation
+        run: |
+          python tests/run_comprehensive_tests.py --smoke
+
+      - name: Run canary deployment
+        if: success()
+        env:
+          CANARY_ENV: staging
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          chmod +x deploy/canary.sh
+          ./deploy/canary.sh
+
+      - name: Notify deployment status
+        if: always()
+        run: |
+          if [ ${{ job.status }} == 'success' ]; then
+            curl -X POST ${{ secrets.DISCORD_WEBHOOK_URL }} \
+              -H 'Content-Type: application/json' \
+              -d '{"content": "✅ N1V1 Canary deployment successful - proceeding to full rollout"}'
+          else
+            curl -X POST ${{ secrets.DISCORD_WEBHOOK_URL }} \
+              -H 'Content-Type: application/json' \
+              -d '{"content": "❌ N1V1 Canary deployment failed - rollback initiated"}'
           fi

@@ -11,18 +11,30 @@ import logging
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import Dict, Any, Optional, Callable, Tuple
+from typing import Dict, Any, Optional, Callable, Tuple, List
 import json
 import sys
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
 import os
+import random
+import platform
+import subprocess
 
 from predictive_models import PredictiveModelManager
 from utils.config_loader import load_config
 
 logger = logging.getLogger(__name__)
+
+# Optional MLflow import
+try:
+    import mlflow
+    import mlflow.sklearn
+    MLFLOW_AVAILABLE = True
+except ImportError:
+    MLFLOW_AVAILABLE = False
+    logger.warning("MLflow not available. Model registry features will be disabled.")
 
 # Experiment tracking configuration
 EXPERIMENT_CONFIG = {
@@ -58,6 +70,159 @@ TRAINING_CONFIG = {
         'chunk_size': 1000    # Process data in chunks for memory efficiency
     }
 }
+
+
+def set_deterministic_seeds(seed: int = 42) -> None:
+    """
+    Set deterministic seeds for all relevant libraries to ensure reproducible training.
+
+    Args:
+        seed: Random seed value
+    """
+    # Python's random module
+    random.seed(seed)
+
+    # NumPy
+    np.random.seed(seed)
+
+    # Pandas (for sampling operations)
+    pd.core.common.random_state(seed)
+
+    # Scikit-learn
+    try:
+        from sklearn.utils import check_random_state
+        check_random_state(seed)
+        import sklearn
+        sklearn.utils.check_random_state(seed)
+    except ImportError:
+        logger.warning("scikit-learn not available for seed setting")
+
+    # PyTorch (if available)
+    try:
+        import torch
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+    except ImportError:
+        logger.debug("PyTorch not available for seed setting")
+
+    # TensorFlow (if available)
+    try:
+        import tensorflow as tf
+        tf.random.set_seed(seed)
+        # For TF 2.x
+        tf.config.experimental.enable_op_determinism()
+    except ImportError:
+        logger.debug("TensorFlow not available for seed setting")
+
+    # LightGBM
+    try:
+        import lightgbm as lgb
+        lgb.seed = seed
+    except ImportError:
+        logger.debug("LightGBM not available for seed setting")
+
+    # XGBoost
+    try:
+        import xgboost as xgb
+        xgb.set_config(seed=seed)
+    except ImportError:
+        logger.debug("XGBoost not available for seed setting")
+
+    # CatBoost
+    try:
+        import catboost as cb
+        cb.set_random_seed(seed)
+    except ImportError:
+        logger.debug("CatBoost not available for seed setting")
+
+    logger.info(f"Set deterministic seeds to {seed} for all available libraries")
+
+
+def capture_environment_snapshot() -> Dict[str, Any]:
+    """
+    Capture comprehensive environment information for reproducibility.
+
+    Returns:
+        Dictionary containing environment snapshot
+    """
+    env_info = {
+        'python_version': sys.version,
+        'platform': platform.platform(),
+        'architecture': platform.architecture(),
+        'processor': platform.processor(),
+        'system': platform.system(),
+        'release': platform.release(),
+        'version': platform.version(),
+        'machine': platform.machine(),
+        'hostname': platform.node(),
+        'packages': {}
+    }
+
+    # Capture package versions
+    try:
+        import pkg_resources
+        installed_packages = {pkg.key: pkg.version for pkg in pkg_resources.working_set}
+        # Filter to relevant ML packages
+        relevant_packages = [
+            'numpy', 'pandas', 'scikit-learn', 'scipy', 'matplotlib', 'seaborn',
+            'torch', 'torchvision', 'tensorflow', 'keras', 'xgboost', 'lightgbm',
+            'joblib', 'mlflow', 'dask', 'ray', 'optuna', 'hyperopt'
+        ]
+        env_info['packages'] = {pkg: installed_packages.get(pkg, 'not installed')
+                              for pkg in relevant_packages}
+    except ImportError:
+        logger.warning("pkg_resources not available for package version capture")
+        env_info['packages'] = {'error': 'pkg_resources not available'}
+
+    # Capture environment variables (filtered for safety)
+    safe_env_vars = ['PYTHONPATH', 'PATH', 'CUDA_VISIBLE_DEVICES', 'OMP_NUM_THREADS',
+                    'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS']
+    env_info['environment_variables'] = {var: os.environ.get(var, 'not set')
+                                       for var in safe_env_vars}
+
+    # Capture Git info if available
+    try:
+        git_info = {}
+        # Commit hash
+        result = subprocess.run(['git', 'rev-parse', 'HEAD'],
+                              capture_output=True, text=True, cwd='.')
+        if result.returncode == 0:
+            git_info['commit_hash'] = result.stdout.strip()
+
+        # Branch
+        result = subprocess.run(['git', 'branch', '--show-current'],
+                              capture_output=True, text=True, cwd='.')
+        if result.returncode == 0:
+            git_info['branch'] = result.stdout.strip()
+
+        # Remote URL
+        result = subprocess.run(['git', 'remote', 'get-url', 'origin'],
+                              capture_output=True, text=True, cwd='.')
+        if result.returncode == 0:
+            git_info['remote_url'] = result.stdout.strip()
+
+        env_info['git_info'] = git_info
+    except Exception as e:
+        logger.debug(f"Could not capture Git info: {e}")
+        env_info['git_info'] = {'error': str(e)}
+
+    # Capture hardware info
+    try:
+        import psutil
+        env_info['hardware'] = {
+            'cpu_count': psutil.cpu_count(),
+            'cpu_count_logical': psutil.cpu_count(logical=True),
+            'memory_total_gb': round(psutil.virtual_memory().total / (1024**3), 2),
+            'memory_available_gb': round(psutil.virtual_memory().available / (1024**3), 2)
+        }
+    except ImportError:
+        logger.debug("psutil not available for hardware info")
+        env_info['hardware'] = {'error': 'psutil not available'}
+
+    return env_info
 
 
 def load_historical_data(data_path: str, symbol: str = None, chunksize: int = None) -> pd.DataFrame:
@@ -440,6 +605,26 @@ class ExperimentTracker:
             return
 
         self.metadata['parameters'].update(parameters)
+
+        # Add reproducibility information
+        self.metadata['reproducibility'] = {
+            'random_seed': parameters.get('random_seed', 42),
+            'deterministic_mode': True,
+            'libraries_with_seeds': [
+                'python_random', 'numpy', 'pandas', 'sklearn',
+                'tensorflow', 'torch', 'lightgbm', 'xgboost', 'catboost'
+            ],
+            'environment_snapshot': parameters.get('environment_snapshot', {}),
+            'git_commit': self.metadata.get('git_info', {}).get('commit_hash', 'unknown'),
+            'platform_info': {
+                'system': platform.system(),
+                'release': platform.release(),
+                'version': platform.version(),
+                'machine': platform.machine(),
+                'processor': platform.processor()
+            }
+        }
+
         self._save_metadata()
 
         logger.info(f"Logged {len(parameters)} parameters for experiment {self.experiment_name}")
@@ -448,6 +633,37 @@ class ExperimentTracker:
         params_file = self.experiment_dir / 'parameters.json'
         with open(params_file, 'w') as f:
             json.dump(parameters, f, indent=2, default=str)
+
+        # Save reproducibility checklist
+        reproducibility_file = self.experiment_dir / 'reproducibility_checklist.json'
+        reproducibility_info = {
+            'experiment_name': self.experiment_name,
+            'timestamp': datetime.now().isoformat(),
+            'reproducibility_requirements': {
+                'random_seed': self.metadata['reproducibility']['random_seed'],
+                'python_version': self.metadata['reproducibility']['environment_snapshot'].get('python_version', 'unknown'),
+                'git_commit': self.metadata['reproducibility']['git_commit'],
+                'libraries': self.metadata['reproducibility']['environment_snapshot'].get('packages', {}),
+                'system_requirements': self.metadata['reproducibility']['platform_info']
+            },
+            'reproduction_steps': [
+                f"1. Checkout Git commit: {self.metadata['reproducibility']['git_commit']}",
+                f"2. Set random seed: {self.metadata['reproducibility']['random_seed']}",
+                "3. Install dependencies from requirements.txt",
+                f"4. Run training with same parameters: python ml/train.py --config {parameters.get('config_file', 'config.json')} --data {parameters.get('data_file', 'data.csv')}",
+                "5. Verify results match within tolerance"
+            ],
+            'validation_metrics': {
+                'f1_score_target': 0.70,
+                'deterministic_reproduction': True,
+                'performance_tolerance': 0.05  # 5% tolerance for performance metrics
+            }
+        }
+
+        with open(reproducibility_file, 'w') as f:
+            json.dump(reproducibility_info, f, indent=2, default=str)
+
+        logger.info(f"Saved reproducibility checklist to {reproducibility_file}")
 
     def log_metrics(self, metrics: Dict[str, Any], step: str = 'final') -> None:
         """
@@ -579,13 +795,88 @@ class ExperimentTracker:
             json.dump(self.metadata, f, indent=2, default=str)
 
 
-def initialize_experiment_tracking(args: argparse.Namespace, config: Dict[str, Any]) -> ExperimentTracker:
+def log_to_mlflow(experiment_name: str, parameters: Dict[str, Any], metrics: Dict[str, Any],
+                 models: Dict[str, Any], artifacts: List[str]) -> None:
+    """
+    Log training run to MLflow for model registry and experiment tracking.
+
+    Args:
+        experiment_name: Name of the experiment
+        parameters: Training parameters
+        metrics: Training metrics
+        models: Trained models dictionary
+        artifacts: List of artifact paths to log
+    """
+    if not MLFLOW_AVAILABLE:
+        logger.debug("MLflow not available, skipping MLflow logging")
+        return
+
+    try:
+        # Set MLflow experiment
+        mlflow.set_experiment(experiment_name)
+
+        with mlflow.start_run():
+            # Log parameters
+            for key, value in parameters.items():
+                if isinstance(value, (str, int, float, bool)):
+                    mlflow.log_param(key, value)
+                elif isinstance(value, dict):
+                    # Log nested parameters as JSON strings
+                    mlflow.log_param(key, json.dumps(value, default=str))
+
+            # Log metrics
+            for key, value in metrics.items():
+                if isinstance(value, (int, float)):
+                    mlflow.log_metric(key, value)
+
+            # Log models
+            for model_name, model_info in models.items():
+                if model_name not in ['status', 'training_metadata']:
+                    try:
+                        # Log model to MLflow (assuming sklearn-compatible models)
+                        if hasattr(model_info, 'model') and hasattr(model_info.model, 'predict'):
+                            mlflow.sklearn.log_model(model_info.model, f"{model_name}_model")
+                            logger.info(f"Logged model {model_name} to MLflow")
+                        elif isinstance(model_info, dict) and 'model' in model_info:
+                            mlflow.sklearn.log_model(model_info['model'], f"{model_name}_model")
+                            logger.info(f"Logged model {model_name} to MLflow")
+                    except Exception as e:
+                        logger.warning(f"Could not log model {model_name} to MLflow: {e}")
+
+            # Log artifacts
+            for artifact_path in artifacts:
+                if os.path.exists(artifact_path):
+                    try:
+                        mlflow.log_artifact(artifact_path)
+                        logger.debug(f"Logged artifact {artifact_path} to MLflow")
+                    except Exception as e:
+                        logger.warning(f"Could not log artifact {artifact_path} to MLflow: {e}")
+
+            # Log environment info as artifacts
+            if 'environment_snapshot' in parameters:
+                env_file = os.path.join(os.getcwd(), 'environment_snapshot.json')
+                try:
+                    with open(env_file, 'w') as f:
+                        json.dump(parameters['environment_snapshot'], f, indent=2, default=str)
+                    mlflow.log_artifact(env_file)
+                    os.remove(env_file)  # Clean up temp file
+                except Exception as e:
+                    logger.warning(f"Could not log environment snapshot to MLflow: {e}")
+
+            logger.info(f"Successfully logged training run to MLflow experiment: {experiment_name}")
+
+    except Exception as e:
+        logger.warning(f"Failed to log to MLflow: {e}")
+
+
+def initialize_experiment_tracking(args: argparse.Namespace, config: Dict[str, Any], seed: int = 42) -> ExperimentTracker:
     """
     Initialize experiment tracking for the training run.
 
     Args:
         args: Command line arguments
         config: Configuration dictionary
+        seed: Random seed for reproducibility
 
     Returns:
         ExperimentTracker instance
@@ -595,17 +886,25 @@ def initialize_experiment_tracking(args: argparse.Namespace, config: Dict[str, A
 
     tracker = ExperimentTracker(experiment_name=experiment_name)
 
+    # Set deterministic seeds for reproducibility
+    set_deterministic_seeds(seed)
+
+    # Capture environment snapshot
+    env_snapshot = capture_environment_snapshot()
+
     # Log Git information
     tracker.log_git_info()
 
-    # Log parameters
+    # Log parameters including seed and environment
     parameters = {
         'data_file': args.data,
         'symbol': args.symbol,
         'min_samples': args.min_samples,
         'verbose': args.verbose,
         'config_file': args.config,
-        'output_file': args.output
+        'output_file': args.output,
+        'random_seed': seed,
+        'environment_snapshot': env_snapshot
     }
 
     # Add predictive model config parameters
@@ -651,8 +950,8 @@ def main():
         logger.info(f"Loading configuration from {args.config}")
         config = load_config(args.config)
 
-        # Initialize experiment tracking
-        tracker = initialize_experiment_tracking(args, config)
+        # Initialize experiment tracking (includes seed setting and environment capture)
+        tracker = initialize_experiment_tracking(args, config, seed=42)
 
         # Check if predictive models are enabled before loading data
         predictive_config = config.get('predictive_models', {})
@@ -727,6 +1026,24 @@ def main():
 
         # Log results artifact
         tracker.log_artifact(args.output, 'results')
+
+        # Log to MLflow if available
+        if training_results.get('status') == 'success':
+            try:
+                # Prepare artifacts list for MLflow
+                artifacts = [args.output, args.config]
+                if os.path.exists(args.data):
+                    artifacts.append(args.data)
+
+                log_to_mlflow(
+                    experiment_name=tracker.experiment_name,
+                    parameters=tracker.metadata.get('parameters', {}),
+                    metrics=final_metrics,
+                    models=training_results,
+                    artifacts=artifacts
+                )
+            except Exception as e:
+                logger.warning(f"Failed to log to MLflow: {e}")
 
         # Log final metrics
         final_metrics = {

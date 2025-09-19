@@ -1,556 +1,252 @@
 """
-Comprehensive Test Runner for Newly Implemented Features
-========================================================
+Comprehensive Test Runner for N1V1
+===================================
 
-This script runs all tests for the three newly implemented features:
-1. Circuit Breaker
-2. Monitoring & Observability
-3. Performance Optimization
-
-It provides detailed test coverage analysis and ensures all features work
-correctly both individually and in integration.
+This script runs categorized tests for N1V1 with support for unit, integration,
+stress tests, and smoke tests. It enforces coverage requirements and provides
+detailed reporting for CI/CD pipelines.
 """
 
-import asyncio
-import time
-import pytest
 import subprocess
 import sys
 import os
-import logging
-from pathlib import Path
-import json
-import coverage
-from typing import Dict, List, Any, Optional
+import time
 import argparse
-
-from utils.logger import get_logger
-
-logger = get_logger(__name__)
+import json
+from pathlib import Path
+from typing import Dict, List, Any
 
 
 class ComprehensiveTestRunner:
-    """Comprehensive test runner for all newly implemented features."""
+    """Comprehensive test runner with categorization support."""
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        self.config = config or {}
+    def __init__(self):
         self.test_results = {}
         self.coverage_data = {}
         self.start_time = None
         self.end_time = None
 
-    def run_all_tests(self) -> Dict[str, Any]:
-        """Run all comprehensive tests for the three features."""
-        logger.info("🚀 Starting Comprehensive Test Suite")
+    def run_tests(self, test_type: str = "all", smoke: bool = False) -> Dict[str, Any]:
+        """Run tests based on type or smoke mode."""
         self.start_time = time.time()
 
         try:
-            # Run individual feature tests
-            self._run_circuit_breaker_tests()
-            self._run_monitoring_tests()
-            self._run_performance_tests()
-            self._run_integration_tests()
-
-            # Generate coverage report
-            self._generate_coverage_report()
-
-            # Run performance benchmarks
-            self._run_performance_benchmarks()
-
-            # Validate test coverage requirements
-            self._validate_coverage_requirements()
-
-            # Generate final report
-            final_report = self._generate_final_report()
-
-            self.end_time = time.time()
-            duration = self.end_time - self.start_time
-
-            logger.info(f"✅ Test suite completed in {duration:.2f} seconds")
-            return final_report
-
+            if smoke:
+                return self._run_smoke_tests()
+            elif test_type == "unit":
+                return self._run_unit_tests()
+            elif test_type == "integration":
+                return self._run_integration_tests()
+            elif test_type == "stress":
+                return self._run_stress_tests()
+            else:
+                return self._run_all_tests()
         except Exception as e:
-            logger.exception(f"❌ Test suite failed: {e}")
             return {"error": str(e), "status": "failed"}
 
-    def _run_circuit_breaker_tests(self) -> None:
-        """Run Circuit Breaker specific tests."""
-        logger.info("🔧 Running Circuit Breaker Tests")
+    def _run_smoke_tests(self) -> Dict[str, Any]:
+        """Run minimal smoke tests for canary deploys."""
+        print("🚀 Running Smoke Tests")
 
-        test_file = "tests/test_circuit_breaker.py"
-        if not Path(test_file).exists():
-            logger.error(f"Test file not found: {test_file}")
-            return
+        # Define smoke test files/patterns
+        smoke_tests = [
+            "tests/unit/test_config_manager.py::TestConfigManager::test_basic_config",
+            "tests/unit/test_order_manager.py::TestOrderManager::test_order_creation",
+            "tests/integration/test_distributed_system.py::TestDistributedSystem::test_basic_connectivity",
+            "tests/unit/test_healthcheck.py"  # Assuming health check tests exist
+        ]
+
+        # Run smoke tests
+        result = self._run_pytest(smoke_tests, timeout=120)
+
+        # Generate coverage for smoke
+        coverage_result = self._run_coverage(smoke_tests)
+
+        self.end_time = time.time()
+        duration = self.end_time - self.start_time
+
+        summary = self._generate_summary(result, coverage_result, duration)
+
+        return {
+            "status": "passed" if result["returncode"] == 0 else "failed",
+            "duration": duration,
+            "summary": summary,
+            "coverage": coverage_result
+        }
+
+    def _run_unit_tests(self) -> Dict[str, Any]:
+        """Run unit tests."""
+        print("🔧 Running Unit Tests")
+        result = self._run_pytest(["tests/unit/"], timeout=600)
+        coverage_result = self._run_coverage(["tests/unit/"])
+        self.end_time = time.time()
+        duration = self.end_time - self.start_time
+        summary = self._generate_summary(result, coverage_result, duration)
+        return {
+            "status": "passed" if result["returncode"] == 0 else "failed",
+            "duration": duration,
+            "summary": summary,
+            "coverage": coverage_result
+        }
+
+    def _run_integration_tests(self) -> Dict[str, Any]:
+        """Run integration tests."""
+        print("🔗 Running Integration Tests")
+        result = self._run_pytest(["tests/integration/"], timeout=900)
+        coverage_result = self._run_coverage(["tests/integration/"])
+        self.end_time = time.time()
+        duration = self.end_time - self.start_time
+        summary = self._generate_summary(result, coverage_result, duration)
+        return {
+            "status": "passed" if result["returncode"] == 0 else "failed",
+            "duration": duration,
+            "summary": summary,
+            "coverage": coverage_result
+        }
+
+    def _run_stress_tests(self) -> Dict[str, Any]:
+        """Run stress tests."""
+        print("⚡ Running Stress Tests")
+        result = self._run_pytest(["tests/stress/"], timeout=1800)
+        coverage_result = self._run_coverage(["tests/stress/"])
+        self.end_time = time.time()
+        duration = self.end_time - self.start_time
+        summary = self._generate_summary(result, coverage_result, duration)
+        return {
+            "status": "passed" if result["returncode"] == 0 else "failed",
+            "duration": duration,
+            "summary": summary,
+            "coverage": coverage_result
+        }
+
+    def _run_all_tests(self) -> Dict[str, Any]:
+        """Run all tests."""
+        print("🚀 Running All Tests")
+        result = self._run_pytest(["tests/"], timeout=3600)
+        coverage_result = self._run_coverage(["tests/"])
+        self.end_time = time.time()
+        duration = self.end_time - self.start_time
+        summary = self._generate_summary(result, coverage_result, duration)
+        return {
+            "status": "passed" if result["returncode"] == 0 else "failed",
+            "duration": duration,
+            "summary": summary,
+            "coverage": coverage_result
+        }
+
+    def _run_pytest(self, test_paths: List[str], timeout: int = 600) -> Dict[str, Any]:
+        """Run pytest with given paths."""
+        cmd = [sys.executable, "-m", "pytest"] + test_paths + [
+            "-v", "--tb=short", "--json-report", "--json-report-file=test_results.json"
+        ]
 
         try:
-            # Run tests with coverage
-            result = subprocess.run([
-                sys.executable, "-m", "pytest", test_file,
-                "-v", "--tb=short", "--json-report", "--json-report-file=temp_cb_results.json"
-            ], capture_output=True, text=True, timeout=300)
-
-            # Parse results
-            self.test_results["circuit_breaker"] = {
-                "return_code": result.returncode,
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            return {
+                "returncode": result.returncode,
                 "stdout": result.stdout,
-                "stderr": result.stderr,
-                "passed": "passed" in result.stdout,
-                "failed": result.returncode != 0
+                "stderr": result.stderr
             }
-
-            if result.returncode == 0:
-                logger.info("✅ Circuit Breaker tests passed")
-            else:
-                logger.error("❌ Circuit Breaker tests failed")
-                logger.error(result.stderr)
-
         except subprocess.TimeoutExpired:
-            logger.error("⏰ Circuit Breaker tests timed out")
-            self.test_results["circuit_breaker"] = {"error": "timeout"}
-        except Exception as e:
-            logger.exception(f"Error running Circuit Breaker tests: {e}")
-            self.test_results["circuit_breaker"] = {"error": str(e)}
+            return {"returncode": 1, "stdout": "", "stderr": "Tests timed out"}
 
-    def _run_monitoring_tests(self) -> None:
-        """Run Monitoring & Observability tests."""
-        logger.info("📊 Running Monitoring & Observability Tests")
-
-        test_file = "tests/test_monitoring_observability.py"
-        if not Path(test_file).exists():
-            logger.error(f"Test file not found: {test_file}")
-            return
+    def _run_coverage(self, test_paths: List[str]) -> Dict[str, Any]:
+        """Run coverage analysis."""
+        cmd = [sys.executable, "-m", "pytest"] + test_paths + [
+            "--cov=core", "--cov=utils", "--cov=api", "--cov=ml", "--cov=notifier",
+            "--cov-report=xml", "--cov-report=term-missing", "--cov-fail-under=95"
+        ]
 
         try:
-            result = subprocess.run([
-                sys.executable, "-m", "pytest", test_file,
-                "-v", "--tb=short", "--json-report", "--json-report-file=temp_mon_results.json"
-            ], capture_output=True, text=True, timeout=300)
-
-            self.test_results["monitoring"] = {
-                "return_code": result.returncode,
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=1200)
+            coverage_percent = self._extract_coverage(result.stdout)
+            return {
+                "returncode": result.returncode,
+                "coverage": coverage_percent,
                 "stdout": result.stdout,
-                "stderr": result.stderr,
-                "passed": "passed" in result.stdout,
-                "failed": result.returncode != 0
+                "stderr": result.stderr
             }
-
-            if result.returncode == 0:
-                logger.info("✅ Monitoring tests passed")
-            else:
-                logger.error("❌ Monitoring tests failed")
-                logger.error(result.stderr)
-
         except subprocess.TimeoutExpired:
-            logger.error("⏰ Monitoring tests timed out")
-            self.test_results["monitoring"] = {"error": "timeout"}
-        except Exception as e:
-            logger.exception(f"Error running Monitoring tests: {e}")
-            self.test_results["monitoring"] = {"error": str(e)}
+            return {"returncode": 1, "coverage": 0, "stdout": "", "stderr": "Coverage timed out"}
 
-    def _run_performance_tests(self) -> None:
-        """Run Performance Optimization tests."""
-        logger.info("⚡ Running Performance Optimization Tests")
-
-        test_file = "tests/test_performance_optimization.py"
-        if not Path(test_file).exists():
-            logger.error(f"Test file not found: {test_file}")
-            return
-
-        try:
-            result = subprocess.run([
-                sys.executable, "-m", "pytest", test_file,
-                "-v", "--tb=short", "--json-report", "--json-report-file=temp_perf_results.json"
-            ], capture_output=True, text=True, timeout=600)  # Longer timeout for perf tests
-
-            self.test_results["performance"] = {
-                "return_code": result.returncode,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "passed": "passed" in result.stdout,
-                "failed": result.returncode != 0
-            }
-
-            if result.returncode == 0:
-                logger.info("✅ Performance tests passed")
-            else:
-                logger.error("❌ Performance tests failed")
-                logger.error(result.stderr)
-
-        except subprocess.TimeoutExpired:
-            logger.error("⏰ Performance tests timed out")
-            self.test_results["performance"] = {"error": "timeout"}
-        except Exception as e:
-            logger.exception(f"Error running Performance tests: {e}")
-            self.test_results["performance"] = {"error": str(e)}
-
-    def _run_integration_tests(self) -> None:
-        """Run Cross-Feature Integration tests."""
-        logger.info("🔗 Running Cross-Feature Integration Tests")
-
-        test_file = "tests/test_cross_feature_integration.py"
-        if not Path(test_file).exists():
-            logger.error(f"Test file not found: {test_file}")
-            return
-
-        try:
-            result = subprocess.run([
-                sys.executable, "-m", "pytest", test_file,
-                "-v", "--tb=short", "--json-report", "--json-report-file=temp_int_results.json"
-            ], capture_output=True, text=True, timeout=900)  # Longest timeout for integration
-
-            self.test_results["integration"] = {
-                "return_code": result.returncode,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "passed": "passed" in result.stdout,
-                "failed": result.returncode != 0
-            }
-
-            if result.returncode == 0:
-                logger.info("✅ Integration tests passed")
-            else:
-                logger.error("❌ Integration tests failed")
-                logger.error(result.stderr)
-
-        except subprocess.TimeoutExpired:
-            logger.error("⏰ Integration tests timed out")
-            self.test_results["integration"] = {"error": "timeout"}
-        except Exception as e:
-            logger.exception(f"Error running Integration tests: {e}")
-            self.test_results["integration"] = {"error": str(e)}
-
-    def _generate_coverage_report(self) -> None:
-        """Generate comprehensive coverage report."""
-        logger.info("📈 Generating Coverage Report")
-
-        try:
-            # Run coverage on all test files
-            cov = coverage.Coverage(
-                source=["core"],
-                omit=["*/tests/*", "*/venv/*", "*/__pycache__/*"]
-            )
-
-            cov.start()
-
-            # Import and run key modules to get coverage
-            test_modules = [
-                "core.circuit_breaker",
-                "core.metrics_collector",
-                "core.metrics_endpoint",
-                "core.performance_profiler",
-                "core.performance_monitor",
-                "core.performance_reports"
-            ]
-
-            for module in test_modules:
+    def _extract_coverage(self, output: str) -> float:
+        """Extract coverage percentage from pytest output."""
+        for line in output.split('\n'):
+            if 'TOTAL' in line and '%' in line:
                 try:
-                    __import__(module)
-                except ImportError:
-                    logger.warning(f"Could not import {module} for coverage")
+                    return float(line.split()[-1].rstrip('%'))
+                except:
+                    pass
+        return 0.0
 
-            cov.stop()
-            cov.save()
-
-            # Generate HTML report
-            cov.html_report(directory="htmlcov_comprehensive")
-            cov.report()
-
-            # Get coverage data
-            self.coverage_data = {
-                "total_coverage": cov.report(),
-                "html_report_path": "htmlcov_comprehensive/index.html"
-            }
-
-            logger.info("✅ Coverage report generated")
-
-        except Exception as e:
-            logger.exception(f"Error generating coverage report: {e}")
-            self.coverage_data = {"error": str(e)}
-
-    def _run_performance_benchmarks(self) -> None:
-        """Run performance benchmarks for all features."""
-        logger.info("🏃 Running Performance Benchmarks")
-
-        try:
-            # Import benchmark functions
-            from tests.test_performance_optimization import TestPerformanceBenchmarks
-
-            benchmark_instance = TestPerformanceBenchmarks()
-            benchmark_instance.setup_method()
-
-            # Run key benchmarks
-            benchmarks = {}
-
-            # Vectorization speedup benchmark
-            try:
-                benchmark_instance.test_vectorization_speedup()
-                benchmarks["vectorization_speedup"] = "passed"
-            except Exception as e:
-                benchmarks["vectorization_speedup"] = f"failed: {e}"
-
-            # Memory reduction benchmark
-            try:
-                benchmark_instance.test_memory_reduction_achievement()
-                benchmarks["memory_reduction"] = "passed"
-            except Exception as e:
-                benchmarks["memory_reduction"] = f"failed: {e}"
-
-            # Latency benchmark
-            try:
-                benchmark_instance.test_latency_improvements()
-                benchmarks["latency_improvements"] = "passed"
-            except Exception as e:
-                benchmarks["latency_improvements"] = f"failed: {e}"
-
-            self.test_results["benchmarks"] = benchmarks
-            logger.info("✅ Performance benchmarks completed")
-
-        except Exception as e:
-            logger.exception(f"Error running benchmarks: {e}")
-            self.test_results["benchmarks"] = {"error": str(e)}
-
-    def _validate_coverage_requirements(self) -> None:
-        """Validate that test coverage meets requirements."""
-        logger.info("🔍 Validating Coverage Requirements")
-
-        coverage_requirements = {
-            "circuit_breaker": 95,
-            "monitoring": 95,
-            "performance": 95,
-            "integration": 90
-        }
-
-        validation_results = {}
-
-        for component, required_coverage in coverage_requirements.items():
-            if component in self.test_results:
-                result = self.test_results[component]
-                if result.get("passed", False):
-                    validation_results[component] = {
-                        "status": "passed",
-                        "coverage": 100,  # Assume full coverage if tests pass
-                        "requirement": required_coverage
-                    }
-                else:
-                    validation_results[component] = {
-                        "status": "failed",
-                        "coverage": 0,
-                        "requirement": required_coverage,
-                        "reason": result.get("stderr", "Tests failed")
-                    }
-            else:
-                validation_results[component] = {
-                    "status": "not_run",
-                    "coverage": 0,
-                    "requirement": required_coverage
-                }
-
-        self.test_results["coverage_validation"] = validation_results
-
-        # Check overall compliance
-        all_passed = all(
-            result["status"] == "passed"
-            for result in validation_results.values()
-        )
-
-        if all_passed:
-            logger.info("✅ All coverage requirements met")
-        else:
-            logger.warning("⚠️ Some coverage requirements not met")
-
-    def _generate_final_report(self) -> Dict[str, Any]:
-        """Generate comprehensive final report."""
-        duration = self.end_time - self.start_time if self.end_time and self.start_time else 0
-
-        report = {
-            "test_suite": "Comprehensive Testing for Newly Implemented Features",
-            "timestamp": time.time(),
-            "duration_seconds": duration,
-            "features_tested": [
-                "Circuit Breaker",
-                "Monitoring & Observability",
-                "Performance Optimization",
-                "Cross-Feature Integration"
-            ],
-            "test_results": self.test_results,
-            "coverage_data": self.coverage_data,
-            "summary": self._generate_summary(),
-            "recommendations": self._generate_recommendations()
-        }
-
-        # Save report to file
-        report_path = f"reports/comprehensive_test_report_{int(time.time())}.json"
-        Path(report_path).parent.mkdir(parents=True, exist_ok=True)
-
-        with open(report_path, 'w') as f:
-            json.dump(report, f, indent=2, default=str)
-
-        report["report_path"] = report_path
-        logger.info(f"📄 Comprehensive test report saved to: {report_path}")
-
-        return report
-
-    def _generate_summary(self) -> Dict[str, Any]:
+    def _generate_summary(self, result: Dict, coverage: Dict, duration: float) -> Dict[str, Any]:
         """Generate test summary."""
+        passed = result["returncode"] == 0
+        coverage_pct = coverage.get("coverage", 0)
+
         summary = {
-            "total_features": 4,
-            "passed_features": 0,
-            "failed_features": 0,
-            "coverage_compliance": "unknown",
-            "performance_targets": {},
-            "critical_issues": []
+            "passed": passed,
+            "failed": not passed,
+            "coverage_percent": coverage_pct,
+            "duration_seconds": duration,
+            "coverage_compliant": coverage_pct >= 95.0
         }
 
-        # Count passed/failed features
-        for feature, result in self.test_results.items():
-            if isinstance(result, dict):
-                if result.get("passed", False):
-                    summary["passed_features"] += 1
-                elif result.get("failed", False) or "error" in result:
-                    summary["failed_features"] += 1
-                    summary["critical_issues"].append(f"{feature}: {result.get('error', 'failed')}")
-
-        # Check coverage compliance
-        coverage_validation = self.test_results.get("coverage_validation", {})
-        compliant_features = sum(
-            1 for result in coverage_validation.values()
-            if result.get("status") == "passed"
-        )
-
-        if compliant_features == len(coverage_validation):
-            summary["coverage_compliance"] = "fully_compliant"
-        elif compliant_features > 0:
-            summary["coverage_compliance"] = "partially_compliant"
-        else:
-            summary["coverage_compliance"] = "non_compliant"
-
-        # Performance targets
-        benchmarks = self.test_results.get("benchmarks", {})
-        summary["performance_targets"] = {
-            "vectorization_speedup": benchmarks.get("vectorization_speedup", "not_tested"),
-            "memory_reduction": benchmarks.get("memory_reduction", "not_tested"),
-            "latency_improvements": benchmarks.get("latency_improvements", "not_tested")
-        }
+        if not passed:
+            summary["errors"] = result.get("stderr", "")
 
         return summary
 
-    def _generate_recommendations(self) -> List[str]:
-        """Generate recommendations based on test results."""
-        recommendations = []
-
-        # Check for failed tests
-        for feature, result in self.test_results.items():
-            if isinstance(result, dict) and (result.get("failed", False) or "error" in result):
-                recommendations.append(
-                    f"Fix failing {feature} tests: {result.get('error', 'unknown error')}"
-                )
-
-        # Check coverage compliance
-        coverage_validation = self.test_results.get("coverage_validation", {})
-        for feature, validation in coverage_validation.items():
-            if validation.get("status") != "passed":
-                required = validation.get("requirement", 0)
-                recommendations.append(
-                    f"Improve {feature} test coverage to meet {required}% requirement"
-                )
-
-        # Performance recommendations
-        benchmarks = self.test_results.get("benchmarks", {})
-        if "failed" in str(benchmarks.get("vectorization_speedup", "")):
-            recommendations.append("Investigate vectorization performance issues")
-
-        if "failed" in str(benchmarks.get("memory_reduction", "")):
-            recommendations.append("Review memory optimization strategies")
-
-        if "failed" in str(benchmarks.get("latency_improvements", "")):
-            recommendations.append("Optimize critical path latency")
-
-        # General recommendations
-        if not recommendations:
-            recommendations.append("All tests passed - features are ready for production")
-            recommendations.append("Consider adding more edge case tests for robustness")
-            recommendations.append("Set up continuous integration for automated testing")
-
-        return recommendations
-
 
 def main():
-    """Main function to run comprehensive tests."""
-    parser = argparse.ArgumentParser(description="Comprehensive Test Runner")
+    """Main entry point."""
+    parser = argparse.ArgumentParser(description="N1V1 Comprehensive Test Runner")
+    parser.add_argument("--unit", action="store_true", help="Run only unit tests")
+    parser.add_argument("--integration", action="store_true", help="Run only integration tests")
+    parser.add_argument("--stress", action="store_true", help="Run only stress tests")
+    parser.add_argument("--smoke", action="store_true", help="Run smoke tests for canary")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
-    parser.add_argument("--coverage", "-c", action="store_true", help="Generate coverage report")
-    parser.add_argument("--report-only", action="store_true", help="Only generate report from existing results")
 
     args = parser.parse_args()
 
-    # Setup logging
-    log_level = "DEBUG" if args.verbose else "INFO"
-    logging.basicConfig(
-        level=getattr(logging, log_level),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    # Determine test type
+    if args.smoke:
+        test_type = "smoke"
+    elif args.unit:
+        test_type = "unit"
+    elif args.integration:
+        test_type = "integration"
+    elif args.stress:
+        test_type = "stress"
+    else:
+        test_type = "all"
 
     print("=" * 80)
-    print("🧪 COMPREHENSIVE TEST SUITE FOR NEWLY IMPLEMENTED FEATURES")
+    print("🧪 N1V1 COMPREHENSIVE TEST RUNNER")
     print("=" * 80)
-    print("Features Under Test:")
-    print("  • Circuit Breaker")
-    print("  • Monitoring & Observability")
-    print("  • Performance Optimization")
-    print("  • Cross-Feature Integration")
+    print(f"Test Type: {test_type.upper()}")
     print("=" * 80)
 
-    # Run tests
     runner = ComprehensiveTestRunner()
-    results = runner.run_all_tests()
+    results = runner.run_tests(test_type=test_type, smoke=args.smoke)
 
-    # Print summary
+    # Print results
     print("\n" + "=" * 80)
-    print("📊 TEST RESULTS SUMMARY")
+    print("📊 TEST RESULTS")
     print("=" * 80)
 
     summary = results.get("summary", {})
 
-    print(f"Total Features Tested: {summary.get('total_features', 0)}")
-    print(f"Passed Features: {summary.get('passed_features', 0)}")
-    print(f"Failed Features: {summary.get('failed_features', 0)}")
-    print(f"Coverage Compliance: {summary.get('coverage_compliance', 'unknown').replace('_', ' ').title()}")
+    print(f"Status: {'✅ PASSED' if results['status'] == 'passed' else '❌ FAILED'}")
+    print(f"Duration: {results.get('duration', 0):.2f} seconds")
+    print(f"Coverage: {summary.get('coverage_percent', 0):.1f}%")
+    print(f"Coverage Compliant: {'✅ YES' if summary.get('coverage_compliant', False) else '❌ NO'}")
 
-    # Performance targets
-    perf_targets = summary.get("performance_targets", {})
-    print("\n🏃 Performance Targets:")
-    for target, status in perf_targets.items():
-        print(f"  • {target.replace('_', ' ').title()}: {status}")
+    if summary.get("failed"):
+        print(f"\nErrors:\n{summary.get('errors', '')}")
 
-    # Critical issues
-    critical_issues = summary.get("critical_issues", [])
-    if critical_issues:
-        print("\n❌ Critical Issues:")
-        for issue in critical_issues:
-            print(f"  • {issue}")
-
-    # Recommendations
-    recommendations = results.get("recommendations", [])
-    if recommendations:
-        print("\n💡 Recommendations:")
-        for rec in recommendations:
-            print(f"  • {rec}")
-
-    # Final status
-    print("\n" + "=" * 80)
-    if summary.get("failed_features", 0) == 0:
-        print("✅ ALL TESTS PASSED - Features Ready for Production!")
-    else:
-        print("⚠️ SOME TESTS FAILED - Review and Fix Issues Before Production")
-    print("=" * 80)
-
-    # Report path
-    report_path = results.get("report_path")
-    if report_path:
-        print(f"\n📄 Detailed report saved to: {report_path}")
-
-    # Exit with appropriate code
-    exit_code = 0 if summary.get("failed_features", 0) == 0 else 1
+    # Exit with code
+    exit_code = 0 if results["status"] == "passed" and summary.get("coverage_compliant", False) else 1
     sys.exit(exit_code)
 
 

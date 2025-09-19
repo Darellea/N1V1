@@ -1,0 +1,158 @@
+[
+  {
+    "scenario": {
+      "name": "network_partition",
+      "description": "Network partition causing 60s API timeouts",
+      "duration_seconds": 5,
+      "expected_failure_rate": 100.0,
+      "sla_recovery_time_seconds": 10
+    },
+    "execution": {
+      "start_time": "2025-09-19T11:24:21.927649",
+      "end_time": "2025-09-19T11:24:26.981951",
+      "recovery_time_seconds": 0.14191818237304688,
+      "failure_injected": true,
+      "recovery_detected": true
+    },
+    "metrics": {
+      "orders_before_chaos": 0,
+      "orders_during_chaos": 250,
+      "orders_after_chaos": 0,
+      "failures_before_chaos": 0,
+      "failures_during_chaos": 35,
+      "failures_after_chaos": 0,
+      "chaos_failure_rate": 14.000000000000002,
+      "recovery_successful": true
+    },
+    "validation": {
+      "recovery_detected": true,
+      "recovery_time_seconds": 0.14191818237304688,
+      "sla_met": true,
+      "failure_rate_acceptable": true,
+      "watchdog_alerts_fired": true,
+      "recovery_events_logged": false
+    },
+    "watchdog": {
+      "alerts_count": 1,
+      "recovery_events_count": 0
+    },
+    "timestamp": "2025-09-19T11:24:27.127869"
+  },
+  {
+    "scenario": {
+      "name": "rate_limit_flood",
+      "description": "Exchange rate limiting with 429 responses",
+      "duration_seconds": 3,
+      "expected_failure_rate": 50.0,
+      "sla_recovery_time_seconds": 5
+    },
+    "execution": {
+      "start_time": "2025-09-19T11:24:57.155942",
+      "end_time": "2025-09-19T11:25:00.163823",
+      "recovery_time_seconds": 0.015990257263183594,
+      "failure_injected": true,
+      "recovery_detected": true
+    },
+    "metrics": {
+      "orders_before_chaos": 0,
+      "orders_during_chaos": 240,
+      "orders_after_chaos": 0,
+      "failures_before_chaos": 0,
+      "failures_during_chaos": 9,
+      "failures_after_chaos": 0,
+      "chaos_failure_rate": 3.75,
+      "recovery_successful": true
+    },
+    "validation": {
+      "recovery_detected": true,
+      "recovery_time_seconds": 0.015990257263183594,
+      "sla_met": true,
+      "failure_rate_acceptable": true,
+      "watchdog_alerts_fired": true,
+      "recovery_events_logged": false
+    },
+    "watchdog": {
+      "alerts_count": 1,
+      "recovery_events_count": 0
+    },
+    "timestamp": "2025-09-19T11:25:00.180812"
+  },
+  {
+    "scenario": {
+      "name": "exchange_downtime",
+      "description": "Complete exchange API downtime",
+      "duration_seconds": 5,
+      "expected_failure_rate": 100.0,
+      "sla_recovery_time_seconds": 8
+    },
+    "execution": {
+      "start_time": "2025-09-19T11:25:30.197705",
+      "end_time": "2025-09-19T11:25:35.184839",
+      "recovery_time_seconds": 0.015942096710205078,
+      "failure_injected": true,
+      "recovery_detected": true
+    },
+    "metrics": {
+      "orders_before_chaos": 0,
+      "orders_during_chaos": 266,
+      "orders_after_chaos": 0,
+      "failures_before_chaos": 0,
+      "failures_during_chaos": 38,
+      "failures_after_chaos": 0,
+      "chaos_failure_rate": 14.285714285714285,
+      "recovery_successful": true
+    },
+    "validation": {
+      "recovery_detected": true,
+      "recovery_time_seconds": 0.015942096710205078,
+      "sla_met": true,
+      "failure_rate_acceptable": true,
+      "watchdog_alerts_fired": true,
+      "recovery_events_logged": false
+    },
+    "watchdog": {
+      "alerts_count": 1,
+      "recovery_events_count": 0
+    },
+    "timestamp": "2025-09-19T11:25:35.201780"
+  },
+  {
+    "scenario": {
+      "name": "database_outage",
+      "description": "Database connection failures",
+      "duration_seconds": 4,
+      "expected_failure_rate": 80.0,
+      "sla_recovery_time_seconds": 6
+    },
+    "execution": {
+      "start_time": "2025-09-19T11:26:05.191359",
+      "end_time": "2025-09-19T11:26:09.203228",
+      "recovery_time_seconds": 0.016116619110107422,
+      "failure_injected": true,
+      "recovery_detected": true
+    },
+    "metrics": {
+      "orders_before_chaos": 0,
+      "orders_during_chaos": 243,
+      "orders_after_chaos": 0,
+      "failures_before_chaos": 0,
+      "failures_during_chaos": 24,
+      "failures_after_chaos": 0,
+      "chaos_failure_rate": 9.876543209876543,
+      "recovery_successful": true
+    },
+    "validation": {
+      "recovery_detected": true,
+      "recovery_time_seconds": 0.016116619110107422,
+      "sla_met": true,
+      "failure_rate_acceptable": true,
+      "watchdog_alerts_fired": true,
+      "recovery_events_logged": false
+    },
+    "watchdog": {
+      "alerts_count": 1,
+      "recovery_events_count": 0
+    },
+    "timestamp": "2025-09-19T11:26:09.220334"
+  }
+]

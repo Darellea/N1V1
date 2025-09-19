@@ -1,0 +1,10 @@
+{
+  "random_seed": 999,
+  "environment_snapshot": {
+    "python_version": "3.10.0",
+    "packages": {
+      "numpy": "1.22.0",
+      "pandas": "1.4.0"
+    }
+  }
+}

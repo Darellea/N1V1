@@ -409,6 +409,65 @@ class TestDiscordIntegration:
         # Verify shutdown completed
         assert discord_bot_integration_notifier._shutdown_complete is True
 
+    @pytest.mark.asyncio
+    async def test_webhook_integration_order_failure_alert(self, discord_webhook_notifier):
+        """Test order failure alert via webhook integration."""
+        failure_data = {
+            "correlation_id": "test_corr_123",
+            "strategy_id": "test_strategy",
+            "symbol": "BTC/USDT",
+            "exchange": "binance",
+            "error_message": "Network timeout",
+            "retry_count": 3,
+            "order_id": "order_123"
+        }
+
+        result = await discord_webhook_notifier.send_order_failure_alert(failure_data)
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_bot_integration_order_failure_alert(self, discord_bot_integration_notifier):
+        """Test order failure alert via bot integration."""
+        failure_data = {
+            "correlation_id": "test_corr_456",
+            "strategy_id": "test_strategy",
+            "symbol": "ETH/USDT",
+            "exchange": "coinbase",
+            "error_message": "Exchange error",
+            "retry_count": 2,
+            "order_id": "order_456"
+        }
+
+        result = await discord_bot_integration_notifier.send_order_failure_alert(failure_data)
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_webhook_integration_order_failure_alert_disabled(self, discord_webhook_config):
+        """Test order failure alert when alerts are disabled."""
+        discord_webhook_config["alerts"]["enabled"] = False
+        notifier = DiscordNotifier(discord_webhook_config)
+        try:
+            await notifier.initialize()
+            failure_data = {
+                "correlation_id": "test_corr_789",
+                "strategy_id": "test_strategy",
+                "symbol": "BTC/USDT",
+                "exchange": "binance",
+                "error_message": "Test error",
+                "retry_count": 1
+            }
+
+            result = await notifier.send_order_failure_alert(failure_data)
+
+            assert result is False
+        finally:
+            try:
+                await notifier.shutdown()
+            except Exception:
+                pass  # Ignore cleanup errors in tests
+
 
 # Module-level cleanup to prevent logging errors after pytest closes streams
 def teardown_module(module):

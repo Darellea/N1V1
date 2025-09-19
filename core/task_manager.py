@@ -1,18 +1,446 @@
 import asyncio
 import logging
-from typing import Set, Optional, Callable, Coroutine, Any
+import json
+import uuid
+from typing import Set, Optional, Callable, Coroutine, Any, Dict, List, Union
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+import time
 
 logger = logging.getLogger(__name__)
 
+@dataclass
+class TaskMessage:
+    """Represents a task message for distributed processing."""
+    task_id: str
+    task_type: str  # 'signal', 'backtest', 'optimization'
+    payload: Dict[str, Any]
+    priority: int = 1
+    correlation_id: Optional[str] = None
+    timestamp: float = None
+    retry_count: int = 0
+    max_retries: int = 3
+
+    def __post_init__(self):
+        if self.timestamp is None:
+            self.timestamp = time.time()
+        if self.correlation_id is None:
+            self.correlation_id = str(uuid.uuid4())
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            'task_id': self.task_id,
+            'task_type': self.task_type,
+            'payload': self.payload,
+            'priority': self.priority,
+            'correlation_id': self.correlation_id,
+            'timestamp': self.timestamp,
+            'retry_count': self.retry_count,
+            'max_retries': self.max_retries
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'TaskMessage':
+        """Create from dictionary."""
+        return cls(**data)
+
+
+class QueueAdapter(ABC):
+    """Abstract base class for queue adapters."""
+
+    @abstractmethod
+    async def connect(self) -> None:
+        """Establish connection to the queue."""
+        pass
+
+    @abstractmethod
+    async def disconnect(self) -> None:
+        """Close connection to the queue."""
+        pass
+
+    @abstractmethod
+    async def enqueue_task(self, task: TaskMessage) -> bool:
+        """Enqueue a task message."""
+        pass
+
+    @abstractmethod
+    async def dequeue_task(self) -> Optional[TaskMessage]:
+        """Dequeue a task message."""
+        pass
+
+    @abstractmethod
+    async def acknowledge_task(self, task_id: str) -> bool:
+        """Acknowledge successful processing of a task."""
+        pass
+
+    @abstractmethod
+    async def reject_task(self, task_id: str, requeue: bool = True) -> bool:
+        """Reject a task, optionally requeueing it."""
+        pass
+
+    @abstractmethod
+    async def get_queue_depth(self) -> int:
+        """Get the current queue depth."""
+        pass
+
+
+class InMemoryQueueAdapter(QueueAdapter):
+    """In-memory queue adapter for local development and testing."""
+
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.queue: List[TaskMessage] = []
+        self.processing: Set[str] = set()
+        self._connected = False
+
+    async def connect(self) -> None:
+        """Connect to in-memory queue."""
+        self._connected = True
+        logger.info("Connected to in-memory queue")
+
+    async def disconnect(self) -> None:
+        """Disconnect from in-memory queue."""
+        self._connected = False
+        logger.info("Disconnected from in-memory queue")
+
+    async def enqueue_task(self, task: TaskMessage) -> bool:
+        """Enqueue task to in-memory queue."""
+        if not self._connected:
+            return False
+
+        # Insert based on priority (higher priority first)
+        insert_pos = 0
+        for i, queued_task in enumerate(self.queue):
+            if task.priority > queued_task.priority:
+                break
+            insert_pos = i + 1
+
+        self.queue.insert(insert_pos, task)
+        logger.debug(f"Enqueued task {task.task_id} with priority {task.priority}")
+        return True
+
+    async def dequeue_task(self) -> Optional[TaskMessage]:
+        """Dequeue task from in-memory queue."""
+        if not self._connected or not self.queue:
+            return None
+
+        # Find first task not currently being processed
+        for i, task in enumerate(self.queue):
+            if task.task_id not in self.processing:
+                self.processing.add(task.task_id)
+                dequeued_task = self.queue.pop(i)
+                logger.debug(f"Dequeued task {dequeued_task.task_id}")
+                return dequeued_task
+
+        return None
+
+    async def acknowledge_task(self, task_id: str) -> bool:
+        """Acknowledge task completion."""
+        if task_id in self.processing:
+            self.processing.remove(task_id)
+            logger.debug(f"Acknowledged task {task_id}")
+            return True
+        return False
+
+    async def reject_task(self, task_id: str, requeue: bool = True) -> bool:
+        """Reject task, optionally requeue."""
+        if task_id in self.processing:
+            self.processing.remove(task_id)
+            if requeue:
+                # Find the task and requeue it (would need to be stored elsewhere)
+                logger.debug(f"Rejected and requeued task {task_id}")
+            else:
+                logger.debug(f"Rejected task {task_id}")
+            return True
+        return False
+
+    async def get_queue_depth(self) -> int:
+        """Get queue depth."""
+        return len(self.queue)
+
+
+class RabbitMQAdapter(QueueAdapter):
+    """RabbitMQ queue adapter for production use."""
+
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.connection = None
+        self.channel = None
+        self.queue_name = config.get('queue_name', 'n1v1_tasks')
+        self._connected = False
+
+    async def connect(self) -> None:
+        """Connect to RabbitMQ."""
+        try:
+            import aio_pika
+            from aio_pika import connect_robust
+
+            host = self.config.get('host', 'localhost')
+            port = self.config.get('port', 5672)
+            user = self.config.get('user', 'guest')
+            password = self.config.get('password', 'guest')
+            vhost = self.config.get('vhost', '/')
+
+            connection_string = f"amqp://{user}:{password}@{host}:{port}/{vhost}"
+
+            self.connection = await connect_robust(connection_string)
+            self.channel = await self.connection.channel()
+
+            # Declare queue
+            await self.channel.declare_queue(self.queue_name, durable=True)
+
+            self._connected = True
+            logger.info(f"Connected to RabbitMQ queue: {self.queue_name}")
+
+        except ImportError:
+            logger.error("aio-pika not installed. Install with: pip install aio-pika")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to connect to RabbitMQ: {e}")
+            raise
+
+    async def disconnect(self) -> None:
+        """Disconnect from RabbitMQ."""
+        if self.connection:
+            await self.connection.close()
+            self._connected = False
+            logger.info("Disconnected from RabbitMQ")
+
+    async def enqueue_task(self, task: TaskMessage) -> bool:
+        """Enqueue task to RabbitMQ."""
+        if not self._connected or not self.channel:
+            return False
+
+        try:
+            import aio_pika
+
+            message_body = json.dumps(task.to_dict()).encode()
+
+            message = aio_pika.Message(
+                body=message_body,
+                delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
+                headers={
+                    'task_type': task.task_type,
+                    'priority': str(task.priority),
+                    'correlation_id': task.correlation_id
+                }
+            )
+
+            await self.channel.default_exchange.publish(
+                message,
+                routing_key=self.queue_name
+            )
+
+            logger.debug(f"Enqueued task {task.task_id} to RabbitMQ")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to enqueue task to RabbitMQ: {e}")
+            return False
+
+    async def dequeue_task(self) -> Optional[TaskMessage]:
+        """Dequeue task from RabbitMQ."""
+        if not self._connected or not self.channel:
+            return None
+
+        try:
+            import aio_pika
+
+            # Get message from queue
+            message = await self.channel.get(self.queue_name, no_ack=False)
+
+            if message:
+                task_data = json.loads(message.body.decode())
+                task = TaskMessage.from_dict(task_data)
+
+                # Store delivery tag for acknowledgement
+                task._delivery_tag = message.delivery_tag
+
+                logger.debug(f"Dequeued task {task.task_id} from RabbitMQ")
+                return task
+
+        except Exception as e:
+            logger.error(f"Failed to dequeue task from RabbitMQ: {e}")
+
+        return None
+
+    async def acknowledge_task(self, task_id: str) -> bool:
+        """Acknowledge task in RabbitMQ."""
+        # In a full implementation, we'd need to track delivery tags
+        # For now, this is a placeholder
+        logger.debug(f"Acknowledged task {task_id} in RabbitMQ")
+        return True
+
+    async def reject_task(self, task_id: str, requeue: bool = True) -> bool:
+        """Reject task in RabbitMQ."""
+        # In a full implementation, we'd need to track delivery tags
+        logger.debug(f"Rejected task {task_id} in RabbitMQ (requeue={requeue})")
+        return True
+
+    async def get_queue_depth(self) -> int:
+        """Get RabbitMQ queue depth."""
+        if not self._connected or not self.channel:
+            return 0
+
+        try:
+            queue = await self.channel.get_queue(self.queue_name)
+            return queue.declaration_result.message_count
+        except Exception as e:
+            logger.error(f"Failed to get queue depth: {e}")
+            return 0
+
+
+class KafkaAdapter(QueueAdapter):
+    """Kafka queue adapter for high-throughput scenarios."""
+
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.producer = None
+        self.consumer = None
+        self.topic = config.get('topic', 'n1v1_tasks')
+        self._connected = False
+
+    async def connect(self) -> None:
+        """Connect to Kafka."""
+        try:
+            from aiokafka import AIOKafkaProducer, AIOKafkaConsumer
+
+            bootstrap_servers = self.config.get('bootstrap_servers', ['localhost:9092'])
+            group_id = self.config.get('group_id', 'n1v1_workers')
+
+            # Create producer
+            self.producer = AIOKafkaProducer(bootstrap_servers=bootstrap_servers)
+            await self.producer.start()
+
+            # Create consumer
+            self.consumer = AIOKafkaConsumer(
+                self.topic,
+                bootstrap_servers=bootstrap_servers,
+                group_id=group_id,
+                auto_offset_reset='earliest',
+                enable_auto_commit=False
+            )
+            await self.consumer.start()
+
+            self._connected = True
+            logger.info(f"Connected to Kafka topic: {self.topic}")
+
+        except ImportError:
+            logger.error("aiokafka not installed. Install with: pip install aiokafka")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to connect to Kafka: {e}")
+            raise
+
+    async def disconnect(self) -> None:
+        """Disconnect from Kafka."""
+        if self.producer:
+            await self.producer.stop()
+        if self.consumer:
+            await self.consumer.stop()
+        self._connected = False
+        logger.info("Disconnected from Kafka")
+
+    async def enqueue_task(self, task: TaskMessage) -> bool:
+        """Enqueue task to Kafka."""
+        if not self._connected or not self.producer:
+            return False
+
+        try:
+            message_value = json.dumps(task.to_dict()).encode()
+            message_key = task.task_id.encode()
+
+            await self.producer.send_and_wait(
+                self.topic,
+                value=message_value,
+                key=message_key,
+                headers=[
+                    ('task_type', task.task_type.encode()),
+                    ('priority', str(task.priority).encode()),
+                    ('correlation_id', task.correlation_id.encode())
+                ]
+            )
+
+            logger.debug(f"Enqueued task {task.task_id} to Kafka")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to enqueue task to Kafka: {e}")
+            return False
+
+    async def dequeue_task(self) -> Optional[TaskMessage]:
+        """Dequeue task from Kafka."""
+        if not self._connected or not self.consumer:
+            return None
+
+        try:
+            # Get message from consumer
+            message = await self.consumer.getone()
+
+            if message:
+                task_data = json.loads(message.value.decode())
+                task = TaskMessage.from_dict(task_data)
+
+                # Store message for acknowledgement
+                task._kafka_message = message
+
+                logger.debug(f"Dequeued task {task.task_id} from Kafka")
+                return task
+
+        except Exception as e:
+            logger.error(f"Failed to dequeue task from Kafka: {e}")
+
+        return None
+
+    async def acknowledge_task(self, task_id: str) -> bool:
+        """Acknowledge task in Kafka."""
+        # In a full implementation, we'd need to track messages
+        logger.debug(f"Acknowledged task {task_id} in Kafka")
+        return True
+
+    async def reject_task(self, task_id: str, requeue: bool = True) -> bool:
+        """Reject task in Kafka."""
+        logger.debug(f"Rejected task {task_id} in Kafka (requeue={requeue})")
+        return True
+
+    async def get_queue_depth(self) -> int:
+        """Get Kafka topic lag (approximation of queue depth)."""
+        # This is a simplified implementation
+        # In production, you'd query Kafka admin client for topic metadata
+        return 0
+
+
 class TaskManager:
     """
-    Centralized manager for asyncio tasks to ensure tracking, cancellation,
-    and error handling for all background tasks.
+    Centralized manager for asyncio tasks and distributed task queuing.
+    Handles both local task management and distributed task distribution.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+        self.config = config or {}
         self._tasks: Set[asyncio.Task] = set()
         self._shutdown = False
+
+        # Queue configuration
+        queue_config = self.config.get('queue', {})
+        queue_type = queue_config.get('type', 'in_memory')
+
+        # Initialize queue adapter
+        if queue_type == 'rabbitmq':
+            self.queue_adapter = RabbitMQAdapter(queue_config)
+        elif queue_type == 'kafka':
+            self.queue_adapter = KafkaAdapter(queue_config)
+        else:
+            self.queue_adapter = InMemoryQueueAdapter(queue_config)
+
+        # Worker management
+        self.workers: Dict[str, Dict[str, Any]] = {}  # Store worker info, not tasks
+        self.max_workers = queue_config.get('max_workers', 4)
+        self.worker_tasks: Set[asyncio.Task] = set()
+
+        # Task processing
+        self.task_handlers: Dict[str, Callable] = {}
 
     def create_task(self, coro: Coroutine[Any, Any, Any], *, name: Optional[str] = None) -> asyncio.Task:
         """
@@ -83,3 +511,200 @@ class TaskManager:
             Set of asyncio.Task instances.
         """
         return set(self._tasks)
+
+    # Distributed task management methods
+
+    async def initialize_queue(self) -> None:
+        """Initialize the queue adapter."""
+        await self.queue_adapter.connect()
+        logger.info("Queue adapter initialized")
+
+    async def shutdown_queue(self) -> None:
+        """Shutdown the queue adapter."""
+        await self.queue_adapter.disconnect()
+        logger.info("Queue adapter shutdown")
+
+    def register_task_handler(self, task_type: str, handler: Callable) -> None:
+        """Register a handler for a specific task type."""
+        self.task_handlers[task_type] = handler
+        logger.info(f"Registered handler for task type: {task_type}")
+
+    async def enqueue_task(self, task_type: str, payload: Dict[str, Any],
+                          priority: int = 1, correlation_id: Optional[str] = None) -> str:
+        """Enqueue a task for distributed processing."""
+        task_id = str(uuid.uuid4())
+        task = TaskMessage(
+            task_id=task_id,
+            task_type=task_type,
+            payload=payload,
+            priority=priority,
+            correlation_id=correlation_id
+        )
+
+        success = await self.queue_adapter.enqueue_task(task)
+        if success:
+            logger.info(f"Enqueued task {task_id} of type {task_type}")
+            return task_id
+        else:
+            logger.error(f"Failed to enqueue task {task_id}")
+            raise RuntimeError(f"Failed to enqueue task {task_id}")
+
+    async def start_workers(self, worker_count: Optional[int] = None) -> None:
+        """Start worker tasks to process queued tasks."""
+        count = worker_count or self.max_workers
+
+        for i in range(count):
+            worker_id = f"worker_{i}"
+            worker_task = self.create_task(
+                self._worker_loop(worker_id),
+                name=worker_id
+            )
+            self.workers[worker_id] = worker_task
+            self.worker_tasks.add(worker_task)
+
+        logger.info(f"Started {count} worker tasks")
+
+    async def stop_workers(self) -> None:
+        """Stop all worker tasks."""
+        for worker_id, worker_task in self.workers.items():
+            worker_task.cancel()
+            logger.debug(f"Cancelled worker {worker_id}")
+
+        # Wait for workers to finish
+        if self.worker_tasks:
+            await asyncio.gather(*self.worker_tasks, return_exceptions=True)
+
+        self.workers.clear()
+        self.worker_tasks.clear()
+        logger.info("All workers stopped")
+
+    async def _worker_loop(self, worker_id: str) -> None:
+        """Main worker loop for processing tasks."""
+        logger.info(f"Worker {worker_id} started")
+
+        while not self._shutdown:
+            try:
+                # Dequeue task
+                task = await self.queue_adapter.dequeue_task()
+
+                if task:
+                    logger.debug(f"Worker {worker_id} processing task {task.task_id}")
+
+                    # Process task
+                    success = await self._process_task(task)
+
+                    if success:
+                        await self.queue_adapter.acknowledge_task(task.task_id)
+                        logger.debug(f"Worker {worker_id} completed task {task.task_id}")
+                    else:
+                        # Handle failure and retry logic
+                        await self._handle_task_failure(task)
+                else:
+                    # No tasks available, wait before retrying
+                    await asyncio.sleep(1.0)
+
+            except Exception as e:
+                logger.error(f"Error in worker {worker_id}: {e}", exc_info=True)
+                await asyncio.sleep(5.0)  # Brief pause on error
+
+        logger.info(f"Worker {worker_id} stopped")
+
+    async def _process_task(self, task: TaskMessage) -> bool:
+        """Process a single task using the appropriate handler."""
+        try:
+            if task.task_type not in self.task_handlers:
+                logger.error(f"No handler registered for task type: {task.task_type}")
+                return False
+
+            handler = self.task_handlers[task.task_type]
+
+            # Add correlation_id to logging context
+            logger_extra = {'correlation_id': task.correlation_id}
+
+            # Execute handler
+            result = await handler(task.payload, **logger_extra)
+
+            logger.info(f"Task {task.task_id} processed successfully", extra=logger_extra)
+            return True
+
+        except Exception as e:
+            logger.error(f"Task {task.task_id} processing failed: {e}",
+                        extra={'correlation_id': task.correlation_id}, exc_info=True)
+            return False
+
+    async def _handle_task_failure(self, task: TaskMessage) -> None:
+        """Handle task failure with retry logic."""
+        task.retry_count += 1
+
+        if task.retry_count < task.max_retries:
+            # Requeue with exponential backoff
+            backoff_delay = 2 ** task.retry_count
+            logger.warning(f"Retrying task {task.task_id} in {backoff_delay}s "
+                          f"(attempt {task.retry_count}/{task.max_retries})")
+
+            await asyncio.sleep(backoff_delay)
+            await self.queue_adapter.reject_task(task.task_id, requeue=True)
+        else:
+            # Max retries exceeded, reject permanently
+            logger.error(f"Task {task.task_id} failed permanently after {task.max_retries} attempts")
+            await self.queue_adapter.reject_task(task.task_id, requeue=False)
+
+    async def get_queue_status(self) -> Dict[str, Any]:
+        """Get current queue status."""
+        depth = await self.queue_adapter.get_queue_depth()
+        return {
+            'queue_depth': depth,
+            'active_workers': len(self.workers),
+            'max_workers': self.max_workers,
+            'registered_handlers': list(self.task_handlers.keys())
+        }
+
+    # Convenience methods for common task types
+
+    async def enqueue_signal_task(self, signal_data: Dict[str, Any],
+                                 priority: int = 1) -> str:
+        """Enqueue a signal processing task."""
+        return await self.enqueue_task('signal', signal_data, priority)
+
+    async def enqueue_backtest_task(self, backtest_config: Dict[str, Any],
+                                   priority: int = 2) -> str:
+        """Enqueue a backtest task."""
+        return await self.enqueue_task('backtest', backtest_config, priority)
+
+    async def enqueue_optimization_task(self, optimization_config: Dict[str, Any],
+                                       priority: int = 3) -> str:
+        """Enqueue an optimization task."""
+        return await self.enqueue_task('optimization', optimization_config, priority)
+
+    async def register_worker(self, worker: Any) -> None:
+        """
+        Register a worker with the task manager for load balancing.
+
+        Args:
+            worker: Worker object with node_id, status, capacity, etc.
+        """
+        # Validate worker object
+        if not hasattr(worker, 'node_id'):
+            raise ValueError("Worker must have 'node_id' attribute")
+        if not hasattr(worker, 'status'):
+            raise ValueError("Worker must have 'status' attribute")
+        if not hasattr(worker, 'capacity'):
+            raise ValueError("Worker must have 'capacity' attribute")
+
+        node_id = worker.node_id
+
+        # Store worker information
+        self.workers[node_id] = {
+            'node_id': node_id,
+            'status': worker.status,
+            'capacity': worker.capacity,
+            'current_load': getattr(worker, 'current_load', 0),
+            'assigned_strategies': getattr(worker, 'assigned_strategies', []),
+            'last_heartbeat': time.time()
+        }
+
+        logger.info(f"Registered worker {node_id} with capacity {worker.capacity}")
+
+    async def start(self) -> bool:
+        """Async stub for starting the task manager."""
+        return True

@@ -1,440 +1,421 @@
 """
-Tests for features.py - Feature extraction pipeline.
+Unit tests for enhanced feature engineering functionality.
+
+Tests cover:
+- Cross-asset feature generation
+- Time-anchored feature generation
+- Drift detection capabilities
+- Feature validation and error handling
 """
 
 import pytest
-import pandas as pd
 import numpy as np
+import pandas as pd
 from unittest.mock import patch, MagicMock
-import tempfile
+import sys
 import os
 
+# Add the ml directory to the path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
 from ml.features import (
-    FeatureExtractor,
-    create_feature_pipeline,
-    extract_features_for_symbol,
-    batch_extract_features
+    generate_cross_asset_features,
+    generate_time_anchored_features,
+    detect_feature_drift,
+    validate_features,
+    FeatureDriftDetector,
+    CrossAssetFeatureGenerator,
+    TimeAnchoredFeatureGenerator
 )
 
 
-class TestFeatureExtractor:
-    """Test FeatureExtractor class."""
+class TestCrossAssetFeatureGenerator:
+    """Test cross-asset feature generation functionality."""
 
-    def test_init_default_config(self):
-        """Test initialization with default configuration."""
-        extractor = FeatureExtractor()
+    def setup_method(self):
+        """Set up test data."""
+        np.random.seed(42)
+        dates = pd.date_range('2023-01-01', periods=100, freq='D')
 
-        assert extractor.config is not None
-        assert 'indicator_params' in extractor.config
-        assert 'scaling' in extractor.config
-        assert 'lagged_features' in extractor.config
-        assert extractor.scaler is not None
-        assert extractor.feature_columns == []
-        assert not extractor.is_fitted
-
-    def test_init_custom_config(self):
-        """Test initialization with custom configuration."""
-        custom_config = {
-            'indicator_params': {'rsi_period': 21},
-            'scaling': {'method': 'minmax'}
-        }
-
-        extractor = FeatureExtractor(custom_config)
-
-        assert extractor.config['indicator_params']['rsi_period'] == 21
-        assert extractor.config['scaling']['method'] == 'minmax'
-
-    @patch('ml.features.validate_ohlcv_data')
-    def test_extract_features_insufficient_data(self, mock_validate):
-        """Test feature extraction with insufficient data."""
-        mock_validate.return_value = True
-
-        extractor = FeatureExtractor()
-        data = pd.DataFrame({
-            'open': [100.0] * 10,
-            'high': [105.0] * 10,
-            'low': [95.0] * 10,
-            'close': [102.0] * 10,
-            'volume': [1000] * 10
+        # Create mock multi-asset data
+        self.multi_asset_data = pd.DataFrame({
+            'timestamp': dates,
+            'BTC_close': 50000 + np.random.randn(100) * 1000,
+            'ETH_close': 3000 + np.random.randn(100) * 200,
+            'ADA_close': 1.5 + np.random.randn(100) * 0.1,
+            'BTC_volume': np.random.randint(1000, 10000, 100),
+            'ETH_volume': np.random.randint(500, 5000, 100),
+            'ADA_volume': np.random.randint(100, 1000, 100)
         })
 
-        result = extractor.extract_features(data)
-
-        assert result.empty
-
-    @patch('ml.features.validate_ohlcv_data')
-    @patch('ml.features.calculate_all_indicators')
-    @patch('ml.features.get_indicator_names')
-    def test_extract_features_success(self, mock_get_names, mock_calculate, mock_validate):
-        """Test successful feature extraction."""
-        mock_validate.return_value = True
-
-        # Mock indicator calculation
-        mock_data = pd.DataFrame({
-            'open': [100.0] * 100,
-            'high': [105.0] * 100,
-            'low': [95.0] * 100,
-            'close': [102.0] * 100,
-            'volume': [1000] * 100,
-            'rsi': [50.0] * 100,
-            'ema': [101.0] * 100
-        })
-        mock_calculate.return_value = mock_data
-        mock_get_names.return_value = ['rsi', 'ema']
-
-        extractor = FeatureExtractor()
-        result = extractor.extract_features(mock_data)
-
-        assert not result.empty
-        assert 'rsi' in extractor.feature_columns
-        assert 'ema' in extractor.feature_columns
-        mock_calculate.assert_called_once()
-
-    @patch('ml.features.validate_ohlcv_data')
-    def test_extract_features_invalid_data(self, mock_validate):
-        """Test feature extraction with invalid data."""
-        mock_validate.return_value = False
-
-        extractor = FeatureExtractor()
-        data = pd.DataFrame({'invalid': [1, 2, 3]})
-
-        with pytest.raises(ValueError, match="Data must contain OHLCV columns"):
-            extractor.extract_features(data)
-
-    def test_add_price_features(self):
-        """Test adding price-based features."""
-        extractor = FeatureExtractor()
-        data = pd.DataFrame({
-            'open': [100.0, 102.0, 104.0],
-            'high': [105.0, 107.0, 109.0],
-            'low': [95.0, 97.0, 99.0],
-            'close': [102.0, 104.0, 106.0],
-            'volume': [1000, 1100, 1200]
+        # Create single asset data for error testing
+        self.single_asset_data = pd.DataFrame({
+            'timestamp': dates,
+            'BTC_close': 50000 + np.random.randn(100) * 1000,
+            'BTC_volume': np.random.randint(1000, 10000, 100)
         })
 
-        result = extractor._add_price_features(data)
+    def test_generate_correlation_features(self):
+        """Test correlation-based feature generation."""
+        generator = CrossAssetFeatureGenerator()
 
-        # Check that price features were added
-        expected_features = ['returns', 'log_returns', 'price_change',
-                           'high_low_ratio', 'close_open_ratio', 'body_size',
-                           'upper_shadow', 'lower_shadow']
+        result = generator.generate_correlation_features(self.multi_asset_data)
 
-        for feature in expected_features:
-            assert feature in result.columns
-            assert feature in extractor.feature_columns
+        # Check that correlation features are generated
+        assert 'BTC_ETH_correlation_7d' in result.columns
+        assert 'BTC_ADA_correlation_7d' in result.columns
+        assert 'ETH_ADA_correlation_7d' in result.columns
 
-    def test_add_volume_features(self):
-        """Test adding volume-based features."""
-        extractor = FeatureExtractor()
-        data = pd.DataFrame({
-            'open': [100.0] * 50,
-            'high': [105.0] * 50,
-            'low': [95.0] * 50,
-            'close': [102.0] * 50,
-            'volume': list(range(1000, 1050))
+        # Check correlation values are reasonable (-1 to 1)
+        corr_cols = [col for col in result.columns if 'correlation' in col]
+        for col in corr_cols:
+            assert result[col].min() >= -1.1  # Allow small tolerance
+            assert result[col].max() <= 1.1
+
+    def test_generate_spread_features(self):
+        """Test spread-based feature generation."""
+        generator = CrossAssetFeatureGenerator()
+
+        result = generator.generate_spread_features(self.multi_asset_data)
+
+        # Check that spread features are generated
+        assert 'BTC_ETH_spread' in result.columns
+        assert 'BTC_ADA_spread' in result.columns
+        assert 'ETH_ADA_spread' in result.columns
+
+        # Check spread values are calculated correctly
+        expected_spread = self.multi_asset_data['BTC_close'] - self.multi_asset_data['ETH_close']
+        pd.testing.assert_series_equal(result['BTC_ETH_spread'], expected_spread)
+
+    def test_generate_ratio_features(self):
+        """Test ratio-based feature generation."""
+        generator = CrossAssetFeatureGenerator()
+
+        result = generator.generate_ratio_features(self.multi_asset_data)
+
+        # Check that ratio features are generated
+        assert 'BTC_ETH_ratio' in result.columns
+        assert 'BTC_ADA_ratio' in result.columns
+        assert 'ETH_ADA_ratio' in result.columns
+
+        # Check ratio values are calculated correctly
+        expected_ratio = self.multi_asset_data['BTC_close'] / self.multi_asset_data['ETH_close']
+        pd.testing.assert_series_equal(result['BTC_ETH_ratio'], expected_ratio)
+
+    def test_insufficient_assets_error(self):
+        """Test error handling for insufficient assets."""
+        generator = CrossAssetFeatureGenerator()
+
+        with pytest.raises(ValueError, match="At least 2 assets required"):
+            generator.generate_correlation_features(self.single_asset_data)
+
+    def test_missing_price_columns_error(self):
+        """Test error handling for missing price columns."""
+        generator = CrossAssetFeatureGenerator()
+
+        bad_data = pd.DataFrame({
+            'timestamp': pd.date_range('2023-01-01', periods=10),
+            'BTC_volume': np.random.randint(1000, 10000, 10)
         })
 
-        result = extractor._add_volume_features(data)
+        with pytest.raises(ValueError, match="No price columns found"):
+            generator.generate_spread_features(bad_data)
 
-        # Check that volume features were added
-        expected_features = ['volume_sma_20', 'volume_ratio', 'volume_change', 'volume_ma_ratio']
 
-        for feature in expected_features:
-            assert feature in result.columns
-            assert feature in extractor.feature_columns
+class TestTimeAnchoredFeatureGenerator:
+    """Test time-anchored feature generation functionality."""
 
-    def test_add_lagged_features(self):
-        """Test adding lagged features."""
-        extractor = FeatureExtractor()
-        data = pd.DataFrame({
-            'open': [100.0] * 50,
-            'high': [105.0] * 50,
-            'low': [95.0] * 50,
-            'close': list(range(100, 150)),
-            'volume': [1000] * 50,
-            'rsi': list(range(30, 80)),
-            'ema': list(range(95, 145))
+    def setup_method(self):
+        """Set up test data."""
+        np.random.seed(42)
+        dates = pd.date_range('2023-01-01', periods=200, freq='D')
+
+        self.price_data = pd.DataFrame({
+            'timestamp': dates,
+            'close': 50000 + np.cumsum(np.random.randn(200) * 100),
+            'volume': np.random.randint(1000, 10000, 200)
         })
 
-        result = extractor._add_lagged_features(data)
+    def test_generate_rolling_volatility(self):
+        """Test rolling volatility feature generation."""
+        generator = TimeAnchoredFeatureGenerator()
 
-        # Check that lagged features were added
-        expected_lagged = ['close_lag_1', 'rsi_lag_1', 'ema_lag_1']
+        result = generator.generate_rolling_volatility(self.price_data)
 
-        for feature in expected_lagged:
-            assert feature in result.columns
-            assert feature in extractor.feature_columns
+        # Check that volatility features are generated
+        assert 'volatility_7d' in result.columns
+        assert 'volatility_14d' in result.columns
+        assert 'volatility_30d' in result.columns
 
-    def test_clean_features_drop_missing(self):
-        """Test cleaning features with drop missing values."""
-        extractor = FeatureExtractor()
-        extractor.feature_columns = ['feature1', 'feature2']
+        # Check that volatility values are positive
+        vol_cols = [col for col in result.columns if 'volatility' in col]
+        for col in vol_cols:
+            assert (result[col].dropna() >= 0).all()
 
-        data = pd.DataFrame({
-            'feature1': [1.0, 2.0, None, 4.0],
-            'feature2': [5.0, 6.0, 7.0, 8.0],
-            'other_col': ['a', 'b', 'c', 'd']
+    def test_generate_momentum_features(self):
+        """Test momentum feature generation."""
+        generator = TimeAnchoredFeatureGenerator()
+
+        result = generator.generate_momentum_features(self.price_data)
+
+        # Check that momentum features are generated
+        assert 'momentum_7d' in result.columns
+        assert 'momentum_14d' in result.columns
+        assert 'momentum_30d' in result.columns
+
+        # Check momentum calculation (should be percentage change)
+        expected_momentum = self.price_data['close'].pct_change(7)
+        pd.testing.assert_series_equal(result['momentum_7d'], expected_momentum)
+
+    def test_generate_volume_profile_features(self):
+        """Test volume profile feature generation."""
+        generator = TimeAnchoredFeatureGenerator()
+
+        result = generator.generate_volume_profile_features(self.price_data)
+
+        # Check that volume features are generated
+        assert 'volume_ma_7d' in result.columns
+        assert 'volume_std_7d' in result.columns
+        assert 'volume_zscore_7d' in result.columns
+
+        # Check volume MA calculation
+        expected_ma = self.price_data['volume'].rolling(7).mean()
+        pd.testing.assert_series_equal(result['volume_ma_7d'], expected_ma)
+
+    def test_insufficient_data_error(self):
+        """Test error handling for insufficient data."""
+        generator = TimeAnchoredFeatureGenerator()
+
+        small_data = self.price_data.head(5)
+
+        with pytest.raises(ValueError, match="Insufficient data"):
+            generator.generate_rolling_volatility(small_data)
+
+
+class TestFeatureDriftDetector:
+    """Test feature drift detection functionality."""
+
+    def setup_method(self):
+        """Set up test data."""
+        np.random.seed(42)
+
+        # Create reference data
+        self.reference_data = pd.DataFrame({
+            'feature1': np.random.normal(0, 1, 1000),
+            'feature2': np.random.normal(5, 2, 1000),
+            'feature3': np.random.normal(-2, 0.5, 1000)
         })
 
-        result = extractor._clean_features(data)
-
-        # Should drop row with NaN
-        assert len(result) == 3
-        assert not result.isnull().any().any()
-
-    def test_clean_features_fill_missing(self):
-        """Test cleaning features with fill missing values."""
-        config = {
-            'validation': {
-                'handle_missing': 'fill',
-                'fill_method': 'ffill'
-            }
-        }
-        extractor = FeatureExtractor(config)
-        extractor.feature_columns = ['feature1']
-
-        data = pd.DataFrame({
-            'feature1': [1.0, None, 3.0],
-            'other_col': ['a', 'b', 'c']
+        # Create current data with slight drift
+        self.current_data_drift = pd.DataFrame({
+            'feature1': np.random.normal(0.2, 1.1, 1000),  # Slight mean and std shift
+            'feature2': np.random.normal(5.5, 2.2, 1000),  # Slight drift
+            'feature3': np.random.normal(-2, 0.5, 1000)    # No drift
         })
 
-        result = extractor._clean_features(data)
-
-        # Should fill NaN with forward fill
-        assert len(result) == 3
-        assert not result['feature1'].isnull().any()
-
-    def test_scale_features_standard_scaler(self):
-        """Test scaling features with standard scaler."""
-        extractor = FeatureExtractor()
-        extractor.feature_columns = ['feature1', 'feature2']
-
-        data = pd.DataFrame({
-            'feature1': [1.0, 2.0, 3.0, 4.0, 5.0],
-            'feature2': [10.0, 20.0, 30.0, 40.0, 50.0],
-            'other_col': ['a', 'b', 'c', 'd', 'e']
+        # Create current data with no drift
+        self.current_data_no_drift = pd.DataFrame({
+            'feature1': np.random.normal(0, 1, 1000),
+            'feature2': np.random.normal(5, 2, 1000),
+            'feature3': np.random.normal(-2, 0.5, 1000)
         })
 
-        result = extractor._scale_features(data, fit_scaler=True)
+    def test_kolmogorov_smirnov_drift_detection(self):
+        """Test KS test-based drift detection."""
+        detector = FeatureDriftDetector(method='ks')
 
-        # Check that features are scaled
-        assert 'feature1' in result.columns
-        assert 'feature2' in result.columns
-        assert 'other_col' in result.columns
-        assert extractor.is_fitted
+        # Test with drift
+        drift_scores = detector.detect_drift(self.reference_data, self.current_data_drift)
+        assert len(drift_scores) == 3
+        assert drift_scores['feature1'] > 0.05  # Should detect drift
+        assert drift_scores['feature2'] > 0.05  # Should detect drift
+        assert drift_scores['feature3'] < 0.05  # Should not detect significant drift
 
-        # Check that scaled features have mean close to 0 and std close to 1
-        assert abs(result['feature1'].mean()) < 0.1
-        # Use population standard deviation (ddof=0) to match StandardScaler's behavior
-        assert abs(np.std(result['feature1'], ddof=0) - 1.0) < 0.1
+        # Test without drift
+        no_drift_scores = detector.detect_drift(self.reference_data, self.current_data_no_drift)
+        assert all(score < 0.05 for score in no_drift_scores.values())
 
-    def test_scale_features_no_scaler(self):
-        """Test scaling features with no scaler configured."""
-        config = {'scaling': {'method': 'none'}}
-        extractor = FeatureExtractor(config)
+    def test_population_stability_index_drift_detection(self):
+        """Test PSI-based drift detection."""
+        detector = FeatureDriftDetector(method='psi')
 
-        data = pd.DataFrame({
-            'feature1': [1.0, 2.0, 3.0],
-            'other_col': ['a', 'b', 'c']
+        # Test with drift
+        drift_scores = detector.detect_drift(self.reference_data, self.current_data_drift)
+        assert len(drift_scores) == 3
+        assert drift_scores['feature1'] > 0.1  # Should detect drift
+        assert drift_scores['feature2'] > 0.1  # Should detect drift
+
+    def test_invalid_method_error(self):
+        """Test error handling for invalid drift detection method."""
+        with pytest.raises(ValueError, match="Unsupported drift detection method"):
+            FeatureDriftDetector(method='invalid')
+
+    def test_missing_features_error(self):
+        """Test error handling for missing features."""
+        detector = FeatureDriftDetector()
+
+        bad_current_data = pd.DataFrame({
+            'feature1': np.random.normal(0, 1, 100),
+            'feature4': np.random.normal(0, 1, 100)  # New feature not in reference
         })
 
-        result = extractor._scale_features(data)
+        with pytest.raises(ValueError, match="Features in current data do not match reference"):
+            detector.detect_drift(self.reference_data, bad_current_data)
 
-        # Should return original data unchanged
-        pd.testing.assert_frame_equal(result, data)
 
-    def test_get_feature_importance_template(self):
-        """Test getting feature importance template."""
-        extractor = FeatureExtractor()
-        extractor.feature_columns = ['feature1', 'feature2', 'feature3']
+class TestFeatureValidation:
+    """Test feature validation functionality."""
 
-        template = extractor.get_feature_importance_template()
-
-        assert isinstance(template, dict)
-        assert len(template) == 3
-        assert all(value == 0.0 for value in template.values())
-
-    def test_get_feature_stats(self):
-        """Test getting feature statistics."""
-        extractor = FeatureExtractor()
-        extractor.feature_columns = ['feature1', 'feature2']
-
-        data = pd.DataFrame({
-            'feature1': [1.0, 2.0, 3.0, 4.0, 5.0],
-            'feature2': [10.0, 20.0, 30.0, 40.0, 50.0],
-            'other_col': ['a', 'b', 'c', 'd', 'e']
+    def setup_method(self):
+        """Set up test data."""
+        np.random.seed(42)
+        self.valid_data = pd.DataFrame({
+            'feature1': np.random.normal(0, 1, 100),
+            'feature2': np.random.normal(5, 2, 100),
+            'feature3': np.random.normal(-2, 0.5, 100),
+            'target': np.random.choice([0, 1], 100)
         })
 
-        stats = extractor.get_feature_stats(data)
+    def test_validate_feature_ranges(self):
+        """Test feature range validation."""
+        # Test valid data
+        is_valid, issues = validate_features(self.valid_data, check_ranges=True)
+        assert is_valid
+        assert len(issues) == 0
 
-        assert 'feature1' in stats
-        assert 'feature2' in stats
+        # Test data with extreme values
+        extreme_data = self.valid_data.copy()
+        extreme_data.loc[0, 'feature1'] = 1000  # Extreme value
 
-        feature1_stats = stats['feature1']
-        assert 'mean' in feature1_stats
-        assert 'std' in feature1_stats
-        assert 'min' in feature1_stats
-        assert 'max' in feature1_stats
-        assert 'count' in feature1_stats
+        is_valid, issues = validate_features(extreme_data, check_ranges=True)
+        assert not is_valid
+        assert len(issues) > 0
+        assert 'extreme values' in str(issues[0]).lower()
 
-    def test_save_and_load_scaler(self):
-        """Test saving and loading scaler."""
-        extractor = FeatureExtractor()
-        extractor.feature_columns = ['feature1']
+    def test_validate_feature_correlations(self):
+        """Test feature correlation validation."""
+        # Create highly correlated features
+        correlated_data = self.valid_data.copy()
+        correlated_data['feature4'] = correlated_data['feature1'] + 0.01 * np.random.normal(0, 1, 100)
 
-        data = pd.DataFrame({
-            'feature1': [1.0, 2.0, 3.0, 4.0, 5.0]
+        is_valid, issues = validate_features(correlated_data, check_correlations=True, max_correlation=0.95)
+        assert not is_valid
+        assert len(issues) > 0
+        assert 'correlation' in str(issues[0]).lower()
+
+    def test_validate_missing_values(self):
+        """Test missing value validation."""
+        # Add missing values
+        missing_data = self.valid_data.copy()
+        missing_data.loc[0:10, 'feature1'] = np.nan
+
+        is_valid, issues = validate_features(missing_data, check_missing=True, max_missing_ratio=0.05)
+        assert not is_valid
+        assert len(issues) > 0
+        assert 'missing' in str(issues[0]).lower()
+
+    def test_validate_feature_importance_stability(self):
+        """Test feature importance stability validation."""
+        # This would require trained models, so we'll mock it
+        with patch('ml.features.train_test_split') as mock_split:
+            mock_split.return_value = (self.valid_data.drop('target', axis=1),
+                                     self.valid_data.drop('target', axis=1),
+                                     self.valid_data['target'],
+                                     self.valid_data['target'])
+
+            with patch('ml.features.LGBMClassifier') as mock_lgb:
+                mock_model = MagicMock()
+                mock_model.feature_importances_ = np.array([0.3, 0.3, 0.4])
+                mock_model.fit.return_value = None
+                mock_model.predict.return_value = self.valid_data['target']
+                mock_lgb.return_value = mock_model
+
+                is_valid, issues = validate_features(self.valid_data, check_importance_stability=True)
+                # This test would need more complex mocking, so we'll just check it doesn't crash
+                assert isinstance(is_valid, bool)
+                assert isinstance(issues, list)
+
+
+class TestIntegrationFeatures:
+    """Integration tests for feature engineering pipeline."""
+
+    def setup_method(self):
+        """Set up integration test data."""
+        np.random.seed(42)
+        dates = pd.date_range('2023-01-01', periods=500, freq='D')
+
+        # Create comprehensive test data
+        self.test_data = pd.DataFrame({
+            'timestamp': dates,
+            'BTC_close': 50000 + np.cumsum(np.random.randn(500) * 100),
+            'ETH_close': 3000 + np.cumsum(np.random.randn(500) * 50),
+            'ADA_close': 1.5 + np.cumsum(np.random.randn(500) * 0.05),
+            'BTC_volume': np.random.randint(1000, 10000, 500),
+            'ETH_volume': np.random.randint(500, 5000, 500),
+            'ADA_volume': np.random.randint(100, 1000, 500)
         })
 
-        # Fit scaler first
-        extractor._scale_features(data, fit_scaler=True)
+    def test_full_feature_pipeline(self):
+        """Test the complete feature engineering pipeline."""
+        # Generate cross-asset features
+        cross_asset_features = generate_cross_asset_features(self.test_data)
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            scaler_path = os.path.join(temp_dir, 'scaler.pkl')
+        # Generate time-anchored features
+        time_features = generate_time_anchored_features(self.test_data)
 
-            # Save scaler
-            extractor.save_scaler(scaler_path)
-            assert os.path.exists(scaler_path)
+        # Combine features
+        all_features = pd.concat([cross_asset_features, time_features], axis=1)
 
-            # Create new extractor and load scaler
-            new_extractor = FeatureExtractor()
-            new_extractor.load_scaler(scaler_path)
+        # Validate the combined feature set
+        is_valid, issues = validate_features(all_features, check_missing=True, check_ranges=True)
 
-            assert new_extractor.is_fitted
-            assert new_extractor.scaler is not None
+        assert is_valid or len(issues) == 0, f"Feature validation failed: {issues}"
 
+        # Check that we have a reasonable number of features
+        assert len(all_features.columns) > 10
 
-class TestModuleFunctions:
-    """Test module-level functions."""
+        # Check for expected feature types
+        correlation_features = [col for col in all_features.columns if 'correlation' in col]
+        spread_features = [col for col in all_features.columns if 'spread' in col]
+        volatility_features = [col for col in all_features.columns if 'volatility' in col]
 
-    def test_create_feature_pipeline(self):
-        """Test creating feature pipeline."""
-        config = {'scaling': {'method': 'minmax'}}
-        extractor = create_feature_pipeline(config)
+        assert len(correlation_features) > 0
+        assert len(spread_features) > 0
+        assert len(volatility_features) > 0
 
-        assert isinstance(extractor, FeatureExtractor)
-        assert extractor.config['scaling']['method'] == 'minmax'
+    def test_drift_detection_pipeline(self):
+        """Test the drift detection pipeline."""
+        # Generate features for reference period
+        reference_period = self.test_data.head(300)
+        reference_features = generate_cross_asset_features(reference_period)
 
-    @patch('ml.features.FeatureExtractor')
-    def test_extract_features_for_symbol(self, mock_extractor_class):
-        """Test extracting features for a symbol."""
-        mock_extractor = MagicMock()
-        mock_extractor.extract_features.return_value = pd.DataFrame({'feature1': [1, 2, 3]})
-        mock_extractor_class.return_value = mock_extractor
+        # Generate features for current period
+        current_period = self.test_data.tail(200)
+        current_features = generate_cross_asset_features(current_period)
 
-        data = pd.DataFrame({
-            'open': [100.0, 102.0],
-            'high': [105.0, 107.0],
-            'low': [95.0, 97.0],
-            'close': [102.0, 104.0],
-            'volume': [1000, 1100]
-        })
+        # Detect drift
+        drift_detected, drift_scores = detect_feature_drift(
+            reference_features, current_features, method='ks'
+        )
 
-        symbol, features = extract_features_for_symbol(data, 'BTC/USDT')
+        # Should not detect significant drift in this synthetic data
+        assert isinstance(drift_detected, bool)
+        assert isinstance(drift_scores, dict)
+        assert len(drift_scores) > 0
 
-        assert symbol == 'BTC/USDT'
-        assert not features.empty
-        mock_extractor.extract_features.assert_called_once_with(data)
+    def test_error_handling_integration(self):
+        """Test error handling in integrated pipeline."""
+        # Test with insufficient data
+        small_data = self.test_data.head(10)
 
-    @patch('ml.features.FeatureExtractor')
-    def test_batch_extract_features(self, mock_extractor_class):
-        """Test batch feature extraction."""
-        mock_extractor = MagicMock()
-        mock_extractor.extract_features.return_value = pd.DataFrame({'feature1': [1, 2]})
-        mock_extractor_class.return_value = mock_extractor
+        with pytest.raises(ValueError):
+            generate_time_anchored_features(small_data)
 
-        data_dict = {
-            'BTC/USDT': pd.DataFrame({
-                'open': [100.0, 102.0],
-                'high': [105.0, 107.0],
-                'low': [95.0, 97.0],
-                'close': [102.0, 104.0],
-                'volume': [1000, 1100]
-            }),
-            'ETH/USDT': pd.DataFrame({
-                'open': [200.0, 202.0],
-                'high': [205.0, 207.0],
-                'low': [195.0, 197.0],
-                'close': [202.0, 204.0],
-                'volume': [2000, 2100]
-            })
-        }
+        # Test with missing columns
+        bad_data = pd.DataFrame({'timestamp': pd.date_range('2023-01-01', periods=100)})
 
-        results = batch_extract_features(data_dict)
-
-        assert 'BTC/USDT' in results
-        assert 'ETH/USDT' in results
-        assert len(mock_extractor.extract_features.call_args_list) == 2
-
-    @patch('ml.features.FeatureExtractor')
-    def test_batch_extract_features_with_error(self, mock_extractor_class):
-        """Test batch feature extraction with error handling."""
-        mock_extractor = MagicMock()
-        mock_extractor.extract_features.side_effect = [pd.DataFrame({'feature1': [1]}), Exception("Test error")]
-        mock_extractor_class.return_value = mock_extractor
-
-        data_dict = {
-            'BTC/USDT': pd.DataFrame({'open': [100.0], 'high': [105.0], 'low': [95.0], 'close': [102.0], 'volume': [1000]}),
-            'ETH/USDT': pd.DataFrame({'open': [200.0], 'high': [205.0], 'low': [195.0], 'close': [202.0], 'volume': [2000]})
-        }
-
-        results = batch_extract_features(data_dict)
-
-        # Should only include successful extractions
-        assert 'BTC/USDT' in results
-        assert 'ETH/USDT' not in results
-
-
-class TestFeatureExtractorEdgeCases:
-    """Test edge cases for FeatureExtractor."""
-
-    def test_extract_features_with_empty_data(self):
-        """Test feature extraction with empty data."""
-        extractor = FeatureExtractor()
-        data = pd.DataFrame()
-
-        result = extractor.extract_features(data)
-
-        assert result.empty
-
-    def test_clean_features_no_feature_columns(self):
-        """Test cleaning features when no feature columns remain."""
-        extractor = FeatureExtractor()
-        extractor.feature_columns = ['nonexistent_feature']
-
-        data = pd.DataFrame({
-            'other_col': [1, 2, 3]
-        })
-
-        result = extractor._clean_features(data)
-
-        assert result.empty
-
-    def test_scale_features_no_feature_columns(self):
-        """Test scaling features when no feature columns available."""
-        extractor = FeatureExtractor()
-        extractor.feature_columns = []
-
-        data = pd.DataFrame({
-            'other_col': [1, 2, 3]
-        })
-
-        result = extractor._scale_features(data)
-
-        pd.testing.assert_frame_equal(result, data)
-
-    def test_get_feature_stats_empty_data(self):
-        """Test getting feature stats with empty data."""
-        extractor = FeatureExtractor()
-        extractor.feature_columns = ['feature1']
-
-        data = pd.DataFrame({
-            'feature1': [np.nan, np.nan, np.nan]
-        })
-
-        stats = extractor.get_feature_stats(data)
-
-        assert 'feature1' not in stats or stats['feature1']['count'] == 0
+        with pytest.raises(ValueError):
+            generate_cross_asset_features(bad_data)
 
 
 if __name__ == '__main__':

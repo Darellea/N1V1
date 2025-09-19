@@ -222,5 +222,453 @@
       "amount": 1000
     },
     "timestamp": "2025-09-18T10:58:57.863021"
+  },
+  {
+    "symbol": "TEST",
+    "anomaly_result": {
+      "is_anomaly": "True",
+      "anomaly_type": "price_gap",
+      "severity": "critical",
+      "confidence_score": 1.0,
+      "z_score": null,
+      "threshold": 5.0,
+      "context": {
+        "prev_close": 100.0,
+        "current_close": 120.0,
+        "gap_pct": 20.0
+      },
+      "timestamp": "2025-09-18T16:53:53.426354"
+    },
+    "market_data": [
+      {
+        "close": 100.0,
+        "volume": 1000
+      },
+      {
+        "close": 120.0,
+        "volume": 1000
+      }
+    ],
+    "action_taken": "skip_trade",
+    "original_signal": {
+      "symbol": "TEST",
+      "amount": 1000
+    },
+    "timestamp": "2025-09-18T16:53:53.454477"
+  },
+  {
+    "symbol": "TEST",
+    "anomaly_result": {
+      "is_anomaly": "True",
+      "anomaly_type": "price_gap",
+      "severity": "critical",
+      "confidence_score": 1.0,
+      "z_score": null,
+      "threshold": 5.0,
+      "context": {
+        "prev_close": 100.0,
+        "current_close": 120.0,
+        "gap_pct": 20.0
+      },
+      "timestamp": "2025-09-19T14:56:24.573568"
+    },
+    "market_data": [
+      {
+        "close": 100.0,
+        "volume": 1000
+      },
+      {
+        "close": 120.0,
+        "volume": 1000
+      }
+    ],
+    "action_taken": "skip_trade",
+    "original_signal": {
+      "symbol": "TEST",
+      "amount": 1000
+    },
+    "timestamp": "2025-09-19T14:56:24.588558"
+  },
+  {
+    "symbol": "TEST",
+    "anomaly_result": {
+      "is_anomaly": "True",
+      "anomaly_type": "price_gap",
+      "severity": "critical",
+      "confidence_score": 1.0,
+      "z_score": null,
+      "threshold": 5.0,
+      "context": {
+        "prev_close": 100.0,
+        "current_close": 120.0,
+        "gap_pct": 20.0
+      },
+      "timestamp": "2025-09-19T15:01:09.714130"
+    },
+    "market_data": [
+      {
+        "close": 100.0,
+        "volume": 1000
+      },
+      {
+        "close": 120.0,
+        "volume": 1000
+      }
+    ],
+    "action_taken": "skip_trade",
+    "original_signal": {
+      "symbol": "TEST",
+      "amount": 1000
+    },
+    "timestamp": "2025-09-19T15:01:09.724125"
+  },
+  {
+    "symbol": "TEST",
+    "anomaly_result": {
+      "is_anomaly": true,
+      "anomaly_type": "volume_zscore",
+      "severity": "high",
+      "confidence_score": 0.9596051819697297,
+      "z_score": 14.394077729545945,
+      "threshold": 3.0,
+      "context": {
+        "z_score": 14.394077729545945,
+        "current_volume": 1500.0,
+        "mean_volume": 1095.0,
+        "std_volume": 28.136571693556885
+      },
+      "timestamp": "2025-09-19T15:01:09.760104"
+    },
+    "market_data": [
+      {
+        "close": 102.5,
+        "volume": 1125
+      },
+      {
+        "close": 102.6,
+        "volume": 1130
+      },
+      {
+        "close": 102.7,
+        "volume": 1135
+      },
+      {
+        "close": 102.8,
+        "volume": 1140
+      },
+      {
+        "close": 102.9,
+        "volume": 1500
+      }
+    ],
+    "action_taken": "scale_down",
+    "original_signal": {
+      "symbol": "TEST",
+      "amount": 1000
+    },
+    "timestamp": "2025-09-19T15:01:09.763103"
+  },
+  {
+    "symbol": "TEST",
+    "anomaly_result": {
+      "is_anomaly": "True",
+      "anomaly_type": "price_gap",
+      "severity": "critical",
+      "confidence_score": 1.0,
+      "z_score": null,
+      "threshold": 5.0,
+      "context": {
+        "prev_close": 100.0,
+        "current_close": 120.0,
+        "gap_pct": 20.0
+      },
+      "timestamp": "2025-09-19T15:09:27.426659"
+    },
+    "market_data": [
+      {
+        "close": 100.0,
+        "volume": 1000
+      },
+      {
+        "close": 120.0,
+        "volume": 1000
+      }
+    ],
+    "action_taken": "skip_trade",
+    "original_signal": {
+      "symbol": "TEST",
+      "amount": 1000
+    },
+    "timestamp": "2025-09-19T15:09:27.428658"
+  },
+  {
+    "symbol": "TEST",
+    "anomaly_result": {
+      "is_anomaly": true,
+      "anomaly_type": "volume_zscore",
+      "severity": "high",
+      "confidence_score": 0.9596051819697297,
+      "z_score": 14.394077729545945,
+      "threshold": 3.0,
+      "context": {
+        "z_score": 14.394077729545945,
+        "current_volume": 1500.0,
+        "mean_volume": 1095.0,
+        "std_volume": 28.136571693556885
+      },
+      "timestamp": "2025-09-19T15:09:27.452644"
+    },
+    "market_data": [
+      {
+        "close": 102.5,
+        "volume": 1125
+      },
+      {
+        "close": 102.6,
+        "volume": 1130
+      },
+      {
+        "close": 102.7,
+        "volume": 1135
+      },
+      {
+        "close": 102.8,
+        "volume": 1140
+      },
+      {
+        "close": 102.9,
+        "volume": 1500
+      }
+    ],
+    "action_taken": "scale_down",
+    "original_signal": {
+      "symbol": "TEST",
+      "amount": 1000
+    },
+    "timestamp": "2025-09-19T15:09:27.455642"
+  },
+  {
+    "symbol": "TEST",
+    "anomaly_result": {
+      "is_anomaly": "True",
+      "anomaly_type": "price_gap",
+      "severity": "critical",
+      "confidence_score": 1.0,
+      "z_score": null,
+      "threshold": 5.0,
+      "context": {
+        "prev_close": 100.0,
+        "current_close": 120.0,
+        "gap_pct": 20.0
+      },
+      "timestamp": "2025-09-19T15:21:59.771038"
+    },
+    "market_data": [
+      {
+        "close": 100.0,
+        "volume": 1000
+      },
+      {
+        "close": 120.0,
+        "volume": 1000
+      }
+    ],
+    "action_taken": "skip_trade",
+    "original_signal": {
+      "symbol": "TEST",
+      "amount": 1000
+    },
+    "timestamp": "2025-09-19T15:21:59.779034"
+  },
+  {
+    "symbol": "TEST",
+    "anomaly_result": {
+      "is_anomaly": "True",
+      "anomaly_type": "price_gap",
+      "severity": "critical",
+      "confidence_score": 1.0,
+      "z_score": null,
+      "threshold": 5.0,
+      "context": {
+        "prev_close": 100.0,
+        "current_close": 120.0,
+        "gap_pct": 20.0
+      },
+      "timestamp": "2025-09-19T15:58:29.362015"
+    },
+    "market_data": [
+      {
+        "close": 100.0,
+        "volume": 1000
+      },
+      {
+        "close": 120.0,
+        "volume": 1000
+      }
+    ],
+    "action_taken": "skip_trade",
+    "original_signal": {
+      "symbol": "TEST",
+      "amount": 1000
+    },
+    "timestamp": "2025-09-19T15:58:29.377006"
+  },
+  {
+    "symbol": "TEST",
+    "anomaly_result": {
+      "is_anomaly": "True",
+      "anomaly_type": "price_gap",
+      "severity": "critical",
+      "confidence_score": 1.0,
+      "z_score": null,
+      "threshold": 5.0,
+      "context": {
+        "prev_close": 100.0,
+        "current_close": 120.0,
+        "gap_pct": 20.0
+      },
+      "timestamp": "2025-09-19T16:03:47.951668"
+    },
+    "market_data": [
+      {
+        "close": 100.0,
+        "volume": 1000
+      },
+      {
+        "close": 120.0,
+        "volume": 1000
+      }
+    ],
+    "action_taken": "skip_trade",
+    "original_signal": {
+      "symbol": "TEST",
+      "amount": 1000
+    },
+    "timestamp": "2025-09-19T16:03:47.955664"
+  },
+  {
+    "symbol": "TEST",
+    "anomaly_result": {
+      "is_anomaly": true,
+      "anomaly_type": "volume_zscore",
+      "severity": "high",
+      "confidence_score": 0.9596051819697297,
+      "z_score": 14.394077729545945,
+      "threshold": 3.0,
+      "context": {
+        "z_score": 14.394077729545945,
+        "current_volume": 1500.0,
+        "mean_volume": 1095.0,
+        "std_volume": 28.136571693556885
+      },
+      "timestamp": "2025-09-19T16:03:47.991644"
+    },
+    "market_data": [
+      {
+        "close": 102.5,
+        "volume": 1125
+      },
+      {
+        "close": 102.6,
+        "volume": 1130
+      },
+      {
+        "close": 102.7,
+        "volume": 1135
+      },
+      {
+        "close": 102.8,
+        "volume": 1140
+      },
+      {
+        "close": 102.9,
+        "volume": 1500
+      }
+    ],
+    "action_taken": "scale_down",
+    "original_signal": {
+      "symbol": "TEST",
+      "amount": 1000
+    },
+    "timestamp": "2025-09-19T16:03:47.993642"
+  },
+  {
+    "symbol": "TEST",
+    "anomaly_result": {
+      "is_anomaly": "True",
+      "anomaly_type": "price_gap",
+      "severity": "critical",
+      "confidence_score": 1.0,
+      "z_score": null,
+      "threshold": 5.0,
+      "context": {
+        "prev_close": 100.0,
+        "current_close": 120.0,
+        "gap_pct": 20.0
+      },
+      "timestamp": "2025-09-19T16:12:37.040210"
+    },
+    "market_data": [
+      {
+        "close": 100.0,
+        "volume": 1000
+      },
+      {
+        "close": 120.0,
+        "volume": 1000
+      }
+    ],
+    "action_taken": "skip_trade",
+    "original_signal": {
+      "symbol": "TEST",
+      "amount": 1000
+    },
+    "timestamp": "2025-09-19T16:12:37.042210"
+  },
+  {
+    "symbol": "TEST",
+    "anomaly_result": {
+      "is_anomaly": true,
+      "anomaly_type": "volume_zscore",
+      "severity": "high",
+      "confidence_score": 0.9596051819697297,
+      "z_score": 14.394077729545945,
+      "threshold": 3.0,
+      "context": {
+        "z_score": 14.394077729545945,
+        "current_volume": 1500.0,
+        "mean_volume": 1095.0,
+        "std_volume": 28.136571693556885
+      },
+      "timestamp": "2025-09-19T16:12:37.072193"
+    },
+    "market_data": [
+      {
+        "close": 102.5,
+        "volume": 1125
+      },
+      {
+        "close": 102.6,
+        "volume": 1130
+      },
+      {
+        "close": 102.7,
+        "volume": 1135
+      },
+      {
+        "close": 102.8,
+        "volume": 1140
+      },
+      {
+        "close": 102.9,
+        "volume": 1500
+      }
+    ],
+    "action_taken": "scale_down",
+    "original_signal": {
+      "symbol": "TEST",
+      "amount": 1000
+    },
+    "timestamp": "2025-09-19T16:12:37.075191"
   }
 ]

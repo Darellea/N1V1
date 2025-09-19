@@ -1,0 +1,78 @@
+# Multi-stage build for N1V1 ML Serving component
+FROM python:3.11-slim as builder
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies for building
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gcc \
+    g++ \
+    libgomp1 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy requirements and install Python dependencies
+COPY requirements.txt ./requirements.txt
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt && \
+    # Install additional serving dependencies
+    pip install uvicorn[standard] gunicorn prometheus-client && \
+    # Install ML dependencies
+    pip install scikit-learn xgboost lightgbm pandas numpy joblib
+
+# Production stage
+FROM python:3.11-slim as production
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash n1v1-serving
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Set working directory
+WORKDIR /app
+
+# Copy application code
+COPY ml/ ./ml/
+COPY utils/ ./utils/
+COPY config.json ./config.json
+
+# Create directories for models and logs
+RUN mkdir -p models logs
+
+# Change ownership to non-root user
+RUN chown -R n1v1-serving:n1v1-serving /app
+
+# Switch to non-root user
+USER n1v1-serving
+
+# Environment variables for serving
+ENV REMOTE_INFERENCE_ENABLED=false
+ENV PRELOAD_MODELS=""
+ENV PYTHONPATH=/app
+
+# Health check - HTTP health endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Expose port for ML serving API
+EXPOSE 8000
+
+# Default command - run ML serving API
+CMD ["python", "-m", "uvicorn", "ml.serving:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

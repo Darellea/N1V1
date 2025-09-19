@@ -1,0 +1,144 @@
+{
+  "report_metadata": {
+    "generated_at": "2025-09-19T13:54:00Z",
+    "n1v1_version": "1.0.0",
+    "test_environment": "production_simulation",
+    "report_generator": "acceptance_test_suite"
+  },
+  "acceptance_criteria": {
+    "stability": {
+      "description": "Live trading rollback works; failover triggers and recovers automatically in canary tests",
+      "status": "pending",
+      "tests_passed": 0,
+      "tests_total": 5,
+      "last_tested": null,
+      "details": {
+        "rollback_mechanism": "pending",
+        "failover_recovery": "pending",
+        "canary_deployment": "pending",
+        "state_preservation": "pending",
+        "sla_compliance": "pending"
+      }
+    },
+    "ml_quality": {
+      "description": "Buy F1 ≥ 0.70 on validation; no material degradation in 30 days",
+      "status": "pending",
+      "tests_passed": 0,
+      "tests_total": 3,
+      "last_tested": null,
+      "details": {
+        "f1_score_threshold": "pending",
+        "benchmark_pipeline": "pending",
+        "regression_detection": "pending"
+      }
+    },
+    "slo": {
+      "description": "Signal latency median <50ms, p95 <150ms; Order failure rate <0.5% over 10k orders",
+      "status": "pending",
+      "tests_passed": 0,
+      "tests_total": 5,
+      "last_tested": null,
+      "details": {
+        "signal_latency_median": "pending",
+        "signal_latency_p95": "pending",
+        "order_failure_rate": "pending",
+        "system_throughput": "pending",
+        "end_to_end_latency": "pending"
+      }
+    },
+    "ci_cd": {
+      "description": "All PRs blocked until tests pass and coverage ≥95%; Canary deploys automated",
+      "status": "pending",
+      "tests_passed": 0,
+      "tests_total": 1,
+      "last_tested": null,
+      "details": {
+        "pr_blocking": "pending",
+        "coverage_enforcement": "pending",
+        "canary_automation": "pending"
+      }
+    },
+    "scalability": {
+      "description": "Multi-node scaling works; can process 50+ concurrent strategies",
+      "status": "pending",
+      "tests_passed": 0,
+      "tests_total": 5,
+      "last_tested": null,
+      "details": {
+        "multi_node_scaling": "pending",
+        "concurrent_strategies": "pending",
+        "downtime_during_scaling": "pending",
+        "distributed_processing": "pending",
+        "cluster_recovery": "pending"
+      }
+    },
+    "documentation": {
+      "description": "New dev can run Quickstart demo in ≤10 minutes",
+      "status": "pending",
+      "tests_passed": 0,
+      "tests_total": 8,
+      "last_tested": null,
+      "details": {
+        "quickstart_completeness": "pending",
+        "execution_time_limit": "pending",
+        "documentation_accuracy": "pending",
+        "setup_instructions": "pending",
+        "troubleshooting_coverage": "pending",
+        "version_consistency": "pending",
+        "end_to_end_demo": "pending",
+        "accessibility_validation": "pending"
+      }
+    }
+  },
+  "overall_status": {
+    "acceptance_criteria_met": 0,
+    "acceptance_criteria_total": 6,
+    "tests_passed": 0,
+    "tests_total": 27,
+    "success_rate": 0.0,
+    "production_readiness": "not_ready",
+    "last_full_test_run": null,
+    "estimated_completion_time": null
+  },
+  "benchmark_metrics": {
+    "performance_targets": {
+      "signal_latency_median_ms": 50,
+      "signal_latency_p95_ms": 150,
+      "order_failure_rate_max_pct": 0.5,
+      "throughput_signals_per_sec": 100,
+      "concurrent_strategies_min": 50,
+      "quickstart_completion_max_min": 10
+    },
+    "current_performance": {
+      "signal_latency_median_ms": null,
+      "signal_latency_p95_ms": null,
+      "order_failure_rate_pct": null,
+      "throughput_signals_per_sec": null,
+      "concurrent_strategies_supported": null,
+      "quickstart_completion_min": null
+    },
+    "ml_metrics": {
+      "f1_score_buy": null,
+      "f1_score_sell": null,
+      "model_accuracy": null,
+      "validation_samples": null,
+      "last_benchmark_date": null
+    },
+    "system_health": {
+      "uptime_percentage": null,
+      "error_rate_overall": null,
+      "recovery_time_avg_seconds": null,
+      "node_count": null,
+      "active_strategies": null
+    }
+  },
+  "test_history": [],
+  "recommendations": [],
+  "next_steps": [
+    "Run individual acceptance test suites",
+    "Address any failing tests",
+    "Update CI/CD pipeline for automated acceptance testing",
+    "Generate detailed performance reports",
+    "Conduct final production readiness review"
+  ]
+}

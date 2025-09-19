@@ -399,15 +399,24 @@ async def get_equity(request: Request, db: Session = Depends(get_db)):
 
 @api_router.get("/health")
 async def health_check(request: Request):
-    """Simple health check endpoint."""
-    if not bot_engine:
-        return {"status": "unhealthy", "detail": "Bot engine not available"}
+    """Lightweight health check endpoint."""
+    from core.healthcheck import get_health_check_manager
 
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "bot_running": bot_engine.state.running
-    }
+    health_manager = get_health_check_manager()
+    return await health_manager.perform_health_check()
+
+
+@api_router.get("/ready")
+async def readiness_check(request: Request):
+    """Comprehensive readiness check endpoint."""
+    from core.healthcheck import get_health_check_manager
+
+    health_manager = get_health_check_manager()
+    response, status_code = await health_manager.perform_readiness_check()
+
+    # Return response with appropriate HTTP status
+    from fastapi.responses import JSONResponse
+    return JSONResponse(content=response, status_code=status_code)
 
 
 @api_router.post("/pause", dependencies=[Depends(verify_api_key)])

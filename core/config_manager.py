@@ -8,9 +8,13 @@ hardcoded values throughout the codebase with configurable parameters.
 import os
 import json
 import logging
+import asyncio
 from typing import Dict, Any, Optional, Union, List
 from pathlib import Path
 from dataclasses import dataclass, asdict
+from pydantic import BaseModel, ValidationError, Field
+from pydantic_core import PydanticCustomError
+import jsonschema
 
 from .interfaces import (
     CacheConfig,
@@ -19,8 +23,104 @@ from .interfaces import (
     PerformanceTrackerConfig,
     TradingCoordinatorConfig
 )
+from utils.security import get_secret, SecurityException
 
 logger = logging.getLogger(__name__)
+
+
+# Pydantic models for strict validation
+class EnvironmentConfig(BaseModel):
+    """Environment configuration with strict validation."""
+    mode: str = Field(..., pattern="^(live|paper|backtest)$", description="Trading mode")
+    debug: bool = False
+    log_level: str = Field("INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
+
+
+class ExchangeConfig(BaseModel):
+    """Exchange configuration with strict validation."""
+    name: str = Field(..., min_length=1, description="Exchange name")
+    api_key: Optional[str] = None
+    api_secret: Optional[str] = None
+    api_passphrase: Optional[str] = None
+    sandbox: bool = False
+    timeout: int = Field(30000, ge=1000, le=120000, description="API timeout in ms")
+    rate_limit: int = Field(10, ge=1, le=1000, description="API rate limit")
+
+
+class RiskManagementConfig(BaseModel):
+    """Risk management configuration with strict validation."""
+    stop_loss: float = Field(0.02, ge=0.001, le=0.5, description="Stop loss percentage")
+    take_profit: float = Field(0.04, ge=0.001, le=0.5, description="Take profit percentage")
+    trailing_stop: bool = True
+    position_size: float = Field(0.1, ge=0.01, le=1.0, description="Position size percentage")
+    max_position_size: float = Field(0.3, ge=0.01, le=1.0, description="Max position size percentage")
+    risk_reward_ratio: float = Field(2.0, ge=1.0, le=10.0, description="Risk-reward ratio")
+    max_daily_drawdown: float = Field(0.1, ge=0.01, le=1.0, description="Max daily drawdown")
+    circuit_breaker_enabled: bool = Field(True, description="Circuit breaker enabled")
+
+
+class MonitoringConfig(BaseModel):
+    """Monitoring configuration with strict validation."""
+    enabled: bool = True
+    update_interval: int = Field(5, ge=1, le=300, description="Update interval in seconds")
+    alert_on_errors: bool = True
+    log_level: str = Field("INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
+
+
+class StrategiesConfig(BaseModel):
+    """Strategies configuration with strict validation."""
+    default: str = Field("RSIStrategy", min_length=1, description="Default strategy")
+    active_strategies: List[str] = Field(default_factory=list, description="Active strategies list")
+    max_concurrent_strategies: int = Field(3, ge=1, le=10, description="Max concurrent strategies")
+
+
+class MainConfig(BaseModel):
+    """Main configuration model with strict validation."""
+    environment: EnvironmentConfig
+    exchange: ExchangeConfig
+    risk_management: RiskManagementConfig
+    monitoring: MonitoringConfig
+    strategies: StrategiesConfig
+
+    class Config:
+        extra = "forbid"  # Reject unknown fields
+
+
+# Safe defaults for missing configuration
+SAFE_DEFAULTS = {
+    "environment": {
+        "mode": "paper",
+        "debug": False,
+        "log_level": "INFO"
+    },
+    "exchange": {
+        "name": "kucoin",
+        "sandbox": True,
+        "timeout": 30000,
+        "rate_limit": 10
+    },
+    "risk_management": {
+        "stop_loss": 0.02,
+        "take_profit": 0.04,
+        "trailing_stop": True,
+        "position_size": 0.1,
+        "max_position_size": 0.3,
+        "risk_reward_ratio": 2.0,
+        "max_daily_drawdown": 0.1,
+        "circuit_breaker_enabled": True
+    },
+    "monitoring": {
+        "enabled": True,
+        "update_interval": 5,
+        "alert_on_errors": True,
+        "log_level": "INFO"
+    },
+    "strategies": {
+        "default": "RSIStrategy",
+        "active_strategies": ["RSIStrategy"],
+        "max_concurrent_strategies": 3
+    }
+}
 
 
 @dataclass
@@ -98,23 +198,50 @@ class ConfigManager:
         return "config.json"
 
     def _load_config(self) -> None:
-        """Load configuration from file and environment variables."""
+        """Load configuration from file and environment variables with validation."""
+        config_dict = {}
+
         # Load from file if it exists
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, 'r') as f:
                     file_config = json.load(f)
-                self._merge_config(file_config)
+                config_dict.update(file_config)
                 logger.info(f"Loaded configuration from {self.config_file}")
+            except json.JSONDecodeError as e:
+                logger.error(f"Invalid JSON in configuration file {self.config_file}: {e}")
+                raise ValueError(f"Invalid JSON in configuration file: {e}")
             except Exception as e:
                 logger.warning(f"Failed to load config from {self.config_file}: {e}")
-                self._load_defaults()
+                raise ValueError(f"Failed to load configuration file: {e}")
+
+        # Apply safe defaults for missing sections
+        config_dict = self.apply_safe_defaults(config_dict)
+
+        # Validate main configuration schema
+        validation_errors = self.validate_main_config(config_dict)
+        if validation_errors:
+            error_msg = f"Configuration validation failed: {'; '.join(validation_errors)}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Validate environment-specific requirements
+        env_errors = self.validate_environment_config(config_dict)
+        if env_errors:
+            error_msg = f"Environment validation failed: {'; '.join(env_errors)}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Merge validated config with existing config
+        self._merge_config(config_dict)
 
         # Override with environment variables
         self._load_from_environment()
 
         # Apply any runtime overrides
         self._apply_overrides()
+
+        logger.info("Configuration loaded and validated successfully")
 
     def _merge_config(self, file_config: Dict[str, Any]) -> None:
         """Merge file configuration with defaults."""
@@ -153,7 +280,7 @@ class ConfigManager:
         logger.info("Using default configuration")
 
     def _load_from_environment(self) -> None:
-        """Load configuration overrides from environment variables."""
+        """Load configuration overrides from environment variables and secure secrets."""
         # Cache configuration from environment
         if os.getenv("CACHE_HOST"):
             self._config.cache.host = os.getenv("CACHE_HOST")
@@ -179,6 +306,79 @@ class ConfigManager:
         # Performance tracker configuration from environment
         if os.getenv("STARTING_BALANCE"):
             self._config.performance_tracker.starting_balance = float(os.getenv("STARTING_BALANCE"))
+
+        # Load secrets securely (async operation)
+        try:
+            # Try to run async secret loading in current event loop if available
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # If event loop is running, we can't use run_until_complete
+                # Defer secret loading to a separate async call
+                logger.info("Event loop running, deferring secure secret loading")
+                # We'll load secrets later via async method
+            else:
+                # No event loop running, we can load secrets synchronously
+                loop.run_until_complete(self._load_secrets_securely())
+        except RuntimeError:
+            # No event loop, defer loading
+            logger.info("No event loop available, deferring secure secret loading")
+
+    async def _load_secrets_securely(self) -> None:
+        """Load secrets securely from Vault/KMS with fallback to environment."""
+        try:
+            # Load exchange secrets
+            api_key = await get_secret("exchange_api_key")
+            if api_key:
+                self._config.exchange.api_key = api_key
+                logger.info("Loaded exchange API key from secure storage")
+
+            api_secret = await get_secret("exchange_api_secret")
+            if api_secret:
+                self._config.exchange.api_secret = api_secret
+                logger.info("Loaded exchange API secret from secure storage")
+
+            api_passphrase = await get_secret("exchange_api_passphrase")
+            if api_passphrase:
+                self._config.exchange.api_passphrase = api_passphrase
+                logger.info("Loaded exchange API passphrase from secure storage")
+
+            # Load Discord secrets
+            discord_token = await get_secret("discord_token")
+            if discord_token:
+                # Store in a way that can be accessed later
+                self._overrides["discord_token"] = discord_token
+                logger.info("Loaded Discord token from secure storage")
+
+            discord_channel_id = await get_secret("discord_channel_id")
+            if discord_channel_id:
+                self._overrides["discord_channel_id"] = discord_channel_id
+                logger.info("Loaded Discord channel ID from secure storage")
+
+            discord_webhook_url = await get_secret("discord_webhook_url")
+            if discord_webhook_url:
+                self._overrides["discord_webhook_url"] = discord_webhook_url
+                logger.info("Loaded Discord webhook URL from secure storage")
+
+            # Load API key
+            api_key = await get_secret("api_key")
+            if api_key:
+                self._overrides["api_key"] = api_key
+                logger.info("Loaded API key from secure storage")
+
+        except SecurityException as e:
+            env_mode = os.getenv("ENV", "live").lower()
+            if env_mode in ["live", "production"]:
+                logger.error(f"Failed to load required secrets in production mode: {e}")
+                raise
+            else:
+                logger.warning(f"Failed to load secrets securely, will use environment fallback: {e}")
+        except Exception as e:
+            logger.warning(f"Unexpected error loading secrets securely: {e}")
+
+    async def ensure_secrets_loaded(self) -> None:
+        """Ensure secrets are loaded securely (call this from async contexts)."""
+        await self._load_secrets_securely()
+        self._apply_overrides()
 
     def _apply_overrides(self) -> None:
         """Apply runtime configuration overrides."""
@@ -326,6 +526,109 @@ class ConfigManager:
     def get_bot_engine_config(self) -> Dict[str, Any]:
         """Get bot engine configuration."""
         return self._config.bot_engine.copy()
+
+    def validate_main_config(self, config_dict: Dict[str, Any]) -> List[str]:
+        """Validate main configuration sections with strict schema validation.
+
+        Args:
+            config_dict: Configuration dictionary to validate
+
+        Returns:
+            List of validation error messages
+        """
+        errors = []
+
+        try:
+            # Validate against Pydantic model (strict validation)
+            MainConfig(**config_dict)
+        except ValidationError as e:
+            for error in e.errors():
+                field_path = ".".join(str(loc) for loc in error["loc"])
+                error_msg = f"Field '{field_path}': {error['msg']}"
+                if "ctx" in error and error["ctx"]:
+                    error_msg += f" (expected: {error['ctx']})"
+                errors.append(error_msg)
+                logger.error(f"Configuration validation error: {error_msg}")
+        except Exception as e:
+            errors.append(f"Unexpected validation error: {str(e)}")
+            logger.error(f"Unexpected validation error: {str(e)}")
+
+        return errors
+
+    def validate_environment_config(self, config_dict: Dict[str, Any]) -> List[str]:
+        """Validate environment-specific configuration requirements.
+
+        Args:
+            config_dict: Configuration dictionary to validate
+
+        Returns:
+            List of validation error messages
+        """
+        errors = []
+        env_config = config_dict.get("environment", {})
+        mode = env_config.get("mode", "paper").lower()
+
+        if mode == "live":
+            # Live mode requirements
+            exchange_config = config_dict.get("exchange", {})
+
+            # Check for API keys
+            if not exchange_config.get("api_key"):
+                errors.append("Live mode requires exchange.api_key to be set")
+                logger.error("Live mode validation failed: missing exchange.api_key")
+
+            if not exchange_config.get("api_secret"):
+                errors.append("Live mode requires exchange.api_secret to be set")
+                logger.error("Live mode validation failed: missing exchange.api_secret")
+
+            # Check circuit breaker
+            risk_config = config_dict.get("risk_management", {})
+            if not risk_config.get("circuit_breaker_enabled", False):
+                errors.append("Live mode requires risk_management.circuit_breaker_enabled = true")
+                logger.error("Live mode validation failed: circuit_breaker_enabled must be true")
+
+            # Check sandbox mode
+            if exchange_config.get("sandbox", False):
+                errors.append("Live mode cannot use sandbox exchange")
+                logger.error("Live mode validation failed: sandbox mode not allowed")
+
+        elif mode in ["paper", "backtest"]:
+            # Paper/backtest mode - more relaxed but still validate basics
+            exchange_config = config_dict.get("exchange", {})
+            if not exchange_config.get("name"):
+                errors.append("Exchange name is required")
+                logger.warning("Exchange name missing in paper/backtest mode")
+
+        else:
+            errors.append(f"Invalid environment mode: {mode}")
+            logger.error(f"Invalid environment mode: {mode}")
+
+        return errors
+
+    def apply_safe_defaults(self, config_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply safe defaults to missing configuration sections.
+
+        Args:
+            config_dict: Configuration dictionary to update
+
+        Returns:
+            Updated configuration dictionary with safe defaults
+        """
+        updated_config = config_dict.copy()
+
+        for section, defaults in SAFE_DEFAULTS.items():
+            if section not in updated_config:
+                updated_config[section] = defaults.copy()
+                logger.info(f"Applied safe defaults for missing section: {section}")
+            else:
+                # Apply defaults for missing fields within sections
+                section_config = updated_config[section]
+                for key, default_value in defaults.items():
+                    if key not in section_config:
+                        section_config[key] = default_value
+                        logger.info(f"Applied safe default for {section}.{key}: {default_value}")
+
+        return updated_config
 
     def validate_config(self) -> List[str]:
         """Validate current configuration.

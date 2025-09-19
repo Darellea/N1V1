@@ -13,6 +13,8 @@ Test Categories:
 - Reliability Tests: Long-running stability testing
 - End-to-End Tests: Complete workflow validation
 """
+import sys, os
+sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 
 import asyncio
 import pytest

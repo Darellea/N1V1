@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: n1v1-ml
+  namespace: n1v1
+  labels:
+    app: n1v1-ml
+    component: ml
+spec:
+  serviceName: n1v1-ml
+  replicas: 1
+  selector:
+    matchLabels:
+      app: n1v1-ml
+  template:
+    metadata:
+      labels:
+        app: n1v1-ml
+        component: ml
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: ml
+        image: n1v1-ml:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: CONFIG_FILE
+          value: "/app/config.json"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /app/config.json
+          subPath: config.json
+        - name: models-storage
+          mountPath: /app/models
+        - name: experiments-storage
+          mountPath: /app/experiments
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "1000m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        livenessProbe:
+          exec:
+            command:
+            - test
+            - -f
+            - /app/models/.health
+          initialDelaySeconds: 120
+          periodSeconds: 60
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          exec:
+            command:
+            - test
+            - -f
+            - /app/models/.health
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: config-volume
+        configMap:
+          name: n1v1-config
+  volumeClaimTemplates:
+  - metadata:
+      name: models-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi
+  - metadata:
+      name: experiments-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 20Gi

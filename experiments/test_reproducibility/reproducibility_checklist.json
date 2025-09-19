@@ -1,0 +1,32 @@
+{
+  "experiment_name": "test_reproducibility",
+  "timestamp": "2025-09-19T16:10:47.268255",
+  "reproducibility_requirements": {
+    "random_seed": 999,
+    "python_version": "3.10.0",
+    "git_commit": "unknown",
+    "libraries": {
+      "numpy": "1.22.0",
+      "pandas": "1.4.0"
+    },
+    "system_requirements": {
+      "system": "Windows",
+      "release": "10",
+      "version": "10.0.19042",
+      "machine": "AMD64",
+      "processor": "Intel64 Family 6 Model 60 Stepping 3, GenuineIntel"
+    }
+  },
+  "reproduction_steps": [
+    "1. Checkout Git commit: unknown",
+    "2. Set random seed: 999",
+    "3. Install dependencies from requirements.txt",
+    "4. Run training with same parameters: python ml/train.py --config config.json --data data.csv",
+    "5. Verify results match within tolerance"
+  ],
+  "validation_metrics": {
+    "f1_score_target": 0.7,
+    "deterministic_reproduction": true,
+    "performance_tolerance": 0.05
+  }
+}

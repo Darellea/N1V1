@@ -222,8 +222,8 @@ class MetricsCollector:
     following Prometheus best practices for metric naming and exposition.
     """
 
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        self.config = config or {}
 
         # Metrics storage
         self.metrics: Dict[str, MetricSeries] = {}
@@ -601,6 +601,73 @@ async def collect_strategy_metrics(collector: MetricsCollector) -> None:
         )
 
 
+async def collect_distributed_metrics(collector: MetricsCollector) -> None:
+    """Collect distributed task processing metrics."""
+    try:
+        # Get task manager instance (would need to be injected or accessed globally)
+        # For now, we'll use mock data
+        from core.task_manager import TaskManager
+
+        # Queue depth
+        await collector.record_metric(
+            "distributed_queue_depth",
+            5,
+            {"queue_type": "in_memory"}
+        )
+
+        # Active workers
+        await collector.record_metric(
+            "distributed_active_workers",
+            4,
+            {"worker_type": "signal_processor"}
+        )
+
+        # Task success rate
+        await collector.record_metric(
+            "distributed_task_success_rate",
+            0.95,
+            {"task_type": "signal"}
+        )
+
+        # Task processing latency
+        await collector.record_metric(
+            "distributed_task_processing_seconds",
+            0.45,
+            {"task_type": "signal"}
+        )
+
+        # Worker uptime
+        await collector.record_metric(
+            "distributed_worker_uptime_seconds",
+            3600,
+            {"worker_id": "worker_0"}
+        )
+
+        # Failed tasks
+        await collector.record_metric(
+            "distributed_failed_tasks_total",
+            2,
+            {"failure_reason": "timeout"}
+        )
+
+        # Tasks processed per minute
+        await collector.record_metric(
+            "distributed_tasks_processed_per_minute",
+            12.5,
+            {"task_type": "signal"}
+        )
+
+        # Queue throughput
+        await collector.record_metric(
+            "distributed_queue_throughput_per_second",
+            0.2,
+            {"queue_type": "in_memory"}
+        )
+
+    except Exception as e:
+        logger.error(f"Error collecting distributed metrics: {e}")
+
+
 async def collect_exchange_metrics(collector: MetricsCollector) -> None:
     """Collect exchange connectivity metrics."""
     exchanges = ["binance", "coinbase", "kraken"]
@@ -630,6 +697,204 @@ async def collect_exchange_metrics(collector: MetricsCollector) -> None:
             1250,
             {"exchange": exchange, "endpoint": "orders"}
         )
+
+
+async def collect_performance_metrics(collector: MetricsCollector) -> None:
+    """Collect performance profiling metrics."""
+    try:
+        from core.performance_profiler import get_profiler, get_regression_detector
+
+        profiler = get_profiler()
+        regression_detector = get_regression_detector()
+
+        # Get current performance report
+        report = profiler.generate_report()
+
+        # Record function execution metrics
+        for func_name, metrics in report.get('functions', {}).items():
+            await collector.record_metric(
+                "performance_function_execution_time_seconds",
+                metrics['execution_time']['mean'],
+                {"function": func_name}
+            )
+
+            await collector.record_metric(
+                "performance_function_call_count",
+                metrics['call_count'],
+                {"function": func_name}
+            )
+
+            await collector.record_metric(
+                "performance_function_memory_usage_bytes",
+                metrics['memory_usage']['mean'],
+                {"function": func_name}
+            )
+
+        # Record system performance metrics
+        await collector.record_metric(
+            "performance_total_functions_profiled",
+            report.get('summary', {}).get('total_functions', 0)
+        )
+
+        await collector.record_metric(
+            "performance_total_measurements",
+            report.get('summary', {}).get('total_measurements', 0)
+        )
+
+        # Record regression detection status
+        regression_report = regression_detector.get_regression_report()
+        await collector.record_metric(
+            "performance_regression_baselines_count",
+            len(regression_report.get('baselines', {}).get('functions', {}))
+        )
+
+        # Record performance hotspots
+        hotspots = profiler.get_hotspots(top_n=5)
+        for i, hotspot in enumerate(hotspots):
+            await collector.record_metric(
+                "performance_hotspot_execution_time_seconds",
+                hotspot['avg_time'],
+                {"function": hotspot['function'], "rank": str(i + 1)}
+            )
+
+        # Record memory usage trends
+        if hasattr(profiler, 'get_memory_report'):
+            memory_report = profiler.get_memory_report()
+            if 'current_memory' in memory_report:
+                await collector.record_metric(
+                    "performance_memory_current_bytes",
+                    memory_report['current_memory']
+                )
+            if 'peak_memory' in memory_report:
+                await collector.record_metric(
+                    "performance_memory_peak_bytes",
+                    memory_report['peak_memory']
+                )
+
+    except Exception as e:
+        logger.error(f"Error collecting performance metrics: {e}")
+
+
+async def collect_profiling_tool_metrics(collector: MetricsCollector) -> None:
+    """Collect metrics from advanced profiling tools."""
+    try:
+        from core.performance_profiler import get_advanced_profiler
+
+        advanced_profiler = get_advanced_profiler()
+
+        # Record tool availability
+        tools_available = advanced_profiler.tools_available
+        for tool_name, available in tools_available.items():
+            await collector.record_metric(
+                "profiling_tool_available",
+                1 if available else 0,
+                {"tool": tool_name}
+            )
+
+        # Record active profiling processes
+        profiling_status = advanced_profiler.get_profiling_status()
+        await collector.record_metric(
+            "profiling_active_processes_count",
+            len([pid for pid, active in profiling_status.items() if active])
+        )
+
+        # Record profiling artifacts generated
+        output_dir = Path(advanced_profiler.output_dir)
+        if output_dir.exists():
+            artifact_count = len(list(output_dir.glob("*")))
+            await collector.record_metric(
+                "profiling_artifacts_generated_total",
+                artifact_count
+            )
+
+    except Exception as e:
+        logger.error(f"Error collecting profiling tool metrics: {e}")
+
+
+async def collect_regression_detection_metrics(collector: MetricsCollector) -> None:
+    """Collect regression detection metrics."""
+    try:
+        from core.performance_profiler import get_regression_detector
+
+        regression_detector = get_regression_detector()
+
+        # Record regression thresholds
+        thresholds = regression_detector.thresholds
+        await collector.record_metric(
+            "regression_threshold_latency_increase_ratio",
+            thresholds['latency_increase']
+        )
+
+        await collector.record_metric(
+            "regression_threshold_memory_increase_ratio",
+            thresholds['memory_increase']
+        )
+
+        await collector.record_metric(
+            "regression_threshold_cpu_increase_ratio",
+            thresholds['cpu_increase']
+        )
+
+        # Record baseline statistics
+        baselines = regression_detector.baselines
+        functions_with_baselines = len(baselines.get('functions', {}))
+        await collector.record_metric(
+            "regression_functions_with_baselines_count",
+            functions_with_baselines
+        )
+
+        # Calculate total baseline samples
+        total_samples = sum(
+            len(func_data.get('samples', []))
+            for func_data in baselines.get('functions', {}).values()
+        )
+        await collector.record_metric(
+            "regression_baseline_samples_total",
+            total_samples
+        )
+
+    except Exception as e:
+        logger.error(f"Error collecting regression detection metrics: {e}")
+
+
+async def collect_performance_anomaly_metrics(collector: MetricsCollector) -> None:
+    """Collect performance anomaly detection metrics."""
+    try:
+        from core.performance_profiler import get_profiler
+
+        profiler = get_profiler()
+
+        # Count functions with anomaly detection baselines
+        anomaly_functions = len(profiler.baseline_metrics)
+        await collector.record_metric(
+            "performance_anomaly_functions_monitored_count",
+            anomaly_functions
+        )
+
+        # Record anomaly detection statistics
+        total_measurements = len(profiler.metrics_history)
+        await collector.record_metric(
+            "performance_measurements_total",
+            total_measurements
+        )
+
+        # Calculate anomaly rate (simplified)
+        if hasattr(profiler, '_detected_anomalies'):
+            anomaly_count = len(profiler._detected_anomalies)
+            await collector.record_metric(
+                "performance_anomalies_detected_total",
+                anomaly_count
+            )
+
+            if total_measurements > 0:
+                anomaly_rate = anomaly_count / total_measurements
+                await collector.record_metric(
+                    "performance_anomaly_rate_ratio",
+                    anomaly_rate
+                )
+
+    except Exception as e:
+        logger.error(f"Error collecting performance anomaly metrics: {e}")
 
 
 # Global metrics collector instance

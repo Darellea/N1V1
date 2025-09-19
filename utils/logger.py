@@ -27,6 +27,7 @@ import json
 import csv
 import uuid
 import errno
+import os
 
 from utils.time import now_ms, to_ms, to_iso
 
@@ -68,6 +69,66 @@ class ColorFormatter(logging.Formatter):
         color = self.LEVEL_COLORS.get(levelname, "")
         message = super().format(record)
         return f"{color}{message}{Style.RESET_ALL}"
+
+
+class JSONFormatter(logging.Formatter):
+    """JSON formatter for structured logging with required fields."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Format log record as JSON with required structured fields."""
+        # Create structured log entry
+        log_entry = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",  # UTC ISO8601
+            "level": record.levelname,
+            "module": getattr(record, 'name', 'unknown'),
+            "message": record.getMessage(),
+            "correlation_id": getattr(record, 'correlation_id', None),
+            "request_id": getattr(record, 'request_id', None),
+            "strategy_id": getattr(record, 'strategy_id', None),
+        }
+
+        # Add any extra fields from the record
+        if hasattr(record, '__dict__'):
+            for key, value in record.__dict__.items():
+                if key not in ['name', 'msg', 'args', 'levelname', 'levelno', 'pathname',
+                              'filename', 'module', 'exc_info', 'exc_text', 'stack_info',
+                              'lineno', 'funcName', 'created', 'msecs', 'relativeCreated',
+                              'thread', 'threadName', 'processName', 'process', 'getMessage']:
+                    if value is not None:
+                        log_entry[key] = value
+
+        # Handle exception info
+        if record.exc_info:
+            log_entry["exception"] = self.formatException(record.exc_info)
+
+        return json.dumps(log_entry, default=str)
+
+
+class PrettyFormatter(logging.Formatter):
+    """Human-readable formatter for development."""
+
+    def __init__(self, fmt=None, datefmt=None):
+        default_fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+        super().__init__(fmt or default_fmt, datefmt or "%Y-%m-%d %H:%M:%S")
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Format with context information."""
+        # Add context info to message
+        context_parts = []
+        if hasattr(record, 'correlation_id') and record.correlation_id:
+            context_parts.append(f"corr_id={record.correlation_id}")
+        if hasattr(record, 'request_id') and record.request_id:
+            context_parts.append(f"req_id={record.request_id}")
+        if hasattr(record, 'strategy_id') and record.strategy_id:
+            context_parts.append(f"strategy={record.strategy_id}")
+        if hasattr(record, 'component') and record.component:
+            context_parts.append(f"component={record.component}")
+
+        if context_parts:
+            original_msg = record.getMessage()
+            record.msg = f"{original_msg} ({' | '.join(context_parts)})"
+
+        return super().format(record)
 
 
 class TradeLogger(logging.Logger):
@@ -604,6 +665,11 @@ def setup_logging(config: Optional[Dict[str, Any]] = None) -> TradeLogger:
     """
     Configure root logging and return a configured TradeLogger instance.
 
+    Supports environment variables:
+    - LOG_LEVEL: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO)
+    - LOG_FILE: Path to log file (default: logs/crypto_bot.log)
+    - LOG_FORMAT: json, pretty, or color (default: color)
+
     Args:
         config: Optional dict with logging configuration. Expected keys:
             - level (str or int)
@@ -612,20 +678,33 @@ def setup_logging(config: Optional[Dict[str, Any]] = None) -> TradeLogger:
             - max_size (int)
             - backup_count (int)
             - console (bool)
+            - format (str): json, pretty, or color
 
     Returns:
         Configured TradeLogger
     """
     global _GLOBAL_TRADE_LOGGER
 
+    # Get environment variables
+    env_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    env_log_file = os.getenv("LOG_FILE")
+    env_format = os.getenv("LOG_FORMAT", "color").lower()
+
+    # Validate log level
+    valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+    if env_level not in valid_levels:
+        print(f"Warning: Invalid LOG_LEVEL '{env_level}', using INFO")
+        env_level = "INFO"
+
     # Defaults
     cfg = {
-        "level": "INFO",
+        "level": env_level,
         "file_logging": True,
-        "log_file": str(LOGS_DIR / "crypto_bot.log"),
+        "log_file": env_log_file or str(LOGS_DIR / "crypto_bot.log"),
         "max_size": 10 * 1024 * 1024,
         "backup_count": 5,
         "console": True,
+        "format": env_format,
     }
     if config:
         cfg.update(config)
@@ -650,15 +729,24 @@ def setup_logging(config: Optional[Dict[str, Any]] = None) -> TradeLogger:
     for h in list(trade_logger.handlers):
         trade_logger.removeHandler(h)
 
+    # Determine format
+    log_format = cfg.get("format", "color")
+
     # Console handler
     if cfg.get("console", True):
         console_handler = logging.StreamHandler(sys.stdout)
-        console_fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        console_handler.setFormatter(SecurityFormatter(console_fmt))
+
+        if log_format == "json":
+            console_handler.setFormatter(JSONFormatter())
+        elif log_format == "pretty":
+            console_handler.setFormatter(PrettyFormatter())
+        else:  # color or default
+            console_handler.setFormatter(ColorFormatter())
+
         console_handler.setLevel(level)
         trade_logger.addHandler(console_handler)
 
-    # Rotating file handler
+    # File handler (always JSON for structured logging)
     if cfg.get("file_logging", True):
         log_file = Path(cfg.get("log_file"))
         log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -671,8 +759,8 @@ def setup_logging(config: Optional[Dict[str, Any]] = None) -> TradeLogger:
             backupCount=backup_count,
             encoding="utf-8",
         )
-        file_fmt = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        file_handler.setFormatter(SecurityFormatter(file_fmt))
+        # Always use JSON formatter for file output
+        file_handler.setFormatter(JSONFormatter())
         file_handler.setLevel(level)
         trade_logger.addHandler(file_handler)
 
@@ -718,12 +806,25 @@ def generate_correlation_id() -> str:
     return uuid.uuid4().hex
 
 
-def get_logger_with_context(symbol: Optional[str] = None, component: Optional[str] = None, correlation_id: Optional[str] = None) -> logging.LoggerAdapter:
+def generate_request_id() -> str:
+    """Return a unique request id for tracking individual requests."""
+    return f"req_{uuid.uuid4().hex[:16]}"
+
+
+def get_logger_with_context(symbol: Optional[str] = None, component: Optional[str] = None,
+                           correlation_id: Optional[str] = None, request_id: Optional[str] = None,
+                           strategy_id: Optional[str] = None) -> logging.LoggerAdapter:
     """
-    Return a LoggerAdapter that will attach `symbol`, `component`, and `correlation_id` to all log records made via the adapter.
+    Return a LoggerAdapter that will attach structured context fields to all log records.
 
     Usage:
-        adapter = get_logger_with_context(symbol='BTC/USDT', component='order_manager', correlation_id=generate_correlation_id())
+        adapter = get_logger_with_context(
+            symbol='BTC/USDT',
+            component='order_manager',
+            correlation_id=generate_correlation_id(),
+            request_id=generate_request_id(),
+            strategy_id='momentum_v1'
+        )
         adapter.info('Starting execution')  # record will have those extra fields
     """
     base = get_trade_logger()
@@ -735,6 +836,10 @@ def get_logger_with_context(symbol: Optional[str] = None, component: Optional[st
         extra["component"] = component
     if correlation_id:
         extra["correlation_id"] = correlation_id
+    if request_id:
+        extra["request_id"] = request_id
+    if strategy_id:
+        extra["strategy_id"] = strategy_id
 
     return logging.LoggerAdapter(base, extra)
 

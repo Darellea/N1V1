@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: n1v1-api
+  namespace: n1v1
+  labels:
+    app: n1v1-api
+    component: api
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  selector:
+    app: n1v1-api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: n1v1-core
+  namespace: n1v1
+  labels:
+    app: n1v1-core
+    component: core
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  selector:
+    app: n1v1-core
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: n1v1-ml
+  namespace: n1v1
+  labels:
+    app: n1v1-ml
+    component: ml
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: n1v1-ml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: n1v1-api-external
+  namespace: n1v1
+  labels:
+    app: n1v1-api
+    component: api
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  selector:
+    app: n1v1-api

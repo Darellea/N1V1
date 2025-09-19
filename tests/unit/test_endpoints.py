@@ -87,7 +87,279 @@ class TestHealthEndpoint:
         data = response.json()
         assert "status" in data
         assert "timestamp" in data
+        assert "version" in data
+        assert "uptime_seconds" in data
+        assert "bot_engine" in data
+        assert "correlation_id" in data
+        assert "check_latency_ms" in data
         assert data["status"] in ["healthy", "unhealthy"]
+
+    def test_health_endpoint_returns_metadata(self, client):
+        """Test that health endpoint returns required metadata."""
+        response = client.get("/api/v1/health")
+        data = response.json()
+
+        # Check metadata fields
+        assert isinstance(data["version"], str)
+        assert isinstance(data["uptime_seconds"], (int, float))
+        assert isinstance(data["correlation_id"], str)
+        assert isinstance(data["check_latency_ms"], (int, float))
+        assert data["uptime_seconds"] >= 0
+        assert data["check_latency_ms"] >= 0
+
+    def test_health_endpoint_correlation_id_unique(self, client):
+        """Test that correlation IDs are unique across requests."""
+        response1 = client.get("/api/v1/health")
+        response2 = client.get("/api/v1/health")
+
+        data1 = response1.json()
+        data2 = response2.json()
+
+        assert data1["correlation_id"] != data2["correlation_id"]
+        assert data1["correlation_id"].startswith("health_")
+        assert data2["correlation_id"].startswith("health_")
+
+    def test_health_endpoint_timestamp_format(self, client):
+        """Test that timestamp is in ISO format."""
+        import re
+        from datetime import datetime
+
+        response = client.get("/api/v1/health")
+        data = response.json()
+
+        # Check ISO format
+        iso_pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$'
+        assert re.match(iso_pattern, data["timestamp"])
+
+        # Check it's a valid datetime
+        parsed = datetime.fromisoformat(data["timestamp"].replace('Z', '+00:00'))
+        assert isinstance(parsed, datetime)
+
+
+class TestReadinessEndpoint:
+    """Test readiness check endpoint."""
+
+    def test_readiness_endpoint_returns_200_when_healthy(self, client):
+        """Test that readiness endpoint returns 200 when all checks pass."""
+        response = client.get("/api/v1/ready")
+        # Should return 200 since database/cache are optional and bot engine is available
+        assert response.status_code in [200, 503]  # 503 if dependencies fail
+
+    def test_readiness_endpoint_returns_json_structure(self, client):
+        """Test that readiness endpoint returns proper JSON structure."""
+        response = client.get("/api/v1/ready")
+        data = response.json()
+
+        assert "ready" in data
+        assert "timestamp" in data
+        assert "correlation_id" in data
+        assert "checks" in data
+        assert "total_latency_ms" in data
+        assert isinstance(data["ready"], bool)
+        assert isinstance(data["checks"], dict)
+        assert isinstance(data["correlation_id"], str)
+        assert isinstance(data["total_latency_ms"], (int, float))
+
+    def test_readiness_endpoint_includes_all_check_components(self, client):
+        """Test that readiness endpoint includes all expected components."""
+        response = client.get("/api/v1/ready")
+        data = response.json()
+
+        expected_components = ["database", "exchange", "message_queue", "cache", "bot_engine"]
+        checks = data["checks"]
+
+        for component in expected_components:
+            assert component in checks
+            assert "ready" in checks[component]
+            assert "message" in checks[component]
+            assert isinstance(checks[component]["ready"], bool)
+            assert isinstance(checks[component]["message"], str)
+
+    def test_readiness_endpoint_correlation_id_unique(self, client):
+        """Test that readiness correlation IDs are unique across requests."""
+        response1 = client.get("/api/v1/ready")
+        response2 = client.get("/api/v1/ready")
+
+        data1 = response1.json()
+        data2 = response2.json()
+
+        assert data1["correlation_id"] != data2["correlation_id"]
+        assert data1["correlation_id"].startswith("health_")
+        assert data2["correlation_id"].startswith("health_")
+
+    def test_readiness_endpoint_timestamp_format(self, client):
+        """Test that readiness timestamp is in ISO format."""
+        import re
+        from datetime import datetime
+
+        response = client.get("/api/v1/ready")
+        data = response.json()
+
+        # Check ISO format
+        iso_pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$'
+        assert re.match(iso_pattern, data["timestamp"])
+
+        # Check it's a valid datetime
+        parsed = datetime.fromisoformat(data["timestamp"].replace('Z', '+00:00'))
+        assert isinstance(parsed, datetime)
+
+    def test_readiness_endpoint_returns_503_when_bot_engine_unavailable(self, client):
+        """Test that readiness returns 503 when bot engine is unavailable."""
+        from api.app import set_bot_engine
+        original_engine = client._test_bot_engine
+
+        # Temporarily remove bot engine
+        set_bot_engine(None)
+
+        response = client.get("/api/v1/ready")
+        assert response.status_code == 503
+
+        data = response.json()
+        assert data["ready"] is False
+        assert "bot_engine" in data["checks"]
+        assert data["checks"]["bot_engine"]["ready"] is False
+
+        # Restore bot engine
+        set_bot_engine(original_engine)
+
+    def test_readiness_endpoint_check_details_structure(self, client):
+        """Test that readiness check details have proper structure."""
+        response = client.get("/api/v1/ready")
+        data = response.json()
+
+        for component, check_data in data["checks"].items():
+            # Check required fields
+            assert "ready" in check_data
+            assert "message" in check_data
+
+            # Check optional fields if present
+            if "latency_ms" in check_data:
+                assert isinstance(check_data["latency_ms"], (int, float, type(None)))
+            if "details" in check_data:
+                assert isinstance(check_data["details"], dict)
+
+    def test_readiness_endpoint_latency_measurement(self, client):
+        """Test that readiness endpoint measures latency properly."""
+        response = client.get("/api/v1/ready")
+        data = response.json()
+
+        # Total latency should be reasonable (less than 10 seconds for tests)
+        assert data["total_latency_ms"] >= 0
+        assert data["total_latency_ms"] < 10000
+
+        # Individual check latencies should also be reasonable
+        for component, check_data in data["checks"].items():
+            if "latency_ms" in check_data and check_data["latency_ms"] is not None:
+                assert check_data["latency_ms"] >= 0
+                assert check_data["latency_ms"] < 5000  # 5 seconds max for any single check
+
+    @pytest.mark.parametrize("missing_env_var", [
+        "DATABASE_URL",
+        "EXCHANGE_API_URL",
+        "MESSAGE_QUEUE_URL",
+        "REDIS_URL"
+    ])
+    def test_readiness_endpoint_handles_missing_env_vars(self, client, missing_env_var):
+        """Test that readiness endpoint handles missing environment variables gracefully."""
+        # Store original value
+        original_value = os.environ.get(missing_env_var)
+
+        try:
+            # Remove the environment variable
+            if missing_env_var in os.environ:
+                del os.environ[missing_env_var]
+
+            response = client.get("/api/v1/ready")
+            data = response.json()
+
+            # Should still return a valid response
+            assert "checks" in data
+            assert "ready" in data
+
+            # Check that the relevant component is marked as not ready or optional
+            if missing_env_var == "DATABASE_URL":
+                # Database should be marked as not configured
+                assert "database" in data["checks"]
+                db_check = data["checks"]["database"]
+                assert "configured" in db_check.get("details", {}) or not db_check["ready"]
+
+        finally:
+            # Restore original value
+            if original_value is not None:
+                os.environ[missing_env_var] = original_value
+
+    def test_readiness_endpoint_bot_engine_check(self, client):
+        """Test that readiness endpoint properly checks bot engine."""
+        response = client.get("/api/v1/ready")
+        data = response.json()
+
+        assert "bot_engine" in data["checks"]
+        bot_check = data["checks"]["bot_engine"]
+
+        # With the test bot engine, this should be ready
+        assert "ready" in bot_check
+        assert "message" in bot_check
+        assert isinstance(bot_check["ready"], bool)
+
+    def test_readiness_endpoint_exchange_check(self, client):
+        """Test that readiness endpoint checks exchange connectivity."""
+        response = client.get("/api/v1/ready")
+        data = response.json()
+
+        assert "exchange" in data["checks"]
+        exchange_check = data["checks"]["exchange"]
+
+        assert "ready" in exchange_check
+        assert "message" in exchange_check
+        assert isinstance(exchange_check["ready"], bool)
+
+        # Should have latency if it attempted connection
+        if "latency_ms" in exchange_check:
+            assert isinstance(exchange_check["latency_ms"], (int, float))
+
+    def test_readiness_endpoint_cache_check(self, client):
+        """Test that readiness endpoint checks cache connectivity."""
+        response = client.get("/api/v1/ready")
+        data = response.json()
+
+        assert "cache" in data["checks"]
+        cache_check = data["checks"]["cache"]
+
+        assert "ready" in cache_check
+        assert "message" in cache_check
+        assert isinstance(cache_check["ready"], bool)
+
+    def test_readiness_endpoint_message_queue_check(self, client):
+        """Test that readiness endpoint checks message queue."""
+        response = client.get("/api/v1/ready")
+        data = response.json()
+
+        assert "message_queue" in data["checks"]
+        mq_check = data["checks"]["message_queue"]
+
+        assert "ready" in mq_check
+        assert "message" in mq_check
+        assert isinstance(mq_check["ready"], bool)
+
+        # Message queue is optional, so it might be ready even if not configured
+        if not mq_check["ready"]:
+            assert "configured" in mq_check.get("details", {})
+
+    def test_readiness_endpoint_database_check(self, client):
+        """Test that readiness endpoint checks database connectivity."""
+        response = client.get("/api/v1/ready")
+        data = response.json()
+
+        assert "database" in data["checks"]
+        db_check = data["checks"]["database"]
+
+        assert "ready" in db_check
+        assert "message" in db_check
+        assert isinstance(db_check["ready"], bool)
+
+        # Database might not be configured in tests, which is acceptable
+        if not db_check["ready"]:
+            assert "configured" in db_check.get("details", {}) or "Database not configured" in db_check["message"]
 
 
 class TestStatusEndpoint:

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: n1v1
+  labels:
+    name: n1v1
+    app: trading-bot

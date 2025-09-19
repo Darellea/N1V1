@@ -13,14 +13,11 @@ from decimal import Decimal
 import pandas as pd
 import numpy as np
 
-from optimization import (
-    BaseOptimizer,
-    WalkForwardOptimizer,
-    GeneticOptimizer,
-    RLOptimizer,
-    OptimizerFactory,
-    ParameterBounds
-)
+from optimization.base_optimizer import BaseOptimizer, ParameterBounds
+from optimization.walk_forward import WalkForwardOptimizer
+from optimization.genetic_optimizer import GeneticOptimizer
+from optimization.rl_optimizer import RLOptimizer
+from optimization.optimizer_factory import OptimizerFactory
 from optimization.base_optimizer import OptimizationResult
 from optimization.genetic_optimizer import Chromosome
 

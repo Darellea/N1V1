@@ -31,7 +31,8 @@ from core.metrics_collector import (
     collect_exchange_metrics
 )
 from core.metrics_endpoint import MetricsEndpoint
-from core import AlertRulesManager, DashboardManager
+from core.alert_rules_manager import AlertRulesManager
+from core.dashboard_manager import DashboardManager
 from utils.logger import get_logger
 
 logger = get_logger(__name__)

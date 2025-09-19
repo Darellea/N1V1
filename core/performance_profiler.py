@@ -19,6 +19,9 @@ import psutil
 import gc
 import threading
 import functools
+import subprocess
+import os
+import tempfile
 from typing import Dict, List, Optional, Callable, Any, Union
 from dataclasses import dataclass, field
 from collections import defaultdict, deque
@@ -33,6 +36,8 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import pandas as pd
+import json
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -549,6 +554,483 @@ class PerformanceProfiler:
         self.stop_profiling()
         self.executor.shutdown(wait=True)
         logger.info("Performance Profiler cleaned up")
+
+
+class AdvancedProfiler:
+    """
+    Advanced profiling tools integration for N1V1 framework.
+
+    Supports multiple profiling backends:
+    - py-spy: Sampling profiler with flamegraph support
+    - scalene: CPU and memory profiler with web UI
+    - memory_profiler: Line-by-line memory usage analysis
+    - cProfile: Standard Python profiler with enhanced features
+    """
+
+    def __init__(self, config: Dict[str, Any] = None):
+        self.config = config or {}
+        self.profiling_enabled = self.config.get('enabled', True)
+        self.output_dir = Path(self.config.get('output_dir', 'performance_reports'))
+        self.output_dir.mkdir(exist_ok=True)
+
+        # Tool availability
+        self._check_tool_availability()
+
+        # Active profiling processes
+        self._active_processes: Dict[str, subprocess.Popen] = {}
+
+        logger.info("AdvancedProfiler initialized")
+
+    def _check_tool_availability(self):
+        """Check which profiling tools are available."""
+        self.tools_available = {
+            'py_spy': self._is_tool_available('py-spy'),
+            'scalene': self._is_tool_available('scalene'),
+            'memory_profiler': self._is_tool_available('memory_profiler'),
+            'flamegraph': self._is_tool_available('flamegraph')
+        }
+
+        available_tools = [tool for tool, available in self.tools_available.items() if available]
+        logger.info(f"Available profiling tools: {available_tools}")
+
+    def _is_tool_available(self, tool_name: str) -> bool:
+        """Check if a profiling tool is available."""
+        try:
+            if tool_name == 'py-spy':
+                subprocess.run(['py-spy', '--version'], capture_output=True, check=True)
+            elif tool_name == 'scalene':
+                subprocess.run(['scalene', '--version'], capture_output=True, check=True)
+            elif tool_name == 'memory_profiler':
+                subprocess.run(['python', '-c', 'import memory_profiler'], capture_output=True, check=True)
+            elif tool_name == 'flamegraph':
+                subprocess.run(['flamegraph'], capture_output=True, check=True)
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return False
+
+    def start_pyspy_profiling(self, pid: int = None, output_file: str = None) -> Optional[str]:
+        """
+        Start py-spy profiling.
+
+        Args:
+            pid: Process ID to profile (default: current process)
+            output_file: Output file for flamegraph
+
+        Returns:
+            Process ID of the profiling process
+        """
+        if not self.tools_available['py_spy']:
+            logger.warning("py-spy not available")
+            return None
+
+        if pid is None:
+            pid = os.getpid()
+
+        timestamp = int(time.time())
+        output_file = output_file or f"pyspy_{pid}_{timestamp}.svg"
+
+        output_path = self.output_dir / output_file
+
+        cmd = [
+            'py-spy', 'record',
+            '--pid', str(pid),
+            '--format', 'speedscope',
+            '--output', str(output_path.with_suffix('.json')),
+            '--duration', '60'  # 60 seconds
+        ]
+
+        try:
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self._active_processes[f'pyspy_{pid}'] = process
+            logger.info(f"Started py-spy profiling for PID {pid}")
+
+            # Generate flamegraph from speedscope
+            self._generate_flamegraph_from_speedscope(output_path.with_suffix('.json'), output_path)
+
+            return f'pyspy_{pid}'
+        except Exception as e:
+            logger.error(f"Failed to start py-spy profiling: {e}")
+            return None
+
+    def start_scalene_profiling(self, script_path: str = None, output_dir: str = None) -> Optional[str]:
+        """
+        Start scalene profiling.
+
+        Args:
+            script_path: Python script to profile
+            output_dir: Output directory for scalene results
+
+        Returns:
+            Process ID of the profiling process
+        """
+        if not self.tools_available['scalene']:
+            logger.warning("scalene not available")
+            return None
+
+        output_dir = output_dir or self.output_dir / f"scalene_{int(time.time())}"
+        output_dir.mkdir(exist_ok=True)
+
+        cmd = [
+            'scalene',
+            '--cpu',
+            '--memory',
+            '--html',
+            '--outfile', str(output_dir / 'profile.html')
+        ]
+
+        if script_path:
+            cmd.append(script_path)
+
+        try:
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self._active_processes[f'scalene_{script_path or "main"}'] = process
+            logger.info(f"Started scalene profiling for {script_path or 'main script'}")
+            return f'scalene_{script_path or "main"}'
+        except Exception as e:
+            logger.error(f"Failed to start scalene profiling: {e}")
+            return None
+
+    def profile_with_memory_profiler(self, func: Callable, *args, **kwargs) -> Dict:
+        """
+        Profile function with memory_profiler.
+
+        Args:
+            func: Function to profile
+            *args: Arguments for the function
+            **kwargs: Keyword arguments for the function
+
+        Returns:
+            Memory profiling results
+        """
+        if not self.tools_available['memory_profiler']:
+            logger.warning("memory_profiler not available")
+            return {}
+
+        try:
+            from memory_profiler import profile as memory_profile, memory_usage
+
+            # Profile memory usage over time
+            mem_usage = memory_usage((func, args, kwargs), interval=0.1, timeout=60)
+
+            # Get line-by-line memory usage
+            timestamp = int(time.time())
+            output_file = self.output_dir / f"memory_profile_{timestamp}.txt"
+
+            # Use memory_profiler's profile decorator
+            @memory_profile
+            def profiled_func():
+                return func(*args, **kwargs)
+
+            # Redirect output to file
+            with open(output_file, 'w') as f:
+                import sys
+                old_stdout = sys.stdout
+                sys.stdout = f
+                try:
+                    result = profiled_func()
+                finally:
+                    sys.stdout = old_stdout
+
+            return {
+                'memory_usage_over_time': mem_usage,
+                'peak_memory': max(mem_usage) if mem_usage else 0,
+                'average_memory': sum(mem_usage) / len(mem_usage) if mem_usage else 0,
+                'profile_file': str(output_file),
+                'result': result
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to profile with memory_profiler: {e}")
+            return {}
+
+    def generate_flamegraph(self, profile_data: Dict, output_file: str = None) -> Optional[str]:
+        """
+        Generate flamegraph from profiling data.
+
+        Args:
+            profile_data: Profiling data dictionary
+            output_file: Output file for flamegraph
+
+        Returns:
+            Path to generated flamegraph
+        """
+        if not self.tools_available['flamegraph']:
+            logger.warning("flamegraph tool not available")
+            return None
+
+        timestamp = int(time.time())
+        output_file = output_file or f"flamegraph_{timestamp}.svg"
+        output_path = self.output_dir / output_file
+
+        try:
+            # Convert profile data to flamegraph format
+            stacks = self._convert_to_flamegraph_format(profile_data)
+
+            # Write stacks to temporary file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                for stack in stacks:
+                    f.write(stack + '\n')
+                temp_file = f.name
+
+            # Generate flamegraph
+            cmd = ['flamegraph.pl', temp_file]
+            with open(output_path, 'w') as f:
+                subprocess.run(cmd, stdout=f, check=True)
+
+            # Clean up temp file
+            os.unlink(temp_file)
+
+            logger.info(f"Generated flamegraph: {output_path}")
+            return str(output_path)
+
+        except Exception as e:
+            logger.error(f"Failed to generate flamegraph: {e}")
+            return None
+
+    def _convert_to_flamegraph_format(self, profile_data: Dict) -> List[str]:
+        """Convert profiling data to flamegraph stack format."""
+        stacks = []
+
+        # This is a simplified conversion - in practice, you'd need
+        # to properly format the stack traces based on the profiler output
+        if 'functions' in profile_data:
+            for func_name, metrics in profile_data['functions'].items():
+                # Create stack trace format: function1;function2;function3 count
+                stack = f"{func_name} {int(metrics.get('call_count', 1))}"
+                stacks.append(stack)
+
+        return stacks
+
+    def _generate_flamegraph_from_speedscope(self, speedscope_file: Path, output_file: Path):
+        """Generate flamegraph from py-spy speedscope output."""
+        try:
+            # This would require additional tools to convert speedscope to flamegraph
+            # For now, we'll just copy the speedscope file
+            import shutil
+            shutil.copy2(speedscope_file, output_file.with_suffix('.json'))
+            logger.info(f"Generated speedscope file: {output_file.with_suffix('.json')}")
+        except Exception as e:
+            logger.error(f"Failed to generate flamegraph from speedscope: {e}")
+
+    def stop_profiling(self, process_id: str):
+        """Stop a specific profiling process."""
+        if process_id in self._active_processes:
+            process = self._active_processes[process_id]
+            try:
+                process.terminate()
+                process.wait(timeout=5)
+                logger.info(f"Stopped profiling process: {process_id}")
+            except Exception as e:
+                logger.error(f"Failed to stop profiling process {process_id}: {e}")
+                process.kill()
+            finally:
+                del self._active_processes[process_id]
+
+    def stop_all_profiling(self):
+        """Stop all active profiling processes."""
+        for process_id in list(self._active_processes.keys()):
+            self.stop_profiling(process_id)
+
+    def get_profiling_status(self) -> Dict[str, bool]:
+        """Get status of all profiling processes."""
+        return {
+            process_id: process.poll() is None
+            for process_id, process in self._active_processes.items()
+        }
+
+    def cleanup(self):
+        """Clean up profiling resources."""
+        self.stop_all_profiling()
+        logger.info("AdvancedProfiler cleaned up")
+
+
+class RegressionDetector:
+    """
+    Performance regression detection system.
+
+    Tracks performance baselines and detects significant deviations
+    that may indicate performance regressions.
+    """
+
+    def __init__(self, config: Dict[str, Any] = None):
+        self.config = config or {}
+        self.baselines_file = Path(self.config.get('baselines_file', 'performance_baselines.json'))
+        self.thresholds = {
+            'latency_increase': self.config.get('latency_threshold', 0.20),  # 20% increase
+            'memory_increase': self.config.get('memory_threshold', 0.30),   # 30% increase
+            'cpu_increase': self.config.get('cpu_threshold', 0.25)          # 25% increase
+        }
+
+        self.baselines = self._load_baselines()
+        logger.info("RegressionDetector initialized")
+
+    def _load_baselines(self) -> Dict:
+        """Load performance baselines from file."""
+        if self.baselines_file.exists():
+            try:
+                with open(self.baselines_file, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error(f"Failed to load baselines: {e}")
+
+        return {
+            'functions': {},
+            'last_updated': time.time()
+        }
+
+    def _save_baselines(self):
+        """Save performance baselines to file."""
+        try:
+            with open(self.baselines_file, 'w') as f:
+                json.dump(self.baselines, f, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save baselines: {e}")
+
+    def update_baseline(self, function_name: str, metrics: Dict):
+        """Update baseline for a function."""
+        if function_name not in self.baselines['functions']:
+            self.baselines['functions'][function_name] = {
+                'latency_mean': 0.0,
+                'latency_std': 0.0,
+                'memory_mean': 0,
+                'memory_std': 0,
+                'cpu_mean': 0.0,
+                'cpu_std': 0.0,
+                'samples': []
+            }
+
+        baseline = self.baselines['functions'][function_name]
+        baseline['samples'].append({
+            'timestamp': time.time(),
+            'latency': metrics.get('execution_time', 0),
+            'memory': metrics.get('memory_usage', 0),
+            'cpu': metrics.get('cpu_percent', 0)
+        })
+
+        # Keep only recent samples (last 100)
+        if len(baseline['samples']) > 100:
+            baseline['samples'] = baseline['samples'][-100:]
+
+        # Update statistics
+        self._update_statistics(baseline)
+        self.baselines['last_updated'] = time.time()
+        self._save_baselines()
+
+    def _update_statistics(self, baseline: Dict):
+        """Update statistical measures for a baseline."""
+        samples = baseline['samples']
+        if not samples:
+            return
+
+        latencies = [s['latency'] for s in samples]
+        memories = [s['memory'] for s in samples]
+        cpus = [s['cpu'] for s in samples]
+
+        baseline['latency_mean'] = statistics.mean(latencies)
+        baseline['latency_std'] = statistics.stdev(latencies) if len(latencies) > 1 else 0
+        baseline['memory_mean'] = statistics.mean(memories)
+        baseline['memory_std'] = statistics.stdev(memories) if len(memories) > 1 else 0
+        baseline['cpu_mean'] = statistics.mean(cpus)
+        baseline['cpu_std'] = statistics.stdev(cpus) if len(cpus) > 1 else 0
+
+    def detect_regression(self, function_name: str, current_metrics: Dict) -> Dict:
+        """
+        Detect performance regression for a function.
+
+        Args:
+            function_name: Name of the function
+            current_metrics: Current performance metrics
+
+        Returns:
+            Regression detection results
+        """
+        if function_name not in self.baselines['functions']:
+            return {'regression_detected': False, 'reason': 'no_baseline'}
+
+        baseline = self.baselines['functions'][function_name]
+        if len(baseline['samples']) < 10:  # Need minimum samples
+            return {'regression_detected': False, 'reason': 'insufficient_samples'}
+
+        results = {
+            'regression_detected': False,
+            'issues': [],
+            'current_values': current_metrics,
+            'baseline_values': {
+                'latency_mean': baseline['latency_mean'],
+                'memory_mean': baseline['memory_mean'],
+                'cpu_mean': baseline['cpu_mean']
+            }
+        }
+
+        # Check latency regression
+        current_latency = current_metrics.get('execution_time', 0)
+        latency_threshold = baseline['latency_mean'] * (1 + self.thresholds['latency_increase'])
+        if current_latency > latency_threshold:
+            results['regression_detected'] = True
+            results['issues'].append({
+                'type': 'latency',
+                'current': current_latency,
+                'baseline': baseline['latency_mean'],
+                'threshold': latency_threshold,
+                'increase_percent': (current_latency - baseline['latency_mean']) / baseline['latency_mean']
+            })
+
+        # Check memory regression
+        current_memory = current_metrics.get('memory_usage', 0)
+        memory_threshold = baseline['memory_mean'] * (1 + self.thresholds['memory_increase'])
+        if current_memory > memory_threshold:
+            results['regression_detected'] = True
+            results['issues'].append({
+                'type': 'memory',
+                'current': current_memory,
+                'baseline': baseline['memory_mean'],
+                'threshold': memory_threshold,
+                'increase_percent': (current_memory - baseline['memory_mean']) / baseline['memory_mean']
+            })
+
+        # Check CPU regression
+        current_cpu = current_metrics.get('cpu_percent', 0)
+        cpu_threshold = baseline['cpu_mean'] * (1 + self.thresholds['cpu_increase'])
+        if current_cpu > cpu_threshold:
+            results['regression_detected'] = True
+            results['issues'].append({
+                'type': 'cpu',
+                'current': current_cpu,
+                'baseline': baseline['cpu_mean'],
+                'threshold': cpu_threshold,
+                'increase_percent': (current_cpu - baseline['cpu_mean']) / baseline['cpu_mean']
+            })
+
+        return results
+
+    def get_regression_report(self) -> Dict:
+        """Generate a comprehensive regression report."""
+        return {
+            'baselines': self.baselines,
+            'thresholds': self.thresholds,
+            'last_updated': self.baselines.get('last_updated', 0)
+        }
+
+
+# Global instances
+_advanced_profiler = None
+_regression_detector = None
+
+
+def get_advanced_profiler(config: Dict[str, Any] = None) -> AdvancedProfiler:
+    """Get the global advanced profiler instance."""
+    global _advanced_profiler
+    if _advanced_profiler is None:
+        _advanced_profiler = AdvancedProfiler(config)
+    return _advanced_profiler
+
+
+def get_regression_detector(config: Dict[str, Any] = None) -> RegressionDetector:
+    """Get the global regression detector instance."""
+    global _regression_detector
+    if _regression_detector is None:
+        _regression_detector = RegressionDetector(config)
+    return _regression_detector
 
 
 # Global profiler instance

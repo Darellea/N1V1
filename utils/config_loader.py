@@ -35,6 +35,8 @@ else:
 class DatabaseConfig(BaseModel):
     """Database configuration model."""
 
+    model_config = {"protected_namespaces": ()}
+
     host: str = "localhost"
     port: int = 5432
     username: str
@@ -49,6 +51,9 @@ class ExchangeConfig(BaseModel):
     NOTE: API credentials are now optional in the JSON config and should
     be provided via environment variables for production use. See .env.example.
     """
+
+    model_config = {"protected_namespaces": ()}
+
     name: str
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
@@ -61,6 +66,8 @@ class ExchangeConfig(BaseModel):
 class RiskConfig(BaseModel):
     """Risk management configuration model."""
 
+    model_config = {"protected_namespaces": ()}
+
     stop_loss: float = 0.02
     take_profit: float = 0.04
     trailing_stop: bool = True
@@ -72,6 +79,8 @@ class RiskConfig(BaseModel):
 
 class ConfigModel(BaseModel):
     """Main configuration model."""
+
+    model_config = {"protected_namespaces": ()}
 
     environment: Dict[str, Any]
     exchange: ExchangeConfig
