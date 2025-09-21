@@ -230,8 +230,8 @@ class MetricsCollector:
         self.custom_collectors: List[Callable] = []
 
         # Collection settings
-        self.collection_interval = config.get('collection_interval', 15.0)  # seconds
-        self.max_samples_per_metric = config.get('max_samples_per_metric', 1000)
+        self.collection_interval = self.config.get('collection_interval', 15.0)  # seconds
+        self.max_samples_per_metric = self.config.get('max_samples_per_metric', 1000)
 
         # Async collection
         self._running = False
@@ -328,6 +328,11 @@ class MetricsCollector:
         # For simplicity, we'll store individual observations
         # In a full implementation, this would aggregate into buckets
         await self.record_metric(name, value, labels)
+
+    async def record_latency(self, name: str, latency_ms: float,
+                            labels: Dict[str, str] = None) -> None:
+        """Record a latency measurement."""
+        await self.record_metric(name, latency_ms, labels)
 
     def get_metric_value(self, name: str, labels: Dict[str, str] = None) -> Optional[float]:
         """Get the latest value of a metric."""
@@ -517,6 +522,12 @@ async def collect_trading_metrics(collector: MetricsCollector) -> None:
     )
 
     await collector.record_metric(
+        "trading_orders_skipped_safe_mode_total",
+        0,  # Would be populated from actual data
+        {"account": "main"}
+    )
+
+    await collector.record_metric(
         "trading_order_latency_seconds",
         0.045,
         {"account": "main", "exchange": "binance"}
@@ -527,6 +538,20 @@ async def collect_trading_metrics(collector: MetricsCollector) -> None:
         2.5,
         {"account": "main", "symbol": "BTC/USDT"}
     )
+
+    # Calculate order failure rate excluding safe mode skips
+    total_orders = await collector.get_metric_value("trading_orders_total", {"account": "main", "status": "filled"}) or 0
+    skipped_orders = await collector.get_metric_value("trading_orders_skipped_safe_mode_total", {"account": "main"}) or 0
+    failed_orders = await collector.get_metric_value("trading_orders_failed_total", {"account": "main"}) or 0
+
+    # Failure rate calculation: failed orders / (total orders - skipped orders)
+    if total_orders > skipped_orders:
+        failure_rate = failed_orders / (total_orders - skipped_orders)
+        await collector.record_metric(
+            "trading_order_failure_rate_ratio",
+            failure_rate,
+            {"account": "main"}
+        )
 
 
 async def collect_binary_model_metrics(collector: MetricsCollector) -> None:

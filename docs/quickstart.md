@@ -50,7 +50,7 @@ Get started with N1V1's paper-trade demo in under 10 minutes using Docker Compos
    curl http://localhost:8000/health
    ```
 
-## � Quick Demo Setup
+## Running the Demo
 
 ### 1. Clone and Navigate
 
@@ -91,7 +91,7 @@ curl http://localhost:8000/api/v1/status
 curl http://localhost:8000/api/v1/signals
 ```
 
-## �📊 What You'll See
+## Expected Output
 
 ### Trading Dashboard
 - **Real-time signals** from multiple strategies (EMA, RSI, MACD, etc.)
@@ -105,61 +105,7 @@ curl http://localhost:8000/api/v1/signals
 - **Risk metrics**: Drawdown, exposure, position sizes
 - **Strategy performance**: Individual strategy returns
 
-## 🛠️ Development Setup (Optional)
-
-For contributors who want to modify the code:
-
-### Local Development Environment
-
-```bash
-# Install Python dependencies
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
-
-# Run tests to verify setup
-python tests/run_comprehensive_tests.py
-
-# Start development server
-python main.py --api --debug
-```
-
-### IDE Setup
-
-1. **VS Code** (recommended):
-   - Install Python extension
-   - Configure interpreter: `Python 3.8+`
-   - Enable linting: `ruff` or `flake8`
-
-2. **PyCharm**:
-   - Set project interpreter
-   - Enable pytest integration
-   - Configure code style (Black)
-
-## 🧪 Testing Your Setup
-
-### Run the Test Suite
-
-```bash
-# Unit tests only
-pytest tests/ -k "unit" -v
-
-# Integration tests
-pytest tests/integration/ -v
-
-# Full comprehensive test suite
-python tests/run_comprehensive_tests.py
-
-# Performance benchmarks
-python scripts/run_profiling.py
-```
-
-### Test Coverage Requirements
-
-- **Minimum coverage**: 95%
-- **Core modules**: 100% coverage required
-- **API endpoints**: Full integration test coverage
-
-## 🔧 Configuration
+## Configuration
 
 ### Basic Configuration
 
@@ -196,31 +142,7 @@ export GRAFANA_ENABLED=true
 export LOG_LEVEL=INFO
 ```
 
-## 📈 Understanding the Demo
-
-### Trading Strategies Included
-
-1. **EMA Cross Strategy**: Trend following with exponential moving averages
-2. **RSI Strategy**: Mean reversion using relative strength index
-3. **MACD Strategy**: Momentum trading with MACD indicators
-4. **Bollinger Bands**: Volatility-based mean reversion
-5. **Stochastic Strategy**: Oscillator-based momentum trading
-
-### Risk Management Features
-
-- **Circuit Breaker**: Automatic trading suspension on losses
-- **Position Sizing**: Risk-based position calculation
-- **Drawdown Limits**: Maximum loss protection
-- **Exposure Controls**: Portfolio concentration limits
-
-### Monitoring & Observability
-
-- **Prometheus Metrics**: Real-time performance tracking
-- **Grafana Dashboards**: Visual monitoring interface
-- **Health Checks**: Automated system health validation
-- **Alerting**: Discord/Telegram notification integration
-
-## 🚨 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
@@ -338,7 +260,7 @@ docker compose -f deploy/docker-compose.dev.yml logs api
 docker compose -f deploy/docker-compose.dev.yml logs -f trading-engine
 ```
 
-## 🎯 Next Steps
+## Next Steps
 
 ### For Users
 1. **Explore Strategies**: Try different strategy combinations
@@ -352,7 +274,7 @@ docker compose -f deploy/docker-compose.dev.yml logs -f trading-engine
 3. **Run Tests**: `python tests/run_comprehensive_tests.py`
 4. **Contribute**: See `CONTRIBUTING.md` for guidelines
 
-## 📚 Additional Resources
+## Additional Resources
 
 - **Strategy Development**: `docs/strategy_development.md`
 - **ML Pipeline**: `docs/ml_onboarding.md`
@@ -360,7 +282,7 @@ docker compose -f deploy/docker-compose.dev.yml logs -f trading-engine
 - **Deployment**: `docs/deployment.md`
 - **Security**: `docs/security.md`
 
-## 🆘 Getting Help
+## Getting Help
 
 - **GitHub Issues**: Bug reports and feature requests
 - **Documentation**: Comprehensive guides in `docs/`

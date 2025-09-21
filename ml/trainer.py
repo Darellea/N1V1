@@ -1166,27 +1166,22 @@ def run_walk_forward_validation(X: pd.DataFrame, y: pd.Series, class_weights: Di
             early_stopping_rounds, eval_economic, profit_threshold, fold_idx
         ))
 
-    logging.info(f"Starting parallel walk-forward validation with {n_splits} folds using ProcessPoolExecutor")
+    logging.info(f"Starting sequential walk-forward validation with {n_splits} folds (changed from parallel to avoid hanging)")
 
-    # Execute folds in parallel
+    # Execute folds sequentially to avoid multiprocessing issues
     fold_results = []
-    with ProcessPoolExecutor(max_workers=min(n_splits, multiprocessing.cpu_count())) as executor:
-        # Submit all fold training tasks
-        futures = [executor.submit(_train_single_fold, task) for task in fold_tasks]
-
-        # Collect results as they complete
-        for future in futures:
-            try:
-                fold_result = future.result()
-                fold_results.append(fold_result)
-                fold_idx = fold_result['fold']
-                auc = fold_result['auc']
-                f1 = fold_result['f1']
-                pnl = fold_result.get('pnl', 0)
-                logging.info(f"Fold {fold_idx} completed - AUC: {auc:.4f}, F1: {f1:.4f}, PnL: {pnl:.4f}")
-            except Exception as e:
-                logging.error(f"Error in fold training: {e}")
-                raise
+    for task in fold_tasks:
+        try:
+            fold_result = _train_single_fold(task)
+            fold_results.append(fold_result)
+            fold_idx = fold_result['fold']
+            auc = fold_result['auc']
+            f1 = fold_result['f1']
+            pnl = fold_result.get('pnl', 0)
+            logging.info(f"Fold {fold_idx} completed - AUC: {auc:.4f}, F1: {f1:.4f}, PnL: {pnl:.4f}")
+        except Exception as e:
+            logging.error(f"Error in fold training: {e}")
+            raise
 
     # Sort results by fold index
     fold_results.sort(key=lambda x: x['fold'])

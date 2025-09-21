@@ -3,8 +3,9 @@ from decimal import Decimal
 from unittest.mock import MagicMock
 import dataclasses
 from enum import Enum
+from datetime import datetime
 
-from utils.adapter import signal_to_dict
+from utils.adapter import signal_to_dict, _normalize_timestamp
 from core.contracts import TradingSignal, SignalType, SignalStrength
 
 
@@ -318,3 +319,62 @@ def test_signal_to_dict_with_non_enum_value_attr():
     # Should preserve the object as-is (not try to convert it)
     assert isinstance(result["param"], NotAnEnum)
     assert result["param"].value == "not_an_enum"
+
+
+def test_normalize_timestamp_int():
+    """Test _normalize_timestamp with int input."""
+    result = _normalize_timestamp(1234567890)
+    assert result == 1234567890
+    assert isinstance(result, int)
+
+
+def test_normalize_timestamp_float():
+    """Test _normalize_timestamp with float input (seconds since epoch)."""
+    # Test with a float representing seconds
+    timestamp_float = 1633017600.123
+    result = _normalize_timestamp(timestamp_float)
+    expected = int(1633017600.123 * 1000)  # Convert to milliseconds
+    assert result == expected
+    assert isinstance(result, int)
+
+
+def test_normalize_timestamp_datetime():
+    """Test _normalize_timestamp with datetime input."""
+    from datetime import timezone
+    dt = datetime(2021, 10, 1, 12, 0, 0, tzinfo=timezone.utc)
+    result = _normalize_timestamp(dt)
+    expected = int(dt.timestamp() * 1000)
+    assert result == expected
+    assert isinstance(result, int)
+
+
+def test_normalize_timestamp_str():
+    """Test _normalize_timestamp with ISO string input."""
+    iso_str = "2021-10-01T12:00:00Z"
+    dt = datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
+    expected = int(dt.timestamp() * 1000)
+    result = _normalize_timestamp(iso_str)
+    assert result == expected
+    assert isinstance(result, int)
+
+
+def test_normalize_timestamp_unsupported():
+    """Test _normalize_timestamp with unsupported type raises ValueError."""
+    with pytest.raises(ValueError, match="Unsupported timestamp type"):
+        _normalize_timestamp([])  # List is not supported
+
+
+def test_signal_to_dict_with_float_timestamp():
+    """Test signal_to_dict normalizes float timestamp in attribute probe."""
+    class SignalWithFloatTimestamp:
+        def __init__(self):
+            self.symbol = "BTC/USDT"
+            self.timestamp = 1633017600.123  # Float seconds
+
+    signal = SignalWithFloatTimestamp()
+    result = signal_to_dict(signal)
+
+    # Float should be converted to int milliseconds
+    expected_ms = int(1633017600.123 * 1000)
+    assert result["timestamp"] == expected_ms
+    assert isinstance(result["timestamp"], int)

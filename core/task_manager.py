@@ -435,7 +435,8 @@ class TaskManager:
             self.queue_adapter = InMemoryQueueAdapter(queue_config)
 
         # Worker management
-        self.workers: Dict[str, Dict[str, Any]] = {}  # Store worker info, not tasks
+        self.workers: Dict[str, Any] = {}  # Store worker objects
+        self.worker_info: Dict[str, Dict[str, Any]] = {}  # Store worker info
         self.max_workers = queue_config.get('max_workers', 4)
         self.worker_tasks: Set[asyncio.Task] = set()
 
@@ -691,20 +692,179 @@ class TaskManager:
         if not hasattr(worker, 'capacity'):
             raise ValueError("Worker must have 'capacity' attribute")
 
+        # Initialize assigned_strategies and assigned_tasks if not present
+        if not hasattr(worker, "assigned_strategies") or not isinstance(getattr(worker, "assigned_strategies", None), list):
+            worker.assigned_strategies = []
+        if not hasattr(worker, "assigned_tasks") or not isinstance(getattr(worker, "assigned_tasks", None), list):
+            worker.assigned_tasks = []
+
         node_id = worker.node_id
 
-        # Store worker information
-        self.workers[node_id] = {
-            'node_id': node_id,
-            'status': worker.status,
-            'capacity': worker.capacity,
-            'current_load': getattr(worker, 'current_load', 0),
-            'assigned_strategies': getattr(worker, 'assigned_strategies', []),
-            'last_heartbeat': time.time()
-        }
+        # Store worker object
+        self.workers[node_id] = worker
 
         logger.info(f"Registered worker {node_id} with capacity {worker.capacity}")
+
+    @property
+    def active_workers(self) -> Dict[str, Any]:
+        """Get active workers."""
+        return {k: v for k, v in self.workers.items() if v.status == 'active'}
+
+    @property
+    def total_capacity(self) -> int:
+        """Get total capacity across all active workers."""
+        return sum(worker.capacity for worker in self.active_workers.values())
+
+    async def distribute_strategies(self, strategies: List[Any]) -> None:
+        """Distribute strategies across workers for load balancing."""
+        if not self.active_workers:
+            logger.warning("No active workers available for strategy distribution")
+            return
+
+        # Simple round-robin distribution
+        worker_list = list(self.active_workers.values())
+        for i, strategy in enumerate(strategies):
+            worker = worker_list[i % len(worker_list)]
+            if not hasattr(worker, "assigned_strategies") or not isinstance(getattr(worker, "assigned_strategies", None), list):
+                worker.assigned_strategies = []
+            if len(worker.assigned_strategies) < worker.capacity:
+                worker.assigned_strategies.append(strategy.id if hasattr(strategy, 'id') else str(strategy))
+                worker.current_load = len(worker.assigned_strategies)
+
+        logger.info(f"Distributed {len(strategies)} strategies across {len(worker_list)} workers")
+
+    async def distribute_tasks(self, tasks: List[Any]) -> None:
+        """Distribute tasks across workers considering processing_power and task complexity."""
+        if not self.active_workers:
+            logger.warning("No active workers available for task distribution")
+            return
+
+        worker_list = list(self.active_workers.values())
+        num_tasks = len(tasks)
+
+        if not worker_list or num_tasks == 0:
+            return
+
+        # Sort tasks by complexity (complex > medium > simple), then priority (high > medium > low)
+        complexity_order = {'complex': 3, 'medium': 2, 'simple': 1}
+        priority_order = {'high': 3, 'medium': 2, 'low': 1}
+
+        def task_sort_key(task):
+            complexity = getattr(task, 'complexity', 'simple')
+            priority = getattr(task, 'priority', 'low')
+            return (-complexity_order.get(complexity, 1), -priority_order.get(priority, 1))
+
+        sorted_tasks = sorted(tasks, key=task_sort_key)
+
+        # Sort workers by processing_power descending (use capacity if processing_power not available)
+        def worker_sort_key(worker):
+            processing_power = getattr(worker, 'processing_power', worker.capacity)
+            return -processing_power
+
+        sorted_workers = sorted(worker_list, key=worker_sort_key)
+
+        # Calculate target assignments proportional to processing_power
+        total_pp = sum(getattr(w, 'processing_power', w.capacity) for w in worker_list)
+        targets = {}
+        for worker in worker_list:
+            pp = getattr(worker, 'processing_power', worker.capacity)
+            targets[worker] = int((pp / total_pp) * num_tasks)
+
+        total_target = sum(targets.values())
+        remaining = num_tasks - total_target
+
+        # Distribute remaining tasks to highest processing_power workers
+        sorted_workers_pp = sorted(worker_list, key=lambda w: getattr(w, 'processing_power', w.capacity), reverse=True)
+        for i in range(remaining):
+            targets[sorted_workers_pp[i % len(sorted_workers_pp)]] += 1
+
+        # Assign tasks, prioritizing complex tasks to high processing_power workers
+        for task in sorted_tasks:
+            # Find worker with highest processing_power that has not reached target
+            for worker in sorted_workers_pp:
+                if len(getattr(worker, 'assigned_tasks', [])) < targets[worker]:
+                    # Initialize assigned_tasks if missing
+                    if not hasattr(worker, "assigned_tasks") or not isinstance(getattr(worker, "assigned_tasks", None), list):
+                        worker.assigned_tasks = []
+                    worker.assigned_tasks.append(task)
+                    break
+
+        # Log distribution results
+        logger.info(f"Distributed {num_tasks} tasks across {len(worker_list)} workers (processing_power and complexity prioritized):")
+        total_assigned = 0
+        for worker in worker_list:
+            assigned_count = len(getattr(worker, 'assigned_tasks', []))
+            processing_power = getattr(worker, 'processing_power', worker.capacity)
+            logger.info(f"  Worker {worker.node_id}: {assigned_count} tasks (capacity: {worker.capacity}, processing_power: {processing_power})")
+            total_assigned += assigned_count
+
+        # Final validation
+        if total_assigned != num_tasks:
+            logger.error(f"Task distribution failed: assigned {total_assigned} of {num_tasks} tasks")
+        else:
+            logger.info(f"Successfully distributed all {num_tasks} tasks")
+
+    async def remove_worker(self, node_id: str) -> None:
+        """Remove a worker from the registry."""
+        if node_id in self.workers:
+            worker = self.workers[node_id]
+            failed_strategies = worker.assigned_strategies.copy() if hasattr(worker, 'assigned_strategies') else []
+            del self.workers[node_id]
+            logger.info(f"Removed worker {node_id}")
+
+            if failed_strategies:
+                await self.redistribute_tasks(failed_strategies)
+                logger.info(f"Redistributed {len(failed_strategies)} strategies from failed worker {node_id}")
+
+    async def redistribute_tasks(self, strategies: List[str]) -> None:
+        """Redistribute strategies to remaining workers using load-aware distribution."""
+        if not self.active_workers:
+            logger.warning("No active workers available for strategy redistribution")
+            return
+
+        # Calculate available capacity for each worker (allow up to 1.5x capacity)
+        worker_capacity = []
+        for worker in self.active_workers.values():
+            current_assigned = len(getattr(worker, 'assigned_strategies', []))
+            max_allowed = int(worker.capacity * 1.5)
+            available = max(0, max_allowed - current_assigned)
+            worker_capacity.append({'worker': worker, 'available': available})
+
+        # Sort by available capacity descending
+        worker_capacity.sort(key=lambda x: x['available'], reverse=True)
+
+        assigned_counts = {worker.node_id: 0 for worker in self.active_workers.values()}
+
+        for strategy in strategies:
+            # Find worker with most available capacity
+            assigned = False
+            for item in worker_capacity:
+                if item['available'] > 0:
+                    worker = item['worker']
+                    if not hasattr(worker, 'assigned_strategies'):
+                        worker.assigned_strategies = []
+                    worker.assigned_strategies.append(strategy)
+                    worker.current_load = len(worker.assigned_strategies)
+                    assigned_counts[worker.node_id] += 1
+                    # Update available
+                    item['available'] -= 1
+                    # Re-sort after assignment
+                    worker_capacity.sort(key=lambda x: x['available'], reverse=True)
+                    assigned = True
+                    break
+
+            if not assigned:
+                logger.warning(f"Could not assign strategy {strategy}: no available capacity")
+
+        # Log redistribution results
+        logger.info(f"Redistributed {len(strategies)} strategies to workers: {assigned_counts}")
 
     async def start(self) -> bool:
         """Async stub for starting the task manager."""
         return True
+
+    async def stop(self) -> None:
+        """Stop the task manager and clean up resources."""
+        await self.cancel_all()
+        await self.stop_workers()
+        await self.shutdown_queue()

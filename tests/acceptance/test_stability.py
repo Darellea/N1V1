@@ -25,7 +25,7 @@ from core.watchdog import (
     HeartbeatMessage,
     FailureDiagnosis
 )
-from core.order_manager import OrderManager
+from core.order_manager import OrderManager, MockLiveExecutor
 from core.config_manager import ConfigManager
 from utils.logger import get_logger
 
@@ -50,6 +50,12 @@ class TestStabilityValidation:
                 'retry_delay': 1.0,
                 'timeout': 30
             },
+            'paper': {
+                'initial_balance': 1000.0,
+                'base_currency': 'USDT',
+                'trade_fee': 0.001,
+                'slippage': 0.0005
+            },
             'reliability': {
                 'safe_mode_threshold': 5,
                 'circuit_breaker_timeout': 60
@@ -73,9 +79,10 @@ class TestStabilityValidation:
         return WatchdogService(config.get('watchdog', {}))
 
     @pytest.fixture
-    def order_manager(self, config: Dict[str, Any]) -> OrderManager:
+    def order_manager(self, config: Dict[str, Any], watchdog_service: WatchdogService) -> OrderManager:
         """Order manager fixture."""
-        return OrderManager(config, 'paper')
+        with patch('core.order_manager.LiveOrderExecutor', MockLiveExecutor):
+            return OrderManager(config, 'live', watchdog_service)
 
     @pytest.mark.asyncio
     async def test_exchange_failure_rollback(self, order_manager: OrderManager,
@@ -91,6 +98,9 @@ class TestStabilityValidation:
             heartbeat_interval=10
         )
 
+        # Disable safe mode for this test
+        order_manager.reliability_manager.safe_mode_active = False
+
         # Mock exchange failure
         original_execute = order_manager.live_executor.execute_live_order
 
@@ -99,20 +109,24 @@ class TestStabilityValidation:
             raise Exception("Simulated exchange network failure")
 
         with patch.object(order_manager.live_executor, 'execute_live_order', failing_execute):
-            # Create test signal
+            # Create test signal with proper attributes
             test_signal = Mock()
             test_signal.symbol = 'BTC/USDT'
             test_signal.signal_type = 'ENTRY_LONG'
             test_signal.amount = 0.001
             test_signal.order_type = 'MARKET'
+            test_signal.strategy_id = 'test_strategy'
+            test_signal.correlation_id = 'test_order_123'
 
             # Execute order (should fail and trigger rollback)
             start_time = time.time()
             result = await order_manager.execute_order(test_signal)
             execution_time = time.time() - start_time
 
-            # Verify order failed
-            assert result is None or result.get('status') == 'failed'
+            # Verify order failed gracefully
+            assert result is not None
+            assert result.get('status') == 'failed'
+            assert 'error' in result
 
             # Verify watchdog detected failure
             await asyncio.sleep(1)  # Allow heartbeat processing

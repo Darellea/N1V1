@@ -6,8 +6,9 @@ import pytest
 import tempfile
 import os
 import json
+import time
 from unittest.mock import Mock
-from math import inf, nan
+from math import inf, nan, isfinite
 
 from backtest.backtester import (
     compute_backtest_metrics,

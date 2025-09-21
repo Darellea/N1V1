@@ -1,5 +1,9 @@
 {
-  "overall": {
+  "per_regime_metrics": {},
+  "summary": {
+    "total_regimes": 0
+  },
+  "overall_performance": {
     "equity_curve": [
       100.0
     ],
@@ -12,8 +16,9 @@
     "losses": 0,
     "win_rate": 0.0
   },
-  "per_regime": {},
-  "regime_summary": {
-    "total_regimes": 0
+  "regime_performance": {},
+  "report_type": "regime_aware_backtest_report",
+  "recommendations": {
+    "general": "Insufficient regime data for recommendations"
   }
 }

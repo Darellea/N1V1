@@ -23,6 +23,8 @@ def make_sample_df(rows=200):
     return df
 
 def test_train_creates_model_card(tmp_path):
+    print("Starting test_train_creates_model_card")
+
     # Create synthetic OHLCV DataFrame for binary classification
     rows = 600
     idx = pd.date_range("2020-01-01", periods=rows, freq="H")
@@ -41,12 +43,18 @@ def test_train_creates_model_card(tmp_path):
         "Volume": rng.uniform(1000, 10000, rows),
     }, index=idx)
 
+    print(f"Created DataFrame with shape: {df.shape}")
+
     # Generate features using the standard pipeline
+    print("Generating features...")
     df = generate_features(df)
+    print(f"After feature generation: {df.shape}")
 
     # Create binary labels for trade/no-trade decisions
+    print("Creating binary labels...")
     df = create_binary_labels(df, horizon=5, profit_threshold=0.005)
     df['Label'] = df['label_binary']
+    print(f"After label creation: {df.shape}")
 
     # Ensure we have enough samples for TimeSeriesSplit with 3 splits
     assert len(df) >= 10, "Insufficient data for CV splits in test"
@@ -56,6 +64,7 @@ def test_train_creates_model_card(tmp_path):
     model_path = tmp_path / "model.pkl"
     results_path = tmp_path / "results.json"
 
+    print("Starting train_model_binary...")
     train_model_binary(
         df,
         str(model_path),
@@ -71,6 +80,7 @@ def test_train_creates_model_card(tmp_path):
         early_stopping_rounds=50,
         eval_economic=True,
     )
+    print("train_model_binary completed")
 
     card_path = str(model_path).replace(".pkl", ".model_card.json")
     assert os.path.exists(card_path), "Model card JSON should be created"
@@ -79,3 +89,5 @@ def test_train_creates_model_card(tmp_path):
     assert "feature_list" in card
     assert "training_metadata" in card
     assert card["model_file"].endswith("model.pkl")
+
+    print("Test completed successfully")
