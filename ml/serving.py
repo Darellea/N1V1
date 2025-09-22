@@ -73,7 +73,7 @@ def load_model(model_name: str) -> Any:
             raise HTTPException(status_code=500, detail=f"Model {model_name} not found")
     return models[model_name]
 
-def process_single_prediction(request: PredictionRequest) -> Dict[str, Any]:
+async def process_single_prediction(request: PredictionRequest) -> Dict[str, Any]:
     """Process a single prediction request."""
     start_time = time.time()
     correlation_id = request.correlation_id or str(uuid.uuid4())
@@ -82,13 +82,8 @@ def process_single_prediction(request: PredictionRequest) -> Dict[str, Any]:
         model = load_model(request.model_name)
         features_df = pd.DataFrame(request.features)
 
-        # Run prediction in thread pool to avoid blocking
-        loop = asyncio.new_event_loop()
-        result_df = loop.run_until_complete(
-            asyncio.get_event_loop().run_in_executor(
-                executor, local_predict, model, features_df
-            )
-        )
+        # Run prediction in thread pool to avoid blocking the event loop
+        result_df = await asyncio.to_thread(local_predict, model, features_df)
 
         latency_ms = (time.time() - start_time) * 1000
 
@@ -116,7 +111,7 @@ def process_single_prediction(request: PredictionRequest) -> Dict[str, Any]:
 @app.post("/predict", response_model=PredictionResponse)
 async def predict_single(request: PredictionRequest):
     """Single prediction endpoint."""
-    return process_single_prediction(request)
+    return await process_single_prediction(request)
 
 @app.post("/predict/batch", response_model=List[PredictionResponse])
 async def predict_batch(request: BatchPredictionRequest):
@@ -130,7 +125,7 @@ async def predict_batch(request: BatchPredictionRequest):
     batch_size = request.batch_size
     for i in range(0, len(tasks), batch_size):
         batch = tasks[i:i + batch_size]
-        batch_results = await asyncio.gather(*[asyncio.to_thread(lambda r=r: process_single_prediction(r)) for r in batch])
+        batch_results = await asyncio.gather(*batch)
         results.extend(batch_results)
 
     return results

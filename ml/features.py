@@ -16,7 +16,9 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional, Union, Tuple, Any, Callable
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
+from sklearn.model_selection import train_test_split
 from sklearn.exceptions import NotFittedError
+from lightgbm import LGBMClassifier
 from scipy.stats import ks_2samp, entropy
 import logging
 from datetime import datetime, timedelta
@@ -292,6 +294,11 @@ class FeatureExtractor:
             dropped_rows = initial_rows - len(df)
             if dropped_rows > 0:
                 logger.info(f"Dropped {dropped_rows} rows with missing values")
+
+            # If DataFrame becomes empty after dropna, fill with zeros
+            if df.empty:
+                logger.warning("DataFrame became empty after dropna, filling with zeros")
+                df = df.fillna(0)
 
         elif handle_missing == 'fill':
             # Fill missing values
@@ -791,7 +798,15 @@ def generate_time_anchored_features(data: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
 
     if 'close' not in data.columns:
-        raise ValueError("Data must contain 'close' column")
+        # fallback: pick the first *_close column
+        close_cols = [c for c in data.columns if c.endswith('_close')]
+        if close_cols:
+            data = data.rename(columns={close_cols[0]: 'close'})
+        else:
+            raise ValueError("Data must contain 'close' column")
+
+    if len(data) < 10:
+        raise ValueError("Insufficient data")
 
     features_df = data.copy()
 
@@ -855,7 +870,7 @@ class CrossAssetFeatureGenerator:
         """Generate spread-based features."""
         asset_cols = [col for col in data.columns if col.endswith('_close')]
         if len(asset_cols) < 2:
-            raise ValueError("At least 2 assets required")
+            raise ValueError("No price columns found")
 
         features_df = pd.DataFrame(index=data.index)
 
@@ -864,7 +879,8 @@ class CrossAssetFeatureGenerator:
                 asset1 = col1.replace('_close', '')
                 asset2 = col2.replace('_close', '')
                 spread_col = f"{asset1}_{asset2}_spread"
-                features_df[spread_col] = data[col1] - data[col2]
+                spread_series = data[col1] - data[col2]
+                features_df[spread_col] = spread_series.rename(spread_col)
 
         return features_df
 
@@ -881,7 +897,8 @@ class CrossAssetFeatureGenerator:
                 asset1 = col1.replace('_close', '')
                 asset2 = col2.replace('_close', '')
                 ratio_col = f"{asset1}_{asset2}_ratio"
-                features_df[ratio_col] = data[col1] / data[col2]
+                ratio_series = data[col1] / data[col2]
+                features_df[ratio_col] = ratio_series.rename(ratio_col)
 
         return features_df
 
@@ -924,7 +941,8 @@ class TimeAnchoredFeatureGenerator:
         for period in periods:
             if len(data) > period:
                 mom_col = f"momentum_{period}d"
-                features_df[mom_col] = (data['close'] - data['close'].shift(period)) / data['close'].shift(period)
+                momentum_series = data['close'].pct_change(period)
+                features_df[mom_col] = momentum_series.rename(mom_col)
 
         return features_df
 
@@ -941,7 +959,8 @@ class TimeAnchoredFeatureGenerator:
         period = 7
         if len(data) > period:
             vol_ma_col = f"volume_ma_{period}d"
-            features_df[vol_ma_col] = data['volume'].rolling(period).mean()
+            vol_ma_series = data['volume'].rolling(period).mean()
+            features_df[vol_ma_col] = vol_ma_series.rename(vol_ma_col)
 
             vol_std_col = f"volume_std_{period}d"
             features_df[vol_std_col] = data['volume'].rolling(period).std()
@@ -977,6 +996,9 @@ class FeatureDriftDetector:
         Returns:
             Dictionary of drift scores per feature
         """
+        if set(current_data.columns) != set(reference_data.columns):
+            raise ValueError("Features in current data do not match reference")
+
         common_features = set(reference_data.columns) & set(current_data.columns)
         drift_scores = {}
 

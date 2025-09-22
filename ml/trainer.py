@@ -847,13 +847,14 @@ def create_binary_labels(df: pd.DataFrame, horizon: Optional[int] = None, profit
     return df
 
 
-def validate_inputs(df: pd.DataFrame, feature_columns: Optional[List[str]]) -> Tuple[str, List[str]]:
+def validate_inputs(df: pd.DataFrame, feature_columns: Optional[List[str]] = None, label_col: str = "label_binary") -> Tuple[str, List[str]]:
     """
     Validate input DataFrame and feature columns.
 
     Args:
         df: Input DataFrame with features and labels
-        feature_columns: List of feature column names
+        feature_columns: List of feature column names (optional, inferred if None)
+        label_col: Name of the label column
 
     Returns:
         Tuple of (label_column_name, validated_feature_columns)
@@ -868,15 +869,12 @@ def validate_inputs(df: pd.DataFrame, feature_columns: Optional[List[str]]) -> T
         raise ValueError("Input DataFrame is empty")
 
     # Ensure we have required columns
-    if 'label_binary' not in df.columns and 'Label' not in df.columns:
-        raise ValueError("DataFrame must contain 'label_binary' or 'Label' column")
+    if label_col not in df.columns:
+        raise ValueError(f"DataFrame must contain '{label_col}' column")
 
-    # Use label_binary if available, otherwise Label
-    label_col = 'label_binary' if 'label_binary' in df.columns else 'Label'
-
-    # Set default feature columns
+    # Set default feature columns if not provided
     if feature_columns is None:
-        feature_columns = ['RSI', 'MACD', 'EMA_20', 'ATR', 'StochRSI', 'TrendStrength', 'Volatility']
+        feature_columns = [c for c in df.columns if c != label_col]
 
     # Filter to valid features
     valid_features = [col for col in feature_columns if col in df.columns]

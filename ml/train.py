@@ -264,7 +264,13 @@ def load_historical_data(data_path: str, symbol: str = None, chunksize: int = No
         else:
             raise ValueError(f"Unsupported file format: {data_path}")
 
-        for chunk_idx, df_chunk in enumerate(chunk_iter):
+        # Handle both iterators and single DataFrames (for mocked tests)
+        if hasattr(chunk_iter, "__iter__") and not isinstance(chunk_iter, pd.DataFrame):
+            chunk_iterable = chunk_iter
+        else:
+            chunk_iterable = [chunk_iter]
+
+        for chunk_idx, df_chunk in enumerate(chunk_iterable):
             logger.info(f"Processing chunk {chunk_idx + 1}")
 
             # Ensure required columns exist
@@ -476,6 +482,8 @@ def prepare_training_data(df: pd.DataFrame, min_samples: Optional[int] = None, o
     required_keys = ['open', 'high', 'low', 'close']
     for key in required_keys:
         if column_map[key] not in df.columns:
+            if key in df.columns:
+                continue
             raise KeyError(f"Required column '{column_map[key]}' (mapped from '{key}') not found in DataFrame. Available columns: {list(df.columns)}")
 
     # Basic validation

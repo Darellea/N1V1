@@ -350,7 +350,7 @@ class OrderManager:
 
         # Initialize specialized managers
         self.live_executor = LiveOrderExecutor(config) if self.mode == TradingMode.LIVE else MockLiveExecutor()
-        self.paper_executor = PaperOrderExecutor(self.config)
+        self.paper_executor = PaperOrderExecutor(config)
         self.backtest_executor = BacktestOrderExecutor(self.config)
         self.order_processor = OrderProcessor()
         self.reliability_manager = ReliabilityManager(config.get("reliability", {}))
@@ -359,19 +359,15 @@ class OrderManager:
 
         # Set initial paper balance - use Decimal for precision
         initial_balance = None
-        paper_cfg = config.get("paper") if isinstance(config, dict) else None
+        # Try to get from paper config section
+        paper_cfg = config.get("paper")
         if isinstance(paper_cfg, dict):
             initial_balance = paper_cfg.get("initial_balance")
-        else:
-            cfg_paper = self.config.get("paper") if isinstance(self.config.get("paper", None), dict) else None
-            if isinstance(cfg_paper, dict):
-                initial_balance = cfg_paper.get("initial_balance")
-
+        # Fallback to legacy locations
         if initial_balance is None:
-            # Last-resort: try top-level key (legacy)
-            initial_balance = config.get("initial_balance", None) if isinstance(config, dict) else None
-            if not initial_balance:
-                initial_balance = self.config.get("initial_balance", None)
+            initial_balance = config.get("initial_balance")
+        if initial_balance is None:
+            initial_balance = self.config.get("initial_balance")
 
         # Convert to Decimal for precision, with safe fallback
         try:
@@ -445,9 +441,9 @@ class OrderManager:
                 "signal_strength": {"type": "string", "enum": ["WEAK", "MODERATE", "STRONG"]},
                 "order_type": {"type": "string", "enum": ["MARKET", "LIMIT", "STOP", "STOP_LIMIT"]},
                 "amount": {"type": "number", "minimum": 0.00000001},
-                "price": {"type": "number", "minimum": 0},
-                "stop_loss": {"type": "number", "minimum": 0},
-                "take_profit": {"type": "number", "minimum": 0},
+                "price": {"type": ["number", "null"], "minimum": 0},
+                "stop_loss": {"type": ["number", "null"], "minimum": 0},
+                "take_profit": {"type": ["number", "null"], "minimum": 0},
                 "timestamp": {"type": "number", "minimum": 0}
             },
             "required": ["strategy_id", "symbol", "signal_type", "order_type", "amount"],

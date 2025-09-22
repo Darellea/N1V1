@@ -55,8 +55,8 @@ class LiveOrderExecutor:
                 "defaultType": exch_cfg.get("default_type", "spot"),
             },
         }
-        exchange_name = exch_cfg.get("name")
-        exchange_class = getattr(ccxt, exchange_name) if exchange_name else getattr(ccxt, self.config.get("exchange", {}).get("name"))
+        exchange_name = exch_cfg.get("name") or self.config.get("exchange", {}).get("name") or "binance"
+        exchange_class = getattr(ccxt, exchange_name)
         self.exchange = exchange_class(exchange_config)
 
     async def _create_order_on_exchange(self, order_params: Dict[str, Any]) -> Dict:

@@ -1281,17 +1281,17 @@ class DistributedScheduler:
             'timestamp': time.time()
         }
 
-        return await self.task_manager.enqueue_signal_task(task_data, correlation_id=correlation_id)
+        return await self.task_manager.enqueue_signal_task(task_data)
 
     async def schedule_backtest(self, backtest_config: Dict[str, Any],
                               correlation_id: Optional[str] = None) -> str:
         """Schedule backtest task."""
-        return await self.task_manager.enqueue_backtest_task(backtest_config, correlation_id=correlation_id)
+        return await self.task_manager.enqueue_backtest_task(backtest_config)
 
     async def schedule_optimization(self, optimization_config: Dict[str, Any],
                                   correlation_id: Optional[str] = None) -> str:
         """Schedule optimization task."""
-        return await self.task_manager.enqueue_optimization_task(optimization_config, correlation_id=correlation_id)
+        return await self.task_manager.enqueue_optimization_task(optimization_config)
 
     async def get_queue_status(self) -> Dict[str, Any]:
         """Get current queue status."""

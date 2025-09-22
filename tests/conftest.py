@@ -260,7 +260,7 @@ def multi_timeframe_data(synthetic_market_data):
 
         '1h': data,  # Original 1h data
 
-        '4h': data.resample('4H').agg({
+        '4h': data.resample('4h').agg({
             'open': 'first',
             'high': 'max',
             'low': 'min',

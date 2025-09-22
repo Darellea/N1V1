@@ -107,7 +107,11 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
                 if hasattr(value, "value"):
                     result[key] = value.value
                 elif hasattr(value, "name"):
-                    result[key] = value.name.lower()
+                    # Keep SignalType names uppercase for schema validation
+                    if key == "signal_type":
+                        result[key] = value.name
+                    else:
+                        result[key] = value.name.lower()
             
             # Special handling for TradingSignal dataclass - map quantity to amount
             if hasattr(signal, '__class__') and signal.__class__.__name__ == 'TradingSignal':
@@ -151,6 +155,7 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
     common_attrs = (
         "id",
         "symbol",
+        "signal_type",
         "order_type",
         "side",
         "amount",
@@ -176,7 +181,10 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
 
         # Normalize enums (e.g., OrderType) to value or name
         try:
-            if hasattr(val, "value"):
+            if a == "signal_type" and hasattr(val, "name"):
+                # Keep SignalType names uppercase for schema validation
+                val = val.name
+            elif hasattr(val, "value"):
                 val = val.value
             elif hasattr(val, "name"):
                 # some enums expose .name; convert to lower-case string for readability

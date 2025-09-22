@@ -39,7 +39,7 @@ def make_sample_df(rows=200):
     """Create synthetic OHLCV data with deterministic values for testing."""
     # Ensure minimum rows for testing to avoid n_splits issues
     rows = max(rows, 50)
-    idx = pd.date_range("2020-01-01", periods=rows, freq="H")
+    idx = pd.date_range("2020-01-01", periods=rows, freq="h")
     price = np.linspace(100, 200, rows) + np.sin(np.linspace(0, 10, rows)) * 2
     df = pd.DataFrame({
         "Open": price,
@@ -872,7 +872,7 @@ class TestBinaryTraining:
         # Create synthetic OHLCV data with more variation to ensure good label distribution
         np.random.seed(42)
         rows = 800
-        idx = pd.date_range("2020-01-01", periods=rows, freq="H")
+        idx = pd.date_range("2020-01-01", periods=rows, freq="h")
 
         # Create data with more price variation to ensure good label distribution
         base_price = 100 + np.cumsum(np.random.normal(0, 0.5, rows))
@@ -981,7 +981,7 @@ class TestBinaryTraining:
         # Create dataset with more realistic price movements
         np.random.seed(42)
         rows = 300
-        idx = pd.date_range("2020-01-01", periods=rows, freq="H")
+        idx = pd.date_range("2020-01-01", periods=rows, freq="h")
 
         # Create data with realistic price movements
         base_price = 100
@@ -1075,7 +1075,7 @@ class TestBinaryTraining:
         # Create synthetic data with realistic price movements
         np.random.seed(42)
         rows = 600
-        idx = pd.date_range("2020-01-01", periods=rows, freq="H")
+        idx = pd.date_range("2020-01-01", periods=rows, freq="h")
 
         # Create data with realistic price movements
         base_price = 100

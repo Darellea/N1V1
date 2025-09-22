@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import random
 from typing import Dict, List, Optional, Any, Tuple, Callable
 from datetime import datetime, timedelta
 from collections import defaultdict, OrderedDict
@@ -544,7 +545,7 @@ class AdaptiveWeightingEngine:
             'min_weight': 0.1
         }
 
-    def calculate_adaptive_weights(
+    async def calculate_adaptive_weights(
         self,
         current_market: MarketCondition,
         available_strategies: List[StrategyMetadata],
@@ -595,7 +596,7 @@ class AdaptiveWeightingEngine:
                 adaptive_weights[strategy_name] = NO_KNOWLEDGE_DEFAULT_WEIGHT
 
         # Query relevant knowledge entries
-        relevant_knowledge = self._query_relevant_knowledge(current_market, available_strategies)
+        relevant_knowledge = await self._query_relevant_knowledge(current_market, available_strategies)
 
         if not relevant_knowledge.entries:
             logger.info("No relevant knowledge found, using base weights")
@@ -702,7 +703,17 @@ class AdaptiveWeightingEngine:
                 market_similarity_cache[historical_market] = similarity
         return market_similarity_cache
 
-    def _query_relevant_knowledge(
+    def _calculate_market_similarity(self, current: MarketCondition, historical: MarketCondition) -> float:
+        """Calculate similarity between market conditions."""
+        return self.calculator.calculate_market_similarity(current, historical)
+
+    def _calculate_performance_score(self, performance: 'PerformanceMetrics') -> float:
+        win_rate = performance.win_rate if performance.win_rate is not None else 0.0
+        profit_factor = performance.profit_factor if performance.profit_factor is not None else 1.0
+        sharpe = performance.sharpe_ratio if performance.sharpe_ratio is not None else 0.0
+        return win_rate * 0.5 + profit_factor * 0.3 + sharpe * 0.2
+
+    async def _query_relevant_knowledge(
         self,
         market_condition: MarketCondition,
         strategies: List[StrategyMetadata]
@@ -721,7 +732,7 @@ class AdaptiveWeightingEngine:
         if len(strategy_categories) == 1:
             query.strategy_category = strategy_categories[0]
 
-        return self.storage.query_entries(query)
+        return await self.storage.query_entries(query)
 
     def _filter_strategy_knowledge(
         self,
@@ -736,7 +747,7 @@ class AdaptiveWeightingEngine:
 
 
 
-    def get_strategy_recommendations(
+    async def get_strategy_recommendations(
         self,
         current_market: MarketCondition,
         available_strategies: List[StrategyMetadata],
@@ -753,7 +764,7 @@ class AdaptiveWeightingEngine:
         Returns:
             List of (strategy_name, weight, reasoning) tuples
         """
-        weights = self.calculate_adaptive_weights(current_market, available_strategies)
+        weights = await self.calculate_adaptive_weights(current_market, available_strategies)
 
         # Sort strategies by weight
         sorted_strategies = sorted(weights.items(), key=lambda x: x[1], reverse=True)
@@ -787,7 +798,7 @@ class AdaptiveWeightingEngine:
 
         return f"{confidence} recommendation for {strategy_name} in {regime_name} conditions (weight: {weight:.2f})"
 
-    def update_knowledge_from_trade(
+    async def update_knowledge_from_trade(
         self,
         strategy_name: str,
         market_condition: MarketCondition,
@@ -810,13 +821,13 @@ class AdaptiveWeightingEngine:
             entry_id = self._generate_entry_id(strategy_name, market_condition)
 
             # Check if entry already exists
-            existing_entry = self.storage.get_entry(entry_id)
+            existing_entry = await self.storage.get_entry(entry_id)
 
             if existing_entry:
                 # Update existing entry
                 new_performance = self._extract_performance_from_trade(trade_result)
                 existing_entry.update_performance(new_performance)
-                success = self.storage.save_entry(existing_entry)
+                success = await self.storage.save_entry(existing_entry)
                 action = "updated"
             else:
                 # Create new entry
@@ -835,7 +846,7 @@ class AdaptiveWeightingEngine:
                     last_updated=datetime.now()
                 )
 
-                success = self.storage.save_entry(new_entry)
+                success = await self.storage.save_entry(new_entry)
                 action = "created"
 
             if success:
@@ -905,9 +916,9 @@ class AdaptiveWeightingEngine:
         else:
             return OutcomeTag.BREAK_EVEN
 
-    def get_adaptive_statistics(self) -> Dict[str, Any]:
+    async def get_adaptive_statistics(self) -> Dict[str, Any]:
         """Get statistics about the adaptive learning system."""
-        stats = self.storage.get_stats()
+        stats = await self.storage.get_stats()
 
         # Add cache statistics from CacheManager
         cache_stats = self.cache_manager.get_cache_stats()

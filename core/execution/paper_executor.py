@@ -31,6 +31,9 @@ class PaperOrderExecutor:
         self.paper_balance: Decimal = Decimal("0")
         self.paper_balances: Dict[str, Decimal] = {}
         self.trade_count: int = 0
+        self.portfolio_mode: bool = False
+        self.pairs: Optional[list] = None
+        self.pair_allocation: Optional[Dict[str, float]] = None
 
     def set_initial_balance(self, initial_balance: Optional[Decimal]) -> None:
         """Set the initial paper trading balance.
@@ -112,11 +115,18 @@ class PaperOrderExecutor:
             if total_cost > available_balance:
                 raise ValueError("Insufficient balance for paper trading order")
 
+        # Convert order_type string to OrderType enum
+        from core.types.order_types import OrderType
+        try:
+            order_type_enum = OrderType(str(signal.order_type).lower())
+        except (ValueError, AttributeError):
+            order_type_enum = OrderType.MARKET
+
         # Create simulated order
         order = Order(
             id=f"paper_{self.trade_count}",
             symbol=signal.symbol,
-            type=signal.order_type,
+            type=order_type_enum,
             side=side,
             amount=Decimal(signal.amount),
             price=Decimal(executed_price),
@@ -125,7 +135,7 @@ class PaperOrderExecutor:
             remaining=Decimal(0),
             cost=cost,
             params=getattr(signal, "params", {}) or ({"stop_loss": getattr(signal, "stop_loss", None)}),
-            fee={"cost": float(fee), "currency": self.config["base_currency"]},
+            fee={"cost": float(fee), "currency": self.config.get("order", {}).get("base_currency", "USDT")},
             trailing_stop=(
                 Decimal(str(signal.trailing_stop.get("price")))
                 if getattr(signal, "trailing_stop", None)
@@ -164,7 +174,10 @@ class PaperOrderExecutor:
         Returns:
             Decimal fee amount.
         """
-        fee_rate = Decimal(self.config["trade_fee"])
+        # Get fee rate from paper config section, fallback to order section
+        paper_config = self.config.get("paper", {})
+        fee_rate = paper_config.get("trade_fee") or self.config.get("order", {}).get("trade_fee", "0.001")
+        fee_rate = Decimal(str(fee_rate))
         amt = getattr(
             signal, "amount", signal.get("amount") if isinstance(signal, dict) else 0
         )
@@ -180,7 +193,10 @@ class PaperOrderExecutor:
         Returns:
             Adjusted price (Decimal) including slippage.
         """
-        slippage = Decimal(self.config["slippage"])
+        # Get slippage from paper config section, fallback to order section
+        paper_config = self.config.get("paper", {})
+        slippage = paper_config.get("slippage") or self.config.get("order", {}).get("slippage", "0.001")
+        slippage = Decimal(str(slippage))
         price = getattr(
             signal, "price", signal.get("price") if isinstance(signal, dict) else None
         )

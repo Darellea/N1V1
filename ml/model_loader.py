@@ -89,7 +89,7 @@ def _align_features(model, features: pd.DataFrame) -> pd.DataFrame:
             feature_names = None
 
     # If we have explicit feature names, select & reorder; otherwise keep input order
-    if feature_names:
+    if feature_names and isinstance(feature_names, (list, tuple)):
         missing = [f for f in feature_names if f not in features.columns]
         if missing:
             logger.warning(f"Model expects features not present in input: {missing}. Missing features will be filled with 0.")

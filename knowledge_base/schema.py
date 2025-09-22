@@ -72,6 +72,21 @@ class MarketCondition:
     price_range: Optional[float] = None
     timestamp: datetime = field(default_factory=datetime.now)
 
+    def __hash__(self):
+        return hash((self.regime, self.volatility, self.trend_strength, self.liquidity_score, self.volume_trend, self.price_range))
+
+    def __eq__(self, other):
+        if not isinstance(other, MarketCondition):
+            return False
+        return (
+            self.regime == other.regime and
+            self.volatility == other.volatility and
+            self.trend_strength == other.trend_strength and
+            self.liquidity_score == other.liquidity_score and
+            self.volume_trend == other.volume_trend and
+            self.price_range == other.price_range
+        )
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
@@ -322,6 +337,7 @@ class KnowledgeQuery:
     strategy_name: Optional[str] = None
     strategy_category: Optional[StrategyCategory] = None
     min_confidence: float = 0.0
+    max_confidence: float = 1.0
     min_sample_size: int = 1
     timeframe: Optional[str] = None
     tags: Optional[List[str]] = None

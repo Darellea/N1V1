@@ -11,7 +11,7 @@ from ml.trainer import train_model_binary, generate_features, create_binary_labe
 
 def make_sample_df(rows=200):
     # Create synthetic OHLCV data with deterministic values
-    idx = pd.date_range("2020-01-01", periods=rows, freq="H")
+    idx = pd.date_range("2020-01-01", periods=rows, freq="h")
     price = np.linspace(100, 200, rows) + np.sin(np.linspace(0, 10, rows)) * 2
     df = pd.DataFrame({
         "Open": price,
@@ -27,7 +27,7 @@ def test_train_creates_model_card(tmp_path):
 
     # Create synthetic OHLCV DataFrame for binary classification
     rows = 600
-    idx = pd.date_range("2020-01-01", periods=rows, freq="H")
+    idx = pd.date_range("2020-01-01", periods=rows, freq="h")
     rng = np.random.RandomState(42)
 
     # Create realistic OHLCV data with some trend and volatility

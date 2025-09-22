@@ -12,7 +12,7 @@ import tempfile
 import os
 from pathlib import Path
 from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock, call
+from unittest.mock import Mock, patch, MagicMock, call, AsyncMock
 
 from knowledge_base.schema import (
     KnowledgeEntry, KnowledgeQuery, KnowledgeQueryResult,
@@ -23,7 +23,7 @@ from knowledge_base.storage import KnowledgeStorage, JSONStorage, CSVStorage, SQ
 from knowledge_base.adaptive import (
     AdaptiveWeightingEngine, WeightingCalculator, CacheManager,
     PERFORMANCE_WEIGHT_DEFAULT, REGIME_SIMILARITY_WEIGHT_DEFAULT,
-    RECENCY_WEIGHT_DEFAULT, SAMPLE_SIZE_WEIGHT_DEFAULT
+    RECENCY_WEIGHT_DEFAULT, SAMPLE_SIZE_WEIGHT_DEFAULT, LRUCache
 )
 from knowledge_base.manager import (
     KnowledgeManager, KnowledgeValidator, DataStoreInterface
@@ -198,6 +198,7 @@ class TestStorageBackends:
 
     def test_json_storage(self):
         """Test JSON storage backend."""
+        import asyncio
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = Path(temp_dir) / "test_knowledge.json"
 
@@ -207,25 +208,26 @@ class TestStorageBackends:
             entry = self._create_test_entry("test_001")
 
             # Test save
-            assert storage.save_entry(entry)
+            assert asyncio.run(storage.save_entry(entry))
 
             # Test get
-            retrieved = storage.get_entry("test_001")
+            retrieved = asyncio.run(storage.get_entry("test_001"))
             assert retrieved is not None
             assert retrieved.id == "test_001"
 
             # Test list
-            entries = storage.list_entries()
+            entries = asyncio.run(storage.list_entries())
             assert len(entries) == 1
             assert entries[0].id == "test_001"
 
             # Test stats
-            stats = storage.get_stats()
+            stats = asyncio.run(storage.get_stats())
             assert stats['backend'] == 'json'
             assert stats['total_entries'] == 1
 
     def test_csv_storage(self):
         """Test CSV storage backend."""
+        import asyncio
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = Path(temp_dir) / "test_knowledge.csv"
 
@@ -235,19 +237,20 @@ class TestStorageBackends:
             entry = self._create_test_entry("test_002")
 
             # Test save
-            assert storage.save_entry(entry)
+            assert asyncio.run(storage.save_entry(entry))
 
             # Test get
-            retrieved = storage.get_entry("test_002")
+            retrieved = asyncio.run(storage.get_entry("test_002"))
             assert retrieved is not None
             assert retrieved.id == "test_002"
 
             # Test list
-            entries = storage.list_entries()
+            entries = asyncio.run(storage.list_entries())
             assert len(entries) == 1
 
     def test_sqlite_storage(self):
         """Test SQLite storage backend."""
+        import asyncio
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "test_knowledge.db"
 
@@ -257,21 +260,22 @@ class TestStorageBackends:
             entry = self._create_test_entry("test_003")
 
             # Test save
-            assert storage.save_entry(entry)
+            assert asyncio.run(storage.save_entry(entry))
 
             # Test get
-            retrieved = storage.get_entry("test_003")
+            retrieved = asyncio.run(storage.get_entry("test_003"))
             assert retrieved is not None
             assert retrieved.id == "test_003"
 
             # Test query
             query = KnowledgeQuery(limit=10)
-            result = storage.query_entries(query)
+            result = asyncio.run(storage.query_entries(query))
             assert result.total_found == 1
             assert len(result.entries) == 1
 
     def test_storage_query_filtering(self):
         """Test storage query filtering."""
+        import asyncio
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "test_knowledge.db"
             storage = SQLiteStorage(db_path)
@@ -284,16 +288,16 @@ class TestStorageBackends:
             ]
 
             for entry in entries:
-                storage.save_entry(entry)
+                asyncio.run(storage.save_entry(entry))
 
             # Test regime filtering
             query = KnowledgeQuery(market_regime=MarketRegime.TRENDING)
-            result = storage.query_entries(query)
+            result = asyncio.run(storage.query_entries(query))
             assert result.total_found == 2
 
             # Test confidence filtering
             query = KnowledgeQuery(min_confidence=0.9)
-            result = storage.query_entries(query)
+            result = asyncio.run(storage.query_entries(query))
             assert result.total_found == 0  # Our test entries have confidence 0.7
 
     def _create_test_entry(self, entry_id: str, regime: MarketRegime = MarketRegime.TRENDING) -> KnowledgeEntry:
@@ -355,6 +359,7 @@ class TestAdaptiveWeighting:
 
     def test_calculate_adaptive_weights(self):
         """Test adaptive weight calculation."""
+        import asyncio
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "test.db"
             storage = SQLiteStorage(db_path)
@@ -388,7 +393,7 @@ class TestAdaptiveWeighting:
             ]
 
             # Calculate weights
-            weights = engine.calculate_adaptive_weights(market_condition, strategies)
+            weights = asyncio.run(engine.calculate_adaptive_weights(market_condition, strategies))
 
             # Should return equal weights when no knowledge exists
             assert len(weights) == 2
@@ -442,6 +447,7 @@ class TestAdaptiveWeighting:
 
     def test_update_knowledge_from_trade(self):
         """Test updating knowledge from trade results."""
+        import asyncio
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "test.db"
             storage = SQLiteStorage(db_path)
@@ -460,14 +466,14 @@ class TestAdaptiveWeighting:
                 'exit_price': 10250.0
             }
 
-            success = engine.update_knowledge_from_trade(
+            success = asyncio.run(engine.update_knowledge_from_trade(
                 "TestStrategy", market_condition, trade_result
-            )
+            ))
 
             assert success
 
             # Check that entry was created
-            entry = storage.get_entry(engine._generate_entry_id("TestStrategy", market_condition))
+            entry = asyncio.run(storage.get_entry(engine._generate_entry_id("TestStrategy", market_condition)))
             assert entry is not None
             assert entry.performance.total_trades == 1
             assert entry.performance.total_pnl == 250.0
@@ -478,18 +484,19 @@ class TestKnowledgeManager:
 
     def test_knowledge_manager_creation(self):
         """Test KnowledgeManager initialization."""
-        config = {
-            'enabled': True,
-            'storage': {
-                'backend': 'json',
-                'file_path': 'test_knowledge.json'
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = {
+                'enabled': True,
+                'storage': {
+                    'backend': 'json',
+                    'file_path': str(Path(temp_dir) / 'test_knowledge.json')
+                }
             }
-        }
 
-        manager = KnowledgeManager(config)
-        assert manager.enabled
-        assert manager.storage is not None
-        assert manager.adaptive_engine is not None
+            manager = KnowledgeManager(config)
+            assert manager.enabled
+            assert manager.storage is not None
+            assert manager.adaptive_engine is not None
 
     def test_store_trade_knowledge(self):
         """Test storing trade knowledge through manager."""
@@ -922,7 +929,7 @@ class TestCacheManager:
         """Test CacheManager initialization."""
         cache_manager = CacheManager()
 
-        assert cache_manager._weight_cache == {}
+        assert isinstance(cache_manager._weight_cache, LRUCache)
         assert cache_manager._cache_timestamp is None
         assert cache_manager._cache_ttl == timedelta(minutes=5)
 
@@ -1162,10 +1169,9 @@ class TestDataStoreInterface:
 
         assert data_store.storage == mock_storage
 
-    @patch('tests.test_knowledge_base.DataStoreInterface.save_entry')
-    def test_save_entry(self, mock_save):
+    def test_save_entry(self):
         """Test save_entry method."""
-        mock_storage = Mock()
+        mock_storage = AsyncMock()
         data_store = DataStoreInterface(mock_storage)
 
         entry = Mock()
@@ -1175,10 +1181,9 @@ class TestDataStoreInterface:
         assert result is True
         mock_storage.save_entry.assert_called_once_with(entry)
 
-    @patch('tests.test_knowledge_base.DataStoreInterface.get_entry')
-    def test_get_entry(self, mock_get):
+    def test_get_entry(self):
         """Test get_entry method."""
-        mock_storage = Mock()
+        mock_storage = AsyncMock()
         data_store = DataStoreInterface(mock_storage)
 
         mock_storage.get_entry.return_value = Mock()
@@ -1187,10 +1192,9 @@ class TestDataStoreInterface:
         assert result is not None
         mock_storage.get_entry.assert_called_once_with("test_id")
 
-    @patch('tests.test_knowledge_base.DataStoreInterface.query_entries')
-    def test_query_entries(self, mock_query):
+    def test_query_entries(self):
         """Test query_entries method."""
-        mock_storage = Mock()
+        mock_storage = AsyncMock()
         data_store = DataStoreInterface(mock_storage)
 
         query = Mock()
@@ -1200,56 +1204,52 @@ class TestDataStoreInterface:
         assert result is not None
         mock_storage.query_entries.assert_called_once_with(query)
 
-    @patch('tests.test_knowledge_base.DataStoreInterface.list_entries')
-    def test_list_entries(self, mock_list):
+    def test_list_entries(self):
         """Test list_entries method."""
-        mock_storage = Mock()
+        mock_storage = AsyncMock()
         data_store = DataStoreInterface(mock_storage)
 
-        mock_list.return_value = []
+        mock_storage.list_entries.return_value = []
 
         result = data_store.list_entries(10)
         assert result == []
         mock_storage.list_entries.assert_called_once_with(10)
 
-    @patch('tests.test_knowledge_base.DataStoreInterface.get_stats')
-    def test_get_stats(self, mock_stats):
+    def test_get_stats(self):
         """Test get_stats method."""
-        mock_storage = Mock()
+        mock_storage = AsyncMock()
         data_store = DataStoreInterface(mock_storage)
 
-        mock_stats.return_value = {"total": 5}
+        mock_storage.get_stats = AsyncMock(return_value={"total": 5})
 
         result = data_store.get_stats()
         assert result == {"total": 5}
         mock_storage.get_stats.assert_called_once()
 
-    @patch('tests.test_knowledge_base.DataStoreInterface.clear_all')
-    def test_clear_all_success(self, mock_clear):
+    def test_clear_all_success(self):
         """Test clear_all method success."""
-        mock_storage = Mock()
+        mock_storage = AsyncMock()
         data_store = DataStoreInterface(mock_storage)
 
-        mock_clear.return_value = True
+        mock_storage.list_entries.return_value = []
+        mock_storage.delete_entry.return_value = True
 
         result = data_store.clear_all()
         assert result is True
 
-    @patch('tests.test_knowledge_base.DataStoreInterface.list_entries')
-    @patch('tests.test_knowledge_base.DataStoreInterface.delete_entry')
-    def test_clear_all_with_entries(self, mock_delete, mock_list):
+    def test_clear_all_with_entries(self):
         """Test clear_all method with entries."""
-        mock_storage = Mock()
+        mock_storage = AsyncMock()
         data_store = DataStoreInterface(mock_storage)
 
         # Mock entries
         mock_entries = [Mock(id="1"), Mock(id="2")]
-        mock_list.return_value = mock_entries
-        mock_delete.return_value = True
+        mock_storage.list_entries.return_value = mock_entries
+        mock_storage.delete_entry.return_value = True
 
         result = data_store.clear_all()
         assert result is True
-        assert mock_delete.call_count == 2
+        assert mock_storage.delete_entry.call_count == 2
 
 
 class TestAdaptiveWeightingEngine:
@@ -1257,7 +1257,7 @@ class TestAdaptiveWeightingEngine:
 
     def test_engine_initialization(self):
         """Test AdaptiveWeightingEngine initialization."""
-        mock_storage = Mock()
+        mock_storage = AsyncMock()
         config = {'performance_weight': 0.5}
 
         engine = AdaptiveWeightingEngine(mock_storage, config)
@@ -1269,7 +1269,8 @@ class TestAdaptiveWeightingEngine:
 
     def test_calculate_adaptive_weights_empty_knowledge(self):
         """Test adaptive weights calculation with empty knowledge."""
-        mock_storage = Mock()
+        import asyncio
+        mock_storage = AsyncMock()
         mock_storage.query_entries.return_value = KnowledgeQueryResult([], 0, KnowledgeQuery(), 0.0)
 
         engine = AdaptiveWeightingEngine(mock_storage)
@@ -1291,13 +1292,14 @@ class TestAdaptiveWeightingEngine:
             )
         ]
 
-        weights = engine.calculate_adaptive_weights(market_condition, strategies)
+        weights = asyncio.run(engine.calculate_adaptive_weights(market_condition, strategies))
 
         assert weights == {"StrategyA": 1.0}
 
     def test_get_strategy_recommendations(self):
         """Test strategy recommendations."""
-        mock_storage = Mock()
+        import asyncio
+        mock_storage = AsyncMock()
         mock_storage.query_entries.return_value = KnowledgeQueryResult([], 0, KnowledgeQuery(), 0.0)
 
         engine = AdaptiveWeightingEngine(mock_storage)
@@ -1327,14 +1329,15 @@ class TestAdaptiveWeightingEngine:
             )
         ]
 
-        recommendations = engine.get_strategy_recommendations(market_condition, strategies, top_n=1)
+        recommendations = asyncio.run(engine.get_strategy_recommendations(market_condition, strategies, top_n=1))
 
         assert len(recommendations) == 1
         assert recommendations[0][0] in ["StrategyA", "StrategyB"]
 
     def test_update_knowledge_from_trade_success(self):
         """Test successful knowledge update from trade."""
-        mock_storage = Mock()
+        import asyncio
+        mock_storage = AsyncMock()
         mock_storage.get_entry.return_value = None  # No existing entry
         mock_storage.save_entry.return_value = True
 
@@ -1353,15 +1356,16 @@ class TestAdaptiveWeightingEngine:
             'exit_price': 10250.0
         }
 
-        success = engine.update_knowledge_from_trade("TestStrategy", market_condition, trade_result)
+        success = asyncio.run(engine.update_knowledge_from_trade("TestStrategy", market_condition, trade_result))
 
         assert success
         mock_storage.save_entry.assert_called_once()
 
     def test_update_knowledge_from_trade_existing_entry(self):
         """Test knowledge update with existing entry."""
+        import asyncio
         mock_existing_entry = Mock()
-        mock_storage = Mock()
+        mock_storage = AsyncMock()
         mock_storage.get_entry.return_value = mock_existing_entry
         mock_storage.save_entry.return_value = True
 
@@ -1375,14 +1379,15 @@ class TestAdaptiveWeightingEngine:
 
         trade_result = {'pnl': 150.0}
 
-        success = engine.update_knowledge_from_trade("TestStrategy", market_condition, trade_result)
+        success = asyncio.run(engine.update_knowledge_from_trade("TestStrategy", market_condition, trade_result))
 
         assert success
         mock_existing_entry.update_performance.assert_called_once()
 
     def test_update_knowledge_from_trade_error_handling(self):
         """Test error handling in knowledge update."""
-        mock_storage = Mock()
+        import asyncio
+        mock_storage = AsyncMock()
         mock_storage.get_entry.side_effect = ValueError("Storage error")
 
         engine = AdaptiveWeightingEngine(mock_storage)
@@ -1396,7 +1401,7 @@ class TestAdaptiveWeightingEngine:
         trade_result = {'pnl': 100.0}
 
         with pytest.raises(ValueError):
-            engine.update_knowledge_from_trade("TestStrategy", market_condition, trade_result)
+            asyncio.run(engine.update_knowledge_from_trade("TestStrategy", market_condition, trade_result))
 
 
 class TestEdgeCases:
@@ -1404,6 +1409,7 @@ class TestEdgeCases:
 
     def test_empty_knowledge_base(self):
         """Test behavior with empty knowledge base."""
+        import asyncio
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "empty.db"
             storage = SQLiteStorage(db_path)
@@ -1426,13 +1432,14 @@ class TestEdgeCases:
                 )
             ]
 
-            weights = engine.calculate_adaptive_weights(market_condition, strategies)
+            weights = asyncio.run(engine.calculate_adaptive_weights(market_condition, strategies))
 
             # Should return equal weights
             assert weights['TestStrategy'] == 1.0
 
     def test_corrupted_storage_file(self):
         """Test handling of corrupted storage files."""
+        import asyncio
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = Path(temp_dir) / "corrupted.json"
 
@@ -1443,11 +1450,12 @@ class TestEdgeCases:
             storage = JSONStorage(file_path)
 
             # Should handle corruption gracefully
-            entries = storage.list_entries()
+            entries = asyncio.run(storage.list_entries())
             assert isinstance(entries, list)
 
     def test_large_knowledge_base(self):
         """Test performance with large knowledge base."""
+        import asyncio
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "large.db"
             storage = SQLiteStorage(db_path)
@@ -1457,11 +1465,11 @@ class TestEdgeCases:
             for i in range(100):
                 entry = self._create_test_entry(f"entry_{i}")
                 entries.append(entry)
-                storage.save_entry(entry)
+                asyncio.run(storage.save_entry(entry))
 
             # Test query performance
             query = KnowledgeQuery(limit=50)
-            result = storage.query_entries(query)
+            result = asyncio.run(storage.query_entries(query))
 
             assert len(result.entries) == 50
             assert result.total_found == 100

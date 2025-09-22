@@ -193,7 +193,8 @@ class DataStoreInterface:
         Returns:
             Success status
         """
-        return self.storage.save_entry(entry)
+        import asyncio
+        return asyncio.run(self.storage.save_entry(entry))
 
     def get_entry(self, entry_id: str) -> Optional[KnowledgeEntry]:
         """
@@ -205,7 +206,8 @@ class DataStoreInterface:
         Returns:
             Knowledge entry or None if not found
         """
-        return self.storage.get_entry(entry_id)
+        import asyncio
+        return asyncio.run(self.storage.get_entry(entry_id))
 
     def delete_entry(self, entry_id: str) -> bool:
         """
@@ -217,7 +219,8 @@ class DataStoreInterface:
         Returns:
             Success status
         """
-        return self.storage.delete_entry(entry_id)
+        import asyncio
+        return asyncio.run(self.storage.delete_entry(entry_id))
 
     def query_entries(self, query: KnowledgeQuery) -> KnowledgeQueryResult:
         """
@@ -229,7 +232,8 @@ class DataStoreInterface:
         Returns:
             Query results
         """
-        return self.storage.query_entries(query)
+        import asyncio
+        return asyncio.run(self.storage.query_entries(query))
 
     def list_entries(self, limit: Optional[int] = None) -> List[KnowledgeEntry]:
         """
@@ -241,7 +245,8 @@ class DataStoreInterface:
         Returns:
             List of knowledge entries
         """
-        return self.storage.list_entries(limit)
+        import asyncio
+        return asyncio.run(self.storage.list_entries(limit))
 
     def get_stats(self) -> Dict[str, Any]:
         """
@@ -250,7 +255,8 @@ class DataStoreInterface:
         Returns:
             Statistics dictionary
         """
-        return self.storage.get_stats()
+        import asyncio
+        return asyncio.run(self.storage.get_stats())
 
     def clear_all(self) -> bool:
         """
@@ -260,10 +266,11 @@ class DataStoreInterface:
             Success status
         """
         try:
-            all_entries = self.list_entries(limit=10000)
+            import asyncio
+            all_entries = asyncio.run(self.storage.list_entries(limit=10000))
             deleted_count = 0
             for entry in all_entries:
-                if self.delete_entry(entry.id):
+                if asyncio.run(self.storage.delete_entry(entry.id)):
                     deleted_count += 1
             return deleted_count == len(all_entries)
         except Exception as e:
@@ -291,6 +298,7 @@ class KnowledgeManager:
         """
         self.config = config or self._get_default_config()
         self.enabled = self.config.get('enabled', True)
+        self.storage = None
 
         if not self.enabled:
             logger.info("Knowledge base is disabled")
@@ -302,15 +310,15 @@ class KnowledgeManager:
         # Initialize storage backend
         storage_config = self.config.get('storage', {})
         backend = storage_config.pop('backend', 'json')  # Remove backend from config to avoid conflict
-        storage = KnowledgeStorage(backend, **storage_config)
+        self.storage = KnowledgeStorage(backend, **storage_config)
 
         # Initialize specialized components
-        self.data_store = DataStoreInterface(storage)
+        self.data_store = DataStoreInterface(self.storage)
         self.validator = KnowledgeValidator()
 
         # Initialize adaptive weighting engine
         adaptive_config = self.config.get('adaptive', {})
-        self.adaptive_engine = AdaptiveWeightingEngine(storage, adaptive_config)
+        self.adaptive_engine = AdaptiveWeightingEngine(self.storage, adaptive_config)
 
         # Thread safety
         self._lock = threading.RLock()
@@ -369,9 +377,10 @@ class KnowledgeManager:
         with self._lock:
             try:
                 # Use adaptive engine to update knowledge
-                success = self.adaptive_engine.update_knowledge_from_trade(
+                import asyncio
+                success = asyncio.run(self.adaptive_engine.update_knowledge_from_trade(
                     strategy_name, market_condition, trade_result
-                )
+                ))
 
                 if success:
                     logger.info(f"Stored knowledge for strategy {strategy_name}")
@@ -407,9 +416,10 @@ class KnowledgeManager:
 
         with self._lock:
             try:
-                return self.adaptive_engine.calculate_adaptive_weights(
+                import asyncio
+                return asyncio.run(self.adaptive_engine.calculate_adaptive_weights(
                     current_market, available_strategies, base_weights
-                )
+                ))
             except Exception as e:
                 logger.error(f"Error calculating adaptive weights: {e}")
                 return {s.name: 1.0 for s in available_strategies}
@@ -444,9 +454,10 @@ class KnowledgeManager:
 
         with self._lock:
             try:
-                return self.adaptive_engine.get_strategy_recommendations(
+                import asyncio
+                return asyncio.run(self.adaptive_engine.get_strategy_recommendations(
                     current_market, available_strategies, top_n
-                )
+                ))
             except Exception as e:
                 logger.error(f"Error getting strategy recommendations: {e}")
                 return []
@@ -614,7 +625,8 @@ class KnowledgeManager:
                     stats['storage_stats'] = self.data_store.get_stats()
 
                 if self.adaptive_engine:
-                    stats['adaptive_stats'] = self.adaptive_engine.get_adaptive_statistics()
+                    import asyncio
+                    stats['adaptive_stats'] = asyncio.run(self.adaptive_engine.get_adaptive_statistics())
 
                 # Get knowledge summary
                 if self.data_store:
