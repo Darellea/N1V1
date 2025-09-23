@@ -40,7 +40,7 @@ class MockDataFetcher(IDataFetcher):
 
     def _generate_test_data(self):
         """Generate mock OHLCV data for testing."""
-        dates = pd.date_range('2023-01-01', periods=1000, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=1000, freq='1h')
         np.random.seed(42)  # For reproducible results
 
         # Generate realistic price data with trend and volatility
@@ -284,7 +284,7 @@ class TestOptimizationIntegration:
         consumed by the backtesting system.
         """
         # Create test data
-        dates = pd.date_range('2023-01-01', periods=100, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=100, freq='1h')
         test_data = pd.DataFrame({
             'open': np.random.uniform(50000, 51000, 100),
             'high': np.random.uniform(50500, 51500, 100),
@@ -730,7 +730,7 @@ class TestOptimizationIntegration:
         without performance degradation or memory issues.
         """
         # Create large test dataset
-        dates = pd.date_range('2020-01-01', periods=10000, freq='1H')  # ~1 year of hourly data
+        dates = pd.date_range('2020-01-01', periods=10000, freq='1h')  # ~1 year of hourly data
         large_data = pd.DataFrame({
             'close': np.random.uniform(50000, 51000, 10000),
             'high': np.random.uniform(50500, 51500, 10000),

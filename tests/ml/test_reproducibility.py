@@ -73,7 +73,8 @@ class TestDeterministicSeeds:
         first_sample = df.sample(frac=0.5, random_state=None).index.tolist()
 
         # Reset and resample
-        pd.core.common.random_state(42)
+        np.random.seed(42)
+        df = pd.DataFrame({'A': range(100), 'B': range(100, 200)})
         second_sample = df.sample(frac=0.5, random_state=None).index.tolist()
 
         # Should be identical
@@ -187,39 +188,37 @@ class TestEnvironmentSnapshot:
         assert env_snapshot['environment_variables']['PATH'] == '/usr/local/lib/python3.9'
         assert 'NON_STANDARD_VAR' not in env_snapshot['environment_variables']
 
-    @patch('ml.train.subprocess.run')
-    def test_capture_environment_snapshot_git_info(self, mock_subprocess_run):
+    @patch('ml.train._run_git_command')
+    def test_capture_environment_snapshot_git_info(self, mock_run_git_command):
         """Test Git information capture."""
-        # Mock successful git commands
-        def mock_run(cmd, **kwargs):
-            if 'git rev-parse HEAD' in cmd:
-                return MagicMock(returncode=0, stdout='abc123def456\n')
-            elif 'git branch --show-current' in cmd:
-                return MagicMock(returncode=0, stdout='main\n')
-            elif 'git remote get-url origin' in cmd:
-                return MagicMock(returncode=0, stdout='https://github.com/user/repo.git\n')
-            elif 'git status --porcelain' in cmd:
-                return MagicMock(returncode=0, stdout='M file1.py\n?? file2.py\n')
-            return MagicMock(returncode=1)
-
-        mock_subprocess_run.side_effect = mock_run
+        # Mock successful git commands - return values in order they're called
+        mock_run_git_command.side_effect = [
+            'abc123def456',  # commit_hash
+            'main',          # branch
+            'https://github.com/user/repo.git',  # remote_url
+            'M file1.py\n?? file2.py\n'  # status
+        ]
 
         env_snapshot = capture_environment_snapshot()
 
         assert env_snapshot['git_info']['commit_hash'] == 'abc123def456'
         assert env_snapshot['git_info']['branch'] == 'main'
         assert env_snapshot['git_info']['remote_url'] == 'https://github.com/user/repo.git'
-        assert 'M file1.py' in env_snapshot['git_info']['modified_files']
-        assert '?? file2.py' in env_snapshot['git_info']['modified_files']
+        assert env_snapshot['git_info']['status'] == 'M file1.py\n?? file2.py\n'
 
-    @patch('ml.train.subprocess.run')
-    def test_capture_environment_snapshot_git_failure(self, mock_subprocess_run):
+    @patch('ml.train._run_git_command')
+    def test_capture_environment_snapshot_git_failure(self, mock_run_git_command):
         """Test Git information capture when Git is not available."""
-        mock_subprocess_run.return_value = MagicMock(returncode=1)
+        # Mock all git commands to return empty strings (failure)
+        mock_run_git_command.return_value = ""
 
         env_snapshot = capture_environment_snapshot()
 
-        assert 'error' in env_snapshot['git_info']
+        # Since we always return keys with defaults, check that defaults are used
+        assert env_snapshot['git_info']['commit_hash'] == 'unknown'
+        assert env_snapshot['git_info']['branch'] == 'unknown'
+        assert env_snapshot['git_info']['remote_url'] == 'unknown'
+        assert env_snapshot['git_info']['status'] == 'unknown'
 
     @patch('ml.train.psutil')
     def test_capture_environment_snapshot_hardware(self, mock_psutil):
@@ -338,21 +337,21 @@ class TestExperimentTrackerReproducibility:
             tracking_dir=self.temp_dir
         )
 
-        # Mock Git info
-        with patch('ml.train.subprocess.run') as mock_run:
-            def mock_git_cmd(cmd, **kwargs):
-                if 'git rev-parse HEAD' in cmd:
-                    return MagicMock(returncode=0, stdout='def456abc789\n')
-                elif 'git branch --show-current' in cmd:
-                    return MagicMock(returncode=0, stdout='develop\n')
-                return MagicMock(returncode=1)
-
-            mock_run.side_effect = mock_git_cmd
+        # Mock Git info using the new _run_git_command
+        with patch('ml.train._run_git_command') as mock_run_git_command:
+            mock_run_git_command.side_effect = [
+                'def456abc789',  # commit_hash
+                'develop',       # branch
+                'https://github.com/user/repo.git',  # remote_url
+                ''  # status (empty)
+            ]
 
             tracker.log_git_info()
 
             assert tracker.metadata['git_info']['commit_hash'] == 'def456abc789'
             assert tracker.metadata['git_info']['branch'] == 'develop'
+            assert tracker.metadata['git_info']['remote_url'] == 'https://github.com/user/repo.git'
+            assert tracker.metadata['git_info']['status'] == 'unknown'  # empty becomes unknown
 
     def test_experiment_tracker_finish_experiment(self):
         """Test experiment finishing with reproducibility data."""

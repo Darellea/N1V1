@@ -65,7 +65,7 @@ class TestAdaptiveRiskManagement:
     def sample_market_data(self):
         """Sample OHLCV market data for testing."""
         # Create 20 periods of sample data
-        dates = pd.date_range('2023-01-01', periods=20, freq='H')
+        dates = pd.date_range('2023-01-01', periods=20, freq='h')
         np.random.seed(42)  # For reproducible tests
 
         # Generate realistic price data
@@ -569,7 +569,7 @@ class TestAdaptiveRiskIntegration:
     def sample_market_data(self):
         """Sample OHLCV market data for testing."""
         # Create 20 periods of sample data
-        dates = pd.date_range('2023-01-01', periods=20, freq='H')
+        dates = pd.date_range('2023-01-01', periods=20, freq='h')
         np.random.seed(42)  # For reproducible tests
 
         # Generate realistic price data

@@ -7,6 +7,8 @@ from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
 from typing import Dict, List, Optional, Tuple, Any, Union
 
+logger = logging.getLogger(__name__)
+
 import numpy as np
 import pandas as pd
 import lightgbm as lgb

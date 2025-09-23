@@ -96,7 +96,7 @@ class TestPricePredictor:
         predictor = PricePredictor(config)
 
         # Create sample data
-        dates = pd.date_range('2023-01-01', periods=100, freq='H')
+        dates = pd.date_range('2023-01-01', periods=100, freq='h')
         data = {
             'timestamp': dates,
             'open': np.random.uniform(100, 110, 100),

@@ -73,17 +73,17 @@ def load_model(model_name: str) -> Any:
             raise HTTPException(status_code=500, detail=f"Model {model_name} not found")
     return models[model_name]
 
-async def process_single_prediction(request: PredictionRequest) -> Dict[str, Any]:
+def process_single_prediction(request) -> Dict[str, Any]:
     """Process a single prediction request."""
     start_time = time.time()
-    correlation_id = request.correlation_id or str(uuid.uuid4())
+    correlation_id = getattr(request, 'correlation_id', None) or str(uuid.uuid4())
 
     try:
         model = load_model(request.model_name)
         features_df = pd.DataFrame(request.features)
 
-        # Run prediction in thread pool to avoid blocking the event loop
-        result_df = await asyncio.to_thread(local_predict, model, features_df)
+        # Run prediction synchronously
+        result_df = local_predict(model, features_df)
 
         latency_ms = (time.time() - start_time) * 1000
 
@@ -104,30 +104,30 @@ async def process_single_prediction(request: PredictionRequest) -> Dict[str, Any
 
     except Exception as e:
         latency_ms = (time.time() - start_time) * 1000
-        INFERENCE_REQUESTS.labels(model_name=request.model_name, status='error').inc()
-        logger.error(f"Prediction failed for {request.model_name}, correlation_id: {correlation_id}: {e}")
+        INFERENCE_REQUESTS.labels(model_name=getattr(request, 'model_name', 'unknown'), status='error').inc()
+        logger.error(f"Prediction failed for {getattr(request, 'model_name', 'unknown')}, correlation_id: {correlation_id}: {e}")
+        # Ensure FastAPI-compatible error propagation
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/predict", response_model=PredictionResponse)
 async def predict_single(request: PredictionRequest):
     """Single prediction endpoint."""
-    return await process_single_prediction(request)
+    # Run prediction in thread pool to avoid blocking
+    result = await asyncio.get_event_loop().run_in_executor(
+        executor, process_single_prediction, request
+    )
+    return result
 
 @app.post("/predict/batch", response_model=List[PredictionResponse])
 async def predict_batch(request: BatchPredictionRequest):
     """Batch prediction endpoint."""
-    tasks = []
-    for req in request.requests:
-        tasks.append(process_single_prediction(req))
+    # Process all requests in parallel using thread pool
+    tasks = [
+        asyncio.get_event_loop().run_in_executor(executor, process_single_prediction, req)
+        for req in request.requests
+    ]
 
-    # Process in batches
-    results = []
-    batch_size = request.batch_size
-    for i in range(0, len(tasks), batch_size):
-        batch = tasks[i:i + batch_size]
-        batch_results = await asyncio.gather(*batch)
-        results.extend(batch_results)
-
+    results = await asyncio.gather(*tasks)
     return results
 
 @app.get("/health")

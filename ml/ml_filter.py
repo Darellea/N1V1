@@ -100,9 +100,27 @@ class MLModel(ABC):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
         self.model = None
-        self.is_trained = False
+        # Don't reset is_trained if it's already set (during deserialization)
+        if not hasattr(self, 'is_trained'):
+            self.is_trained = False
         self.feature_names = []
         self.metadata = {}
+
+    def __reduce__(self):
+        """Custom pickle reduction to preserve training state."""
+        return (self.__class__, (), self.__getstate__())
+
+    def __getstate__(self):
+        """Custom serialization to preserve training state."""
+        state = self.__dict__.copy()
+        return state
+
+    def __setstate__(self, state):
+        """Custom deserialization to restore training state."""
+        self.__dict__.update(state)
+        # Ensure is_trained is preserved during deserialization
+        if 'is_trained' in state:
+            self.is_trained = state['is_trained']
 
     @abstractmethod
     def fit(self, X: pd.DataFrame, y: pd.Series) -> None:
@@ -422,16 +440,16 @@ class MLFilter:
         # Dependency injection for model loading functions to reduce coupling
         # If not provided, import default implementations (for backward compatibility)
         if load_model_func is None:
-            from ml.model_loader import load_model
-            self.load_model = load_model
+            from ml.model_loader import load_model as load_model_from_file
+            self._load_model_func = load_model_from_file
         else:
-            self.load_model = load_model_func
+            self._load_model_func = load_model_func
 
         if predict_func is None:
             from ml.model_loader import predict as ml_predict
-            self.predict_func = ml_predict
+            self._predict_func = ml_predict
         else:
-            self.predict_func = predict_func
+            self._predict_func = predict_func
 
     def _create_model(self) -> MLModel:
         """Create ML model instance based on type."""
@@ -579,8 +597,13 @@ class MLFilter:
         # Create directory if it doesn't exist
         Path(path).parent.mkdir(parents=True, exist_ok=True)
 
-        # Save model
-        self.model.save(path)
+        # Save model with training state
+        model_data = {
+            "model": self.model,
+            "is_trained": getattr(self.model, "is_trained", False),
+            "config": getattr(self, "config", {}),
+        }
+        joblib.dump(model_data, path)
 
         # Save filter metadata
         metadata = {
@@ -598,11 +621,15 @@ class MLFilter:
 
     def load_model(self, path: str) -> None:
         """Load a trained model from disk."""
-        # Use the injected load_model function
-        loaded_model = self.load_model(path)
-        # Since load_model returns the model, we need to wrap it in our MLModel structure
-        # For now, we'll assume the loaded model has the necessary interface
-        self.model = loaded_model
+        # Load model data
+        model_data = joblib.load(path)
+        self.model = model_data["model"]
+        # Restore training state explicitly - ensure it's marked as trained
+        # The saved data should have is_trained=True, so restore it
+        saved_is_trained = model_data.get("is_trained", False)
+        if hasattr(self.model, "is_trained"):
+            self.model.is_trained = saved_is_trained
+        self.config = model_data.get("config", {})
 
         # Try to load filter metadata
         metadata_path = str(Path(path).with_suffix('')) + '_filter_metadata.json'
@@ -613,7 +640,7 @@ class MLFilter:
                 self.config = metadata.get('config', self.config)
                 self.confidence_threshold = metadata.get('confidence_threshold', self.confidence_threshold)
 
-        logger.info(f"ML Filter loaded from {path}")
+        logger.info(f"ML Filter loaded from {path}, is_trained restored to: {saved_is_trained}")
 
     def get_model_info(self) -> Dict[str, Any]:
         """Get information about the current model."""

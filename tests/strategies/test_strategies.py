@@ -39,7 +39,7 @@ from core.contracts import TradingSignal, SignalType, SignalStrength
 @pytest.fixture
 def sample_ohlcv_data():
     """Fixture providing sample OHLCV market data for testing."""
-    dates = pd.date_range('2023-01-01', periods=100, freq='1H')
+    dates = pd.date_range('2023-01-01', periods=100, freq='1h')
     np.random.seed(42)  # For reproducible tests
 
     # Generate realistic price data with some volatility
@@ -242,7 +242,7 @@ class TestRSIStrategy:
         strategy = RSIStrategy(rsi_strategy_config)
 
         # Create data with RSI < 30 (oversold)
-        dates = pd.date_range('2023-01-01', periods=50, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=50, freq='1h')
         data = pd.DataFrame({
             'close': [100.0] * 49 + [95.0],  # Price drop to trigger low RSI
             'high': [101.0] * 50,
@@ -270,7 +270,7 @@ class TestRSIStrategy:
         strategy = RSIStrategy(rsi_strategy_config)
 
         # Create data with RSI > 70 (overbought)
-        dates = pd.date_range('2023-01-01', periods=50, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=50, freq='1h')
         data = pd.DataFrame({
             'close': [100.0] * 49 + [105.0],  # Price increase to trigger high RSI
             'high': [101.0] * 50,
@@ -294,7 +294,7 @@ class TestRSIStrategy:
         strategy = RSIStrategy(rsi_strategy_config)
 
         # Create data with RSI in neutral range (30-70)
-        dates = pd.date_range('2023-01-01', periods=50, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=50, freq='1h')
         data = pd.DataFrame({
             'close': [100.0] * 50,
             'high': [101.0] * 50,
@@ -315,7 +315,7 @@ class TestRSIStrategy:
         """Test signal generation with NaN RSI values."""
         strategy = RSIStrategy(rsi_strategy_config)
 
-        dates = pd.date_range('2023-01-01', periods=50, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=50, freq='1h')
         data = pd.DataFrame({
             'close': [100.0] * 50,
             'high': [101.0] * 50,
@@ -334,7 +334,7 @@ class TestRSIStrategy:
         """Test signal generation with volume filtering."""
         strategy = RSIStrategy(rsi_strategy_config)
 
-        dates = pd.date_range('2023-01-01', periods=50, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=50, freq='1h')
         data = pd.DataFrame({
             'close': [100.0] * 50,
             'high': [101.0] * 50,
@@ -358,7 +358,7 @@ class TestRSIStrategy:
 
         strategy = RSIStrategy(rsi_strategy_config)
 
-        dates = pd.date_range('2023-01-01', periods=50, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=50, freq='1h')
 
         # Create data for BTC (oversold)
         btc_data = pd.DataFrame({
@@ -448,7 +448,7 @@ class TestBollingerReversionStrategy:
         """Test signal generation for oversold reversion."""
         strategy = BollingerReversionStrategy(bollinger_strategy_config)
 
-        dates = pd.date_range('2023-01-01', periods=50, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=50, freq='1h')
         data = pd.DataFrame({
             'close': [100.0] * 50,
             'high': [101.0] * 50,
@@ -477,7 +477,7 @@ class TestBollingerReversionStrategy:
         """Test signal generation for overbought reversion."""
         strategy = BollingerReversionStrategy(bollinger_strategy_config)
 
-        dates = pd.date_range('2023-01-01', periods=50, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=50, freq='1h')
         data = pd.DataFrame({
             'close': [100.0] * 50,
             'high': [101.0] * 50,
@@ -506,7 +506,7 @@ class TestBollingerReversionStrategy:
         """Test no signal when bands are too narrow."""
         strategy = BollingerReversionStrategy(bollinger_strategy_config)
 
-        dates = pd.date_range('2023-01-01', periods=50, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=50, freq='1h')
         data = pd.DataFrame({
             'close': [100.0] * 50,
             'high': [101.0] * 50,
@@ -526,7 +526,7 @@ class TestBollingerReversionStrategy:
         """Test handling of NaN position values."""
         strategy = BollingerReversionStrategy(bollinger_strategy_config)
 
-        dates = pd.date_range('2023-01-01', periods=50, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=50, freq='1h')
         data = pd.DataFrame({
             'close': [100.0] * 50,
             'high': [101.0] * 50,
@@ -1080,7 +1080,7 @@ class TestMockingAndIntegration:
         strategy = RSIStrategy(rsi_strategy_config)
 
         # Create data with specific timestamp and RSI value that triggers oversold signal
-        dates = pd.date_range('2023-01-01 10:00:00', periods=50, freq='1H')
+        dates = pd.date_range('2023-01-01 10:00:00', periods=50, freq='1h')
         data = pd.DataFrame({
             'close': [100.0] * 50,
             'high': [101.0] * 50,

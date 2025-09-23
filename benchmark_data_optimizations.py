@@ -27,7 +27,7 @@ def create_test_dataframes(count: int = 50, rows_per_df: int = 1000) -> List[pd.
 
     for i in range(count):
         # Create OHLCV data
-        timestamps = pd.date_range(base_time + pd.Timedelta(hours=i*24), periods=rows_per_df, freq='1H')
+        timestamps = pd.date_range(base_time + pd.Timedelta(hours=i*24), periods=rows_per_df, freq='1h')
         data = {
             'open': np.random.uniform(100, 200, rows_per_df),
             'high': np.random.uniform(150, 250, rows_per_df),

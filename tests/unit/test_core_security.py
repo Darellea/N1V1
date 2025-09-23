@@ -74,7 +74,7 @@ class TestDataExpansionManagerSecurity:
         config = {
             'data_sources': [],
             'target_pairs': ['EUR/USD'],
-            'timeframes': ['1H']
+            'timeframes': ['1h']
         }
         manager = DataExpansionManager(config)
 
@@ -170,7 +170,7 @@ class TestInputValidationEdgeCases:
         config = {
             'data_sources': [],
             'target_pairs': ['EUR/USD'],
-            'timeframes': ['1H']
+            'timeframes': ['1h']
         }
         manager = DataExpansionManager(config)
 

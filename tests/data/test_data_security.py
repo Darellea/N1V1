@@ -36,39 +36,35 @@ class TestPathTraversalPrevention:
         expected_base = os.path.join(os.getcwd(), 'data', 'cache')
         expected_path = os.path.join(expected_base, 'my_cache')
 
-        assert fetcher.cache_dir == expected_path
+        assert fetcher.cache_dir_path == expected_path
 
     def test_sanitize_cache_path_traversal_dots(self):
         """Test blocking path traversal with .. patterns."""
         config = {'cache_enabled': True, 'cache_dir': '../../../etc/passwd'}
-        fetcher = DataFetcher(config)
 
-        with pytest.raises(PathTraversalError, match="Path traversal detected"):
-            fetcher._initialize_exchange()
+        with pytest.raises(PathTraversalError, match="Invalid cache directory path"):
+            DataFetcher(config)
 
     def test_sanitize_cache_path_absolute_path(self):
         """Test blocking absolute paths."""
         config = {'cache_enabled': True, 'cache_dir': '/etc/passwd'}
-        fetcher = DataFetcher(config)
 
         with pytest.raises(PathTraversalError, match="Invalid cache directory path"):
-            fetcher._initialize_exchange()
+            DataFetcher(config)
 
     def test_sanitize_cache_path_backslash_traversal(self):
         """Test blocking backslash path traversal on Windows."""
         config = {'cache_enabled': True, 'cache_dir': '..\\..\\etc\\passwd'}
-        fetcher = DataFetcher(config)
 
-        with pytest.raises(PathTraversalError, match="Path traversal detected"):
-            fetcher._initialize_exchange()
+        with pytest.raises(PathTraversalError, match="Invalid cache directory path"):
+            DataFetcher(config)
 
     def test_sanitize_cache_path_complex_traversal(self):
         """Test blocking complex traversal patterns."""
         config = {'cache_enabled': True, 'cache_dir': 'cache/../../../etc/passwd'}
-        fetcher = DataFetcher(config)
 
-        with pytest.raises(PathTraversalError, match="Path traversal pattern detected"):
-            fetcher._initialize_exchange()
+        with pytest.raises(PathTraversalError, match="Invalid cache directory path"):
+            DataFetcher(config)
 
     def test_sanitize_cache_path_valid_nested(self):
         """Test allowing valid nested paths."""
@@ -78,7 +74,7 @@ class TestPathTraversalPrevention:
         expected_base = os.path.join(os.getcwd(), 'data', 'cache')
         expected_path = os.path.join(expected_base, 'nested', 'cache', 'dir')
 
-        assert fetcher.cache_dir == expected_path
+        assert fetcher.cache_dir_path == expected_path
 
     def test_sanitize_cache_path_empty_string(self):
         """Test handling empty cache directory string."""
@@ -88,7 +84,7 @@ class TestPathTraversalPrevention:
         expected_base = os.path.join(os.getcwd(), 'data', 'cache')
         expected_path = expected_base  # Should resolve to base cache dir
 
-        assert fetcher.cache_dir == expected_path
+        assert fetcher.cache_dir_path == expected_path
 
     def test_cache_disabled_no_validation(self):
         """Test that path validation is skipped when cache is disabled."""
@@ -105,7 +101,7 @@ class TestDataFrameValidation:
     def create_valid_ohlcv_df(self, rows=100):
         """Create a valid OHLCV DataFrame for testing."""
         np.random.seed(42)
-        timestamps = pd.date_range('2023-01-01', periods=rows, freq='1H')
+        timestamps = pd.date_range('2023-01-01', periods=rows, freq='1h')
 
         # Generate realistic OHLCV data
         base_price = 50000
@@ -231,7 +227,7 @@ class TestDatasetVersionManagerSecurity:
 
             # Create valid DataFrame
             df = pd.DataFrame({
-                'timestamp': pd.date_range('2023-01-01', periods=10, freq='1H'),
+                'timestamp': pd.date_range('2023-01-01', periods=10, freq='1h'),
                 'open': [100 + i for i in range(10)],
                 'high': [105 + i for i in range(10)],
                 'low': [95 + i for i in range(10)],
@@ -272,7 +268,7 @@ class TestDatasetVersionManagerSecurity:
 
             # Create legacy DataFrame
             df = pd.DataFrame({
-                'timestamp': pd.date_range('2023-01-01', periods=10, freq='1H'),
+                'timestamp': pd.date_range('2023-01-01', periods=10, freq='1h'),
                 'open': [100 + i for i in range(10)],
                 'high': [105 + i for i in range(10)],
                 'low': [95 + i for i in range(10)],
@@ -414,7 +410,7 @@ class TestVersionNameSanitization:
 
             # Create valid DataFrame
             df = pd.DataFrame({
-                'timestamp': pd.date_range('2023-01-01', periods=5, freq='1H'),
+                'timestamp': pd.date_range('2023-01-01', periods=5, freq='1h'),
                 'open': [100, 102, 104, 106, 108],
                 'high': [105, 107, 109, 111, 113],
                 'low': [95, 97, 99, 101, 103],
@@ -445,7 +441,7 @@ class TestVersionNameSanitization:
 
             # Create valid DataFrame
             df = pd.DataFrame({
-                'timestamp': pd.date_range('2023-01-01', periods=5, freq='1H'),
+                'timestamp': pd.date_range('2023-01-01', periods=5, freq='1h'),
                 'open': [100, 102, 104, 106, 108],
                 'high': [105, 107, 109, 111, 113],
                 'low': [95, 97, 99, 101, 103],
@@ -627,7 +623,7 @@ class TestIntegrationSecurity:
 
             # Create valid DataFrame
             df = pd.DataFrame({
-                'timestamp': pd.date_range('2023-01-01', periods=5, freq='1H'),
+                'timestamp': pd.date_range('2023-01-01', periods=5, freq='1h'),
                 'open': [100, 102, 104, 106, 108],
                 'high': [105, 107, 109, 111, 113],
                 'low': [95, 97, 99, 101, 103],
@@ -644,18 +640,29 @@ class TestIntegrationSecurity:
             assert loaded_df is not None
             assert len(loaded_df) == 5
 
-            # Verify data integrity
-            pd.testing.assert_frame_equal(df.reset_index(drop=True), loaded_df.reset_index(drop=True))
+            # Verify data integrity - loaded DataFrame should have timestamp as index
+            assert len(loaded_df) == len(df)
+            assert isinstance(loaded_df.index, pd.DatetimeIndex)
+            # Check that all expected columns exist
+            expected_cols = ['open', 'high', 'low', 'close', 'volume']
+            for col in expected_cols:
+                assert col in loaded_df.columns, f"Missing column: {col}"
+            # Compare data values (loaded_df has timestamp as index, original df has it as column)
+            original_reset = df.reset_index(drop=True)
+            loaded_reset = loaded_df.reset_index()
+            assert loaded_reset['timestamp'].equals(original_reset['timestamp'])
+            assert loaded_reset['open'].equals(original_reset['open'])
+            assert loaded_reset['close'].equals(original_reset['close'])
+            assert loaded_reset['volume'].equals(original_reset['volume'])
 
     def test_error_handling_and_logging(self):
         """Test that errors are properly logged and handled."""
         with patch('data.data_fetcher.logger') as mock_logger:
-            # Test path traversal error logging
+            # Test path traversal error logging - exception raised during __init__
             config = {'cache_enabled': True, 'cache_dir': '../../../etc/passwd'}
-            fetcher = DataFetcher(config)
 
             with pytest.raises(PathTraversalError):
-                fetcher._initialize_exchange()
+                DataFetcher(config)
 
             # Verify error was logged
             mock_logger.error.assert_called()

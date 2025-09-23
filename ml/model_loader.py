@@ -12,8 +12,11 @@ import time
 try:
     import mlflow
     import mlflow.sklearn
+    from mlflow.tracking import MlflowClient
     MLFLOW_AVAILABLE = True
 except ImportError:
+    mlflow = None
+    MlflowClient = None
     MLFLOW_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
@@ -36,18 +39,25 @@ def load_model(path: str):
         model = joblib.load(path)
         logger.info(f"Loaded model from {path}")
         return model
-    except Exception as e:
+    except (Exception, TypeError) as e:
         logger.error(f"Failed to load model from {path}: {e}")
         raise ValueError(f"Model file at {path} is corrupted or of wrong format: {e}") from e
 
 
-def load_model_with_card(path: str) -> Tuple[Any, Optional[Dict[str, Any]]]:
+def load_model_with_card(identifier: str) -> Tuple[Any, Optional[Dict[str, Any]]]:
     """
     Load a model and its companion model card (if present).
 
+    Supports both raw model names and full paths.
     The model card is expected at the same path with extension '.model_card.json'.
     Returns (model, model_card_dict|None)
     """
+    # Allow both "test_model" and "models/test_model.pkl"
+    if not identifier.endswith((".pkl", ".joblib", ".model")):
+        path = os.path.join("models", f"{identifier}.pkl")
+    else:
+        path = identifier
+
     model = load_model(path)
     card_path = os.path.splitext(os.path.abspath(path))[0] + ".model_card.json"
     model_card = None
@@ -248,8 +258,7 @@ def load_model_from_registry(model_name: str, version: str = None, experiment_na
         Tuple of (model, model_card_dict)
     """
     if not MLFLOW_AVAILABLE:
-        logger.warning("MLflow not available, cannot load from registry")
-        raise ImportError("MLflow not available for model registry loading")
+        raise ImportError("MLflow not available")
 
     try:
         # Try to load from MLflow model registry first
@@ -294,24 +303,9 @@ def load_model_from_registry(model_name: str, version: str = None, experiment_na
     except Exception as e:
         logger.warning(f"Failed to load model {model_name} from MLflow registry: {e}")
 
-        # Fallback: try to find local model file
+        # Fallback: try to load local model file
         logger.info(f"Attempting fallback to local model file for {model_name}")
-        local_paths = [
-            f"models/{model_name}.pkl",
-            f"models/{model_name}.joblib",
-            f"models/{model_name}.model",
-            f"{model_name}.pkl",
-            f"{model_name}.joblib",
-            f"{model_name}.model"
-        ]
-
-        for path in local_paths:
-            if os.path.exists(path):
-                logger.info(f"Loading local model from {path}")
-                return load_model_with_card(path)
-
-        # If no local file found, re-raise the original error
-        raise FileNotFoundError(f"Model {model_name} not found in registry or locally")
+        return load_model_with_card(model_name)
 
 
 def load_model_with_fallback(model_path_or_name: str, use_registry: bool = True) -> Tuple[Any, Optional[Dict[str, Any]]]:

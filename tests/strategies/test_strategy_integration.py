@@ -42,7 +42,7 @@ class MockDataFetcher:
 
     def _generate_mock_data(self) -> Dict[str, pd.DataFrame]:
         """Generate realistic mock OHLCV data for testing."""
-        dates = pd.date_range('2023-01-01', periods=200, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=200, freq='1h')
 
         # Generate BTC data with trend and volatility
         np.random.seed(42)
@@ -628,7 +628,7 @@ class TestErrorScenariosIntegration:
         class CorruptedDataFetcher:
             async def get_historical_data(self, symbol: str, timeframe: str, limit: int = 100):
                 # Return data with NaN values and invalid data
-                dates = pd.date_range('2023-01-01', periods=50, freq='1H')
+                dates = pd.date_range('2023-01-01', periods=50, freq='1h')
                 corrupted_data = pd.DataFrame({
                     'close': [100.0 if i % 5 != 0 else np.nan for i in range(50)],  # Some NaN values
                     'high': [101.0 if i % 7 != 0 else np.nan for i in range(50)],
@@ -756,7 +756,7 @@ class TestPerformanceIntegration:
         efficiently without excessive memory usage or timeouts.
         """
         # Create large dataset
-        dates = pd.date_range('2020-01-01', periods=5000, freq='1H')  # ~6 months of data
+        dates = pd.date_range('2020-01-01', periods=5000, freq='1h')  # ~6 months of data
         large_data = pd.DataFrame({
             'close': np.random.uniform(50000, 51000, 5000),
             'high': np.random.uniform(50500, 51500, 5000),

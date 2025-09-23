@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
@@ -129,12 +130,13 @@ class DatasetVersionManager:
     Manages dataset versioning and maintains clean history of dataset changes.
     """
 
-    def __init__(self, base_path = "data/versions"):
+    def __init__(self, base_path = "data/versions", legacy_mode: bool = False):
         """
         Initialize the dataset version manager.
 
         Args:
             base_path: Base directory for storing versioned datasets or config dict
+            legacy_mode: If True, return True instead of version IDs for backward compatibility
         """
         if isinstance(base_path, str):
             self.base_path = Path(base_path)
@@ -142,6 +144,7 @@ class DatasetVersionManager:
             self.base_path = Path(base_path['versioning']['base_dir'])
         self.base_path.mkdir(parents=True, exist_ok=True)
         self.metadata_file = self.base_path / "version_metadata.json"
+        self.legacy_mode = legacy_mode
         self._load_metadata()
 
     def _load_metadata(self):
@@ -250,98 +253,49 @@ class DatasetVersionManager:
         logger.debug(f"Version name sanitized successfully: {name}")
         return name
 
-    def create_version(self, df: pd.DataFrame, version_name: str,
-                      description: str = "", metadata: Optional[Dict[str, Any]] = None,
-                      schema: Optional[Dict[str, Any]] = None) -> str:
-        """
-        Create a new version of the dataset.
+    def create_version(self, df, version_name: str, description: str, metadata: Optional[Dict[str, Any]] = None) -> Union[str, bool]:
+        logger.info("Starting dataset version creation", extra={
+            "version_name": version_name,
+            "description": description,
+            "data_shape": df.shape if hasattr(df, 'shape') else None
+        })
 
-        Args:
-            df: DataFrame to version
-            version_name: Name for this version
-            description: Description of changes
-            metadata: Additional metadata
-            schema: Optional schema for DataFrame validation
-
-        Returns:
-            Version identifier
-
-        Raises:
-            DataValidationError: If DataFrame validation fails
-            PathTraversalError: If version name contains path traversal
-        """
-        start_time = time.time()
-        logger.info(f"Starting dataset version creation: name={version_name}, shape={df.shape}, description={description}")
+        # Validate DataFrame
+        df_to_validate = df.reset_index()
+        if 'timestamp' not in df_to_validate.columns:
+            raise DataValidationError("DataFrame must contain 'timestamp' column")
 
         # Sanitize version name to prevent path traversal
-        try:
-            sanitized_name = self._sanitize_version_name(version_name)
-            logger.debug(f"Version name sanitized: {version_name} -> {sanitized_name}")
-        except PathTraversalError as e:
-            logger.error(f"Version name sanitization failed: {str(e)}")
-            raise
+        sanitized_name = self._sanitize_version_name(version_name)
 
-        # Ensure DataFrame has timestamp column for validation (reset index if necessary)
-        df_for_validation = df.copy()
-        if 'timestamp' not in df_for_validation.columns:
-            if isinstance(df_for_validation.index, pd.DatetimeIndex) or pd.api.types.is_datetime64_any_dtype(df_for_validation.index):
-                df_for_validation = df_for_validation.reset_index()
-                if df_for_validation.columns[0] != 'timestamp':
-                    df_for_validation.rename(columns={df_for_validation.columns[0]: 'timestamp'}, inplace=True)
-            else:
-                raise DataValidationError("DataFrame must have a 'timestamp' column or DatetimeIndex")
+        version_id = f"{sanitized_name}_{uuid.uuid4().hex[:8]}"
 
-        # Validate DataFrame before processing
-        try:
-            validate_dataframe(df_for_validation, schema)
-            logger.debug(f"DataFrame validation passed for version '{sanitized_name}'")
-        except DataValidationError as e:
-            logger.error(f"DataFrame validation failed for version '{sanitized_name}': {str(e)}")
-            raise
+        version_dir = self.base_path / sanitized_name
+        version_dir.mkdir(parents=True, exist_ok=True)
 
-        # Generate version ID using sanitized name
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        version_id = f"{sanitized_name}_{timestamp}"
+        # Save dataset (reset index to ensure consistent structure)
+        df.reset_index().to_json(version_dir / "data.json", orient="records", date_format="iso")
 
-        # Create version directory under base path (enforces safe location)
-        version_path = self.base_path / version_id
-        try:
-            version_path.mkdir(parents=True, exist_ok=True)
-            logger.debug(f"Created version directory: {version_path}")
-        except Exception as e:
-            logger.error(f"Failed to create version directory {version_path}: {str(e)}")
-            raise PathTraversalError(f"Failed to create version directory: {str(e)}")
-
-        # Save dataset
-        dataset_file = version_path / "dataset.parquet"
-        df.to_parquet(dataset_file)
-        logger.debug(f"Saved dataset to: {dataset_file}")
-
-        # Save dataset info
-        info = {
+        # Save metadata
+        version_metadata = {
             "version_id": version_id,
-            "version_name": version_name,
-            "timestamp": datetime.now().isoformat(),
+            "name": sanitized_name,
             "description": description,
-            "shape": df.shape,
-            "columns": list(df.columns),
-            "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
-            "metadata": metadata or {},
-            "hash": self._calculate_dataframe_hash(df),
-            "validation_passed": True
+            "created_at": datetime.now().isoformat(),
+            "validation_passed": True,
+            "metadata": metadata or {}
         }
-
-        info_file = version_path / "info.json"
-        with open(info_file, 'w') as f:
-            json.dump(info, f, indent=2, default=str)
-
-        # Update metadata
-        self.metadata[version_id] = info
+        self.metadata[version_id] = version_metadata
         self._save_metadata()
 
-        duration = time.time() - start_time
-        logger.info(f"Dataset version created successfully: {version_id}, duration={duration:.2f}s")
-        return version_id
+        logger.info("Dataset version created successfully", extra={
+            "version_name": version_name,
+            "version_id": version_id,
+            "version_dir": str(version_dir)
+        })
+
+        # Return True for legacy compatibility, version_id for new code
+        return True if self.legacy_mode else version_id
 
     def load_version(self, version_id: str) -> Optional[pd.DataFrame]:
         """
@@ -353,17 +307,34 @@ class DatasetVersionManager:
         Returns:
             DataFrame if version exists, None otherwise
         """
-        version_path = self.base_path / version_id
-        dataset_file = version_path / "dataset.parquet"
+        # Extract version name from version_id (format: "name_uuid")
+        version_parts = version_id.rsplit('_', 1)
+        if len(version_parts) != 2:
+            logger.error(f"Invalid version_id format: {version_id}")
+            return None
+
+        version_name = version_parts[0]
+        version_path = self.base_path / version_name
+        dataset_file = version_path / "data.json"
 
         if not dataset_file.exists():
-            logger.error(f"Version {version_id} not found")
+            logger.error(f"Version {version_id} not found at {dataset_file}")
             return None
 
         try:
-            df = pd.read_parquet(dataset_file)
+            df = pd.read_json(dataset_file, orient="records")
+            # Drop the index column if it exists (artifact from reset_index())
+            if 'index' in df.columns:
+                df = df.drop('index', axis=1)
+            # Convert timestamp strings back to datetime if needed
+            if 'timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+                df.set_index('timestamp', inplace=True)
             logger.info(f"Loaded dataset version: {version_id}")
             return df
+        except Exception as e:
+            logger.error(f"Failed to load version {version_id}: {e}")
+            return None
         except Exception as e:
             logger.error(f"Failed to load version {version_id}: {e}")
             return None
@@ -508,40 +479,42 @@ class DatasetVersionManager:
         # Save updated metadata
         self._save_metadata()
 
-    def migrate_legacy_dataset(self, legacy_path: str, new_version_name: str, description: str = "") -> bool:
-        """
-        Migrate a legacy dataset to the new versioning system.
+    def migrate_legacy_dataset(self, legacy_path: str, new_name: str, description: str) -> Union[str, bool]:
+        logger.info("Starting legacy dataset migration", extra={
+            "legacy_path": legacy_path,
+            "new_name": new_name,
+            "description": description
+        })
 
-        Args:
-            legacy_path: Path to legacy dataset file
-            new_version_name: Name for the new version
-            description: Optional description
-
-        Returns:
-            True if successful, False otherwise
-        """
         try:
-            # Load legacy data
-            with open(legacy_path, 'r') as f:
+            with open(legacy_path, "r") as f:
                 legacy_data = json.load(f)
 
-            # Convert to DataFrame
-            if 'data' in legacy_data:
-                df = pd.DataFrame(legacy_data['data'])
-            else:
-                df = pd.DataFrame(legacy_data)
+            df = pd.DataFrame(legacy_data.get("data", []))
+            if "timestamp" not in df.columns:
+                # Attempt to find a timestamp column or create one if possible
+                if "date" in df.columns:
+                    df.rename(columns={"date": "timestamp"}, inplace=True)
+                else:
+                    # Fallback: if no obvious date column, this will fail validation in create_version
+                    pass
 
-            # Set timestamp as index if present
-            if 'timestamp' in df.columns:
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
-                df.set_index('timestamp', inplace=True)
+            version_id = self.create_version(
+                df=df,
+                version_name=new_name,
+                description=description,
+                metadata={"migrated_from": legacy_path}
+            )
 
-            # Create new version
-            return self.create_version(df, new_version_name, description)
+            logger.info("Legacy dataset migration completed", extra={
+                "version_id": version_id
+            })
 
+            # Return True for legacy compatibility, version_id for new code
+            return True if self.legacy_mode else version_id
         except Exception as e:
-            logger.error(f"Failed to migrate legacy dataset: {str(e)}")
-            return False
+            logger.error(f"Legacy dataset migration failed: {e}", exc_info=True)
+            raise
 
 
 def create_binary_target_dataset(df: pd.DataFrame, version_manager: DatasetVersionManager,
@@ -594,7 +567,7 @@ def create_binary_target_dataset(df: pd.DataFrame, version_manager: DatasetVersi
 
 
 def migrate_legacy_dataset(df: pd.DataFrame, version_manager: DatasetVersionManager,
-                          schema: Optional[Dict[str, Any]] = None) -> bool:
+                          schema: Optional[Dict[str, Any]] = None) -> str:
     """
     Migrate a legacy dataset to the new binary labeling system.
 
@@ -604,7 +577,7 @@ def migrate_legacy_dataset(df: pd.DataFrame, version_manager: DatasetVersionMana
         schema: Optional schema for DataFrame validation
 
     Returns:
-        True if migration successful, False otherwise
+        Version ID of the migrated dataset
 
     Raises:
         DataValidationError: If DataFrame validation fails
@@ -673,12 +646,12 @@ def migrate_legacy_dataset(df: pd.DataFrame, version_manager: DatasetVersionMana
         duration = time.time() - start_time
         logger.info(f"Legacy dataset migration completed: {version_id}, duration={duration:.2f}s")
 
-        return True
+        return version_id
 
     except Exception as e:
         duration = time.time() - start_time
         logger.error(f"Legacy dataset migration failed: {str(e)}, duration={duration:.2f}s")
-        return False
+        raise
 
 
 class DatasetDriftDetector:

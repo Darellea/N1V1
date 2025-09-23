@@ -28,7 +28,8 @@ from ml.model_monitor import (
     DriftMetrics,
     ModelHealthReport,
     create_model_monitor,
-    generate_monitoring_report
+    generate_monitoring_report,
+    _safe_joblib_dump
 )
 
 
@@ -49,9 +50,8 @@ class TestModelMonitor:
         self.model_path = os.path.join(self.temp_dir, 'test_model.pkl')
         self.config_path = os.path.join(self.temp_dir, 'test_config.json')
 
-        # Save mock model
-        import joblib
-        joblib.dump(self.mock_model, self.model_path)
+        # Save mock model using safe dump
+        _safe_joblib_dump(self.mock_model, self.model_path)
 
         # Create mock config
         self.config = {

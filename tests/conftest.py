@@ -188,7 +188,7 @@ def synthetic_market_data():
     timestamps = pd.date_range(
         start=datetime(2024, 1, 1),
         periods=n_points,
-        freq='1H'
+        freq='1h'
     )
 
     # Generate realistic price data with trends and volatility
@@ -566,7 +566,7 @@ def generate_regime_data():
         timestamps = pd.date_range(
             start=datetime(2024, 1, 1),
             periods=n_points,
-            freq='1H'
+            freq='1h'
         )
 
         if regime_type == "bull_market":
@@ -898,7 +898,7 @@ def mock_dataframe():
     timestamps = pd.date_range(
         start=datetime(2024, 1, 1),
         periods=100,
-        freq='1H'
+        freq='1h'
     )
 
     df = pd.DataFrame({

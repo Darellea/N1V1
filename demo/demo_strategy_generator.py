@@ -92,7 +92,7 @@ class StrategyGeneratorDemo:
         # Generate timestamps (1-hour intervals)
         end_time = datetime.now()
         start_time = end_time - timedelta(days=days)
-        timestamps = pd.date_range(start=start_time, end=end_time, freq='1H')
+        timestamps = pd.date_range(start=start_time, end=end_time, freq='1h')
 
         np.random.seed(42)  # For reproducible results
 

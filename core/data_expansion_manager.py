@@ -53,7 +53,7 @@ class DataExpansionManager:
         self.config = config
         self.data_sources = config.get('data_sources', [])
         self.target_pairs = config.get('target_pairs', ['EUR/USD', 'GBP/USD', 'USD/JPY'])
-        self.timeframes = config.get('timeframes', ['1H', '4H'])
+        self.timeframes = config.get('timeframes', ['1h', '4H'])
         self.data_dir = Path(config.get('data_dir', 'historical_data'))
         self.min_samples_per_pair = config.get('min_samples_per_pair', 1000)
 
@@ -777,7 +777,7 @@ if __name__ == "__main__":
             }
         ],
         'target_pairs': ['EUR/USD', 'GBP/USD', 'USD/JPY', 'AUD/USD'],
-        'timeframes': ['1H', '4H'],
+        'timeframes': ['1h', '4H'],
         'data_dir': 'historical_data',
         'min_samples_per_pair': 1000
     }

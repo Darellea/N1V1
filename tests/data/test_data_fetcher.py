@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch, Mock
 from datetime import datetime, timedelta
 import time
 
-from data.data_fetcher import DataFetcher
+from data.data_fetcher import DataFetcher, PathTraversalError
 
 
 class TestDataFetcherInitialization:
@@ -41,7 +41,8 @@ class TestDataFetcherInitialization:
 
         assert fetcher.config == config
         assert fetcher.cache_enabled == True
-        assert fetcher.cache_dir == '.test_cache'
+        assert fetcher.config['cache_dir'] == '.test_cache'  # Raw config value
+        assert fetcher.cache_dir == os.path.join(os.getcwd(), 'data', 'cache', '.test_cache')  # Sanitized path
         assert hasattr(fetcher, 'exchange')
         assert hasattr(fetcher, '_exchange')
 
@@ -474,11 +475,18 @@ class TestDataFetcherCaching:
         # Save to cache
         self.fetcher._save_to_cache(cache_key, df)
 
-        # Manually set cache file to be old (2 hours ago)
+        # Manually modify the cache file to have an old timestamp (3 hours ago)
         cache_path = os.path.join(self.temp_dir, f"{cache_key}.json")
         if os.path.exists(cache_path):
-            old_time = time.time() - 7200  # 2 hours ago
-            os.utime(cache_path, (old_time, old_time))
+            with open(cache_path, 'r') as f:
+                cache_data = json.load(f)
+
+            # Set timestamp to 1 year ago (way beyond default 24 hour TTL)
+            old_timestamp = int((pd.Timestamp.now() - pd.Timedelta(days=365)).timestamp() * 1000)
+            cache_data["timestamp"] = old_timestamp
+
+            with open(cache_path, 'w') as f:
+                json.dump(cache_data, f)
 
             # Try to load (should return None due to expiration)
             loaded_df = self.fetcher._load_from_cache(cache_key)
@@ -667,24 +675,16 @@ class TestDataFetcherErrorScenarios:
 
     def test_cache_operations_error_handling(self):
         """Test cache operations error handling."""
-        # Test with invalid cache directory
+        # Test with invalid cache directory - should raise PathTraversalError immediately
         config = {
             'name': 'binance',
             'cache_enabled': True,
             'cache_dir': '/invalid/path'
         }
-        fetcher = DataFetcher(config)
 
-        # Should not raise exception during cache operations
-        cache_key = "test_key"
-        df = pd.DataFrame({'close': [50000]})
-
-        # These should not raise exceptions
-        fetcher._save_to_cache(cache_key, df)
-        result = fetcher._load_from_cache(cache_key)
-        # Cache operations may succeed or fail depending on the system
-        # The important thing is that they don't raise exceptions
-        assert result is None or isinstance(result, pd.DataFrame)
+        # Should raise PathTraversalError during initialization
+        with pytest.raises(PathTraversalError, match="Invalid cache directory path"):
+            DataFetcher(config)
 
 
 class TestDataFetcherEdgeCases:
@@ -813,8 +813,8 @@ class TestDataFetcherIntegration:
         result3 = await self.fetcher.get_historical_data('BTC/USDT', '1h', 100, force_fresh=True)
         assert len(result3) == 1
 
-        # Verify exchange was called for all requests (since cache loading is mocked)
-        assert mock_exchange.fetch_ohlcv.call_count == 3
+        # Verify exchange was called only for first and third requests (second should use cache)
+        assert mock_exchange.fetch_ohlcv.call_count == 2
 
     @pytest.mark.asyncio
     async def test_multiple_symbols_workflow(self):

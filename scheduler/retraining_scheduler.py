@@ -523,7 +523,7 @@ class RetrainingScheduler:
         # Create synthetic training data
         np.random.seed(42)
         n_samples = 5000
-        timestamps = pd.date_range('2023-01-01', periods=n_samples, freq='1H')
+        timestamps = pd.date_range('2023-01-01', periods=n_samples, freq='1h')
 
         # Generate synthetic OHLCV data
         data = []
@@ -885,7 +885,7 @@ if __name__ == "__main__":
                 }
             ],
             'target_pairs': ['EUR/USD', 'GBP/USD'],
-            'timeframes': ['1H', '4H'],
+            'timeframes': ['1h', '4H'],
             'data_dir': 'historical_data'
         }
     }

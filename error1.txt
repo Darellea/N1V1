@@ -5984,15 +5984,15 @@ Order failed: safe_mode_active
 tests/acceptance/test_ml_quality.py::TestMLQualityValidation::test_f1_score_threshold_validation
 tests/acceptance/test_ml_quality.py::TestMLQualityValidation::test_model_benchmark_pipeline_execution
   C:\Users\TU\Desktop\new project\N1V1\tests\acceptance\test_ml_quality.py:48: FutureWarning: 'H' is deprecated and will be removed in a future version, please use 'h' instead.
-    'timestamp': pd.date_range('2024-01-01', periods=n_samples, freq='1H'),
+    'timestamp': pd.date_range('2024-01-01', periods=n_samples, freq='1h'),
 
 tests/acceptance/test_ml_quality.py::TestMLQualityValidation::test_validation_data_quality_checks
   C:\Users\TU\Desktop\new project\N1V1\tests\acceptance\test_ml_quality.py:279: FutureWarning: 'H' is deprecated and will be removed in a future version, please use 'h' instead.
-    'timestamp': pd.date_range('2024-01-01', periods=100, freq='1H'),
+    'timestamp': pd.date_range('2024-01-01', periods=100, freq='1h'),
 
 tests/acceptance/test_ml_quality.py::TestMLQualityValidation::test_validation_data_quality_checks
   C:\Users\TU\Desktop\new project\N1V1\tests\acceptance\test_ml_quality.py:295: FutureWarning: 'H' is deprecated and will be removed in a future version, please use 'h' instead.
-    'timestamp': pd.date_range('2024-01-01', periods=50, freq='1H'),
+    'timestamp': pd.date_range('2024-01-01', periods=50, freq='1h'),
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
 =============================================== short test summary info ===============================================

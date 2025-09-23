@@ -1558,7 +1558,7 @@ class StrategyGenerator(BaseOptimizer):
         # Evaluate current population
         # For now, use dummy data - in practice this would be passed in
         dummy_data = pd.DataFrame({
-            'timestamp': pd.date_range('2023-01-01', periods=100, freq='1H'),
+            'timestamp': pd.date_range('2023-01-01', periods=100, freq='1h'),
             'open': np.random.uniform(100, 110, 100),
             'high': np.random.uniform(105, 115, 100),
             'low': np.random.uniform(95, 105, 100),

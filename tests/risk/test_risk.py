@@ -30,7 +30,7 @@ from core.contracts import TradingSignal, SignalType, SignalStrength
 @pytest.fixture
 def sample_market_data():
     """Fixture providing sample market data for testing."""
-    dates = pd.date_range('2023-01-01', periods=100, freq='1H')
+    dates = pd.date_range('2023-01-01', periods=100, freq='1h')
     np.random.seed(42)  # For reproducible tests
 
     # Generate realistic price data with some volatility
@@ -306,7 +306,7 @@ class TestAnomalyDetection:
         detector = AnomalyDetector(anomaly_detector_config)
 
         # Create data with extreme price movement
-        dates = pd.date_range('2023-01-01', periods=60, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=60, freq='1h')
         prices = [100.0] * 59 + [150.0]  # Sudden 50% jump
 
         data = pd.DataFrame({
@@ -338,7 +338,7 @@ class TestAnomalyDetection:
         detector = AnomalyDetector(anomaly_detector_config)
 
         # Create data with extreme volume spike
-        dates = pd.date_range('2023-01-01', periods=30, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=30, freq='1h')
         volumes = [1000] * 29 + [50000]  # Extreme volume spike
 
         data = pd.DataFrame({
@@ -370,7 +370,7 @@ class TestAnomalyDetection:
         detector = AnomalyDetector(anomaly_detector_config)
 
         # Create data with large price gap
-        dates = pd.date_range('2023-01-01', periods=3, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=3, freq='1h')
         prices = [100.0, 100.0, 115.0]  # 15% gap
 
         data = pd.DataFrame({
@@ -519,7 +519,7 @@ class TestExtremeConditions:
         detector = AnomalyDetector(anomaly_detector_config)
 
         # Simulate flash crash: sudden massive price drop
-        dates = pd.date_range('2023-01-01', periods=60, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=60, freq='1h')
         prices = [100.0] * 58 + [50.0, 45.0]  # 50%+ drop in 2 periods
 
         data = pd.DataFrame({
@@ -545,7 +545,7 @@ class TestExtremeConditions:
         detector = AnomalyDetector(anomaly_detector_config)
 
         # Simulate high volatility period
-        dates = pd.date_range('2023-01-01', periods=100, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=100, freq='1h')
         np.random.seed(123)
 
         # Generate highly volatile price series
@@ -572,7 +572,7 @@ class TestExtremeConditions:
         detector = AnomalyDetector(anomaly_detector_config)
 
         # Create data with gaps (NaN values)
-        dates = pd.date_range('2023-01-01', periods=50, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=50, freq='1h')
         prices = np.random.normal(100, 2, 50)
         prices[10:15] = np.nan  # Gap in data
         prices[25:27] = np.nan  # Another gap
@@ -599,7 +599,7 @@ class TestExtremeConditions:
         detector = AnomalyDetector(anomaly_detector_config)
 
         # Create data with extreme volume spike
-        dates = pd.date_range('2023-01-01', periods=30, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=30, freq='1h')
         volumes = [1000] * 29 + [1000000]  # Million-fold volume increase
 
         data = pd.DataFrame({
@@ -624,7 +624,7 @@ class TestExtremeConditions:
         detector = AnomalyDetector(anomaly_detector_config)
 
         # Create data with zero price
-        dates = pd.date_range('2023-01-01', periods=10, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=10, freq='1h')
         prices = [100.0] * 9 + [0.0]  # Zero price
 
         data = pd.DataFrame({
@@ -658,7 +658,7 @@ class TestExtremeConditions:
         detector = AnomalyDetector(anomaly_detector_config)
 
         # DataFrame with only 2 rows (insufficient for most calculations)
-        dates = pd.date_range('2023-01-01', periods=2, freq='1H')
+        dates = pd.date_range('2023-01-01', periods=2, freq='1h')
         data = pd.DataFrame({
             'close': [100.0, 101.0],
             'high': [101.0, 102.0],

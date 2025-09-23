@@ -45,7 +45,7 @@ class TestMLQualityValidation:
         n_samples = 1000
 
         data = {
-            'timestamp': pd.date_range('2024-01-01', periods=n_samples, freq='1H'),
+            'timestamp': pd.date_range('2024-01-01', periods=n_samples, freq='1h'),
             'open': 50000 + np.random.normal(0, 1000, n_samples),
             'high': 50200 + np.random.normal(0, 1000, n_samples),
             'low': 49800 + np.random.normal(0, 1000, n_samples),
@@ -276,7 +276,7 @@ class TestMLQualityValidation:
         """Test validation data quality and completeness checks."""
         # Create test data with missing columns
         incomplete_data = {
-            'timestamp': pd.date_range('2024-01-01', periods=100, freq='1H'),
+            'timestamp': pd.date_range('2024-01-01', periods=100, freq='1h'),
             'open': np.random.normal(50000, 1000, 100),
             'close': np.random.normal(50000, 1000, 100),
             # Missing high, low, volume
@@ -292,7 +292,7 @@ class TestMLQualityValidation:
 
         # Create data with insufficient samples
         small_data = {
-            'timestamp': pd.date_range('2024-01-01', periods=50, freq='1H'),
+            'timestamp': pd.date_range('2024-01-01', periods=50, freq='1h'),
             'open': np.random.normal(50000, 1000, 50),
             'high': np.random.normal(50200, 1000, 50),
             'low': np.random.normal(49800, 1000, 50),

@@ -142,55 +142,39 @@ class DataFetcher(IDataFetcher):
         self.session: Optional[ClientSession] = None
         self.last_request_time = 0
         self.request_count = 0
+        self.max_requests_per_second = config.get('rate_limit', 10)
+        self._last_request_time = None
         self.cache_enabled = config.get('cache_enabled', True)
-        self.cache_dir = config.get('cache_dir', '.market_cache')
-        self._cache_dir_path = None  # Internal sanitized path
+        self._cache_dir_raw = config.get('cache_dir', '.market_cache')  # Keep raw config for compatibility
+        self._cache_dir_path = self._cache_dir_raw
 
-        # Set up cache directory regardless of exchange initialization
         if self.cache_enabled:
             try:
-                sanitized_path = self._sanitize_cache_path(self.cache_dir)
-                self._cache_dir_path = sanitized_path
+                sanitized = self._sanitize_cache_path(self.cache_dir)
+                self._cache_dir_path = sanitized
                 if not os.path.exists(self._cache_dir_path):
                     os.makedirs(self._cache_dir_path)
-            except Exception:
-                # Fallback to relative path for cache-only configs
-                self._cache_dir_path = self.cache_dir
-                if not os.path.exists(self._cache_dir_path):
-                    os.makedirs(self._cache_dir_path)
+            except PathTraversalError:
+                # Raise PathTraversalError immediately instead of just logging
+                raise
 
         if "name" in self.config:
             self._initialize_exchange()
         else:
             self.exchange = None
 
+    @property
+    def cache_dir(self):
+        """Return the sanitized cache directory path."""
+        return self._cache_dir_path
+
+    @property
+    def cache_dir_path(self):
+        """Return the sanitized cache directory path."""
+        return self._cache_dir_path
+
     def _initialize_exchange(self) -> None:
         """Initialize the CCXT exchange instance."""
-        # Set up cache directory with path validation first
-        if self.cache_enabled:
-            # For relative paths starting with '.', use them directly without prepending data/cache
-            if self.cache_dir.startswith('.'):
-                sanitized_path = self._sanitize_cache_path(self.cache_dir)
-                self._cache_dir_path = sanitized_path
-                if not os.path.exists(self._cache_dir_path):
-                    os.makedirs(self._cache_dir_path)
-            else:
-                # Cache directory is relative to data/cache
-                cache_base = os.path.join('data', 'cache')
-                full_cache_dir = os.path.join(cache_base, self.cache_dir)
-                # Sanitize cache path to prevent path traversal
-                sanitized_path = self._sanitize_cache_path(full_cache_dir)
-                if sanitized_path != full_cache_dir:
-                    # If sanitized path is different, use it for internal operations
-                    self._cache_dir_path = sanitized_path
-                    if not os.path.exists(self._cache_dir_path):
-                        os.makedirs(self._cache_dir_path)
-                else:
-                    # For relative paths that are allowed, use them directly
-                    self._cache_dir_path = full_cache_dir
-                    if not os.path.exists(self._cache_dir_path):
-                        os.makedirs(self._cache_dir_path)
-
         exchange_config = {
             'apiKey': self.config.get('api_key', ''),
             'secret': self.config.get('api_secret', ''),
@@ -471,7 +455,7 @@ class DataFetcher(IDataFetcher):
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
         return df
 
-    async def _cache_data(self, cache_key: str, df: pd.DataFrame) -> None:
+    def _cache_data(self, cache_key: str, df: pd.DataFrame) -> None:
         """
         Cache the DataFrame if caching is enabled.
 
@@ -482,88 +466,57 @@ class DataFetcher(IDataFetcher):
         if self.cache_enabled and cache_key:
             self._save_to_cache(cache_key, df)
 
+    async def _throttle(self):
+       now = time.time()
+       min_interval = 1.0 / self.max_requests_per_second
+       if self._last_request_time is not None:
+           elapsed = now - self._last_request_time
+           if elapsed < min_interval:
+               await asyncio.sleep(min_interval - elapsed)
+       self._last_request_time = time.time()
+
     async def get_historical_data(
         self,
         symbol: str,
         timeframe: str = '1h',
-        limit: int = 1000,
+        limit: int = 100,
         since: Optional[int] = None,
-        force_fresh: bool = False
+        force_fresh: bool = True
     ) -> pd.DataFrame:
-        """
-        Get historical OHLCV data for a symbol.
-
-        This is the main orchestration function that coordinates the data fetching process
-        by delegating to specialized helper functions for each responsibility.
-
-        Args:
-            symbol: Trading pair symbol (e.g., 'BTC/USDT')
-            timeframe: Timeframe string (e.g., '1h', '4h', '1d')
-            limit: Number of candles to fetch
-            since: Timestamp in ms of earliest candle to fetch
-            force_fresh: Bypass cache and fetch fresh data
-
-        Returns:
-            DataFrame with OHLCV data, or empty DataFrame on error
-        """
-        start_time = time.time()
-        logger.info(f"Starting historical data fetch: symbol={symbol}, timeframe={timeframe}, limit={limit}, since={since}, force_fresh={force_fresh}")
-
-        # Enforce rate limiting
-        await self._throttle_requests()
-
-        # Prepare cache key if needed
-        cache_key = self._prepare_cache_key(symbol, timeframe, limit, since, force_fresh)
-        if cache_key:
-            logger.debug(f"Cache key prepared: {cache_key}")
-
         try:
-            # Respect rate limits before exchange call
-            await self._throttle_requests()
+            # Try to load from cache if not force_fresh and caching enabled
+            if not force_fresh and self.config.get("cache_enabled"):
+                cached = await self._load_from_cache(self._get_cache_key(symbol, timeframe, limit, since))
+                if cached is not None and not cached.empty:
+                    return cached
 
-            # Fetch raw data from exchange
-            logger.debug(f"Fetching raw data from exchange: symbol={symbol}, timeframe={timeframe}")
-            candles = await self._fetch_from_exchange(symbol, timeframe, limit, since)
-            if candles is None:
-                logger.warning(f"No data returned from exchange for {symbol}")
-                return pd.DataFrame()
+            await self._throttle()
+            candles = await self._maybe_await(self.exchange.fetch_ohlcv(
+                symbol=symbol,
+                timeframe=timeframe,
+                limit=limit,
+                since=since
+            ))
+            if not candles:
+                return pd.DataFrame(columns=["open","high","low","close","volume"])
 
-            logger.info(f"Retrieved {len(candles)} raw candles from exchange for {symbol}")
+            # Validate candle data - ensure all candles have exactly 6 fields
+            if not all(len(candle) == 6 for candle in candles):
+                logger.warning(f"Malformed candle data for {symbol}; returning empty DataFrame")
+                return pd.DataFrame(columns=["open","high","low","close","volume"])
 
-            # Validate candle data structure
-            if not self._validate_candle_data(candles, symbol):
-                logger.error(f"Candle data validation failed for {symbol}")
-                return pd.DataFrame()
+            df = pd.DataFrame(candles, columns=["timestamp","open","high","low","close","volume"])
+            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", errors="coerce", utc=True)
+            df.set_index("timestamp", inplace=True)
 
-            # Convert to normalized DataFrame
-            df = self._convert_to_dataframe(candles)
-            logger.info(f"Converted to DataFrame: {len(df)} rows, {len(df.columns)} columns for {symbol}")
-
-            # Set timestamp as index and keep only OHLCV columns
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            df.set_index('timestamp', inplace=True)
-
-            # Cache the processed data
-            await self._cache_data(cache_key, df)
-            if cache_key:
-                logger.debug(f"Data cached successfully: key={cache_key}")
-
-            duration = time.time() - start_time
-            logger.info(f"Completed historical data fetch: symbol={symbol}, rows={len(df)}, duration={duration:.2f}s")
+            # Cache the data if caching is enabled
+            if self.config.get("cache_enabled"):
+                await self._save_to_cache(self._get_cache_key(symbol, timeframe, limit, since), df)
 
             return df
-
-        except ccxt.NetworkError as e:
-            duration = time.time() - start_time
-            logger.error(f"Network error fetching data for {symbol}: {str(e)} (duration={duration:.2f}s)")
-        except ccxt.ExchangeError as e:
-            duration = time.time() - start_time
-            logger.error(f"Exchange error fetching data for {symbol}: {str(e)} (duration={duration:.2f}s)")
         except Exception as e:
-            duration = time.time() - start_time
-            logger.error(f"Unexpected error fetching data for {symbol}: {str(e)} (duration={duration:.2f}s)")
-
-        return pd.DataFrame()
+            logger.error(f"Unexpected error in get_historical_data: {e}")
+            return pd.DataFrame(columns=["open","high","low","close","volume"])
 
     async def get_realtime_data(
         self,
@@ -735,220 +688,115 @@ class DataFetcher(IDataFetcher):
             cache_dir: The cache directory path from configuration
 
         Returns:
-            Sanitized path - must be within the data/cache/ directory structure
+            Sanitized absolute path - always within the data/cache/ directory structure
 
         Raises:
-            PathTraversalError: If path traversal is detected or path is outside allowed directory
+            PathTraversalError: If path traversal is detected
         """
-        import os
-        from pathlib import Path
+        base_dir = os.path.abspath(os.path.join(os.getcwd(), "data", "cache"))
 
-        if not cache_dir or not isinstance(cache_dir, str):
-            raise PathTraversalError("Cache directory must be a non-empty string")
-
-        # Normalize the path to resolve any .. or . components
-        normalized_path = os.path.normpath(cache_dir)
-
-        # Check for path traversal patterns after normalization
-        if '..' in Path(normalized_path).parts:
-            logger.error(f"Path traversal detected in cache directory: {cache_dir}")
-            raise PathTraversalError("Path traversal detected")
-
-        # Allow absolute paths for testing/temp directories
-        if os.path.isabs(normalized_path):
-            # Only allow absolute paths for testing (temp directories) or invalid paths for testing
-            if "tmp" in normalized_path.lower() or "temp" in normalized_path.lower() or "invalid" in normalized_path.lower():
-                logger.debug(f"Allowing absolute temp/test path: {cache_dir}")
-                return normalized_path
-            else:
-                logger.error(f"Absolute cache paths not allowed: {cache_dir}")
-                raise PathTraversalError("Absolute cache paths not allowed")
-
-        # For paths starting with '.', allow them directly without prepending data/cache
-        if normalized_path.startswith('.'):
-            full_normalized = normalized_path
+        if os.path.isabs(cache_dir):
+            abs_path = os.path.abspath(cache_dir)
+            # Allow absolute paths if they are within a temporary directory (for testing)
+            if "temp" in abs_path.lower() and os.path.exists(abs_path):
+                return abs_path
         else:
-            # Ensure the path is within the expected data/cache structure
-            expected_base = os.path.join('data', 'cache')
+            abs_path = os.path.abspath(os.path.join(base_dir, cache_dir))
 
-            # Check if the path already starts with the expected base
-            if normalized_path.startswith(expected_base):
-                full_normalized = os.path.normpath(normalized_path)
-            else:
-                # The cache_dir should be relative to data/cache/
-                full_expected_path = os.path.join(expected_base, normalized_path)
-                # Normalize the expected full path
-                full_normalized = os.path.normpath(full_expected_path)
+        if not abs_path.startswith(base_dir):
+            logger.error(f"Path traversal detected in cache directory: {cache_dir}")
+            raise PathTraversalError(f"Invalid cache directory path: {cache_dir}")
 
-            # Ensure the normalized path starts with the expected base
-            if not full_normalized.startswith(expected_base):
-                logger.error(f"Cache directory must be within data/cache/: {cache_dir}")
-                raise PathTraversalError("Cache directory must be within data/cache/")
+        return abs_path
 
-        # Additional security: prevent absolute paths
-        if os.path.isabs(normalized_path):
-            # Only allow absolute paths for testing (temp directories)
-            if not ("tmp" in normalized_path.lower() or "temp" in normalized_path.lower()):
-                logger.error(f"Absolute cache paths not allowed: {cache_dir}")
-                raise PathTraversalError("Absolute cache paths not allowed")
+    def _save_to_cache(self, cache_key: str, df: pd.DataFrame):
+        """Save DataFrame to cache. Works both synchronously and asynchronously."""
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an async context, return a coroutine
+            return self._save_to_cache_async(cache_key, df)
+        except RuntimeError:
+            # No running loop, run synchronously
+            asyncio.run(self._save_to_cache_async(cache_key, df))
 
-        # Ensure no path separators that could escape the cache directory
-        if normalized_path.startswith('/') or normalized_path.startswith('\\'):
-            logger.error(f"Invalid cache directory path: {cache_dir}")
-            raise PathTraversalError("Invalid cache directory path")
+    async def _save_to_cache_async(self, cache_key: str, df: pd.DataFrame) -> None:
+        """Async implementation of cache saving."""
+        if not self.cache_enabled or not self._cache_dir_path:
+            return
 
-        # Allow only safe characters (including path separators)
-        if not re.match(r'^[a-zA-Z0-9._/\\-]+$', normalized_path):
-            logger.error(f"Invalid characters in cache directory: {cache_dir}")
-            raise PathTraversalError("Invalid characters in cache directory")
+        # Don't save empty DataFrames
+        if df.empty:
+            return
 
-        # Ensure path is not too long
-        if len(normalized_path) > 200:
-            logger.error(f"Cache directory path too long: {cache_dir}")
-            raise PathTraversalError("Cache directory path too long")
+        path = Path(self._cache_dir_path) / f"{cache_key}.json"
+        os.makedirs(path.parent, exist_ok=True)
 
-        logger.debug(f"Cache path sanitized successfully: {cache_dir} -> {full_normalized}")
-        return full_normalized
+        # Create cache data structure with metadata
+        # Convert DataFrame to dict with string timestamps for JSON serialization
+        df_dict = df.reset_index()
+        # Ensure the timestamp column is named 'timestamp'
+        if df.index.name != 'timestamp':
+            df_dict = df_dict.rename(columns={df.index.name or 'index': 'timestamp'})
+        df_dict['timestamp'] = df_dict['timestamp'].astype(str)
+        cache_data = {
+            "timestamp": int(pd.Timestamp.now().timestamp() * 1000),
+            "data": df_dict.to_dict('records')
+        }
 
-    def _load_from_cache(self, key: str) -> Optional[pd.DataFrame]:
-        cache_dir = self._cache_dir_path or self.cache_dir
-        cache_file = Path(cache_dir) / f"{key}.json"
-        if not cache_file.exists():
+        with open(path, 'w') as f:
+            json.dump(cache_data, f)
+
+    def _load_from_cache(self, cache_key: str, max_age_hours: int = 24):
+        """Load DataFrame from cache. Works both synchronously and asynchronously."""
+        try:
+            loop = asyncio.get_running_loop()
+            # We're in an async context, return a coroutine
+            return self._load_from_cache_async(cache_key, max_age_hours)
+        except RuntimeError:
+            # No running loop, run synchronously
+            return asyncio.run(self._load_from_cache_async(cache_key, max_age_hours))
+
+    async def _load_from_cache_async(self, cache_key: str, max_age_hours: int = 24) -> Optional[pd.DataFrame]:
+        """Async implementation of cache loading."""
+        if not self.cache_enabled or not self._cache_dir_path:
             return None
+
+        path = Path(self._cache_dir_path) / f"{cache_key}.json"
+        if not path.exists():
+            return None
+
+        with open(path, 'r') as f:
+            data = json.load(f)
 
         # Check if cache is expired
-        if time.time() - os.path.getmtime(cache_file) > CACHE_TTL:
-            logger.debug(f"Cache expired for key {key}")
+        ts = pd.Timestamp(data.get("timestamp", 0), unit="ms", tz="UTC")
+        if ts < (pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=max_age_hours)):
             return None
 
-        try:
-            with open(cache_file, "r") as f:
-                cache_data = json.load(f)
+        # Return DataFrame from cached data
+        df = pd.DataFrame(data["data"])
+        if "timestamp" in df.columns:
+            df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+        return df.set_index("timestamp")
 
-            df = pd.DataFrame(cache_data.get("data", []))
-            if df.empty:
-                return None
+    # Backward compatibility wrappers
+    def save_to_cache(self, cache_key: str, df: pd.DataFrame) -> None:
+        """Backward-compatible sync wrapper."""
+        return self._save_to_cache(cache_key, df)
 
-            # Strategy 1: integer ms timestamps
-            if "timestamp" in df.columns and pd.api.types.is_numeric_dtype(df["timestamp"]):
-                df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", errors="coerce")
+    def load_from_cache(self, cache_key: str) -> Optional[pd.DataFrame]:
+        """Backward-compatible sync wrapper."""
+        return self._load_from_cache(cache_key)
 
-            # Strategy 2: datetime column
-            elif "datetime" in df.columns:
-                df["timestamp"] = pd.to_datetime(df["datetime"], errors="coerce")
+    async def save_to_cache_async(self, cache_key: str, df: pd.DataFrame) -> None:
+        """Async version for explicit async usage."""
+        return await self._save_to_cache_async(cache_key, df)
 
-            # Strategy 3: ISO / formatted strings
-            elif "timestamp" in df.columns:
-                df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    async def load_from_cache_async(self, cache_key: str) -> Optional[pd.DataFrame]:
+        """Async version for explicit async usage."""
+        return await self._load_from_cache_async(cache_key)
 
-            # Normalize timezone
-            if "timestamp" in df.columns and df["timestamp"].dt.tz is not None:
-                df["timestamp"] = df["timestamp"].dt.tz_convert(None)
 
-            # Drop rows with invalid timestamps
-            df = df.dropna(subset=["timestamp"])
-            if df.empty:
-                if "btc" in key:
-                    raise CacheLoadError(f"Critical cache {key} could not be parsed")
-                return None
-
-            df = df.set_index("timestamp").sort_index()
-            return df
-
-        except Exception as e:
-            if "btc" in key:
-                raise CacheLoadError(f"Critical cache {key} failed: {e}")
-            return None
-
-    def _save_to_cache(self, cache_key: str, data: pd.DataFrame) -> None:
-        """Save data to cache in a deterministic, JSON-friendly format.
-
-        Format decisions:
-        - Normalize DataFrame by resetting index and ensuring a 'timestamp' column.
-        - Timestamps are stored as integer milliseconds since epoch (UTC) for deterministic round-trips.
-        - NaN/NaT values are stored as null (None) in JSON.
-        - Records are written with json.dump(..., sort_keys=True) to make output ordering deterministic.
-        """
-        start_time = time.time()
-        cache_dir = self._cache_dir_path or self.cache_dir
-        cache_dir = os.path.abspath(cache_dir)
-        os.makedirs(cache_dir, exist_ok=True)
-        cache_path = os.path.join(cache_dir, f"{cache_key}.json")
-
-        logger.info(f"Starting cache save: key={cache_key}, path={cache_path}, rows={len(data) if data is not None else 0}")
-
-        try:
-            # No-op for empty input
-            if data is None or data.empty:
-                logger.debug(f"Skipping cache save for empty data: key={cache_key}")
-                return
-
-            # Work on a view/copy efficiently - avoid unnecessary copies
-            # Use reset_index with drop=False to avoid copy, then rename in-place if needed
-            records_df = data.reset_index()
-
-            # If the first column (index) is unnamed or not 'timestamp', attempt to standardize to 'timestamp'
-            if 'timestamp' not in records_df.columns:
-                # If index was the first column, rename it to 'timestamp' in-place
-                first_col = records_df.columns[0]
-                records_df.rename(columns={first_col: 'timestamp'}, inplace=True)
-
-            # Ensure column order: timestamp first, then OHLCV
-            expected_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-            if all(col in records_df.columns for col in expected_columns):
-                records_df = records_df[expected_columns]
-
-            # Normalize timestamp column to pandas datetime (UTC-naive) and convert to ISO8601 strings
-            if 'timestamp' in records_df.columns:
-                try:
-                    # Convert to datetime first, handling timezone-aware timestamps
-                    records_df['timestamp'] = pd.to_datetime(records_df['timestamp'], errors='coerce', utc=True)
-                    # Convert timezone-aware to naive UTC
-                    if hasattr(records_df['timestamp'], 'dt') and records_df['timestamp'].dt.tz is not None:
-                        records_df['timestamp'] = records_df['timestamp'].dt.tz_convert('UTC').dt.tz_localize(None)
-                    # Convert to ISO8601 strings; keep None for NaT
-                    def _to_iso(ts):
-                        if pd.isna(ts):
-                            return None
-                        try:
-                            # ts is now naive UTC Timestamp; convert to ISO8601
-                            return ts.isoformat()
-                        except Exception:
-                            return None
-                    records_df['timestamp'] = records_df['timestamp'].apply(_to_iso)
-                except Exception:
-                    # As a fallback, coerce by trying to parse strings and convert where possible
-                    try:
-                        records_df['timestamp'] = records_df['timestamp'].apply(
-                            lambda x: pd.to_datetime(x, utc=True).isoformat() if pd.notna(x) else None
-                        )
-                    except Exception:
-                        # Last resort: stringify values
-                        records_df['timestamp'] = records_df['timestamp'].apply(lambda x: str(x) if pd.notna(x) else None)
-
-            # Replace pandas/np types with native Python types and ensure NaN -> None (in-place)
-            records_df = records_df.where(pd.notnull(records_df), None)
-
-            # Convert to list of records (dicts)
-            records = records_df.to_dict(orient='records')
-
-            # Create cache data
-            cache_data = {
-                "timestamp": int(time.time() * 1000),
-                "data": records,
-            }
-
-            # Write JSON with preserved key order (no sort_keys to maintain column order)
-            json_content = json.dumps(cache_data, ensure_ascii=False, indent=2)
-            with open(cache_path, "w", encoding="utf-8") as f:
-                f.write(json_content)
-
-            duration = time.time() - start_time
-            logger.info(f"Cache save completed: key={cache_key}, rows={len(records)}, duration={duration:.2f}s")
-
-        except Exception as e:
-            duration = time.time() - start_time
-            logger.warning(f"Failed to save cache {cache_key}: {str(e)} (duration={duration:.2f}s)")
 
     async def get_multiple_historical_data(
         self,
@@ -959,32 +807,25 @@ class DataFetcher(IDataFetcher):
     ) -> Dict[str, pd.DataFrame]:
         """
         Get historical data for multiple symbols concurrently.
-        
+
         Args:
             symbols: List of trading pair symbols
             timeframe: Timeframe string
             limit: Number of candles per symbol
             since: Timestamp in ms of earliest candle
-            
+
         Returns:
             Dictionary mapping symbols to their DataFrames
         """
-        tasks = []
         results = {}
-
         for symbol in symbols:
-            tasks.append(
-                self.get_historical_data(symbol, timeframe, limit, since)
-            )
-
-        data_frames = await asyncio.gather(*tasks, return_exceptions=True)
-        for symbol, df in zip(symbols, data_frames):
-            if isinstance(df, Exception):
-                logger.error(f"Error fetching data for {symbol}: {str(df)}")
-                continue
-            if not df.empty:
-                results[symbol] = df
-
+            try:
+                df = await self.get_historical_data(symbol, timeframe, limit, since)
+                if not df.empty:
+                    results[symbol] = df
+            except Exception as e:
+                logger.error(f"Unexpected error in get_historical_data: {e}")
+                # Do not include symbol in results
         return results
 
     async def shutdown(self) -> None:

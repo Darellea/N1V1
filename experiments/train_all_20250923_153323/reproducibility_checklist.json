@@ -1,0 +1,48 @@
+{
+  "experiment_name": "train_all_20250923_153323",
+  "timestamp": "2025-09-23T15:33:24.166970",
+  "reproducibility_requirements": {
+    "random_seed": 42,
+    "python_version": "3.10.11",
+    "git_commit": "3021d0c0997381d0d620509e0698b6f6275963ab",
+    "libraries": {
+      "numpy": "1.26.2",
+      "pandas": "2.3.2",
+      "scikit-learn": "1.3.2",
+      "scipy": "1.15.3",
+      "matplotlib": "3.10.6",
+      "seaborn": "0.13.2",
+      "torch": "not installed",
+      "torchvision": "not installed",
+      "tensorflow": "2.20.0",
+      "keras": "3.11.3",
+      "xgboost": "2.0.2",
+      "lightgbm": "4.1.0",
+      "joblib": "1.3.2",
+      "mlflow": "not installed",
+      "dask": "not installed",
+      "ray": "not installed",
+      "optuna": "4.5.0",
+      "hyperopt": "not installed"
+    },
+    "system_requirements": {
+      "system": "Windows",
+      "release": "10",
+      "version": "10.0.19042",
+      "machine": "AMD64",
+      "processor": "Intel64 Family 6 Model 60 Stepping 3, GenuineIntel"
+    }
+  },
+  "reproduction_steps": [
+    "1. Checkout Git commit: 3021d0c0997381d0d620509e0698b6f6275963ab",
+    "2. Set random seed: 42",
+    "3. Install dependencies from requirements.txt",
+    "4. Run training with same parameters: python ml/train.py --config config.json --data data.csv",
+    "5. Verify results match within tolerance"
+  ],
+  "validation_metrics": {
+    "f1_score_target": 0.7,
+    "deterministic_reproduction": true,
+    "performance_tolerance": 0.05
+  }
+}

@@ -60,7 +60,7 @@ class MockStrategy(BaseStrategy):
 def sample_data():
     """Create sample OHLCV data for testing."""
     np.random.seed(42)
-    dates = pd.date_range('2023-01-01', periods=500, freq='H')
+    dates = pd.date_range('2023-01-01', periods=500, freq='h')
 
     # Generate realistic price data
     price = 100
