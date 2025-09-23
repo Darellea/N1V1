@@ -40,7 +40,6 @@ dist/
 .eggs/
 
 # --- Data / Cache ---
-data/
 cache/
 tmp/
 .test_cache/
