@@ -1,0 +1,19 @@
+[
+  {
+    "symbol": "TEST",
+    "anomaly_result": {
+      "is_anomaly": true,
+      "anomaly_type": "price_gap",
+      "severity": "high",
+      "confidence_score": 0.9,
+      "z_score": null,
+      "threshold": null,
+      "context": null,
+      "timestamp": "2025-09-24T10:59:43.239131"
+    },
+    "market_data": null,
+    "action_taken": "skip_trade",
+    "original_signal": null,
+    "timestamp": "2025-09-24T10:59:43.239131"
+  }
+]

@@ -179,7 +179,7 @@ class TestPriceGapDetector:
         detector = PriceGapDetector()
         result = detector.detect(data)
 
-        assert result.is_anomaly is False
+        assert result.is_anomaly == False
         assert result.anomaly_type == AnomalyType.NONE
 
     def test_detect_price_gap(self):
@@ -191,7 +191,7 @@ class TestPriceGapDetector:
         detector = PriceGapDetector()
         result = detector.detect(data)
 
-        assert result.is_anomaly is True
+        assert result.is_anomaly == True
         assert result.anomaly_type == AnomalyType.PRICE_GAP
         assert result.severity == AnomalySeverity.CRITICAL
         assert result.context['gap_pct'] == 15.0
@@ -205,7 +205,7 @@ class TestPriceGapDetector:
         detector = PriceGapDetector()
         result = detector.detect(data)
 
-        assert result.is_anomaly is False
+        assert result.is_anomaly == False
         assert result.anomaly_type == AnomalyType.NONE
 
     def test_detect_insufficient_data(self):
@@ -217,7 +217,7 @@ class TestPriceGapDetector:
         detector = PriceGapDetector()
         result = detector.detect(data)
 
-        assert result.is_anomaly is False
+        assert result.is_anomaly == False
         assert result.anomaly_type == AnomalyType.NONE
 
 
@@ -514,7 +514,7 @@ class TestEdgeCases:
         result = detector.detect(data)
 
         # Should handle gracefully without division by zero
-        assert result.is_anomaly is False
+        assert result.is_anomaly == False
 
     def test_extreme_values(self):
         """Test handling of extreme values."""
@@ -526,7 +526,7 @@ class TestEdgeCases:
         detector = PriceGapDetector()
         result = detector.detect(data)
 
-        assert result.is_anomaly is True
+        assert result.is_anomaly == True
         assert result.severity == AnomalySeverity.CRITICAL
 
     def test_max_history_limit(self):

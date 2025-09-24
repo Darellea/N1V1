@@ -110,6 +110,9 @@ class GeneticOptimizer(BaseOptimizer):
     5. Returns the fittest parameter set
     """
 
+    # Nested ParameterBounds class for test compatibility
+    ParameterBounds = ParameterBounds
+
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize Genetic Algorithm Optimizer with Adaptive Population Sizing.
@@ -153,7 +156,8 @@ class GeneticOptimizer(BaseOptimizer):
         # ============================================================================
 
         # Adaptive population sizing parameters
-        self.initial_population_size = config.get('initial_population_size', 20)
+        # Support both 'population_size' and 'initial_population_size' for backward compatibility
+        self.initial_population_size = config.get('initial_population_size', config.get('population_size', 20))
         self.min_population_size = config.get('min_population_size', 10)
         self.max_population_size = config.get('max_population_size', 200)
         self.adaptation_rate = config.get('adaptation_rate', 0.1)  # How aggressively to adapt
@@ -183,8 +187,7 @@ class GeneticOptimizer(BaseOptimizer):
         # Make Chromosome accessible within the class
         self.Chromosome = Chromosome
 
-        # Override parameter bounds to use list for index access
-        self.parameter_bounds: List[ParameterBounds] = []
+        # Parameter bounds inherited from BaseOptimizer (dict)
 
     def add_parameter_bounds(self, bounds: ParameterBounds) -> None:
         """
@@ -193,7 +196,7 @@ class GeneticOptimizer(BaseOptimizer):
         Args:
             bounds: ParameterBounds object defining constraints
         """
-        self.parameter_bounds.append(bounds)
+        self.parameter_bounds[bounds.name] = bounds
 
     def _calculate_fitness(self, strategy, data: pd.DataFrame, params: Dict[str, Any]) -> float:
         """
@@ -320,12 +323,12 @@ class GeneticOptimizer(BaseOptimizer):
 
     def _get_bounds_dict(self) -> Dict[str, ParameterBounds]:
         """
-        Convert parameter bounds list to dictionary for compatibility.
+        Get parameter bounds dictionary.
 
         Returns:
             Dictionary mapping parameter names to bounds
         """
-        return {bounds.name: bounds for bounds in self.parameter_bounds}
+        return self.parameter_bounds
 
     def get_optimization_stats(self) -> Dict[str, Any]:
         """
@@ -445,7 +448,7 @@ class GeneticOptimizer(BaseOptimizer):
             genes = {}
 
             # Generate random values for each parameter
-            for bounds in self.parameter_bounds:
+            for bounds in self.parameter_bounds.values():
                 param_name = bounds.name
                 if bounds.param_type == "categorical":
                     genes[param_name] = random.choice(bounds.categories or [bounds.min_value])
@@ -532,21 +535,21 @@ class GeneticOptimizer(BaseOptimizer):
         Returns:
             Tuple of two offspring chromosomes
         """
-        # Single-point crossover
+        # Single-point crossover with support for different gene sets
         genes1 = parent1.genes.copy()
         genes2 = parent2.genes.copy()
 
-        # Get all parameter names
-        param_names = list(genes1.keys())
+        # Get union of all parameter names from both parents
+        all_params = sorted(set(genes1.keys()) | set(genes2.keys()))
 
-        if len(param_names) > 1:
+        if len(all_params) > 1:
             # Choose crossover point
-            crossover_point = random.randint(1, len(param_names) - 1)
+            crossover_point = random.randint(1, len(all_params) - 1)
 
-            # Swap genes after crossover point
-            for i in range(crossover_point, len(param_names)):
-                param = param_names[i]
-                genes1[param], genes2[param] = genes2[param], genes1[param]
+            # Swap genes after crossover point, but only for parameters present in both parents
+            for param in all_params[crossover_point:]:
+                if param in genes1 and param in genes2:
+                    genes1[param], genes2[param] = genes2[param], genes1[param]
 
         offspring1 = Chromosome(genes=genes1)
         offspring2 = Chromosome(genes=genes2)
@@ -653,7 +656,7 @@ class GeneticOptimizer(BaseOptimizer):
         # Calculate diversity for each parameter
         diversity = {}
 
-        for bounds in self.parameter_bounds:
+        for bounds in self.parameter_bounds.values():
             param_name = bounds.name
             values = [
                 chrom.genes.get(param_name) for chrom in self.population

@@ -245,6 +245,34 @@ class ParameterBounds:
     param_type: str = "float"  # "int", "float", "categorical"
     categories: Optional[List[Any]] = None
 
+    def __post_init__(self):
+        """Validate parameter bounds after initialization."""
+        if not isinstance(self.name, str) or not self.name:
+            raise ValueError("Parameter name must be a non-empty string")
+
+        if self.param_type not in ["int", "float", "categorical"]:
+            raise ValueError(f"Invalid param_type: {self.param_type}. Must be 'int', 'float', or 'categorical'")
+
+        if self.param_type == "categorical":
+            if self.categories is None or not isinstance(self.categories, list):
+                raise ValueError("Categories must be provided for categorical parameters")
+            if len(self.categories) == 0:
+                raise ValueError("Categories list cannot be empty")
+        else:
+            # For int/float parameters, validate min_value and max_value
+            if not isinstance(self.min_value, (int, float)):
+                raise TypeError(f"min_value must be numeric, got {type(self.min_value)}")
+            if not isinstance(self.max_value, (int, float)):
+                raise TypeError(f"max_value must be numeric, got {type(self.max_value)}")
+            if self.min_value >= self.max_value:
+                raise ValueError(f"min_value ({self.min_value}) must be less than max_value ({self.max_value})")
+
+        if self.step is not None:
+            if not isinstance(self.step, (int, float)):
+                raise TypeError(f"step must be numeric, got {type(self.step)}")
+            if self.step <= 0:
+                raise ValueError("step must be positive")
+
     def validate_value(self, value: Any) -> bool:
         """Validate if a value is within bounds."""
         if self.param_type == "categorical":
@@ -336,12 +364,17 @@ class BaseOptimizer(ABC):
         Returns:
             True if all parameters are valid
         """
+        if not params:
+            return True
         for name, value in params.items():
+            if value is None:
+                continue
             if name in self.parameter_bounds:
                 bounds = self.parameter_bounds[name]
-                if not bounds.validate_value(value):
-                    self.logger.warning(f"Parameter {name}={value} is out of bounds")
-                    return False
+                if bounds.param_type in ('int', 'float'):
+                    if not (bounds.min_value <= value <= bounds.max_value):
+                        self.logger.warning(f"Parameter {name}={value} is out of bounds")
+                        return False
         return True
 
     def clamp_parameters(self, params: Dict[str, Any]) -> Dict[str, Any]:

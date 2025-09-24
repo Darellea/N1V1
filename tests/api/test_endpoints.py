@@ -856,8 +856,7 @@ class TestCustomExceptionMiddleware:
         """Test that custom exception middleware catches and handles exceptions."""
         # This test is tricky to trigger directly, but we can test by ensuring the middleware is added
         from api.app import app
-        middleware_classes = [type(mw.app) if hasattr(mw, 'app') else type(mw) for mw in app.user_middleware]
-        assert any('CustomExceptionMiddleware' in str(cls) for cls in middleware_classes)
+        assert any('CustomExceptionMiddleware' in str(mw) for mw in app.user_middleware)
 
 
 class TestRateLimitJSONMiddleware:
@@ -1144,21 +1143,17 @@ class TestMiddlewareOrder:
         from api.app import app
         cors_found = False
         for middleware in app.user_middleware:
-            if hasattr(middleware, 'app') and hasattr(middleware.app, 'allow_origins'):
+            if hasattr(middleware, 'cls') and 'CORSMiddleware' in str(middleware.cls):
                 cors_found = True
-                assert middleware.app.allow_origins is not None
+                assert 'allow_origins' in middleware.options
+                assert middleware.options['allow_origins'] is not None
                 break
         assert cors_found
 
     def test_rate_limit_middleware_configured(self, client):
         """Test that rate limit middleware is configured."""
         from api.app import app
-        rate_limit_found = False
-        for middleware in app.user_middleware:
-            if 'SlowAPIMiddleware' in str(type(middleware)):
-                rate_limit_found = True
-                break
-        assert rate_limit_found
+        assert any('SlowAPIMiddleware' in str(mw) for mw in app.user_middleware)
 
 
 class TestEndpointDependencies:

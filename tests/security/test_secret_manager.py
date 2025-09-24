@@ -96,23 +96,24 @@ class TestSecretManager:
     @pytest.mark.asyncio
     async def test_get_secret_vault_success(self, mock_config):
         """Test getting secret from Vault successfully."""
-        with patch("utils.security.VaultKeyManager") as mock_vault_class:
-            mock_vault_instance = MagicMock()
-            mock_vault_instance.get_secret = AsyncMock(return_value="vault-secret")
-            mock_vault_class.return_value = mock_vault_instance
+        with patch("utils.security._load_security_config", return_value=mock_config):
+            with patch("utils.security.get_secure_credential_manager") as mock_get_manager:
+                mock_manager = MagicMock()
+                mock_manager.key_manager.get_secret = AsyncMock(return_value="vault-secret")
+                mock_get_manager.return_value = mock_manager
 
-            with patch.dict(os.environ, {"ENV": "live"}):
-                result = await get_secret("exchange_api_key")
-                assert result == "vault-secret"
-                mock_vault_instance.get_secret.assert_called_once_with("exchange", "api_key")
+                with patch.dict(os.environ, {"ENV": "live"}):
+                    result = await get_secret("exchange_api_key")
+                    assert result == "vault-secret"
+                    mock_manager.key_manager.get_secret.assert_called_once_with("exchange", "api_key")
 
     @pytest.mark.asyncio
     async def test_get_secret_vault_failure_fallback_to_env(self, mock_config, mock_env_dev):
         """Test Vault failure falls back to environment in dev mode."""
-        with patch("utils.security.VaultKeyManager") as mock_vault_class:
-            mock_vault_instance = MagicMock()
-            mock_vault_instance.get_secret = AsyncMock(return_value=None)
-            mock_vault_class.return_value = mock_vault_instance
+        with patch("utils.security.get_secure_credential_manager") as mock_get_manager:
+            mock_manager = MagicMock()
+            mock_manager.key_manager.get_secret = AsyncMock(return_value=None)
+            mock_get_manager.return_value = mock_manager
 
             result = await get_secret("exchange_api_key")
             assert result == "test-exchange-key"
@@ -120,34 +121,36 @@ class TestSecretManager:
     @pytest.mark.asyncio
     async def test_get_secret_live_mode_vault_failure_raises_exception(self, mock_config):
         """Test that Vault failure in live mode raises SecurityException."""
-        with patch("utils.security.VaultKeyManager") as mock_vault_class:
-            mock_vault_instance = MagicMock()
-            mock_vault_instance.get_secret = AsyncMock(return_value=None)
-            mock_vault_class.return_value = mock_vault_instance
+        with patch("utils.security._load_security_config", return_value=mock_config):
+            with patch("utils.security.get_secure_credential_manager") as mock_get_manager:
+                mock_manager = MagicMock()
+                mock_manager.key_manager.get_secret = AsyncMock(return_value=None)
+                mock_get_manager.return_value = mock_manager
 
-            with patch.dict(os.environ, {"ENV": "live"}):
-                with pytest.raises(SecurityException, match="Required secret 'exchange_api_key' not found"):
-                    await get_secret("exchange_api_key")
+                with patch.dict(os.environ, {"ENV": "live"}):
+                    with pytest.raises(SecurityException, match="Required secret 'exchange_api_key' not found"):
+                        await get_secret("exchange_api_key")
 
     @pytest.mark.asyncio
     async def test_rotate_key_success(self, mock_config):
         """Test successful key rotation."""
-        with patch("utils.security.VaultKeyManager") as mock_vault_class:
-            mock_vault_instance = MagicMock()
-            mock_vault_instance.rotate_key = AsyncMock(return_value=True)
-            mock_vault_class.return_value = mock_vault_instance
+        with patch("utils.security._load_security_config", return_value=mock_config):
+            with patch("utils.security.get_secure_credential_manager") as mock_get_manager:
+                mock_manager = MagicMock()
+                mock_manager.key_manager.rotate_key = AsyncMock(return_value=True)
+                mock_get_manager.return_value = mock_manager
 
-            result = await rotate_key("exchange_api_key")
-            assert result is True
-            mock_vault_instance.rotate_key.assert_called_once_with("exchange", "api_key")
+                result = await rotate_key("exchange_api_key")
+                assert result is True
+                mock_manager.key_manager.rotate_key.assert_called_once_with("exchange", "api_key")
 
     @pytest.mark.asyncio
     async def test_rotate_key_failure(self, mock_config):
         """Test key rotation failure."""
-        with patch("utils.security.VaultKeyManager") as mock_vault_class:
-            mock_vault_instance = MagicMock()
-            mock_vault_instance.rotate_key = AsyncMock(return_value=False)
-            mock_vault_class.return_value = mock_vault_instance
+        with patch("utils.security.get_secure_credential_manager") as mock_get_manager:
+            mock_manager = MagicMock()
+            mock_manager.key_manager.rotate_key = AsyncMock(return_value=False)
+            mock_get_manager.return_value = mock_manager
 
             result = await rotate_key("exchange_api_key")
             assert result is False
@@ -322,11 +325,11 @@ class TestVaultKeyManager:
                 }
             }
         })
+        mock_response.close = AsyncMock()
 
-        with patch("aiohttp.ClientSession") as mock_session_class:
-            mock_session = MagicMock()
-            mock_session.get.return_value.__aenter__ = AsyncMock(return_value=mock_response)
-            mock_session_class.return_value = mock_session
+        with patch.object(vault_manager, '_ensure_session') as mock_ensure:
+            vault_manager.session = AsyncMock()
+            vault_manager.session.get.return_value = mock_response
 
             result = await vault_manager.get_secret("test_path", "test_key")
             assert result == "test_value"
@@ -350,11 +353,11 @@ class TestVaultKeyManager:
         """Test successful secret storage in Vault."""
         mock_response = MagicMock()
         mock_response.status = 200
+        mock_response.close = AsyncMock()
 
-        with patch("aiohttp.ClientSession") as mock_session_class:
-            mock_session = MagicMock()
-            mock_session.post.return_value.__aenter__ = AsyncMock(return_value=mock_response)
-            mock_session_class.return_value = mock_session
+        with patch.object(vault_manager, '_ensure_session') as mock_ensure:
+            vault_manager.session = AsyncMock()
+            vault_manager.session.post.return_value = mock_response
 
             result = await vault_manager.store_secret("test_path", "test_key", "test_value")
             assert result is True

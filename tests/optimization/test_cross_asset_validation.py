@@ -378,14 +378,23 @@ class TestAssetSelector:
             ValidationAsset('ADA/USDT', 'Cardano')
         ]
 
-        weighted = selector._apply_weighting(assets)
+        # Mock market cap fetching to return ETH > ADA
+        with patch.object(selector, '_fetch_market_caps_dynamically') as mock_fetch:
+            mock_fetch.return_value = {
+                'ETH/USDT': 300000000000,  # 300B
+                'ADA/USDT': 100000000000   # 100B
+            }
 
-        # ETH should have higher weight than ADA
-        eth_weight = next(asset.weight for asset in weighted if asset.symbol == 'ETH/USDT')
-        ada_weight = next(asset.weight for asset in weighted if asset.symbol == 'ADA/USDT')
+            weighted = selector._apply_weighting(assets)
 
-        assert eth_weight > ada_weight
-        assert abs(eth_weight + ada_weight - 1.0) < 0.001  # Should sum to 1
+            # ETH should have higher weight than ADA (75% vs 25%)
+            eth_weight = next(asset.weight for asset in weighted if asset.symbol == 'ETH/USDT')
+            ada_weight = next(asset.weight for asset in weighted if asset.symbol == 'ADA/USDT')
+
+            assert eth_weight > ada_weight
+            assert abs(eth_weight - 0.75) < 0.001
+            assert abs(ada_weight - 0.25) < 0.001
+            assert abs(eth_weight + ada_weight - 1.0) < 0.001  # Should sum to 1
 
 
 class TestCrossAssetValidator:

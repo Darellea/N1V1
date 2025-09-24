@@ -155,6 +155,9 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
 
     def _check_volume_confirmation_for_symbol(self, symbol: str, data: pd.DataFrame, row: pd.Series) -> bool:
         """Check if volume confirms the signal for a symbol."""
+        if not self.params.get("volume_filter", False):
+            return True  # Volume filter not enabled
+
         if "volume" not in row.index or pd.isna(row["volume"]):
             return True  # No volume data, allow signal
 
@@ -179,7 +182,7 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
         """Generate signals based on RSI overbought/oversold levels."""
         signals: List[TradingSignal] = []
 
-        if rsi_value > self.params["overbought"]:
+        if rsi_value >= self.params["overbought"]:
             self._update_signal_counts("short")
             signals.append(
                 self._create_rsi_signal(
@@ -191,7 +194,7 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
                 )
             )
 
-        elif rsi_value < self.params["oversold"]:
+        elif rsi_value <= self.params["oversold"]:
             self._update_signal_counts("long")
             signals.append(
                 self._create_rsi_signal(
@@ -265,7 +268,7 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
             # Generate signals if RSI is valid
             # Volume confirmation filter
             volume_confirmed = True
-            if "volume" in last_row.index and not pd.isna(last_row["volume"]):
+            if self.params.get("volume_filter", False) and "volume" in last_row.index and not pd.isna(last_row["volume"]):
                 try:
                     # Calculate average volume over the specified period
                     volume_period = int(self.params.get("volume_period", 10))
@@ -288,7 +291,7 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
                 logger.info(f"Volume confirmation failed for {symbol}: signal skipped")
                 return signals
 
-            if last_row["rsi"] > self.params["overbought"]:
+            if last_row["rsi"] >= self.params["overbought"]:
                 # Track signal
                 self.signal_counts["short"] += 1
                 self.signal_counts["total"] += 1
@@ -317,7 +320,7 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
                     )
                 )
 
-            elif last_row["rsi"] < self.params["oversold"]:
+            elif last_row["rsi"] <= self.params["oversold"]:
                 # Track signal
                 self.signal_counts["long"] += 1
                 self.signal_counts["total"] += 1

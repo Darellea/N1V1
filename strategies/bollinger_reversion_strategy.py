@@ -153,7 +153,7 @@ class BollingerReversionStrategy(BaseStrategy):
 
                 # Check for oversold condition (price near lower band)
                 oversold_threshold = self.params["reversion_threshold"]
-                oversold = bb_position < oversold_threshold
+                oversold = bb_position < -oversold_threshold
 
                 # Check for overbought condition (price near upper band)
                 overbought_threshold = 1.0 - self.params["reversion_threshold"]
@@ -187,9 +187,9 @@ class BollingerReversionStrategy(BaseStrategy):
                             metadata={
                                 "reversion_type": "oversold",
                                 "bb_position": bb_position,
-                                "bb_middle": row["bb_middle"],
-                                "bb_upper": row["bb_upper"],
-                                "bb_lower": row["bb_lower"],
+                                "bb_middle": row.get("bb_middle", None),
+                                "bb_upper": row.get("bb_upper", None),
+                                "bb_lower": row.get("bb_lower", None),
                                 "bb_width": bb_width
                             },
                             timestamp=signal_timestamp,
@@ -220,9 +220,9 @@ class BollingerReversionStrategy(BaseStrategy):
                             metadata={
                                 "reversion_type": "overbought",
                                 "bb_position": bb_position,
-                                "bb_middle": row["bb_middle"],
-                                "bb_upper": row["bb_upper"],
-                                "bb_lower": row["bb_lower"],
+                                "bb_middle": row.get("bb_middle", None),
+                                "bb_upper": row.get("bb_upper", None),
+                                "bb_lower": row.get("bb_lower", None),
                                 "bb_width": bb_width
                             },
                             timestamp=signal_timestamp,
@@ -282,7 +282,7 @@ class BollingerReversionStrategy(BaseStrategy):
 
             # Check for oversold condition (price near lower band)
             oversold_threshold = self.params["reversion_threshold"]
-            oversold = last_row["bb_position"] < oversold_threshold
+            oversold = last_row["bb_position"] < -oversold_threshold
 
             # Check for overbought condition (price near upper band)
             overbought_threshold = 1.0 - self.params["reversion_threshold"]

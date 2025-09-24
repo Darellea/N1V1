@@ -280,15 +280,16 @@ class TestAssetSelector:
             ValidationAsset('ADA/USDT', 'Cardano')
         ]
 
-        # Mock market cap weights
-        with patch.object(selector, '_get_market_cap_weights') as mock_get_weights:
-            mock_get_weights.return_value = {
-                'ETH/USDT': 0.7,
-                'ADA/USDT': 0.3
+        # Mock market cap fetching
+        with patch.object(selector, '_fetch_market_caps_dynamically') as mock_fetch:
+            mock_fetch.return_value = {
+                'ETH/USDT': 70000000000,  # 70B
+                'ADA/USDT': 30000000000   # 30B
             }
 
             weighted = selector._apply_weighting(assets)
 
+            # Should be proportional: 70/100 = 0.7, 30/100 = 0.3
             assert weighted[0].weight == 0.7
             assert weighted[1].weight == 0.3
 
@@ -307,10 +308,12 @@ class TestAssetSelector:
             ValidationAsset('ADA/USDT', 'Cardano')
         ]
 
-        weights = selector._get_market_cap_weights(assets)
+        # Mock dynamic fetching to fail so it falls back to config
+        with patch.object(selector, '_fetch_market_caps_dynamically', return_value=None):
+            weights = selector._get_market_cap_weights(assets)
 
-        assert weights['ETH/USDT'] == 0.6
-        assert weights['ADA/USDT'] == 0.4
+            assert weights['ETH/USDT'] == 0.6
+            assert weights['ADA/USDT'] == 0.4
 
     def test_get_market_cap_weights_fallback_to_equal(self):
         """Test market cap weights fallback to equal when no data available."""
@@ -389,10 +392,18 @@ class TestAssetSelector:
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value=mock_response_data)
 
-        mock_session = AsyncMock()
-        mock_session.get.return_value.__aenter__.return_value = mock_response
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
 
-        with patch('aiohttp.ClientSession', return_value=mock_session):
+        mock_session = MagicMock()
+        mock_session.get.return_value = mock_cm
+
+        mock_session_cm = MagicMock()
+        mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_cm.__aexit__ = AsyncMock(return_value=None)
+
+        with patch('aiohttp.ClientSession', return_value=mock_session_cm):
             result = await selector._fetch_from_coingecko_async(['ETH/USDT'])
 
             assert result == {'ETH/USDT': 50000000000}
@@ -402,13 +413,21 @@ class TestAssetSelector:
         """Test CoinGecko API fetch failure."""
         selector = AssetSelector(self.config)
 
-        with patch('aiohttp.ClientSession') as mock_session_class:
-            mock_session = AsyncMock()
-            mock_response = AsyncMock()
-            mock_response.status = 500
-            mock_session.get.return_value.__aenter__.return_value = mock_response
-            mock_session_class.return_value.__aenter__.return_value = mock_session
+        mock_response = AsyncMock()
+        mock_response.status = 500
 
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = MagicMock()
+        mock_session.get.return_value = mock_cm
+
+        mock_session_cm = MagicMock()
+        mock_session_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_cm.__aexit__ = AsyncMock(return_value=None)
+
+        with patch('aiohttp.ClientSession', return_value=mock_session_cm):
             result = await selector._fetch_from_coingecko_async(['ETH/USDT'])
 
             assert result is None

@@ -24,6 +24,7 @@ from datetime import datetime
 from pathlib import Path
 import warnings
 
+import aiohttp
 import numpy as np
 import pandas as pd
 
@@ -41,7 +42,8 @@ class ValidationAsset:
     """
 
     def __init__(self, symbol: str, name: str, weight: float = 1.0,
-                 required_history: int = 1000, timeframe: str = '1h'):
+                 required_history: int = 1000, timeframe: str = '1h',
+                 market_cap: Optional[float] = None):
         """
         Initialize validation asset.
 
@@ -51,12 +53,14 @@ class ValidationAsset:
             weight: Relative weight in validation (higher = more important)
             required_history: Minimum historical data points required
             timeframe: Data timeframe for validation
+            market_cap: Market capitalization (optional)
         """
         self.symbol = symbol
         self.name = name
         self.weight = weight
         self.required_history = required_history
         self.timeframe = timeframe
+        self.market_cap = market_cap
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -347,24 +351,25 @@ class AssetSelector:
                 asset.weight = weight
 
         elif self.asset_weights == 'market_cap':
-            # Weight by market capitalization
-            market_cap_weights = self._get_market_cap_weights(assets)
-
-            total_weight = 0
-            for asset in assets:
-                asset.weight = market_cap_weights.get(asset.symbol, 0.1)
-                total_weight += asset.weight
-
-            # Normalize weights to ensure they sum to 1
-            if total_weight > 0:
+            # Get market cap data
+            market_caps = self._fetch_market_caps_dynamically([asset.symbol for asset in assets])
+            if market_caps:
                 for asset in assets:
-                    asset.weight /= total_weight
+                    asset.market_cap = market_caps.get(asset.symbol, 0)
+
+                # Calculate weights
+                total_cap = sum(asset.market_cap for asset in assets if asset.market_cap)
+                if total_cap > 0:
+                    for asset in assets:
+                        asset.weight = asset.market_cap / total_cap
+                else:
+                    # fallback to equal weights
+                    for asset in assets:
+                        asset.weight = 1 / len(assets)
             else:
-                # Fallback to equal weighting
-                self.logger.warning("No valid market cap weights found, falling back to equal weighting")
-                weight = 1.0 / len(assets) if assets else 1.0
+                # fallback to equal weights
                 for asset in assets:
-                    asset.weight = weight
+                    asset.weight = 1 / len(assets)
 
         # Ensure weights sum to 1 (final safety check)
         total_weight = sum(asset.weight for asset in assets)
@@ -469,65 +474,43 @@ class AssetSelector:
                 self.logger.warning(f"Async CoinGecko fetch failed: {e}")
                 return None
 
-    async def _fetch_from_coingecko_async(self, asset_symbols: List[str]) -> Optional[Dict[str, float]]:
+    async def _fetch_from_coingecko_async(self, symbols: List[str]) -> Optional[Dict[str, int]]:
         """
         Async implementation of CoinGecko API fetching.
 
         Args:
-            asset_symbols: List of asset symbols
+            symbols: List of asset symbols
 
         Returns:
-            Dictionary of market caps or None if failed
+            Dictionary mapping symbols to market caps or None if failed
         """
+        symbol_to_id = self._get_coingecko_id_mapping()
+        id_to_symbol = {v: k for k, v in symbol_to_id.items()}
+
+        ids = []
+        for s in symbols:
+            base = s.split("/")[0].upper()
+            if base in symbol_to_id:
+                ids.append(symbol_to_id[base])
+
+        if not ids:
+            return None
+
+        url = "https://api.coingecko.com/api/v3/coins/markets"
+        params = {"vs_currency": "usd", "ids": ",".join(ids)}
         try:
-            import aiohttp
-
-            # Map common symbols to CoinGecko IDs
-            symbol_to_id = self._get_coingecko_id_mapping()
-
-            # Convert symbols to CoinGecko IDs
-            coingecko_ids = []
-            for symbol in asset_symbols:
-                base_symbol = symbol.split('/')[0].upper()
-                if base_symbol in symbol_to_id:
-                    coingecko_ids.append(symbol_to_id[base_symbol])
-
-            if not coingecko_ids:
-                return None
-
-            # Fetch market data from CoinGecko
-            url = "https://api.coingecko.com/api/v3/coins/markets"
-            params = {
-                'vs_currency': 'usd',
-                'ids': ','.join(coingecko_ids),
-                'order': 'market_cap_desc',
-                'per_page': len(coingecko_ids),
-                'page': 1,
-                'sparkline': False
-            }
-
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, params=params) as response:
                     if response.status == 200:
                         data = await response.json()
-                        market_caps = {}
-
-                        for coin in data:
-                            coin_id = coin['id']
-                            market_cap = coin.get('market_cap', 0)
-
-                            # Find original symbol
-                            for symbol in asset_symbols:
-                                base_symbol = symbol.split('/')[0].upper()
-                                if symbol_to_id.get(base_symbol) == coin_id:
-                                    market_caps[symbol] = market_cap
-                                    break
-
-                        return market_caps if market_caps else None
-
+                        return {
+                            f"{id_to_symbol.get(item['id'], item['id'].upper())}/USDT": item["market_cap"]
+                            for item in data if "market_cap" in item
+                        }
+                    else:
+                        self.logger.warning(f"Failed to fetch from CoinGecko: HTTP {response.status}")
         except Exception as e:
-            self.logger.warning(f"Failed to fetch from CoinGecko: {str(e)}")
-
+            self.logger.warning(f"Failed to fetch from CoinGecko: {e}")
         return None
 
     def _fetch_from_coinmarketcap(self, asset_symbols: List[str]) -> Optional[Dict[str, float]]:

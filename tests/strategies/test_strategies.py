@@ -95,7 +95,8 @@ def rsi_strategy_config():
             "stop_loss_pct": 0.05,
             "take_profit_pct": 0.1,
             "volume_period": 10,
-            "volume_threshold": 1.5
+            "volume_threshold": 1.5,
+            "volume_filter": True
         }
     )
 
@@ -461,13 +462,13 @@ class TestBollingerReversionStrategy:
         }, index=dates)
 
         # Temporarily adjust volume threshold to ensure signal generation
-        original_threshold = bollinger_strategy_config.params.get("volume_threshold", 1.1)
-        bollinger_strategy_config.params["volume_threshold"] = 1.0
+        original_threshold = strategy.params.get("volume_threshold", 1.1)
+        strategy.params["volume_threshold"] = 1.0
 
         signals = await strategy.generate_signals(data)
 
         # Restore original threshold
-        bollinger_strategy_config.params["volume_threshold"] = original_threshold
+        strategy.params["volume_threshold"] = original_threshold
 
         assert len(signals) == 1
         assert signals[0].signal_type == SignalType.ENTRY_LONG
@@ -490,13 +491,13 @@ class TestBollingerReversionStrategy:
         }, index=dates)
 
         # Temporarily adjust volume threshold to ensure signal generation
-        original_threshold = bollinger_strategy_config.params.get("volume_threshold", 1.1)
-        bollinger_strategy_config.params["volume_threshold"] = 1.0
+        original_threshold = strategy.params.get("volume_threshold", 1.1)
+        strategy.params["volume_threshold"] = 1.0
 
         signals = await strategy.generate_signals(data)
 
         # Restore original threshold
-        bollinger_strategy_config.params["volume_threshold"] = original_threshold
+        strategy.params["volume_threshold"] = original_threshold
 
         assert len(signals) == 1
         assert signals[0].signal_type == SignalType.ENTRY_SHORT
@@ -1092,14 +1093,14 @@ class TestMockingAndIntegration:
         }, index=dates)
 
         # Temporarily adjust volume threshold to ensure signal generation
-        original_threshold = rsi_strategy_config.params.get("volume_threshold", 1.5)
-        rsi_strategy_config.params["volume_threshold"] = 1.0
+        original_threshold = strategy.params.get("volume_threshold", 1.5)
+        strategy.params["volume_threshold"] = 1.0
 
         signals1 = await strategy.generate_signals(data)
         signals2 = await strategy.generate_signals(data)
 
         # Restore original threshold
-        rsi_strategy_config.params["volume_threshold"] = original_threshold
+        strategy.params["volume_threshold"] = original_threshold
 
         # Signals should be identical (deterministic)
         assert len(signals1) == len(signals2) == 1

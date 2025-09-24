@@ -672,6 +672,7 @@ class WalkForwardOptimizer(BaseOptimizer):
         Returns:
             Best parameter set based on walk-forward analysis
         """
+        start_time = time.time()
         self.logger.info(f"Processing data in chunks of {self.data_splitter.chunk_size} rows")
 
         # Initialize data iterator for memory-efficient processing
@@ -738,22 +739,26 @@ class WalkForwardOptimizer(BaseOptimizer):
 
         return best_params
 
-    def _process_windows_sequential(self, strategy_class) -> None:
+    def _process_windows_sequential(self, strategy_class, windows=None) -> None:
         """Process windows sequentially."""
-        for i, window in enumerate(self.windows):
-            self.logger.info(f"Processing window {i+1}/{len(self.windows)}")
+        if windows is None:
+            windows = self.windows
+        for i, window in enumerate(windows):
+            self.logger.info(f"Processing window {i+1}/{len(windows)}")
             self._process_single_window(strategy_class, window, i)
 
-    def _process_windows_parallel(self, strategy_class) -> None:
+    def _process_windows_parallel(self, strategy_class, windows=None) -> None:
         """Process windows in parallel."""
+        if windows is None:
+            windows = self.windows
         # For simplicity, using ThreadPoolExecutor
         # In production, consider using ProcessPoolExecutor for CPU-intensive tasks
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        with ThreadPoolExecutor(max_workers=min(4, len(self.windows))) as executor:
+        with ThreadPoolExecutor(max_workers=min(4, len(windows))) as executor:
             futures = [
                 executor.submit(self._process_single_window, strategy_class, window, i)
-                for i, window in enumerate(self.windows)
+                for i, window in enumerate(windows)
             ]
 
             for future in as_completed(futures):

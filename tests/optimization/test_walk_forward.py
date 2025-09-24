@@ -5,7 +5,10 @@ This module contains comprehensive tests for the walk-forward optimization syste
 ensuring robustness, correctness, and proper integration with existing components.
 """
 
+import logging
 import pytest
+
+logger = logging.getLogger(__name__)
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta

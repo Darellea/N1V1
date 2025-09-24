@@ -70,6 +70,8 @@ from .genome import (
     IndicatorType, SignalLogic, Species, GenomeList
 )
 from strategies.base_strategy import BaseStrategy
+from strategies.rsi_strategy import RSIStrategy
+from strategies.bollinger_reversion_strategy import BollingerReversionStrategy
 from backtest.backtester import compute_backtest_metrics
 from utils.logger import get_logger
 
@@ -229,6 +231,7 @@ class StrategyFactory:
             if gene.component_type not in [StrategyComponent.INDICATOR,
                                          StrategyComponent.SIGNAL_LOGIC,
                                          StrategyComponent.RISK_MANAGEMENT,
+                                         StrategyComponent.TIMEFRAME,
                                          StrategyComponent.FILTER]:
                 errors.append(f"Gene {i}: Invalid component type {gene.component_type}")
 
@@ -364,6 +367,9 @@ class StrategyFactory:
             StrategyComponent.RISK_MANAGEMENT: {
                 'stop_loss': {'min': 0.005, 'max': 0.1, 'type': float},
                 'take_profit': {'min': 0.01, 'max': 0.2, 'type': float}
+            },
+            StrategyComponent.TIMEFRAME: {
+                'timeframe': {'allowed_values': ['1m', '5m', '15m', '30m', '1h', '4h', '1d'], 'type': str}
             },
             StrategyComponent.FILTER: {
                 'volume_threshold': {'min': 0.1, 'max': 5.0, 'type': float}
@@ -1773,6 +1779,10 @@ def _register_strategy_generator():
     except ImportError:
         logger.warning("Could not register with optimizer factory")
 
+
+# Initialize strategy registry with actual classes
+StrategyFactory.STRATEGY_REGISTRY['rsi_momentum']['class'] = RSIStrategy
+StrategyFactory.STRATEGY_REGISTRY['bollinger_reversion']['class'] = BollingerReversionStrategy
 
 # Register on import
 _register_strategy_generator()

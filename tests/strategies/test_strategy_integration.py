@@ -248,8 +248,8 @@ class TestStrategyIntegrationWorkflow:
 
             async def get_historical_data(self, symbol: str, timeframe: str, limit: int = 100):
                 self.fail_count += 1
-                if self.fail_count == 1:
-                    # Fail on first call
+                if self.fail_count <= 2:
+                    # Fail on first two calls
                     raise ConnectionError("Network error")
                 return await super().get_historical_data(symbol, timeframe, limit)
 
@@ -266,7 +266,7 @@ class TestStrategyIntegrationWorkflow:
         assert isinstance(signals, list)
 
         # Verify fetcher was called multiple times (retry behavior)
-        assert failing_fetcher.call_count >= 2
+        assert failing_fetcher.fail_count >= 2
 
     @pytest.mark.asyncio
     async def test_strategy_insufficient_data_handling(self, rsi_strategy_config):

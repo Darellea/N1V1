@@ -12,6 +12,7 @@ import json
 import csv
 import tempfile
 import os
+import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock, mock_open
 import uuid
@@ -601,7 +602,14 @@ class TestSetupLogging:
 
     def test_setup_logging_creates_file_handler(self):
         """Test setup_logging creates rotating file handler."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as temp_file:
+        import tempfile
+        import os
+
+        # Ensure not in test mode
+        os.environ["TESTING"] = "0"
+
+        # Create a temporary file
+        with tempfile.NamedTemporaryFile(suffix='.log', delete=False) as temp_file:
             log_file = temp_file.name
 
         try:
@@ -623,7 +631,6 @@ class TestSetupLogging:
             assert file_handler.maxBytes == 1024
             assert file_handler.backupCount == 1
         finally:
-            # Clean up
             try:
                 os.unlink(log_file)
             except:
@@ -941,7 +948,7 @@ class TestEnvironmentVariables:
         utils.logger._GLOBAL_TRADE_LOGGER = None
 
         # Clear environment variables
-        for var in ["LOG_LEVEL", "LOG_FILE", "LOG_FORMAT"]:
+        for var in ["LOG_LEVEL", "LOG_FILE", "LOG_FORMAT", "TESTING"]:
             os.environ.pop(var, None)
 
     def test_setup_logging_with_env_log_level(self):
@@ -1001,7 +1008,7 @@ class TestEnvironmentVariables:
         logger = setup_logging()
 
         # Console handler should use PrettyFormatter
-        console_handlers = [h for h in logger.handlers if isinstance(h, logging.StreamHandler)]
+        console_handlers = [h for h in logger.handlers if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)]
         assert len(console_handlers) == 1
         assert isinstance(console_handlers[0].formatter, PrettyFormatter)
 
@@ -1012,7 +1019,7 @@ class TestEnvironmentVariables:
         logger = setup_logging()
 
         # Console handler should use ColorFormatter
-        console_handlers = [h for h in logger.handlers if isinstance(h, logging.StreamHandler)]
+        console_handlers = [h for h in logger.handlers if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)]
         assert len(console_handlers) == 1
         assert isinstance(console_handlers[0].formatter, ColorFormatter)
 

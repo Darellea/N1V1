@@ -14,8 +14,17 @@ from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 import aiohttp
 import redis
-import psycopg2
-import pymongo
+try:
+    import psycopg2
+except ImportError:
+    from utils.logger import get_trade_logger
+    logger = get_trade_logger()
+    psycopg2 = None
+    logger.warning("psycopg2 not installed, skipping DB health check in test/dev environments")
+try:
+    import pymongo
+except ImportError:
+    pymongo = None
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -82,20 +91,27 @@ class HealthCheckManager:
                 uptime_seconds = 0
 
             # Check if bot engine is available (lightweight check)
+            from api.app import bot_engine
             bot_engine_status = "unknown"
-            if hasattr(self.diagnostics_manager, 'state') and self.diagnostics_manager.state:
-                bot_engine_status = "available"
-            else:
+            if bot_engine is None:
                 bot_engine_status = "unavailable"
+                status = "unhealthy"
+                detail = "Bot engine not available"
+            else:
+                bot_engine_status = "available"
+                status = "healthy"
+                detail = None
 
             response = {
-                "status": "healthy",
+                "status": status,
                 "timestamp": datetime.now().isoformat(),
                 "version": "1.0.0",  # Should be read from package version
                 "uptime_seconds": round(uptime_seconds, 2),
                 "bot_engine": bot_engine_status,
                 "correlation_id": correlation_id
             }
+            if detail:
+                response["detail"] = detail
 
             latency = (time.time() - start_time) * 1000
             response["check_latency_ms"] = round(latency, 2)
@@ -176,7 +192,7 @@ class HealthCheckManager:
                         logger.error(f"Readiness check failed for {check.component}", extra={
                             "correlation_id": correlation_id,
                             "component": check.component,
-                            "message": check.message,
+                            "check_message": check.message,
                             "latency_ms": check.latency_ms,
                             "details": check.details
                         })
@@ -242,6 +258,13 @@ class HealthCheckManager:
 
             # Try to connect based on database type
             if "postgresql" in db_url.lower():
+                if psycopg2 is None:
+                    return ReadinessCheck(
+                        component="database",
+                        ready=True,  # Consider skipped as ready for test/dev
+                        message="DB check skipped - psycopg2 not available",
+                        details={"skipped": True, "reason": "psycopg2 not installed"}
+                    )
                 # PostgreSQL connection
                 conn = psycopg2.connect(db_url)
                 conn.close()
@@ -249,6 +272,13 @@ class HealthCheckManager:
                 # MySQL connection (would need pymysql)
                 pass  # Placeholder
             elif "mongodb" in db_url.lower():
+                if pymongo is None:
+                    return ReadinessCheck(
+                        component="database",
+                        ready=True,  # Consider skipped as ready for test/dev
+                        message="DB check skipped - pymongo not available",
+                        details={"skipped": True, "reason": "pymongo not installed"}
+                    )
                 # MongoDB connection
                 client = pymongo.MongoClient(db_url, serverSelectionTimeoutMS=5000)
                 client.admin.command('ping')

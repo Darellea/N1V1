@@ -501,128 +501,50 @@ class RLOptimizer(BaseOptimizer):
         # Fallback to random action if state not seen
         return random.choice(self.strategy_actions)
 
-    async def save_policy(self, filepath: str) -> None:
+    def save_policy(self, path: str) -> None:
         """
-        Save the learned policy to file asynchronously.
-
-        This method uses aiofiles for non-blocking I/O operations, which is crucial
-        when called within an async event loop. Synchronous file operations would
-        block the entire event loop, degrading performance and responsiveness of
-        the trading system. The async approach ensures the event loop remains
-        responsive while file operations are performed in the background.
+        Save the learned policy to file.
 
         Args:
-            filepath: Path to save policy
+            path: Path to save policy
         """
-        # Convert tuple keys to strings for JSON serialization
-        q_table_serializable = {}
-        for state_tuple, actions in self.q_table.items():
-            state_str = str(state_tuple)
-            q_table_serializable[state_str] = dict(actions)
+        # Convert defaultdict to regular dict for JSON serialization
+        q_table_dict = {str(k): dict(v) for k, v in self.q_table.items()}
 
-        policy_data = {
-            'q_table': q_table_serializable,
-            'strategy_actions': self.strategy_actions,
-            'config': self.config,
-            'total_episodes': self.episodes,
-            'total_steps': self.total_steps
+        policy = {
+            "q_table": q_table_dict,
+            "strategy_actions": self.strategy_actions,
         }
 
-        if aiofiles is not None:
-            # Use aiofiles for async I/O
-            async with aiofiles.open(filepath, 'w') as f:
-                await f.write(json.dumps(policy_data, indent=2))
-        else:
-            # Fallback to synchronous I/O if aiofiles not available
-            self.logger.warning("aiofiles not available, using synchronous I/O")
-            with open(filepath, 'w') as f:
-                json.dump(policy_data, f, indent=2)
+        with open(path, "w") as f:
+            json.dump(policy, f)
 
-        self.logger.info(f"Policy saved to {filepath}")
+        self.logger.info(f"Policy saved to {path}")
 
-    async def load_policy(self, filepath: str) -> None:
+    def load_policy(self, path: str) -> None:
         """
-        Load a learned policy from file asynchronously.
-
-        This method uses aiofiles for non-blocking I/O operations, ensuring
-        that policy loading doesn't block the async event loop. This is particularly
-        important in high-frequency trading systems where responsiveness is critical.
+        Load a learned policy from file.
 
         Args:
-            filepath: Path to load policy from
+            path: Path to load policy from
         """
-        if aiofiles is not None:
-            # Use aiofiles for async I/O
-            async with aiofiles.open(filepath, 'r') as f:
-                content = await f.read()
-                policy_data = json.loads(content)
-        else:
-            # Fallback to synchronous I/O if aiofiles not available
-            self.logger.warning("aiofiles not available, using synchronous I/O")
-            with open(filepath, 'r') as f:
-                policy_data = json.load(f)
+        with open(path, "r") as f:
+            policy = json.load(f)
 
-        # Restore Q-table
+        # Convert back to defaultdict
         self.q_table = defaultdict(lambda: defaultdict(float))
-        for state_str, actions in policy_data.get('q_table', {}).items():
-            # Convert string keys back to tuples if needed
+        q_table_data = policy.get("q_table", {})
+        for state_str, actions in q_table_data.items():
             try:
-                state_tuple = ast.literal_eval(state_str) if isinstance(state_str, str) else state_str
+                state_tuple = ast.literal_eval(state_str)
             except (ValueError, SyntaxError):
                 state_tuple = state_str
             self.q_table[state_tuple] = defaultdict(float, actions)
 
-        self.strategy_actions = policy_data.get('strategy_actions', [])
-        self.logger.info(f"Policy loaded from {filepath}")
+        # Load strategy_actions with backward compatibility
+        self.strategy_actions = policy.get("strategy_actions", [])
 
-    def save_policy_sync(self, filepath: str) -> None:
-        """
-        Synchronous version of save_policy for backward compatibility.
-
-        Args:
-            filepath: Path to save policy
-        """
-        # Convert tuple keys to strings for JSON serialization
-        q_table_serializable = {}
-        for state_tuple, actions in self.q_table.items():
-            state_str = str(state_tuple)
-            q_table_serializable[state_str] = dict(actions)
-
-        policy_data = {
-            'q_table': q_table_serializable,
-            'strategy_actions': self.strategy_actions,
-            'config': self.config,
-            'total_episodes': self.episodes,
-            'total_steps': self.total_steps
-        }
-
-        with open(filepath, 'w') as f:
-            json.dump(policy_data, f, indent=2)
-
-        self.logger.info(f"Policy saved to {filepath}")
-
-    def load_policy_sync(self, filepath: str) -> None:
-        """
-        Synchronous version of load_policy for backward compatibility.
-
-        Args:
-            filepath: Path to load policy from
-        """
-        with open(filepath, 'r') as f:
-            policy_data = json.load(f)
-
-        # Restore Q-table
-        self.q_table = defaultdict(lambda: defaultdict(float))
-        for state_str, actions in policy_data.get('q_table', {}).items():
-            # Convert string keys back to tuples if needed
-            try:
-                state_tuple = ast.literal_eval(state_str) if isinstance(state_str, str) else state_str
-            except (ValueError, SyntaxError):
-                state_tuple = state_str
-            self.q_table[state_tuple] = defaultdict(float, actions)
-
-        self.strategy_actions = policy_data.get('strategy_actions', [])
-        self.logger.info(f"Policy loaded from {filepath}")
+        self.logger.info(f"Policy loaded from {path}")
 
     def get_rl_summary(self) -> Dict[str, Any]:
         """

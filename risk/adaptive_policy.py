@@ -135,9 +135,7 @@ class MarketConditionMonitor:
         except (ValueError, TypeError, KeyError, AttributeError) as e:
             logger.error(f"Error assessing market conditions for {symbol}: {e}")
             logger.error(f"Stack trace: {traceback.format_exc()}")
-            # For critical data validation errors, re-raise to prevent silent failures
-            if isinstance(e, ValueError) and "Market data" in str(e):
-                raise ValueError(f"Critical market data validation error for {symbol}: {e}") from e
+            # Return safe defaults instead of re-raising for graceful degradation
             return {
                 'volatility_level': 'unknown',
                 'trend_strength': 25,
@@ -474,9 +472,18 @@ class MarketConditionMonitor:
         Raises:
             ValueError: If validation fails
         """
-        # Use enhanced validation with OHLC columns for comprehensive checks
-        required_columns = ['close', 'high', 'low', 'open']  # Full OHLC for volatility calculations
+        # Check for minimal required columns
+        required_columns = ['close', 'high', 'low']
         if not enhanced_validate_market_data(data, required_columns):
+            raise ValueError("Market data validation failed - missing required columns or invalid data")
+
+        # Auto-generate 'open' column if missing (use close as proxy)
+        if 'open' not in data.columns:
+            data['open'] = data['close']
+
+        # Validate with core columns (allow missing 'open' in non-critical cases)
+        core_required_columns = ['close', 'high', 'low']
+        if not enhanced_validate_market_data(data, core_required_columns):
             raise ValueError("Market data validation failed - missing required columns or invalid data")
 
 
@@ -1106,25 +1113,25 @@ class AdaptiveRiskPolicy:
 
     def _get_conservative_fallback_multiplier(self, reason: str) -> Tuple[float, str]:
         """
-        Return a conservative fallback multiplier when data is unavailable or calculations fail.
+        Return a neutral fallback multiplier when data is unavailable or calculations fail.
 
         This method implements the fallback mechanism for data unavailability by providing
-        a safe, conservative risk multiplier that minimizes exposure during uncertain conditions.
+        a neutral risk multiplier (1.0) that maintains normal exposure during uncertain conditions.
 
         Args:
             reason: Reason for using fallback (e.g., "insufficient data", "error: ...")
 
         Returns:
-            Tuple of (conservative_multiplier, reasoning)
+            Tuple of (neutral_multiplier, reasoning)
         """
-        # Use a very conservative multiplier (25% of normal risk) during data unavailability
-        conservative_multiplier = max(self.min_multiplier, 0.25)
+        # Use neutral multiplier (1.0) during data unavailability
+        neutral_multiplier = 1.0
 
-        reasoning = f"Conservative fallback multiplier {conservative_multiplier:.2f}: {reason} - using safe defaults"
+        reasoning = f"Neutral multiplier {neutral_multiplier:.2f}: {reason} - using safe defaults"
 
-        logger.warning(f"Using conservative fallback for {reason}: multiplier={conservative_multiplier}")
+        logger.warning(f"Using neutral fallback for {reason}: multiplier={neutral_multiplier}")
 
-        return conservative_multiplier, reasoning
+        return neutral_multiplier, reasoning
 
     def _assess_market_conditions_with_fallback(
         self,

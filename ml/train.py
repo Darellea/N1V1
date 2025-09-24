@@ -111,74 +111,56 @@ TRAINING_CONFIG = {
 
 def set_deterministic_seeds(seed: int = 42) -> None:
     """
-    Set deterministic seeds for all relevant libraries to ensure reproducible training.
-
-    Args:
-        seed: Random seed value
+    Set deterministic seeds for reproducibility across all supported ML frameworks.
     """
-    # Python's random module
+    import random, numpy as np
+
+    # Python random
     random.seed(seed)
 
     # NumPy
     np.random.seed(seed)
 
-    # Pandas
+    # pandas
     try:
-        import pandas as pd
-        pd.core.common.random_state(seed)
+        from pandas.core.common import random_state
+        random_state(seed)
+        logger.debug(f"pandas random_state set to {seed}")
     except Exception:
-        logger.debug("Pandas seed setting failed")
-
-    # Scikit-learn
-    try:
-        from sklearn.utils import check_random_state
-        check_random_state(seed)
-        import sklearn
-        sklearn.utils.check_random_state(seed)
-    except Exception:
-        logger.warning("scikit-learn not available for seed setting")
-
-    # PyTorch
-    torch = sys.modules.get("torch")
-    if torch:
-        try:
-            if hasattr(torch, "manual_seed"):
-                torch.manual_seed(seed)
-            if hasattr(torch, "cuda") and hasattr(torch.cuda, "manual_seed_all"):
-                torch.cuda.manual_seed(seed)
-                torch.cuda.manual_seed_all(seed)
-        except Exception:
-            logger.warning("Torch seed setting failed")
+        logger.warning("pandas random_state not available, skipping pandas seeding")
 
     # TensorFlow
-    tf = sys.modules.get("tensorflow")
-    if tf:
-        try:
-            if hasattr(tf, "random") and hasattr(tf.random, "set_seed"):
-                tf.random.set_seed(seed)
-        except Exception:
-            logger.warning("TensorFlow seed setting failed")
-
-    # LightGBM
     try:
-        import lightgbm as lgb
-        lgb.seed = seed
-    except Exception:
-        logger.debug("LightGBM seed setting failed")
+        import tensorflow as tf
+        tf.random.set_seed(seed)
+    except ImportError:
+        logger.warning("TensorFlow not available, skipping tf seeding")
 
-    # XGBoost
+    # PyTorch
     try:
-        xgb.set_config(seed=seed)
-    except Exception:
-        logger.debug("XGBoost seed setting failed")
+        import torch
+        torch.manual_seed(seed)
+        if hasattr(torch, "cuda"):
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+    except ImportError:
+        logger.warning("PyTorch not available, skipping torch seeding")
+
+    # scikit-learn
+    try:
+        import sklearn  # presence only
+        # sklearn uses numpy random internally, already seeded above
+    except ImportError:
+        logger.warning("scikit-learn not available, skipping sklearn seeding")
 
     # CatBoost
     try:
+        import catboost as cb
         cb.set_random_seed(seed)
-    except Exception:
-        logger.debug("CatBoost seed setting failed")
+    except ImportError:
+        logger.warning("CatBoost not available, skipping cb seeding")
 
-    logger.info(f"Set deterministic seeds to {seed} for all available libraries")
+    logger.info("Set deterministic seeds to %s for all available libraries", seed)
 
 
 def capture_environment_snapshot() -> Dict[str, Any]:

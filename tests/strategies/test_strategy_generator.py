@@ -302,11 +302,10 @@ class TestStrategyGenerator:
         genome = generator.population[0]
 
         # Generate strategy
-        strategy_class = await generator.generate_strategy(genome, "TestStrategy")
+        strategy_instance = await generator.generate_strategy(genome, "TestStrategy")
 
-        assert strategy_class is not None
-        assert hasattr(strategy_class, '__name__')
-        assert 'TestStrategy' in strategy_class.__name__
+        assert strategy_instance is not None
+        assert isinstance(strategy_instance, BaseStrategy)
 
     @pytest.mark.asyncio
     async def test_population_save_load(self, test_config, temp_dir):

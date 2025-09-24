@@ -107,10 +107,16 @@ def _validate_equity_progression(equity_progression: List[Dict[str, Any]]) -> No
                 elif not isinstance(trade_id, (int, float)):
                     raise BacktestValidationError(f"Record {i}: trade_id must be numeric or numeric string")
 
-            # Validate timestamp - must be string
+            # Validate timestamp - must be string or pd.Timestamp
             timestamp = record.get('timestamp')
-            if timestamp is not None and not isinstance(timestamp, str):
-                raise BacktestValidationError(f"Record {i}: timestamp must be string")
+            if timestamp is not None:
+                if isinstance(timestamp, str):
+                    pass  # String is valid
+                elif hasattr(timestamp, 'isoformat'):  # pd.Timestamp or datetime-like
+                    # Convert pd.Timestamp to string for consistency
+                    record['timestamp'] = timestamp.isoformat()
+                else:
+                    raise BacktestValidationError(f"Record {i}: timestamp must be string or datetime-like object")
 
             # Validate equity - must be numeric
             equity = record.get('equity')

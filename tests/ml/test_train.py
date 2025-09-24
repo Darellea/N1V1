@@ -492,7 +492,7 @@ class TestReproducibility:
     @patch('ml.train.logger')
     def test_set_deterministic_seeds_with_libs(self, mock_logger):
         """Test set_deterministic_seeds with optional libraries available."""
-        with patch.dict('sys.modules', {'sklearn': MagicMock(), 'torch': MagicMock(), 'tensorflow': MagicMock()}):
+        with patch.dict('sys.modules', {'sklearn': MagicMock(), 'torch': MagicMock(), 'tensorflow': MagicMock(), 'catboost': MagicMock()}):
             # Just ensure the function runs without errors when libraries are available
             set_deterministic_seeds(seed=456)
 

@@ -33,52 +33,51 @@ class TestVaultKeyManager:
     def vault_manager(self, vault_config):
         return VaultKeyManager(**vault_config)
 
-    @patch('aiohttp.ClientSession')
-    async def test_get_secret_success(self, mock_session, vault_manager):
+    async def test_get_secret_success(self, vault_manager):
         """Test successful secret retrieval from Vault."""
-        # Mock the aiohttp session and response
         mock_response = AsyncMock()
         mock_response.status = 200
-        mock_response.json.return_value = {
+        mock_response.json = AsyncMock(return_value={
             "data": {
                 "data": {
                     "api_key": "test-key-123"
                 }
             }
-        }
+        })
+        mock_response.close = AsyncMock()
 
-        mock_session_instance = AsyncMock()
-        mock_session_instance.get.return_value.__aenter__.return_value = mock_response
-        mock_session.return_value = mock_session_instance
+        with patch.object(vault_manager, '_ensure_session') as mock_ensure:
+            vault_manager.session = AsyncMock()
+            vault_manager.session.get.return_value = mock_response
 
-        result = await vault_manager.get_secret("exchange", "api_key")
-        assert result == "test-key-123"
+            result = await vault_manager.get_secret("exchange", "api_key")
+            assert result == "test-key-123"
 
-    @patch('aiohttp.ClientSession')
-    async def test_get_secret_not_found(self, mock_session, vault_manager):
+    async def test_get_secret_not_found(self, vault_manager):
         """Test secret not found in Vault."""
         mock_response = AsyncMock()
         mock_response.status = 404
+        mock_response.close = AsyncMock()
 
-        mock_session_instance = AsyncMock()
-        mock_session_instance.get.return_value.__aenter__.return_value = mock_response
-        mock_session.return_value = mock_session_instance
+        with patch.object(vault_manager, '_ensure_session') as mock_ensure:
+            vault_manager.session = AsyncMock()
+            vault_manager.session.get.return_value = mock_response
 
-        result = await vault_manager.get_secret("exchange", "nonexistent")
-        assert result is None
+            result = await vault_manager.get_secret("exchange", "nonexistent")
+            assert result is None
 
-    @patch('aiohttp.ClientSession')
-    async def test_store_secret_success(self, mock_session, vault_manager):
+    async def test_store_secret_success(self, vault_manager):
         """Test successful secret storage in Vault."""
         mock_response = AsyncMock()
         mock_response.status = 200
+        mock_response.close = AsyncMock()
 
-        mock_session_instance = AsyncMock()
-        mock_session_instance.post.return_value.__aenter__.return_value = mock_response
-        mock_session.return_value = mock_session_instance
+        with patch.object(vault_manager, '_ensure_session') as mock_ensure:
+            vault_manager.session = AsyncMock()
+            vault_manager.session.post.return_value = mock_response
 
-        result = await vault_manager.store_secret("exchange", "api_key", "new-key-123")
-        assert result is True
+            result = await vault_manager.store_secret("exchange", "api_key", "new-key-123")
+            assert result is True
 
     async def test_rotate_key(self, vault_manager):
         """Test key rotation functionality."""
@@ -95,14 +94,16 @@ class TestVaultKeyManager:
 
     async def test_health_check_success(self, vault_manager):
         """Test successful Vault health check."""
-        with patch.object(vault_manager, '_ensure_session') as mock_ensure:
-            with patch.object(vault_manager.session, 'get') as mock_get:
-                mock_response = AsyncMock()
-                mock_response.status = 200
-                mock_get.return_value.__aenter__.return_value = mock_response
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.close = AsyncMock()
 
-                result = await vault_manager.health_check()
-                assert result is True
+        with patch.object(vault_manager, '_ensure_session') as mock_ensure:
+            vault_manager.session = AsyncMock()
+            vault_manager.session.get.return_value = mock_response
+
+            result = await vault_manager.health_check()
+            assert result is True
 
 
 class TestAWSKMSKeyManager:

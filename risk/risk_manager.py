@@ -195,6 +195,9 @@ class RiskManager:
             config: Risk management configuration dictionary
         """
         self.config = config
+
+        # Initialize logger - use provided logger or fall back to module logger
+        self.logger = config.get("logger") if config.get("logger") else logging.getLogger(__name__)
         # Make thresholds configurable with safe defaults
         self.require_stop_loss = get_config_value(config, "require_stop_loss", True, bool)
         self.max_position_size = get_config_value(config, "max_position_size", Decimal("0.3"), Decimal)
@@ -246,6 +249,8 @@ class RiskManager:
         self.symbol_volatility = {}
         # Track per-symbol loss streaks for adaptive sizing
         self.loss_streaks = {}
+        # Store trade history for adaptive policy
+        self.trade_history = []
 
         # Position tracking for trailing stops
         self.position_tracking = {}  # symbol -> tracking data
@@ -337,6 +342,12 @@ class RiskManager:
                     amt_dec = Decimal(str(signal.amount))
                     if amt_dec > max_allowed:
                         signal.amount = max_allowed
+
+                    # Additional sanity check: cap at a reasonable maximum to prevent overflow
+                    # This prevents extreme position sizes from very tight stop losses
+                    sanity_max = min(account_balance * Decimal("10"), Decimal("10000000"))  # Max 10x account balance or 10M
+                    if signal.amount > sanity_max:
+                        signal.amount = sanity_max
                 except Exception:
                     # If any error occurs while capping, continue and let validation handle it.
                     pass
@@ -359,7 +370,7 @@ class RiskManager:
                 signal.take_profit = await self.calculate_take_profit(signal)
 
             # Update volatility tracking
-            if market_data and "close" in market_data:
+            if market_data is not None and "close" in getattr(market_data, "columns", []):
                 await self._update_volatility(signal.symbol, market_data["close"])
 
             return True
@@ -412,10 +423,25 @@ class RiskManager:
             base_position = await self._fixed_fractional_position_size(signal)
 
         # Apply adaptive risk multiplier
-        risk_multiplier = await self._get_adaptive_risk_multiplier(signal.symbol, market_data)
+        try:
+            result = get_risk_multiplier(signal.symbol, market_data, self.trade_history)
+            if isinstance(result, tuple) and len(result) == 2:
+                multiplier, reason = result
+            else:
+                raise ValueError("Invalid multiplier format")
+        except Exception as e:
+            self.logger.warning(f"Adaptive policy error: {e}, defaulting to multiplier=1.0")
+            multiplier, reason = Decimal("1.0"), "Fallback default"
+        risk_multiplier = Decimal(str(multiplier))
 
         # Calculate final position size
-        adjusted_position = base_position * Decimal(str(risk_multiplier))
+        adjusted_position = base_position * risk_multiplier
+
+        # Apply hard cap to prevent extreme position sizes
+        account_balance = await self._get_current_balance()
+        hard_cap = min(account_balance * Decimal("10"), Decimal("10000000"))
+        if adjusted_position > hard_cap:
+            adjusted_position = hard_cap
 
         # Log the adjustment
         logger.info(
@@ -739,6 +765,19 @@ class RiskManager:
             normalized = to_ms(timestamp)
             timestamp = normalized if normalized is not None else now_ms()
 
+        # Store trade result in history for adaptive policy
+        trade_result = {
+            "symbol": symbol,
+            "pnl": float(pnl),
+            "is_win": bool(is_win),
+            "timestamp": int(timestamp),
+        }
+        self.trade_history.append(trade_result)
+
+        # Keep only recent trade history (last 100 trades)
+        if len(self.trade_history) > 100:
+            self.trade_history = self.trade_history[-100:]
+
         # Update loss/win streak per symbol
         prev_streak = int(self.loss_streaks.get(symbol, 0))
         if is_win:
@@ -838,10 +877,11 @@ class RiskManager:
         """
         try:
             # Use circuit breaker to protect position size calculations
-            return self._position_size_circuit_breaker.call(
+            result = await self._position_size_circuit_breaker.call(
                 self._calculate_adaptive_position_size_protected,
                 signal, market_data
             )
+            return _safe_quantize(result)
         except CircuitBreakerOpen:
             logger.warning("Position size circuit breaker is OPEN - using conservative fallback")
             # Fallback to conservative fixed percentage when circuit is open
@@ -1426,7 +1466,7 @@ class RiskManager:
         else:
             data_df = None
 
-        # Get risk multiplier from adaptive policy
+        # Get risk multiplier from adaptive policy (synchronous call)
         multiplier, reasoning = get_risk_multiplier(symbol, data_df)
 
         # Log the multiplier decision

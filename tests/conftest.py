@@ -16,6 +16,9 @@ Test Categories:
 import sys, os
 sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 
+# Set testing environment variable for API tests
+os.environ["TESTING"] = "1"
+
 import asyncio
 import pytest
 import numpy as np
@@ -781,6 +784,14 @@ def cleanup_test_artifacts():
     # Clean up any temporary files or resources
     # This runs after each test function
     pass
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Reset the rate limiter before each test to ensure isolation."""
+    from api.app import limiter
+    limiter.reset()
+    yield
 
 
 @pytest.fixture

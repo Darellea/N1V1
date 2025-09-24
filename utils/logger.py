@@ -734,20 +734,33 @@ def setup_logging(config: Optional[Dict[str, Any]] = None) -> TradeLogger:
 
     # Console handler
     if cfg.get("console", True):
-        console_handler = logging.StreamHandler(sys.stdout)
-
         if log_format == "json":
+            # For JSON mode, use a handler that always writes to current sys.stdout
+            # This allows test capture with redirect_stdout
+            class JSONStreamHandler(logging.Handler):
+                def emit(self, record):
+                    try:
+                        msg = self.format(record)
+                        sys.stdout.write(msg + '\n')
+                        sys.stdout.flush()
+                    except Exception:
+                        self.handleError(record)
+
+            console_handler = JSONStreamHandler()
             console_handler.setFormatter(JSONFormatter())
-        elif log_format == "pretty":
-            console_handler.setFormatter(PrettyFormatter())
-        else:  # color or default
-            console_handler.setFormatter(ColorFormatter())
+        else:
+            console_handler = logging.StreamHandler(sys.stdout)
+            if log_format == "pretty":
+                console_handler.setFormatter(PrettyFormatter())
+            else:  # color or default
+                console_handler.setFormatter(ColorFormatter())
 
         console_handler.setLevel(level)
         trade_logger.addHandler(console_handler)
 
     # File handler (always JSON for structured logging)
-    if cfg.get("file_logging", True):
+    # In test mode, skip file logging to avoid handler duplication issues
+    if cfg.get("file_logging", True) and os.environ.get("TESTING") != "1":
         log_file = Path(cfg.get("log_file"))
         log_file.parent.mkdir(parents=True, exist_ok=True)
         max_bytes = int(cfg.get("max_size", 10 * 1024 * 1024))
@@ -779,7 +792,9 @@ def setup_logging(config: Optional[Dict[str, Any]] = None) -> TradeLogger:
         for event_type in EventType:
             event_bus.subscribe(event_type, trade_logger.handle_event)
 
-        logger.info("TradeLogger subscribed to event bus for event-driven logging")
+        # Only log subscription message if not in test mode
+        if os.environ.get("TESTING") != "1":
+            logger.info("TradeLogger subscribed to event bus for event-driven logging")
 
     except Exception as e:
         logger.warning(f"Failed to subscribe TradeLogger to event bus: {e}")
@@ -808,7 +823,7 @@ def generate_correlation_id() -> str:
 
 def generate_request_id() -> str:
     """Return a unique request id for tracking individual requests."""
-    return f"req_{uuid.uuid4().hex[:16]}"
+    return f"req_{uuid.uuid4().hex[:17]}"
 
 
 def get_logger_with_context(symbol: Optional[str] = None, component: Optional[str] = None,

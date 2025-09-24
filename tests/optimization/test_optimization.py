@@ -170,7 +170,8 @@ class TestGeneticOptimizer:
         optimizer.add_parameter_bounds(bounds)
 
         assert len(optimizer.parameter_bounds) == 1
-        assert optimizer.parameter_bounds[0].name == 'rsi_period'
+        assert 'rsi_period' in optimizer.parameter_bounds
+        assert optimizer.parameter_bounds['rsi_period'].name == 'rsi_period'
 
     def test_population_initialization(self):
         """Test population initialization."""

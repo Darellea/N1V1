@@ -190,7 +190,7 @@ class BaseStrategy(ABC):
 
     async def _get_market_data(self) -> pd.DataFrame:
         """
-        Fetch the required market data for the strategy.
+        Fetch the required market data for the strategy with retry logic and exponential backoff.
 
         Returns:
             DataFrame with OHLCV data for configured symbols and timeframe
@@ -201,17 +201,10 @@ class BaseStrategy(ABC):
         # Get data for all configured symbols
         all_data = []
         for symbol in self.config.symbols:
-            try:
-                data = await self.data_fetcher.get_historical_data(
-                    symbol=symbol,
-                    timeframe=self.config.timeframe,
-                    limit=self.config.required_history,
-                )
-                if data is not None:
-                    data["symbol"] = symbol  # Add symbol column
-                    all_data.append(data)
-            except Exception as e:
-                self.logger.error(f"Failed to get data for {symbol}: {str(e)}")
+            data = await self._get_symbol_data_with_retry(symbol)
+            if data is not None:
+                data["symbol"] = symbol  # Add symbol column
+                all_data.append(data)
 
         if not all_data:
             return pd.DataFrame()
@@ -224,6 +217,38 @@ class BaseStrategy(ABC):
             combined.index = pd.to_datetime(combined.index, unit="ms")
 
         return combined.sort_index()
+
+    async def _get_symbol_data_with_retry(self, symbol: str) -> Optional[pd.DataFrame]:
+        """
+        Fetch data for a single symbol with retry logic and exponential backoff.
+
+        Args:
+            symbol: Trading symbol to fetch data for
+
+        Returns:
+            DataFrame with symbol data or None if all retries failed
+        """
+        max_retries = 3
+        base_delay = 1.0  # Base delay in seconds
+
+        for attempt in range(max_retries):
+            try:
+                data = await self.data_fetcher.get_historical_data(
+                    symbol=symbol,
+                    timeframe=self.config.timeframe,
+                    limit=self.config.required_history,
+                )
+                return data
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    # Last attempt failed
+                    self.logger.error(f"Failed to get data for {symbol} after {max_retries} attempts: {str(e)}")
+                    return None
+                else:
+                    # Calculate exponential backoff delay
+                    delay = base_delay * (2 ** attempt)
+                    self.logger.warning(f"Failed to get data for {symbol} (attempt {attempt + 1}/{max_retries}): {str(e)}. Retrying in {delay:.1f}s")
+                    await asyncio.sleep(delay)
 
     def _log_signals(self, signals: List[TradingSignal]) -> None:
         """Log generated signals."""

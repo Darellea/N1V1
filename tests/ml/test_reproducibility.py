@@ -90,37 +90,41 @@ class TestDeterministicSeeds:
 
     @patch('ml.train.xgb')
     def test_set_deterministic_seeds_xgboost(self, mock_xgb):
-        """Test that XGBoost seed is set."""
+        """Test that XGBoost seeding is handled (via numpy, not set_config)."""
         set_deterministic_seeds(42)
 
-        # Check that xgb.set_config was called with seed
-        mock_xgb.set_config.assert_called_with(seed=42)
+        # XGBoost seeding is handled via numpy, not direct set_config call
+        # The mock should not be called since we don't use set_config anymore
+        mock_xgb.set_config.assert_not_called()
 
-    @patch('ml.train.cb')
-    def test_set_deterministic_seeds_catboost(self, mock_cb):
+    @patch.dict('sys.modules', {'catboost': MagicMock()})
+    def test_set_deterministic_seeds_catboost(self):
         """Test that CatBoost seed is set."""
         set_deterministic_seeds(42)
 
-        # Check that cb.set_random_seed was called
-        mock_cb.set_random_seed.assert_called_with(42)
+        # Check that catboost was imported and set_random_seed was called
+        import catboost as cb
+        cb.set_random_seed.assert_called_with(42)
 
-    @patch('ml.train.tf')
-    def test_set_deterministic_seeds_tensorflow(self, mock_tf):
+    @patch.dict('sys.modules', {'tensorflow': MagicMock()})
+    def test_set_deterministic_seeds_tensorflow(self):
         """Test that TensorFlow seed is set."""
         set_deterministic_seeds(42)
 
-        # Check that tf.random.set_seed was called
-        mock_tf.random.set_seed.assert_called_with(42)
+        # Check that tensorflow was imported and random.set_seed was called
+        import tensorflow as tf
+        tf.random.set_seed.assert_called_with(42)
 
-    @patch('ml.train.torch')
-    def test_set_deterministic_seeds_pytorch(self, mock_torch):
+    @patch.dict('sys.modules', {'torch': MagicMock()})
+    def test_set_deterministic_seeds_pytorch(self):
         """Test that PyTorch seeds are set."""
         set_deterministic_seeds(42)
 
-        # Check that torch.manual_seed was called
-        mock_torch.manual_seed.assert_called_with(42)
-        mock_torch.cuda.manual_seed.assert_called_with(42)
-        mock_torch.cuda.manual_seed_all.assert_called_with(42)
+        # Check that torch was imported and methods were called
+        import torch
+        torch.manual_seed.assert_called_with(42)
+        torch.cuda.manual_seed.assert_called_with(42)
+        torch.cuda.manual_seed_all.assert_called_with(42)
 
 
 class TestEnvironmentSnapshot:
