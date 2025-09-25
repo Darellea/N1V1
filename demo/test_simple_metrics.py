@@ -68,13 +68,13 @@ def test_metrics_calculation():
         loaded = engine.load_from_json(json_path)
         print(f"✅ Successfully loaded metrics: {loaded.strategy_id}")
 
-        return True
+        assert True
 
     except Exception as e:
         print(f"❌ Test failed: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        assert False
 
 
 def test_metrics_result_structure():
@@ -122,11 +122,11 @@ def test_metrics_result_structure():
         print("✅ MetricsResult deserialization works")
         print(f"   Sharpe Ratio: {restored.sharpe_ratio:.2f}")
 
-        return True
+        assert True
 
     except Exception as e:
         print(f"❌ Structure test failed: {e}")
-        return False
+        assert False
 
 
 def main():
@@ -136,8 +136,17 @@ def main():
 
     # Run tests
     results = []
-    results.append(test_metrics_calculation())
-    results.append(test_metrics_result_structure())
+    try:
+        test_metrics_calculation()
+        results.append(True)
+    except AssertionError:
+        results.append(False)
+
+    try:
+        test_metrics_result_structure()
+        results.append(True)
+    except AssertionError:
+        results.append(False)
 
     # Summary
     successful = sum(results)

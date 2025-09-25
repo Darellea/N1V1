@@ -233,13 +233,17 @@ class TestBinaryModelIntegrationGlobalFunctions:
 
     def test_get_binary_integration_with_config(self):
         """Test get_binary_integration with specific config."""
+        # Reset singleton for this test
+        import core.binary_model_integration
+        core.binary_model_integration._binary_integration_instance = None
+        core.binary_model_integration._last_config = None
+
         config = {"binary_integration": {"enabled": True, "threshold": 0.8}}
 
-        with patch('core.binary_model_integration.get_config', return_value=config):
-            instance = get_binary_integration()
+        instance = get_binary_integration(config_override=config)
 
-            assert instance.enabled == True
-            assert instance.binary_threshold == 0.8
+        assert instance.enabled == True
+        assert instance.binary_threshold == 0.8
 
     @pytest.mark.asyncio
     async def test_integrate_binary_model_convenience_function(self):

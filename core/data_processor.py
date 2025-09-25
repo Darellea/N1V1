@@ -181,22 +181,21 @@ class DataProcessor:
         results = {}
 
         for symbol, data in data_dict.items():
-            # Validate symbol and data
-            if not isinstance(symbol, str) or not symbol.strip():
-                logger.warning(f"Invalid symbol: {symbol}, skipping")
+            # Validate symbol and data - skip invalid entries entirely
+            if not isinstance(symbol, str):
+                logger.warning("Invalid symbol: %s, skipping", symbol)
                 continue
             if not isinstance(data, pd.DataFrame):
-                logger.warning(f"Invalid data type for {symbol}: expected DataFrame, got {type(data)}")
+                logger.warning("Invalid data type for %s: expected DataFrame, got %s", symbol, type(data))
                 continue
             if data.empty:
-                results[symbol] = data.copy()
-                continue
-            if len(data) < period:
-                logger.warning(f"Insufficient data for {symbol}: {len(data)} < {period}")
-                results[symbol] = data.copy()
+                logger.warning("Empty DataFrame for %s, skipping", symbol)
                 continue
             if 'close' not in data.columns:
-                logger.warning(f"Missing 'close' column for {symbol}")
+                logger.warning("Missing 'close' column for %s, skipping", symbol)
+                continue
+            if len(data) < period:
+                logger.warning("Insufficient data for %s: %d < %d", symbol, len(data), period)
                 results[symbol] = data.copy()
                 continue
 

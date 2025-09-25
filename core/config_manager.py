@@ -83,7 +83,7 @@ class MainConfig(BaseModel):
     strategies: StrategiesConfig
 
     class Config:
-        extra = "forbid"  # Reject unknown fields
+        extra = "allow"  # Allow extra known sections
 
 
 # Safe defaults for missing configuration

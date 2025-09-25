@@ -55,15 +55,21 @@ class MetricsEndpoint:
         self.path = self.config.get('path', '/metrics')
 
         # Security configuration - secure defaults
-        self.enable_auth = self.config.get('enable_auth', False)  # Default to disabled for testing
+        self.enable_auth = self.config.get('enable_auth', True)  # secure default
         self.auth_token = self.config.get('auth_token', '')
         if not self.auth_token and self.enable_auth:
             logger.warning("Authentication enabled but no auth_token provided - metrics endpoint will reject all requests")
-        self.enable_tls = self.config.get('enable_tls', False)  # Default to disabled for testing
-        self.cert_file = self.config.get('cert_file', '')
-        self.key_file = self.config.get('key_file', '')
-        if self.enable_tls and (not self.cert_file or not self.key_file):
-            logger.warning("TLS enabled but cert_file/key_file not provided - falling back to HTTP")
+
+        # Apply secure defaults
+        self.enable_tls = self.config.get("enable_tls", True)
+        self.cert_file = self.config.get("cert_file")
+        self.key_file = self.config.get("key_file")
+
+        # Validation: downgrade TLS if explicitly enabled but incomplete
+        if "enable_tls" in self.config and self.config["enable_tls"] and not (self.cert_file and self.key_file):
+            logger.warning(
+                "TLS enabled but cert_file/key_file not provided - falling back to HTTP"
+            )
             self.enable_tls = False
 
         # Performance configuration

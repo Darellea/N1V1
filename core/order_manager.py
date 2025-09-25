@@ -358,29 +358,15 @@ class OrderManager:
         self.watchdog_service = watchdog_service
 
         # Set initial paper balance - use Decimal for precision
-        initial_balance = None
-        # Try to get from paper config section
-        paper_cfg = config.get("paper")
-        if isinstance(paper_cfg, dict):
-            initial_balance = paper_cfg.get("initial_balance")
-        # Fallback to legacy locations
-        if initial_balance is None:
-            initial_balance = config.get("initial_balance")
-        if initial_balance is None:
-            initial_balance = self.config.get("initial_balance")
-
-        # Convert to Decimal for precision, with safe fallback
+        default_balance = Decimal("1000.00")
+        raw_balance = config.get("paper", {}).get("initial_balance", default_balance)
         try:
-            if initial_balance is not None:
-                initial_balance = Decimal(str(initial_balance))
-            else:
-                initial_balance = Decimal("1000.0")  # Default balance
-        except (InvalidOperation, ValueError, TypeError):
-            logger.warning(f"Invalid initial_balance value: {initial_balance}, using default")
-            initial_balance = Decimal("1000.0")
-
-        self.paper_executor.set_initial_balance(initial_balance)
-        self.portfolio_manager.set_initial_balance(initial_balance)
+            balance = Decimal(str(raw_balance))
+        except (InvalidOperation, TypeError, ValueError):
+            logger.warning(f"Invalid initial_balance value: {raw_balance}, using default")
+            balance = default_balance
+        self.paper_executor.set_initial_balance(balance)
+        self.portfolio_manager.set_initial_balance(balance)
 
         # Portfolio flags (BotEngine may set these attributes after instantiation)
         self.portfolio_mode: bool = False

@@ -1,8 +1,8 @@
 [
   {
-    "timestamp": "2025-09-24 17:10:33.165931",
+    "timestamp": "2025-09-25 16:42:06.081329",
     "type": "TEST_ALERT",
     "message": "Test message",
-    "model_path": "C:\\Users\\TU\\AppData\\Local\\Temp\\tmpppzyhstv\\test_model.pkl"
+    "model_path": "C:\\Users\\TU\\AppData\\Local\\Temp\\tmpem6w_q79\\test_model.pkl"
   }
 ]

@@ -121,12 +121,12 @@ class PerformanceTracker:
                 excess_returns = returns - risk_free_rate
                 std_returns = np.std(excess_returns)
 
-                # Safe division: handle zero standard deviation (constant returns)
-                if std_returns > 0:
+                # Safe division: handle zero or very small standard deviation (constant returns)
+                if std_returns > 0.001:  # Consider small std as constant
                     sharpe = float(np.mean(excess_returns) / std_returns)
                     self.performance_stats["sharpe_ratio"] = sharpe * np.sqrt(252)  # Annualize
                 else:
-                    # For constant returns, Sharpe ratio is undefined, use 0 or None
+                    # For constant returns, Sharpe ratio is undefined, use 0
                     self.performance_stats["sharpe_ratio"] = 0.0
 
         except Exception as e:
@@ -215,7 +215,7 @@ class PerformanceTracker:
         try:
             equity_prog = self.performance_stats.get("equity_progression", [])
             if not equity_prog:
-                return {}
+                return {"profit_factor": 0.0}
 
             # Calculate additional metrics
             equity_values = [record.get("equity", 0) for record in equity_prog if record.get("equity")]
@@ -246,12 +246,15 @@ class PerformanceTracker:
                 else:
                     # No wins and no losses - undefined, use 0
                     additional_metrics["profit_factor"] = 0.0
+            else:
+                # No pnl values, profit factor is 0
+                additional_metrics["profit_factor"] = 0.0
 
             return additional_metrics
 
         except Exception as e:
             logger.exception(f"Failed to calculate additional metrics: {e}")
-            return {}
+            return {"profit_factor": 0.0}
 
     def reset_performance(self):
         """Reset all performance tracking data."""

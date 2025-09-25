@@ -27,32 +27,31 @@ class LogSanitizer:
     while preserving useful debugging information.
     """
 
-    # Patterns for sensitive data that should be masked
+    # Patterns for sensitive data that should be masked (ordered by priority)
     SENSITIVE_PATTERNS = [
-        # API keys and secrets (more flexible patterns)
-        (r'api[_-]?key["\']?\s*[:=]\s*["\']?([a-zA-Z0-9_-]{20,})["\']?', '***API_KEY_MASKED***'),
-        (r'secret["\']?\s*[:=]\s*["\']?([a-zA-Z0-9_-]{20,})["\']?', '***SECRET_MASKED***'),
-        (r'token["\']?\s*[:=]\s*["\']?([a-zA-Z0-9_-]{20,})["\']?', '***TOKEN_MASKED***'),
-        (r'password["\']?\s*[:=]\s*["\']?([a-zA-Z0-9_-]{8,})["\']?', '***PASSWORD_MASKED***'),
+        # Bearer tokens (highest priority)
+        (r'Bearer\s+[A-Za-z0-9\-\._~\+\/]+=*', '***TOKEN_MASKED***'),
 
-        # Direct API key patterns (like sk-1234567890abcdef)
-        (r'\b(sk|pk|rk|xoxb)-[a-zA-Z0-9_-]{20,}\b', '***API_KEY_MASKED***'),
+        # Phone numbers (require separators to avoid matching parts of other strings)
+        (r'\+?\d{1,3}[-]\d{3}[-]\d{4}', '***PHONE_MASKED***'),
 
-        # Bearer tokens
-        (r'\bBearer\s+[a-zA-Z0-9_.-]{20,}\b', '***TOKEN_MASKED***'),
+        # Emails
+        (r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', '***EMAIL_MASKED***'),
 
-        # Financial amounts (balance, equity, PnL) - more flexible
-        (r'\b(?:balance|equity|pnl|profit|loss)[\'"]?\s*[:=]\s*[\'"]?(-?[\d,]+\.?\d*)[\'"]?', lambda m: f"***{m.group(1).upper()}_MASKED***"),
-        (r'\b\d{1,3}(?:,\d{3})*\.\d{2}\b', '***AMOUNT_MASKED***'),  # Currency amounts like 12345.67
+        # SSNs
+        (r'\b\d{3}-\d{2}-\d{4}\b', '***SSN_MASKED***'),
 
-        # Personal information
-        (r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b', '***EMAIL_MASKED***'),
-        (r'\b\+?[\d\s\-\(\)]{10,}\b', '***PHONE_MASKED***'),
-        (r'\b\d{3}-?\d{2}-?\d{4}\b', '***SSN_MASKED***'),
+        # API keys - prefixed formats (high priority, before amounts)
+        (r'\b(sk|pk|rk|xoxb)[_-]?[A-Za-z0-9]{1,}\b', '***API_KEY_MASKED***'),
 
-        # Generic sensitive patterns
-        (r'"[a-zA-Z0-9_-]{32,}"', '***SENSITIVE_DATA_MASKED***'),  # Long alphanumeric strings
-        (r"'[a-zA-Z0-9_-]{32,}'", '***SENSITIVE_DATA_MASKED***'),
+        # API keys - generic long strings (avoid masked)
+        (r'(?<!\*\*\*)(?<!MASKED)\b[A-Za-z0-9_-]{16,}\b(?!\*\*\*)', '***API_KEY_MASKED***'),
+
+        # Financial amounts with labels (semantic masking)
+        (r'\b(balance|equity|pnl|profit|loss)[\'"]?\s*[:=]\s*[\'"]?(-?[\d,]+\.?\d*)[\'"]?', lambda m: f"***{m.group(1).upper()}_MASKED***"),
+
+        # Generic financial amounts (avoid matching already masked or API keys)
+        (r'(?<!\*\*\*)(?<!MASKED)(?<!sk)(?<!pk)(?<!rk)(?<!xoxb)\b\d+(\.\d+)?\b(?!\*\*\*)', '***AMOUNT_MASKED***'),
     ]
 
     @classmethod
@@ -90,11 +89,8 @@ class LogSanitizer:
     @classmethod
     def _sanitize_for_audit(cls, message: str) -> str:
         """Sanitize message for audit logging (minimal information)."""
-        # For audit logs, only keep essential security events
-        if any(keyword in message.lower() for keyword in ['auth', 'login', 'access', 'security', 'breach']):
-            return cls._apply_sanitization(message)
-        else:
-            return "[AUDIT] Security event logged"
+        # For audit logs, always return minimal fixed string
+        return "[AUDIT] Security event logged"
 
 
 class StructuredLogger:
@@ -121,78 +117,70 @@ class StructuredLogger:
         """Set the logging sensitivity level."""
         self.sensitivity = sensitivity
 
-    def _format_structured_message(self, message: str, **kwargs) -> str:
-        """Format a structured log message with key-value pairs."""
-        if not kwargs:
-            return message
+    def _format_structured_message(self, message: str, log_level: str = "INFO", **kwargs) -> str:
+        """Format a structured log message as JSON."""
+        import json
 
         # Sanitize kwargs based on sensitivity
         sanitized_kwargs = {}
         for key, value in kwargs.items():
-            if isinstance(value, (int, float)):
-                # Numeric values are generally safe
+            if self.sensitivity in [LogSensitivity.DEBUG, LogSensitivity.AUDIT]:
+                # Keep original types for DEBUG/AUDIT
                 sanitized_kwargs[key] = value
-            elif isinstance(value, str):
-                # String values may need sanitization
-                if self.sensitivity in [LogSensitivity.DEBUG, LogSensitivity.AUDIT]:
-                    sanitized_kwargs[key] = value
-                else:
-                    sanitized_kwargs[key] = self.sanitizer.sanitize_message(value, self.sensitivity)
             else:
-                # Other types - convert to string and sanitize
-                str_value = str(value)
-                if self.sensitivity in [LogSensitivity.DEBUG, LogSensitivity.AUDIT]:
-                    sanitized_kwargs[key] = str_value
+                # For SECURE/INFO, apply semantic masking for known fields
+                if key in ['amount', 'balance', 'pnl'] and self.sensitivity in [LogSensitivity.SECURE, LogSensitivity.INFO]:
+                    sanitized_kwargs[key] = f"***{key.upper()}_MASKED***"
                 else:
-                    sanitized_kwargs[key] = self.sanitizer.sanitize_message(str_value, self.sensitivity)
+                    # Otherwise sanitize string representations
+                    if isinstance(value, str):
+                        sanitized_kwargs[key] = self.sanitizer.sanitize_message(value, self.sensitivity)
+                    else:
+                        str_value = str(value)
+                        sanitized_kwargs[key] = self.sanitizer.sanitize_message(str_value, self.sensitivity)
 
-        # Format as structured message
-        structured_parts = [message]
-        for key, value in sanitized_kwargs.items():
-            structured_parts.append(f"{key}={value}")
+        # Create structured data
+        log_data = {"level": log_level, "message": message, **sanitized_kwargs}
 
-        return " | ".join(structured_parts)
+        # Return JSON string
+        return json.dumps(log_data)
 
     def debug(self, message: str, **kwargs):
         """Log debug message with structured data."""
-        if self.logger.isEnabledFor(logging.DEBUG):
-            formatted_message = self._format_structured_message(message, **kwargs)
-            self.logger.debug(formatted_message)
+        formatted_message = self._format_structured_message(message, log_level="DEBUG", **kwargs)
+        self.logger.debug(formatted_message)
 
     def info(self, message: str, **kwargs):
         """Log info message with structured data."""
-        if self.logger.isEnabledFor(logging.INFO):
-            formatted_message = self._format_structured_message(message, **kwargs)
-            sanitized_message = self.sanitizer.sanitize_message(formatted_message, self.sensitivity)
-            self.logger.info(sanitized_message)
+        # Remove 'level' from kwargs to avoid conflicts
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k != 'level'}
+        formatted_message = self._format_structured_message(message, log_level="INFO", **filtered_kwargs)
+        sanitized_message = self.sanitizer.sanitize_message(formatted_message, self.sensitivity)
+        self.logger.info(sanitized_message)
 
     def warning(self, message: str, **kwargs):
         """Log warning message with structured data."""
-        if self.logger.isEnabledFor(logging.WARNING):
-            formatted_message = self._format_structured_message(message, **kwargs)
-            sanitized_message = self.sanitizer.sanitize_message(formatted_message, self.sensitivity)
-            self.logger.warning(sanitized_message)
+        formatted_message = self._format_structured_message(message, log_level="WARNING", **kwargs)
+        sanitized_message = self.sanitizer.sanitize_message(formatted_message, self.sensitivity)
+        self.logger.warning(sanitized_message)
 
     def error(self, message: str, **kwargs):
         """Log error message with structured data."""
-        if self.logger.isEnabledFor(logging.ERROR):
-            formatted_message = self._format_structured_message(message, **kwargs)
-            sanitized_message = self.sanitizer.sanitize_message(formatted_message, self.sensitivity)
-            self.logger.error(sanitized_message)
+        formatted_message = self._format_structured_message(message, log_level="ERROR", **kwargs)
+        sanitized_message = self.sanitizer.sanitize_message(formatted_message, self.sensitivity)
+        self.logger.error(sanitized_message)
 
     def critical(self, message: str, **kwargs):
         """Log critical message with structured data."""
-        if self.logger.isEnabledFor(logging.CRITICAL):
-            formatted_message = self._format_structured_message(message, **kwargs)
-            sanitized_message = self.sanitizer.sanitize_message(formatted_message, self.sensitivity)
-            self.logger.critical(sanitized_message)
+        formatted_message = self._format_structured_message(message, log_level="CRITICAL", **kwargs)
+        sanitized_message = self.sanitizer.sanitize_message(formatted_message, self.sensitivity)
+        self.logger.critical(sanitized_message)
 
     def exception(self, message: str, **kwargs):
         """Log exception with structured data."""
-        if self.logger.isEnabledFor(logging.ERROR):
-            formatted_message = self._format_structured_message(message, **kwargs)
-            sanitized_message = self.sanitizer.sanitize_message(formatted_message, self.sensitivity)
-            self.logger.exception(sanitized_message)
+        formatted_message = self._format_structured_message(message, log_level="ERROR", **kwargs)
+        sanitized_message = self.sanitizer.sanitize_message(formatted_message, self.sensitivity)
+        self.logger.exception(sanitized_message)
 
 
 # Global logger factory

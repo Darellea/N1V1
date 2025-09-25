@@ -241,11 +241,21 @@ class SecurityViolationException(SecurityException):
     pass
 
 
+SECRET_PATTERNS = [
+    re.compile(r"(API_KEY\s*=\s*)([^\s]+)", re.IGNORECASE),
+    re.compile(r"(TOKEN\s*=\s*)([^\s]+)", re.IGNORECASE),
+    re.compile(r"(SECRET\s*=\s*)([^\s]+)", re.IGNORECASE),
+    re.compile(r"(PASSWORD\s*=\s*)([^\s]+)", re.IGNORECASE),
+]
+
 def sanitize_error_message(message: str) -> str:
     """Sanitize error messages to prevent information leakage."""
-    # Remove sensitive data from error messages
-    formatter = SecurityFormatter()
-    return formatter._mask_sensitive_data(message)
+    if not isinstance(message, str):
+        return message
+    sanitized = message
+    for pattern in SECRET_PATTERNS:
+        sanitized = pattern.sub(r"\1***SECRET_MASKED***", sanitized)
+    return sanitized
 
 
 def log_security_event(event_type: str, details: Dict[str, Any], level: str = 'INFO'):

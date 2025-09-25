@@ -193,18 +193,21 @@ def predict(model, features: pd.DataFrame, model_name: Optional[str] = None) -> 
     X = features.copy()
     X = _align_features(model, X)
 
+    # Convert to numpy array for sklearn models
+    X_array = X.values if hasattr(X, 'values') else X
+
     # If model supports predict_proba
     proba = None
     if hasattr(model, "predict_proba"):
         try:
-            proba = model.predict_proba(X)
+            proba = model.predict_proba(X_array)
         except Exception as e:
             logger.warning(f"predict_proba failed: {e}")
             proba = None
 
     preds = None
     try:
-        preds = model.predict(X)
+        preds = model.predict(X_array)
     except Exception as e:
         # As a fallback, try model.predict on numpy array
         logger.error(f"model.predict failed: {e}")

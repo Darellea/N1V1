@@ -42,10 +42,10 @@ def test_import_chain():
             print(".3f")
         except ImportError as e:
             print(f"❌ FAILED to import {module_name}: {e}")
-            return False
+            assert False
         except Exception as e:
             print(f"❌ ERROR importing {module_name}: {e}")
-            return False
+            assert False
 
     print("\n✅ All modules imported successfully!")
     print("\nImport performance:")
@@ -81,10 +81,10 @@ def test_import_chain():
 
     except Exception as e:
         print(f"❌ ERROR testing module functions: {e}")
-        return False
+        assert False
 
     print("\n🎉 Basic import verification PASSED!")
-    return True
+    assert True
 
 
 def test_lazy_import_functionality():
@@ -104,11 +104,11 @@ def test_lazy_import_functionality():
         assert "API_KEY" in result  # Should still contain the key name but mask the value
 
         print("✅ Lazy import functionality working correctly")
-        return True
+        assert True
 
     except Exception as e:
         print(f"❌ ERROR testing lazy import: {e}")
-        return False
+        assert False
 
 
 def test_module_interactions():
@@ -133,11 +133,11 @@ def test_module_interactions():
 
         # This should work without circular import issues
         print("✅ Module interactions working correctly")
-        return True
+        assert True
 
     except Exception as e:
         print(f"❌ ERROR testing module interactions: {e}")
-        return False
+        assert False
 
 
 if __name__ == "__main__":
@@ -148,9 +148,20 @@ if __name__ == "__main__":
     success = True
 
     # Run all tests
-    success &= test_import_chain()
-    success &= test_lazy_import_functionality()
-    success &= test_module_interactions()
+    try:
+        test_import_chain()
+    except AssertionError:
+        success = False
+
+    try:
+        test_lazy_import_functionality()
+    except AssertionError:
+        success = False
+
+    try:
+        test_module_interactions()
+    except AssertionError:
+        success = False
 
     print("\n" + "=" * 60)
     if success:

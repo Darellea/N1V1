@@ -1,59 +1,59 @@
 {
-  "timestamp": "2025-09-18T14:56:05.345009",
+  "timestamp": "2025-09-25T12:26:07.643431",
   "summary": {
-    "total_files": 590,
-    "total_lines": 345088,
-    "code_lines": 271793,
-    "comment_lines": 29119,
-    "comment_ratio_percent": 10.71,
-    "avg_lines_per_file": 584.89
+    "total_files": 886,
+    "total_lines": 1128166,
+    "code_lines": 1045347,
+    "comment_lines": 32377,
+    "comment_ratio_percent": 3.1,
+    "avg_lines_per_file": 1273.33
   },
   "by_type": {
     "other": {
-      "files": 145,
-      "total_lines": 160473,
-      "code_lines": 141714,
-      "comment_lines": 6620
-    },
-    "code": {
-      "files": 304,
-      "total_lines": 155482,
-      "code_lines": 105428,
-      "comment_lines": 20455
-    },
-    "docs": {
-      "files": 27,
-      "total_lines": 12722,
-      "code_lines": 8472,
-      "comment_lines": 1972
+      "files": 179,
+      "total_lines": 872954,
+      "code_lines": 853238,
+      "comment_lines": 6799
     },
     "config": {
-      "files": 114,
-      "total_lines": 16411,
-      "code_lines": 16179,
-      "comment_lines": 72
+      "files": 331,
+      "total_lines": 57245,
+      "code_lines": 55888,
+      "comment_lines": 174
+    },
+    "code": {
+      "files": 335,
+      "total_lines": 174931,
+      "code_lines": 118902,
+      "comment_lines": 22901
+    },
+    "docs": {
+      "files": 41,
+      "total_lines": 23036,
+      "code_lines": 17319,
+      "comment_lines": 2503
     }
   },
   "by_language": {
     "Other": {
-      "files": 145,
-      "lines": 160473
-    },
-    "Python": {
-      "files": 304,
-      "lines": 155482
-    },
-    "Markdown": {
-      "files": 16,
-      "lines": 11583
+      "files": 179,
+      "lines": 872954
     },
     "JSON": {
-      "files": 109,
-      "lines": 15605
+      "files": 315,
+      "lines": 54235
+    },
+    "Python": {
+      "files": 335,
+      "lines": 174931
+    },
+    "Markdown": {
+      "files": 29,
+      "lines": 15640
     },
     "Text": {
-      "files": 10,
-      "lines": 833
+      "files": 11,
+      "lines": 7090
     },
     "TOML": {
       "files": 1,
@@ -61,11 +61,11 @@
     },
     "INI": {
       "files": 1,
-      "lines": 9
+      "lines": 10
     },
     "YAML": {
-      "files": 3,
-      "lines": 725
+      "files": 14,
+      "lines": 2928
     },
     "HTML": {
       "files": 1,
@@ -74,25 +74,50 @@
   },
   "by_component": {
     "other": {
-      "files": 555,
-      "total_lines": 330290,
-      "code_lines": 261293,
-      "comment_lines": 27147
+      "files": 799,
+      "total_lines": 1087511,
+      "code_lines": 1011276,
+      "comment_lines": 29874
     },
     "docs": {
-      "files": 16,
-      "total_lines": 11583,
-      "code_lines": 7390,
-      "comment_lines": 1955
+      "files": 29,
+      "total_lines": 15640,
+      "code_lines": 9983,
+      "comment_lines": 2486
     },
     "config": {
-      "files": 19,
-      "total_lines": 3215,
-      "code_lines": 3110,
+      "files": 58,
+      "total_lines": 25015,
+      "code_lines": 24088,
       "comment_lines": 17
     }
   },
   "largest_files": [
+    {
+      "path": "logs\\core.log",
+      "lines": 536101,
+      "extension": ".log"
+    },
+    {
+      "path": "logs\\crypto_bot.log.3",
+      "lines": 53940,
+      "extension": ".3"
+    },
+    {
+      "path": "logs\\crypto_bot.log.1",
+      "lines": 52815,
+      "extension": ".1"
+    },
+    {
+      "path": "logs\\crypto_bot.log.2",
+      "lines": 46463,
+      "extension": ".2"
+    },
+    {
+      "path": "test_output.log.1",
+      "lines": 35334,
+      "extension": ".1"
+    },
     {
       "path": ".ruff_cache\\content\\7020655576297244954",
       "lines": 27269,
@@ -100,18 +125,8 @@
     },
     {
       "path": "logs\\crypto_bot.log",
-      "lines": 26878,
+      "lines": 22767,
       "extension": ".log"
-    },
-    {
-      "path": "logs\\core.log",
-      "lines": 16096,
-      "extension": ".log"
-    },
-    {
-      "path": "htmlcov\\function_index.html",
-      "lines": 9963,
-      "extension": ".html"
     },
     {
       "path": ".ruff_cache\\content\\1879841978194122611",
@@ -119,45 +134,30 @@
       "extension": ""
     },
     {
+      "path": "test_output.log",
+      "lines": 6103,
+      "extension": ".log"
+    },
+    {
       "path": "logs\\anomalies.json",
       "lines": 6078,
       "extension": ".json"
-    },
-    {
-      "path": ".ruff_cache\\content\\4471166355422738127",
-      "lines": 3920,
-      "extension": ""
-    },
-    {
-      "path": "md\\RAW.md",
-      "lines": 2539,
-      "extension": ".md"
-    },
-    {
-      "path": ".ruff_cache\\content\\17941625260945127573",
-      "lines": 2363,
-      "extension": ""
-    },
-    {
-      "path": "htmlcov\\class_index.html",
-      "lines": 2163,
-      "extension": ".html"
     }
   ],
   "quality_metrics": {
     "test_to_production_ratio": 0.0,
     "component_distribution": {
       "other": {
-        "lines": 261293,
-        "percentage": 247.84
+        "lines": 1011276,
+        "percentage": 850.51
       },
       "docs": {
-        "lines": 7390,
-        "percentage": 7.01
+        "lines": 9983,
+        "percentage": 8.4
       },
       "config": {
-        "lines": 3110,
-        "percentage": 2.95
+        "lines": 24088,
+        "percentage": 20.26
       }
     }
   }

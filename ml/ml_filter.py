@@ -212,8 +212,11 @@ class LogisticRegressionModel(MLModel):
 
         X_aligned = X[self.feature_names]
 
-        predictions = self.model.predict(X_aligned.values)
-        probabilities = self.model.predict_proba(X_aligned.values)
+        # Convert to numpy array for sklearn models
+        X_array = X_aligned.values
+
+        predictions = self.model.predict(X_array)
+        probabilities = self.model.predict_proba(X_array)
 
         # Get confidence scores (probability of predicted class)
         confidence_scores = np.max(probabilities, axis=1)

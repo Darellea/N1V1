@@ -394,7 +394,7 @@ class RealTimePerformanceMonitor:
             except Exception as e:
                 logger.exception(f"Error updating baseline for {metric_name}: {e}")
 
-    async def _detect_anomalies(self, metrics: Dict[str, float]) -> List[AnomalyDetectionResult]:
+    def _detect_anomalies(self, metrics: Dict[str, float]) -> List[AnomalyDetectionResult]:
         """Detect anomalies in performance metrics."""
         anomalies = []
         current_time = time.time()
@@ -539,7 +539,7 @@ class RealTimePerformanceMonitor:
                     {"alert_id": alert.alert_id, "severity": alert.severity}
                 )
 
-    async def _calculate_system_health_score(self) -> float:
+    def _calculate_system_health_score(self) -> float:
         """Calculate overall system health score (0-100)."""
         # Initialize at 100.0 and only reduce if anomalies detected
         base_health = 100.0

@@ -45,8 +45,6 @@ class MetricsResult:
     max_drawdown_duration: int  # days
     value_at_risk_95: float
     expected_shortfall_95: float
-    beta: Optional[float]
-    alpha: Optional[float]
 
     # Trade Statistics
     total_trades: int
@@ -59,10 +57,12 @@ class MetricsResult:
     largest_win: float
     largest_loss: float
 
-    # Risk-Adjusted Metrics
-    kelly_criterion: float
-    ulcer_index: float
-    downside_deviation: float
+    # Optional fields with defaults for backward compatibility
+    beta: Optional[float] = None
+    alpha: Optional[float] = None
+    kelly_criterion: Optional[float] = None
+    ulcer_index: Optional[float] = None
+    downside_deviation: Optional[float] = None
 
     # Metadata
     benchmark_return: Optional[float] = None
@@ -85,7 +85,12 @@ class MetricsResult:
         data['timestamp'] = datetime.fromisoformat(data['timestamp'])
         data['period_start'] = datetime.fromisoformat(data['period_start'])
         data['period_end'] = datetime.fromisoformat(data['period_end'])
-        return cls(**data)
+
+        # Filter data to only include fields that exist in the dataclass
+        import dataclasses
+        fields = {f.name for f in dataclasses.fields(cls)}
+        filtered_data = {k: v for k, v in data.items() if k in fields}
+        return cls(**filtered_data)
 
 
 class MetricsEngine:

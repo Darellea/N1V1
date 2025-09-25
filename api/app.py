@@ -3,6 +3,11 @@ FastAPI application for the crypto trading bot.
 Provides REST endpoints for monitoring and controlling the bot.
 """
 
+try:
+    import multipart  # required by Starlette
+except ImportError:
+    import python_multipart as multipart
+
 from fastapi import FastAPI, HTTPException, Request, Depends, Response, APIRouter
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,6 +29,9 @@ from slowapi.middleware import SlowAPIMiddleware
 from slowapi.errors import RateLimitExceeded
 import redis
 from .middleware import CustomExceptionMiddleware, RateLimitExceptionMiddleware, RateLimitException
+
+# Re-export for backward compatibility
+RateLimitJSONMiddleware = RateLimitExceptionMiddleware
 
 
 

@@ -252,6 +252,98 @@ class TestBotEngineInitialization:
 
         assert engine.live_display is None
 
+    @pytest.mark.parametrize("invalid_balance,expected_default", [
+        ("invalid", 1000.0),
+        (None, 1000.0),
+        (-100, 1000.0),
+        (0, 1000.0),
+    ])
+    @pytest.mark.asyncio
+    async def test_initialization_with_invalid_balance(self, invalid_balance, expected_default):
+        """Test initialization with various invalid balance values."""
+        config = {
+            "environment": {"mode": "paper"},
+            "trading": {
+                "portfolio_mode": False,
+                "symbol": "BTC/USDT",
+                "initial_balance": invalid_balance
+            },
+            "exchange": {"markets": ["BTC/USDT"], "base_currency": "USDT"},
+            "strategies": {"active_strategies": [], "strategy_config": {}},
+            "notifications": {"discord": {"enabled": False}},
+            "monitoring": {"terminal_display": False, "update_interval": 1.0},
+            "risk_management": {},
+            "backtesting": {"timeframe": "1h"}
+        }
+        with patch('core.bot_engine.DataFetcher'), \
+             patch('core.bot_engine.OrderManager'), \
+             patch('core.bot_engine.RiskManager'), \
+             patch('core.bot_engine.SignalRouter'), \
+             patch('core.bot_engine.DiscordNotifier', return_value=None):
+
+            engine = BotEngine(config)
+            assert engine.starting_balance == expected_default
+
+    @pytest.mark.asyncio
+    async def test_initialization_discord_enabled(self, mock_config, mock_components):
+        """Test initialization with Discord notifications enabled."""
+        mock_config["notifications"]["discord"]["enabled"] = True
+
+        with patch('core.bot_engine.DataFetcher', return_value=mock_components["data_fetcher"]), \
+             patch('core.bot_engine.OrderManager', return_value=mock_components["order_manager"]), \
+             patch('core.bot_engine.RiskManager', return_value=mock_components["risk_manager"]), \
+             patch('core.bot_engine.SignalRouter', return_value=mock_components["signal_router"]), \
+             patch('core.bot_engine.DiscordNotifier', return_value=mock_components["notifier"]):
+
+            engine = BotEngine(mock_config)
+            await engine.initialize()
+
+            assert engine.notifier == mock_components["notifier"]
+            mock_components["notifier"].initialize.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_initialize_strategies_with_active_strategies(self, mock_config, mock_components):
+        """Test initializing strategies with active strategies."""
+        mock_config["strategies"]["active_strategies"] = ["test_strategy"]
+        mock_config["strategies"]["strategy_config"] = {"test_strategy": {}}
+
+        mock_strategy = Mock(spec=BaseStrategy)
+        mock_strategy.initialize = AsyncMock()
+
+        with patch('core.bot_engine.DataFetcher', return_value=mock_components["data_fetcher"]), \
+             patch('core.bot_engine.OrderManager', return_value=mock_components["order_manager"]), \
+             patch('core.bot_engine.RiskManager', return_value=mock_components["risk_manager"]), \
+             patch('core.bot_engine.SignalRouter', return_value=mock_components["signal_router"]), \
+             patch('core.bot_engine.DiscordNotifier', return_value=None), \
+             patch('core.bot_engine.STRATEGY_MAP', {"test_strategy": Mock(return_value=mock_strategy)}):
+
+            engine = BotEngine(mock_config)
+            await engine.initialize()
+
+            assert len(engine.strategies) == 1
+            assert engine.strategies[0] == mock_strategy
+            mock_strategy.initialize.assert_called_once_with(mock_components["data_fetcher"])
+
+    @pytest.mark.asyncio
+    async def test_initialize_strategies_with_unknown_strategy(self, mock_config, mock_components):
+        """Test initializing strategies with unknown strategy name."""
+        mock_config["strategies"]["active_strategies"] = ["unknown_strategy"]
+        mock_config["strategies"]["strategy_config"] = {"unknown_strategy": {}}
+
+        with patch('core.bot_engine.DataFetcher', return_value=mock_components["data_fetcher"]), \
+             patch('core.bot_engine.OrderManager', return_value=mock_components["order_manager"]), \
+             patch('core.bot_engine.RiskManager', return_value=mock_components["risk_manager"]), \
+             patch('core.bot_engine.SignalRouter', return_value=mock_components["signal_router"]), \
+             patch('core.bot_engine.DiscordNotifier', return_value=None), \
+             patch('core.bot_engine.STRATEGY_MAP', {}), \
+             patch('core.bot_engine.logger') as mock_logger:
+
+            engine = BotEngine(mock_config)
+            await engine.initialize()
+
+            assert len(engine.strategies) == 0
+            mock_logger.warning.assert_called_once_with("Strategy not found: unknown_strategy")
+
 
 class TestBotEngineTradingCycle:
     """Test BotEngine trading cycle functionality."""
@@ -344,6 +436,73 @@ class TestBotEngineTradingCycle:
             assert result == {"BTC/USDT": "cached_data"}
             # Should not call data fetcher
             mock_engine.data_fetcher.get_historical_data.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_trading_cycle_with_portfolio_mode(self, mock_config, mock_data_fetcher, mock_order_manager, mock_risk_manager, mock_signal_router):
+        """Test trading cycle in portfolio mode."""
+        config = mock_config.copy()
+        config["trading"]["portfolio_mode"] = True
+        config["exchange"]["markets"] = ["BTC/USDT", "ETH/USDT"]
+
+        with patch('core.bot_engine.DataFetcher', return_value=mock_data_fetcher), \
+             patch('core.bot_engine.OrderManager', return_value=mock_order_manager), \
+             patch('core.bot_engine.RiskManager', return_value=mock_risk_manager), \
+             patch('core.bot_engine.SignalRouter', return_value=mock_signal_router):
+
+            engine = BotEngine(config)
+            engine.data_fetcher = mock_data_fetcher
+            engine.order_manager = mock_order_manager
+            engine.risk_manager = mock_risk_manager
+            engine.signal_router = mock_signal_router
+            engine.strategies = []
+            engine.task_manager = MagicMock()
+            engine.pairs = ["BTC/USDT", "ETH/USDT"]
+            engine.portfolio_mode = True
+
+            # Disable safe mode
+            mock_order_manager.safe_mode_active = False
+            mock_risk_manager.block_signals = False
+            mock_signal_router.block_signals = False
+
+            # Mock realtime data
+            mock_data_fetcher.get_realtime_data = AsyncMock(return_value={"BTC/USDT": MagicMock(), "ETH/USDT": MagicMock()})
+
+            await engine._trading_cycle()
+
+            mock_data_fetcher.get_realtime_data.assert_called_once_with(["BTC/USDT", "ETH/USDT"])
+
+    @pytest.mark.asyncio
+    async def test_trading_cycle_with_safe_mode_active(self, mock_config, mock_data_fetcher, mock_order_manager, mock_risk_manager, mock_signal_router, mock_notifier):
+        """Test trading cycle when global safe mode is active."""
+        # Enable Discord notifications in config
+        config = mock_config.copy()
+        config["notifications"]["discord"]["enabled"] = True
+
+        with patch('core.bot_engine.DataFetcher', return_value=mock_data_fetcher), \
+             patch('core.bot_engine.OrderManager', return_value=mock_order_manager), \
+             patch('core.bot_engine.RiskManager', return_value=mock_risk_manager), \
+             patch('core.bot_engine.SignalRouter', return_value=mock_signal_router), \
+             patch('core.bot_engine.DiscordNotifier', return_value=mock_notifier):
+
+            engine = BotEngine(config)
+            engine.data_fetcher = mock_data_fetcher
+            engine.order_manager = mock_order_manager
+            engine.risk_manager = mock_risk_manager
+            engine.signal_router = mock_signal_router
+            engine.notifier = mock_notifier
+            engine.strategies = []
+            engine.task_manager = MagicMock()
+            engine.pairs = ["BTC/USDT"]
+
+            # Enable safe mode
+            mock_order_manager.safe_mode_active = True
+            mock_risk_manager.block_signals = False
+            mock_signal_router.block_signals = False
+
+            await engine._trading_cycle()
+
+            # Should not proceed to trading
+            mock_notifier.send_alert.assert_called_once_with("Bot entering SAFE MODE: suspending new trades.")
 
     @pytest.mark.asyncio
     async def test_check_safe_mode_conditions_normal(self, mock_engine):
@@ -469,6 +628,12 @@ class TestBotEnginePerformanceTracking:
         """Create mock engine."""
         engine = BotEngine(mock_config)
         engine.starting_balance = 10000.0
+
+        # Initialize order_manager for tests that need it
+        engine.order_manager = Mock()
+        engine.order_manager.get_equity = AsyncMock(return_value=10000.0)
+        engine.order_manager.get_balance = AsyncMock(return_value=10000.0)
+
         return engine
 
     def test_update_performance_metrics_win(self, mock_engine):
@@ -562,6 +727,52 @@ class TestBotEnginePerformanceTracking:
         record = mock_engine.performance_stats["equity_progression"][0]
         # Should calculate equity from starting balance + total pnl
         assert record["equity"] == 10050.0  # 10000 + 50
+
+    @pytest.mark.asyncio
+    async def test_record_trade_equity_backtest_mode(self, mock_config, mock_order_manager):
+        """Test recording trade equity in backtest mode."""
+        config = mock_config.copy()
+        config["environment"]["mode"] = "backtest"
+
+        engine = BotEngine(config)
+        engine.mode = TradingMode.BACKTEST
+        engine.order_manager = mock_order_manager
+        engine.starting_balance = 1000.0
+        engine.performance_stats["total_pnl"] = 50.0
+        mock_order_manager.get_equity.return_value = 0.0  # Simulate no tracking
+
+        order_result = {"id": "test_trade", "pnl": 50.0}
+
+        await engine.record_trade_equity(order_result)
+
+        record = engine.performance_stats["equity_progression"][0]
+        assert record["equity"] == 1050.0  # starting_balance + total_pnl
+
+    @pytest.mark.asyncio
+    async def test_check_global_safe_mode_activation(self, mock_config, mock_order_manager, mock_risk_manager, mock_signal_router):
+        """Test global safe mode activation."""
+        engine = BotEngine(mock_config)
+        engine.order_manager = mock_order_manager
+        engine.risk_manager = mock_risk_manager
+        engine.signal_router = mock_signal_router
+
+        # Initially not safe
+        mock_order_manager.safe_mode_active = False
+        mock_risk_manager.block_signals = False
+        mock_signal_router.block_signals = False
+
+        await engine._check_global_safe_mode()
+        assert engine.global_safe_mode is False
+
+        # Activate safe mode
+        mock_order_manager.safe_mode_active = True
+        await engine._check_global_safe_mode()
+        assert engine.global_safe_mode is True
+
+        # Deactivate
+        mock_order_manager.safe_mode_active = False
+        await engine._check_global_safe_mode()
+        assert engine.global_safe_mode is False
 
     def test_calculate_cumulative_return(self, mock_engine):
         """Test cumulative return calculation."""
@@ -686,6 +897,45 @@ class TestBotEngineStateManagement:
 
             mock_emergency.assert_called_once()
             mock_logger.error.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_run_with_paused_state(self, mock_config):
+        """Test run loop when bot is paused."""
+        engine = BotEngine(mock_config)
+        engine.state.running = True
+        engine.state.paused = True
+        engine.task_manager = MagicMock()
+
+        with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+
+            async def stop_after_pause(*args, **kwargs):
+                engine.state.running = False
+
+            mock_sleep.side_effect = stop_after_pause
+
+            await engine.run()
+
+            mock_sleep.assert_called_once_with(1)
+
+    @pytest.mark.asyncio
+    async def test_run_with_exception(self, mock_config):
+        """Test run loop with exception in trading cycle."""
+        engine = BotEngine(mock_config)
+        engine.state.running = True
+        engine.task_manager = MagicMock()
+        engine.live_display = None
+
+        async def fake_emergency_shutdown():
+            engine.state.running = False
+
+        with patch.object(engine, '_trading_cycle', side_effect=Exception("Test exception")), \
+             patch.object(engine, '_emergency_shutdown', side_effect=fake_emergency_shutdown) as mock_emergency, \
+             patch('core.bot_engine.logger') as mock_logger:
+
+            await engine.run()
+
+            mock_emergency.assert_called_once()
+            mock_logger.error.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_emergency_shutdown_complete(self, mock_engine):
@@ -1147,6 +1397,76 @@ class TestBotEngineUtilityFunctions:
         assert "BTC/USDT" in result
         assert 'single_timeframe' in result["BTC/USDT"]
         assert 'multi_timeframe' in result["BTC/USDT"]
+
+    def test_initialize_performance_stats(self, mock_config):
+        """Test performance stats initialization."""
+        engine = BotEngine(mock_config)
+
+        # Clear existing stats
+        engine.performance_stats = {}
+
+        engine._initialize_performance_stats()
+
+        assert "total_pnl" in engine.performance_stats
+        assert "equity_history" in engine.performance_stats
+        assert "returns_history" in engine.performance_stats
+        assert "wins" in engine.performance_stats
+        assert "losses" in engine.performance_stats
+        assert "equity_progression" in engine.performance_stats
+
+    def test_update_pnl(self, mock_config):
+        """Test PnL update."""
+        engine = BotEngine(mock_config)
+        engine.performance_stats["total_pnl"] = 100.0
+
+        engine._update_pnl(50.0)
+        assert engine.performance_stats["total_pnl"] == 150.0
+
+    def test_update_win_loss_counts(self, mock_config):
+        """Test win/loss count updates."""
+        engine = BotEngine(mock_config)
+
+        # Test win
+        engine._update_win_loss_counts(50.0)
+        assert engine.performance_stats["wins"] == 1
+        assert engine.performance_stats["losses"] == 0
+
+        # Test loss
+        engine._update_win_loss_counts(-25.0)
+        assert engine.performance_stats["wins"] == 1
+        assert engine.performance_stats["losses"] == 1
+
+        # Test zero (should not count)
+        engine._update_win_loss_counts(0.0)
+        assert engine.performance_stats["wins"] == 1
+        assert engine.performance_stats["losses"] == 1
+
+    def test_log_status(self, mock_config):
+        """Test logging bot status."""
+        engine = BotEngine(mock_config)
+        engine.state.balance = 1000.0
+        engine.state.equity = 1000.0
+        engine.state.active_orders = 0
+        engine.state.open_positions = 0
+
+        with patch('core.bot_engine.logger') as mock_logger:
+            engine._log_status()
+
+            mock_logger.info.assert_called_once()
+            call_args = mock_logger.info.call_args[0][0]
+            assert "Bot Status" in call_args
+            assert "PAPER" in call_args
+
+    def test_print_status_table_exception(self, mock_config):
+        """Test print_status_table with exception."""
+        engine = BotEngine(mock_config)
+        engine.state.balance = "invalid"  # Invalid type to trigger exception
+
+        with patch('core.bot_engine.logger') as mock_logger:
+            engine.print_status_table()
+
+            # Should still log something, but handle exception
+            mock_logger.exception.assert_called_with("Failed to log status table")
 
 
 if __name__ == "__main__":

@@ -203,7 +203,8 @@ class BaseStrategy(ABC):
         for symbol in self.config.symbols:
             data = await self._get_symbol_data_with_retry(symbol)
             if data is not None:
-                data["symbol"] = symbol  # Add symbol column
+                data = data.copy()
+                data.loc[:, "symbol"] = symbol
                 all_data.append(data)
 
         if not all_data:

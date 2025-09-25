@@ -924,6 +924,41 @@ def mock_dataframe():
 
 
 @pytest.fixture
+def mock_config() -> Dict[str, Any]:
+    """Create mock configuration for testing that mirrors test_config."""
+    return {
+        "environment": {"mode": "paper"},
+        "trading": {
+            "portfolio_mode": False,
+            "symbol": "BTC/USDT",
+            "initial_balance": 10000.0,
+            "pair_allocation": {"BTC/USDT": 0.6, "ETH/USDT": 0.4}
+        },
+        "exchange": {
+            "markets": ["BTC/USDT"],
+            "base_currency": "USDT"
+        },
+        "strategies": {
+            "active_strategies": ["TestStrategy"],
+            "strategy_config": {
+                "TestStrategy": {"param1": "value1"}
+            }
+        },
+        "notifications": {
+            "discord": {"enabled": False}
+        },
+        "monitoring": {
+            "update_interval": 1.0,
+            "terminal_display": False
+        },
+        "risk_management": {},
+        "backtesting": {"timeframe": "1h"},
+        "cache": {"enabled": False},
+        "multi_timeframe": {}
+    }
+
+
+@pytest.fixture
 def mock_config_loader():
     """Mock configuration loader for testing."""
     loader = Mock()

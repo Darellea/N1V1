@@ -15,7 +15,6 @@ from enum import Enum
 from functools import wraps
 import sys
 
-# Lazy import to avoid circular dependency
 def _get_sanitize_error_message():
     from utils.security import sanitize_error_message
     return sanitize_error_message
