@@ -82,8 +82,33 @@ class MainConfig(BaseModel):
     monitoring: MonitoringConfig
     strategies: StrategiesConfig
 
+    # Allow additional sections for DI compatibility
+    trading: Optional[Dict[str, Any]] = None
+    order: Optional[Dict[str, Any]] = None
+    risk: Optional[Dict[str, Any]] = None
+    backtesting: Optional[Dict[str, Any]] = None
+    notifications: Optional[Dict[str, Any]] = None
+    logging: Optional[Dict[str, Any]] = None
+    advanced: Optional[Dict[str, Any]] = None
+    profiling: Optional[Dict[str, Any]] = None
+    queue: Optional[Dict[str, Any]] = None
+    event_bus: Optional[Dict[str, Any]] = None
+    diagnostics: Optional[Dict[str, Any]] = None
+    knowledge_base: Optional[Dict[str, Any]] = None
+    strategy_selector: Optional[Dict[str, Any]] = None
+    multi_timeframe: Optional[Dict[str, Any]] = None
+    regime_forecasting: Optional[Dict[str, Any]] = None
+    strategy_generator: Optional[Dict[str, Any]] = None
+    ensemble: Optional[Dict[str, Any]] = None
+    performance_tracker: Optional[Dict[str, Any]] = None
+    cache: Optional[Dict[str, Any]] = None
+    memory: Optional[Dict[str, Any]] = None
+    data_manager: Optional[Dict[str, Any]] = None
+    trading_coordinator: Optional[Dict[str, Any]] = None
+    bot_engine: Optional[Dict[str, Any]] = None
+
     class Config:
-        extra = "allow"  # Allow extra known sections
+        extra = "forbid"
 
 
 # Safe defaults for missing configuration
@@ -232,6 +257,9 @@ class ConfigManager:
             logger.error(error_msg)
             raise ValueError(error_msg)
 
+        # Set validated main config
+        self.main_config = MainConfig(**config_dict)
+
         # Merge validated config with existing config
         self._merge_config(config_dict)
 
@@ -307,21 +335,8 @@ class ConfigManager:
         if os.getenv("STARTING_BALANCE"):
             self._config.performance_tracker.starting_balance = float(os.getenv("STARTING_BALANCE"))
 
-        # Load secrets securely (async operation)
-        try:
-            # Try to run async secret loading in current event loop if available
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If event loop is running, we can't use run_until_complete
-                # Defer secret loading to a separate async call
-                logger.info("Event loop running, deferring secure secret loading")
-                # We'll load secrets later via async method
-            else:
-                # No event loop running, we can load secrets synchronously
-                loop.run_until_complete(self._load_secrets_securely())
-        except RuntimeError:
-            # No event loop, defer loading
-            logger.info("No event loop available, deferring secure secret loading")
+        # Load secrets securely (async operation) - always defer during sync initialization
+        logger.info("Deferring secure secret loading during sync initialization")
 
     async def _load_secrets_securely(self) -> None:
         """Load secrets securely from Vault/KMS with fallback to environment."""
@@ -386,16 +401,21 @@ class ConfigManager:
             self._set_nested_value(self._config, key.split("."), value)
 
     def _set_nested_value(self, obj: Any, keys: list, value: Any) -> None:
-        """Set a nested configuration value."""
+        """Set a nested configuration value inside dicts or objects."""
         if len(keys) == 1:
-            setattr(obj, keys[0], value)
-        else:
-            attr = getattr(obj, keys[0])
-            if attr is None:
-                # Create nested object if it doesn't exist
-                setattr(obj, keys[0], type(attr)())
-                attr = getattr(obj, keys[0])
-            self._set_nested_value(attr, keys[1:], value)
+            if isinstance(obj, dict):
+                obj[keys[0]] = value
+            else:
+                setattr(obj, keys[0], value)
+            return
+        next_obj = obj.get(keys[0]) if isinstance(obj, dict) else getattr(obj, keys[0], None)
+        if next_obj is None:
+            next_obj = {}
+            if isinstance(obj, dict):
+                obj[keys[0]] = next_obj
+            else:
+                setattr(obj, keys[0], next_obj)
+        self._set_nested_value(next_obj, keys[1:], value)
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value by dot-separated key.
@@ -627,6 +647,11 @@ class ConfigManager:
                     if key not in section_config:
                         section_config[key] = default_value
                         logger.info(f"Applied safe default for {section}.{key}: {default_value}")
+
+        # Special handling for performance tracker starting balance
+        if "performance_tracker" not in updated_config:
+            updated_config["performance_tracker"] = {}
+        updated_config["performance_tracker"].setdefault("starting_balance", 2000.0)
 
         return updated_config
 

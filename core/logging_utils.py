@@ -5,6 +5,7 @@ This module provides sanitization and structured logging capabilities to prevent
 information disclosure while maintaining useful debugging information.
 """
 
+import json
 import logging
 import re
 from typing import Dict, Any, Optional, Union
@@ -119,7 +120,8 @@ class StructuredLogger:
 
     def _format_structured_message(self, message: str, log_level: str = "INFO", **kwargs) -> str:
         """Format a structured log message as JSON."""
-        import json
+        # Fields that should not be sanitized (metadata fields)
+        non_sensitive_fields = {'component', 'operation', 'user_id', 'level', 'message'}
 
         # Sanitize kwargs based on sensitivity
         sanitized_kwargs = {}
@@ -127,9 +129,12 @@ class StructuredLogger:
             if self.sensitivity in [LogSensitivity.DEBUG, LogSensitivity.AUDIT]:
                 # Keep original types for DEBUG/AUDIT
                 sanitized_kwargs[key] = value
+            elif key in non_sensitive_fields:
+                # Don't sanitize metadata fields
+                sanitized_kwargs[key] = value
             else:
                 # For SECURE/INFO, apply semantic masking for known fields
-                if key in ['amount', 'balance', 'pnl'] and self.sensitivity in [LogSensitivity.SECURE, LogSensitivity.INFO]:
+                if key in ['amount', 'balance', 'pnl', 'api_key'] and self.sensitivity in [LogSensitivity.SECURE, LogSensitivity.INFO]:
                     sanitized_kwargs[key] = f"***{key.upper()}_MASKED***"
                 else:
                     # Otherwise sanitize string representations
@@ -142,7 +147,7 @@ class StructuredLogger:
         # Create structured data
         log_data = {"level": log_level, "message": message, **sanitized_kwargs}
 
-        # Return JSON string
+        # Return JSON formatted string
         return json.dumps(log_data)
 
     def debug(self, message: str, **kwargs):
@@ -155,52 +160,52 @@ class StructuredLogger:
         # Remove 'level' from kwargs to avoid conflicts
         filtered_kwargs = {k: v for k, v in kwargs.items() if k != 'level'}
         formatted_message = self._format_structured_message(message, log_level="INFO", **filtered_kwargs)
-        sanitized_message = self.sanitizer.sanitize_message(formatted_message, self.sensitivity)
-        self.logger.info(sanitized_message)
+        # For structured logging, values are already sanitized in JSON, don't sanitize again
+        self.logger.info(formatted_message)
 
     def warning(self, message: str, **kwargs):
         """Log warning message with structured data."""
         formatted_message = self._format_structured_message(message, log_level="WARNING", **kwargs)
-        sanitized_message = self.sanitizer.sanitize_message(formatted_message, self.sensitivity)
-        self.logger.warning(sanitized_message)
+        # For structured logging, values are already sanitized in JSON, don't sanitize again
+        self.logger.warning(formatted_message)
 
     def error(self, message: str, **kwargs):
         """Log error message with structured data."""
         formatted_message = self._format_structured_message(message, log_level="ERROR", **kwargs)
-        sanitized_message = self.sanitizer.sanitize_message(formatted_message, self.sensitivity)
-        self.logger.error(sanitized_message)
+        # For structured logging, values are already sanitized in JSON, don't sanitize again
+        self.logger.error(formatted_message)
 
     def critical(self, message: str, **kwargs):
         """Log critical message with structured data."""
         formatted_message = self._format_structured_message(message, log_level="CRITICAL", **kwargs)
-        sanitized_message = self.sanitizer.sanitize_message(formatted_message, self.sensitivity)
-        self.logger.critical(sanitized_message)
+        # For structured logging, values are already sanitized in JSON, don't sanitize again
+        self.logger.critical(formatted_message)
 
     def exception(self, message: str, **kwargs):
         """Log exception with structured data."""
         formatted_message = self._format_structured_message(message, log_level="ERROR", **kwargs)
-        sanitized_message = self.sanitizer.sanitize_message(formatted_message, self.sensitivity)
-        self.logger.exception(sanitized_message)
+        # For structured logging, values are already sanitized in JSON, don't sanitize again
+        self.logger.exception(formatted_message)
 
 
 # Global logger factory
 _loggers: Dict[str, StructuredLogger] = {}
-_global_sensitivity: Optional[LogSensitivity] = None
+_global_sensitivity: LogSensitivity = LogSensitivity.INFO
 
-def get_structured_logger(name: str, sensitivity: LogSensitivity = LogSensitivity.INFO) -> StructuredLogger:
+def get_structured_logger(name: str, sensitivity: Optional[LogSensitivity] = None) -> StructuredLogger:
     """
     Get or create a structured logger instance.
 
     Args:
         name: Logger name
-        sensitivity: Default sensitivity level
+        sensitivity: Optional sensitivity level (uses global if not provided)
 
     Returns:
         StructuredLogger instance
     """
     if name not in _loggers:
-        # Use global sensitivity if set, otherwise use provided sensitivity
-        effective_sensitivity = _global_sensitivity if _global_sensitivity is not None else sensitivity
+        # Use provided sensitivity or global default
+        effective_sensitivity = sensitivity or _global_sensitivity
         _loggers[name] = StructuredLogger(name, effective_sensitivity)
     return _loggers[name]
 

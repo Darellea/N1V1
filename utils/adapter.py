@@ -7,6 +7,7 @@ into plain dictionaries for loggers, order manager, and notifier code paths.
 
 from typing import Any, Dict
 import dataclasses
+import enum
 import logging
 import time
 from datetime import datetime
@@ -91,6 +92,20 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
 
     Returns an empty dict for None input.
     """
+    def _convert_value(v):
+        if isinstance(v, enum.Enum):
+            # Prefer .value if defined
+            if hasattr(v, "value"):
+                if isinstance(v.value, str):
+                    return v.value.lower()
+                return v.value
+            return v.name.lower()
+        elif isinstance(v, dict):
+            return {k: _convert_value(val) for k, val in v.items()}
+        elif isinstance(v, list):
+            return [_convert_value(item) for item in v]
+        return v
+
     if signal is None:
         return {}
 
@@ -102,20 +117,12 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
     try:
         if dataclasses.is_dataclass(signal):
             result = dataclasses.asdict(signal)
-            # Convert enums to their values/names for JSON serialization
-            for key, value in result.items():
-                if hasattr(value, "value"):
-                    result[key] = value.value
-                elif hasattr(value, "name"):
-                    # Keep SignalType names uppercase for schema validation
-                    if key == "signal_type":
-                        result[key] = value.name
-                    else:
-                        result[key] = value.name.lower()
-            
+            # Apply enum conversion
+            result = _convert_value(result)
+
             # Special handling for TradingSignal dataclass - map quantity to amount
             if hasattr(signal, '__class__') and signal.__class__.__name__ == 'TradingSignal':
-                if 'quantity' in result:
+                if 'quantity' in result and result.get('quantity') is not None:
                     result['amount'] = result.pop('quantity')
 
             # Normalize timestamp to milliseconds
@@ -179,19 +186,8 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
             # If property access raises, skip that attribute.
             continue
 
-        # Normalize enums (e.g., OrderType) to value or name
-        try:
-            if a == "signal_type" and hasattr(val, "name"):
-                # Keep SignalType names uppercase for schema validation
-                val = val.name
-            elif hasattr(val, "value"):
-                val = val.value
-            elif hasattr(val, "name"):
-                # some enums expose .name; convert to lower-case string for readability
-                val = val.name.lower()
-        except AttributeError:
-            # If enum-like object doesn't expose expected attributes, ignore and continue.
-            pass
+        # Apply enum conversion
+        val = _convert_value(val)
 
         # Normalize timestamp to milliseconds
         if a == 'timestamp':
@@ -215,7 +211,7 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
         if isinstance(obj_dict, dict):
             for k, v in obj_dict.items():
                 if k not in out and not k.startswith("_"):
-                    out[k] = v
+                    out[k] = _convert_value(v)
     except AttributeError:
         # If accessing __dict__ raises, give up on this fallback.
         pass

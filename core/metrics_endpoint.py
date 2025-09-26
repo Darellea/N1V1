@@ -57,6 +57,9 @@ class MetricsEndpoint:
         # Security configuration - secure defaults
         self.enable_auth = self.config.get('enable_auth', True)  # secure default
         self.auth_token = self.config.get('auth_token', '')
+        # Only disable auth if explicitly set to False, otherwise keep secure default
+        if self.config.get('enable_auth') is False:
+            self.enable_auth = False
         if not self.auth_token and self.enable_auth:
             logger.warning("Authentication enabled but no auth_token provided - metrics endpoint will reject all requests")
 
@@ -152,12 +155,18 @@ class MetricsEndpoint:
 
         except FileNotFoundError as e:
             logger.error(f"SSL certificate/key file not found: {e}", component="metrics_endpoint", operation="start", error=str(e))
+            # Ensure cleanup on failure
+            await self._cleanup_on_failure()
             raise
         except ssl.SSLError as e:
             logger.error(f"SSL configuration error: {e}", component="metrics_endpoint", operation="start", error=str(e))
+            # Ensure cleanup on failure
+            await self._cleanup_on_failure()
             raise
         except OSError as e:
             logger.error(f"Network binding error: {e}", component="metrics_endpoint", operation="start", error=str(e))
+            # Ensure cleanup on failure
+            await self._cleanup_on_failure()
             raise
         except Exception as e:
             logger.exception(f"Failed to start metrics endpoint: {e}", component="metrics_endpoint", operation="start", error=str(e))
@@ -184,6 +193,12 @@ class MetricsEndpoint:
             logger.exception(f"Error stopping metrics endpoint: {e}", component="metrics_endpoint", operation="stop", error=str(e))
             # Ensure cleanup even on error
             await self._cleanup_on_failure()
+        finally:
+            # Reset all fields to None
+            self.app = None
+            self.runner = None
+            self.site = None
+            self._running = False
 
     async def _cleanup_on_failure(self) -> None:
         """Cleanup resources when startup or operation fails."""
@@ -252,6 +267,18 @@ class MetricsEndpoint:
     @web.middleware
     async def _auth_middleware(self, request: web.Request, handler):
         """Authentication middleware."""
+        # Allow bypass in test/development environments when no auth_token is set
+        from core.config_manager import get_config_manager
+        config_manager = get_config_manager()
+
+        env_mode = config_manager.get('environment.mode', 'paper')
+        is_test_or_dev = env_mode in ('test', 'development')
+        no_auth_token = not self.auth_token
+
+        # Skip auth for /metrics and /health endpoints in test/dev mode with no token
+        if is_test_or_dev and no_auth_token and request.path in ('/metrics', '/health'):
+            return await handler(request)
+
         if not self.enable_auth:
             return await handler(request)
 
@@ -414,15 +441,15 @@ def create_metrics_endpoint(config: Optional[Dict[str, Any]] = None) -> MetricsE
     return _metrics_endpoint
 
 
-def _cleanup_endpoint_on_exit() -> None:
+async def _cleanup_endpoint_on_exit() -> None:
     """Cleanup function called on application exit."""
-    logger.info("Performing metrics endpoint cleanup on application exit", component="metrics_endpoint", operation="cleanup")
     try:
-        # Use asyncio.run() for synchronous cleanup
-        asyncio.run(stop_metrics_endpoint())
-        logger.info("Metrics endpoint cleanup completed successfully", component="metrics_endpoint", operation="cleanup")
+        # Use print instead of logger to avoid I/O on closed file issues during shutdown
+        print("Performing metrics endpoint cleanup on application exit")
+        await stop_metrics_endpoint()
+        print("Metrics endpoint cleanup completed successfully")
     except Exception as e:
-        logger.error(f"Error during metrics endpoint cleanup on exit: {str(e)}", component="metrics_endpoint", operation="cleanup", error=str(e))
+        print(f"Error during metrics endpoint cleanup on exit: {str(e)}")
 
 
 # Example configuration

@@ -970,3 +970,55 @@ def mock_config_loader():
         "notifications": {"discord": {"enabled": False}}
     })
     return loader
+
+
+# Cache fixtures for cache testing
+@pytest.fixture
+def mock_redis():
+    """Mock Redis client for testing."""
+    mock_client = AsyncMock()
+    mock_client.ping.return_value = True
+    mock_client.get.return_value = None
+    mock_client.setex.return_value = True
+    mock_client.delete.return_value = 1
+    mock_client.ttl.return_value = 30
+    return mock_client
+
+
+@pytest.fixture
+def cache_config():
+    """Cache configuration for testing."""
+    from core.cache import CacheConfig, MemoryConfig, EvictionPolicy
+    return CacheConfig(
+        host="localhost",
+        port=6379,
+        db=0,
+        password=None,
+        socket_timeout=5.0,
+        socket_connect_timeout=5.0,
+        ttl_config={
+            "default": 300,
+            "market_ticker": 60,
+            "ohlcv": 600,
+            "account_balance": 30
+        },
+        eviction_policy=EvictionPolicy.TTL,
+        max_cache_size=10000,
+        memory_config=MemoryConfig(
+            max_memory_mb=500.0,
+            warning_memory_mb=400.0,
+            cleanup_memory_mb=350.0,
+            eviction_batch_size=100,
+            memory_check_interval=60.0
+        )
+    )
+
+
+@pytest.fixture
+def cache_instance(cache_config, mock_redis):
+    """Cache instance with mocked Redis client."""
+    from core.cache import RedisCache
+    cache = RedisCache(cache_config)
+    cache._redis_client = mock_redis
+    cache._connected = True
+    return cache

@@ -12,12 +12,13 @@ from utils.time import now_ms, to_ms, to_iso
 from .logging_utils import get_structured_logger, LogSensitivity
 from .utils.error_utils import ErrorHandler, ErrorContext, ErrorSeverity, ErrorCategory
 from .utils.config_utils import get_config
+from .interfaces import PerformanceTrackerInterface
 
 logger = get_structured_logger("core.performance_tracker", LogSensitivity.SECURE)
 error_handler = ErrorHandler("performance_tracker")
 
 
-class PerformanceTracker:
+class PerformanceTracker(PerformanceTrackerInterface):
     """
     Tracks and calculates trading performance metrics.
 

@@ -104,7 +104,7 @@ class LiveOrderExecutionStrategy(OrderExecutionStrategy):
             self.order_manager.reliability_manager.record_critical_error(
                 e, context={"symbol": getattr(signal, "symbol", None)}
             )
-            logger.exception("Live order failed after retries")
+            logger.error(f"Live order failed after retries: {e}")
             trade_logger.log_failed_order(signal_to_dict(signal), str(e))
 
             # Notify watchdog of order execution failure
@@ -120,12 +120,12 @@ class LiveOrderExecutionStrategy(OrderExecutionStrategy):
             # Trigger rollback logic
             await self._rollback_failed_order(signal, str(e))
 
-            # Return failed order status
+            # Return structured error response instead of None
             return {
                 "id": None,
-                "symbol": getattr(signal, "symbol", None),
                 "status": "failed",
-                "error": str(e)
+                "error": str(e),
+                "symbol": getattr(signal, "symbol", None)
             }
 
     async def _rollback_failed_order(self, signal: Any, error_message: str) -> None:
@@ -175,6 +175,8 @@ class FallbackOrderExecutionStrategy(OrderExecutionStrategy):
     async def execute_order(self, signal: Any) -> Optional[Dict[str, Any]]:
         """Execute order using paper trading as fallback."""
         logger.warning("Unknown trading mode, falling back to paper trading")
+        if self.order_manager.paper_executor is None:
+            raise ValueError("Paper executor not available for fallback")
         order = await self.order_manager.paper_executor.execute_paper_order(signal)
         return await self.order_manager.order_processor.process_order(order)
 
@@ -348,10 +350,19 @@ class OrderManager:
         # normalized mode name (lowercase string) for consistent checks across module
         self.mode_name: str = getattr(self.mode, "value", str(self.mode)).lower()
 
-        # Initialize specialized managers
-        self.live_executor = LiveOrderExecutor(config) if self.mode == TradingMode.LIVE else MockLiveExecutor()
-        self.paper_executor = PaperOrderExecutor(config)
-        self.backtest_executor = BacktestOrderExecutor(self.config)
+        # Initialize specialized managers - only initialize the executor for the current mode
+        if self.mode == TradingMode.LIVE:
+            self.live_executor = LiveOrderExecutor(config)
+            self.paper_executor = None
+            self.backtest_executor = None
+        elif self.mode == TradingMode.PAPER:
+            self.live_executor = MockLiveExecutor(config)
+            self.paper_executor = PaperOrderExecutor(config)
+            self.backtest_executor = None
+        elif self.mode == TradingMode.BACKTEST:
+            self.live_executor = MockLiveExecutor(config)
+            self.paper_executor = None
+            self.backtest_executor = BacktestOrderExecutor(self.config)
         self.order_processor = OrderProcessor()
         self.reliability_manager = ReliabilityManager(config.get("reliability", {}))
         self.portfolio_manager = PortfolioManager()
@@ -365,7 +376,10 @@ class OrderManager:
         except (InvalidOperation, TypeError, ValueError):
             logger.warning(f"Invalid initial_balance value: {raw_balance}, using default")
             balance = default_balance
-        self.paper_executor.set_initial_balance(balance)
+
+        # Set balance on paper executor if it exists (paper/backtest modes)
+        if self.paper_executor:
+            self.paper_executor.set_initial_balance(balance)
         self.portfolio_manager.set_initial_balance(balance)
 
         # Portfolio flags (BotEngine may set these attributes after instantiation)
@@ -426,15 +440,28 @@ class OrderManager:
                 "signal_type": {"type": "string", "enum": ["ENTRY_LONG", "ENTRY_SHORT", "EXIT_LONG", "EXIT_SHORT"]},
                 "signal_strength": {"type": "string", "enum": ["WEAK", "MODERATE", "STRONG"]},
                 "order_type": {"type": "string", "enum": ["MARKET", "LIMIT", "STOP", "STOP_LIMIT"]},
-                "amount": {"type": "number", "minimum": 0.00000001},
-                "price": {"type": ["number", "null"], "minimum": 0},
-                "stop_loss": {"type": ["number", "null"], "minimum": 0},
-                "take_profit": {"type": ["number", "null"], "minimum": 0},
-                "timestamp": {"type": "number", "minimum": 0}
+                "amount": {"type": "string", "pattern": r"^-?\d+(\.\d+)?$"},
+                "price": {"type": ["string", "null"], "pattern": r"^-?\d+(\.\d+)?$"},
+                "stop_loss": {"type": ["string", "null"], "pattern": r"^-?\d+(\.\d+)?$"},
+                "take_profit": {"type": ["string", "null"], "pattern": r"^-?\d+(\.\d+)?$"},
+                "timestamp": {"type": "string", "pattern": r"^\d+$"}
             },
             "required": ["strategy_id", "symbol", "signal_type", "order_type", "amount"],
             "additionalProperties": True
         }
+
+    def _normalize_payload(self, payload: dict) -> dict:
+        """Normalize payload by converting Decimal, float, and int values to strings for schema validation."""
+        normalized = {}
+        for k, v in payload.items():
+            if isinstance(v, (Decimal, float, int)):
+                normalized[k] = str(v)
+            elif k == "order_type" and isinstance(v, str):
+                # Normalize order_type to uppercase for schema validation
+                normalized[k] = v.upper()
+            else:
+                normalized[k] = v
+        return normalized
 
     def _validate_order_payload(self, signal: Any) -> None:
         """Validate order payload against schema and business rules."""
@@ -448,11 +475,14 @@ class OrderManager:
             # Convert signal to dict for validation
             signal_dict = signal_to_dict(signal)
 
+            # Normalize payload to convert numeric types to strings for schema validation
+            normalized_dict = self._normalize_payload(signal_dict)
+
             # Validate against JSON schema
             schema = self._get_order_schema()
-            jsonschema.validate(instance=signal_dict, schema=schema)
+            jsonschema.validate(instance=normalized_dict, schema=schema)
 
-            # Additional business rule validations
+            # Additional business rule validations (use original dict for business logic)
             self._validate_business_rules(signal_dict)
 
             logger.debug(f"Order payload validation passed for {signal_dict.get('symbol', 'unknown')}")
@@ -473,16 +503,18 @@ class OrderManager:
     def _validate_business_rules(self, signal_dict: Dict[str, Any]) -> None:
         """Validate business rules for order payload."""
         # Check for unsafe defaults
-        if signal_dict.get("amount", 0) <= 0:
+        amount = signal_dict.get("amount")
+        if amount is not None and float(amount) <= 0:
             raise ValueError("Order amount must be positive")
 
-        if signal_dict.get("price", 0) < 0:
+        price = signal_dict.get("price")
+        if price is not None and float(price) < 0:
             raise ValueError("Order price cannot be negative")
 
         # Validate stop loss and take profit for limit orders
         order_type = signal_dict.get("order_type", "").upper()
         if order_type in ["STOP", "STOP_LIMIT"]:
-            if "stop_loss" not in signal_dict:
+            if signal_dict.get("stop_loss") is None:
                 raise ValueError("Stop orders must include stop_loss price")
 
         # Validate signal type consistency
@@ -535,14 +567,14 @@ class OrderManager:
             logger.info("Safe mode active: order skipped (not counted as failure)", exc_info=False)
             # Log as a separate event, not as a failed order
             trade_logger.trade("Order skipped: safe_mode_active", {"signal": signal_to_dict(signal), "reason": "safe_mode_active"})
-            return {"id": None, "symbol": getattr(signal, "symbol", None), "status": "skipped_safe_mode", "reason": "safe_mode_active"}
+            return {"id": None, "symbol": getattr(signal, "symbol", None), "status": "skipped", "reason": "safe_mode_active"}
 
         # Use strategy pattern for order execution
         try:
             strategy = self._execution_strategies.get(self.mode, self._fallback_strategy)
             return await strategy.execute_order(signal)
-        except (NetworkError, ExchangeError, OSError) as e:
-            logger.error(f"Order execution failed (exchange/network): {str(e)}", exc_info=True)
+        except (NetworkError, ExchangeError, OSError, asyncio.TimeoutError, ValueError) as e:
+            logger.error(f"Order execution failed: {str(e)}", exc_info=True)
             trade_logger.log_failed_order(signal_to_dict(signal), str(e))
             return None
         except asyncio.CancelledError:
@@ -735,8 +767,9 @@ class OrderManager:
 
             self.pair_allocation = allocation
 
-            # Configure both executors and portfolio manager
-            self.paper_executor.set_portfolio_mode(portfolio_mode, pairs, allocation)
+            # Configure executors and portfolio manager (only if they exist)
+            if self.paper_executor:
+                self.paper_executor.set_portfolio_mode(portfolio_mode, pairs, allocation)
             self.portfolio_manager.initialize_portfolio(pairs, portfolio_mode, allocation)
         except (ValueError, TypeError, OSError) as e:
             logger.exception(f"Failed to initialize portfolio (recoverable): {e}")

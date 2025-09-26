@@ -102,14 +102,19 @@ class TestJournalWriter:
         """Test stopping the journal writer."""
         jw = JournalWriter(self.journal_path, self.task_manager)
 
-        # Mock task
-        mock_task = AsyncMock()
-        jw._task = mock_task
+        # Create a real asyncio task
+        async def dummy_task():
+            pass
+
+        jw._task = asyncio.create_task(dummy_task())
 
         await jw.stop()
 
-        # Should have put None in queue and waited for task
-        mock_task.assert_awaited_once()
+        # Allow event loop to advance
+        await asyncio.sleep(0)
+
+        # Assert task is completed after stop()
+        assert jw._task.done()
 
     def test_multiple_appends(self):
         """Test multiple synchronous appends."""

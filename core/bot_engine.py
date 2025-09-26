@@ -1082,7 +1082,7 @@ class BotEngine:
 
         except Exception:
             print("Trading Bot Status - Display unavailable")
-            logger.exception("Failed to print status table")
+            logger.exception("Failed to log status table")
 
     async def shutdown(self) -> None:
         """Gracefully shutdown the bot engine."""
@@ -1269,6 +1269,7 @@ class BotEngine:
         """
         try:
             from core.contracts import TradingSignal, SignalType, SignalStrength
+            from datetime import datetime
 
             # Determine signal type based on direction
             if decision.direction == "long":
@@ -1282,24 +1283,46 @@ class BotEngine:
             # Get current price
             current_price = market_data['close'].iloc[-1] if not market_data.empty else 0.0
 
-            # Create signal
+            # Safe defaults for TradingSignal fields
+            strategy_id = getattr(decision.selected_strategy, "__name__", "UnknownStrategy")
+            signal_strength_value = getattr(decision, "binary_probability", 1.0)
+
+            # Convert signal_strength to SignalStrength enum
+            if signal_strength_value >= 0.8:
+                signal_strength = SignalStrength.STRONG
+            elif signal_strength_value >= 0.6:
+                signal_strength = SignalStrength.MODERATE
+            else:
+                signal_strength = SignalStrength.WEAK
+
+            order_type = getattr(decision, "order_type", "market")
+
+            # Handle timestamp with safe defaults
+            timestamp = getattr(decision, "timestamp", datetime.utcnow())
+            # If timestamp is invalid (like a mock), default to datetime.utcnow()
+            if not isinstance(timestamp, (int, float, datetime, str)):
+                timestamp = datetime.utcnow()
+
+            reasoning = getattr(decision, "reasoning", "")
+
+            # Create signal with safe defaults
             signal = TradingSignal(
-                strategy_id=decision.selected_strategy.__name__ if decision.selected_strategy else "binary_integration",
+                strategy_id=strategy_id,
                 symbol=symbol,
                 signal_type=signal_type,
-                signal_strength=SignalStrength.MODERATE,  # Default strength
-                order_type="market",  # Default order type
+                signal_strength=signal_strength,
+                order_type=order_type,
                 current_price=current_price,
-                amount=decision.position_size,
-                stop_loss=decision.stop_loss,
-                take_profit=decision.take_profit,
-                timestamp=decision.timestamp,
+                amount=getattr(decision, "position_size", 0.0),
+                stop_loss=getattr(decision, "stop_loss", None),
+                take_profit=getattr(decision, "take_profit", None),
+                timestamp=timestamp,
                 metadata={
-                    "strategy": decision.selected_strategy.__name__ if decision.selected_strategy else "binary_integration",
-                    "regime": decision.regime,
-                    "binary_probability": decision.binary_probability,
-                    "risk_score": decision.risk_score,
-                    "reasoning": decision.reasoning
+                    "strategy": strategy_id,
+                    "regime": getattr(decision, "regime", None),
+                    "binary_probability": signal_strength_value,
+                    "risk_score": getattr(decision, "risk_score", None),
+                    "reasoning": reasoning
                 }
             )
 

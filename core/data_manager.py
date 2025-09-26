@@ -16,12 +16,13 @@ except ImportError:
 
 from .logging_utils import get_structured_logger, LogSensitivity
 from .utils.error_utils import ErrorHandler, ErrorContext, ErrorSeverity, ErrorCategory, CircuitBreaker
+from .interfaces import DataManagerInterface
 
 logger = get_structured_logger("core.data_manager", LogSensitivity.SECURE)
 error_handler = ErrorHandler("data_manager")
 
 
-class DataManager:
+class DataManager(DataManagerInterface):
     """
     Manages market data fetching, caching, and processing.
 

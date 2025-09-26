@@ -198,21 +198,21 @@ class AdaptivePricer:
         Returns:
             Price adjustment amount
         """
-        spread_pct = context.get('spread_pct', 0.002)  # Default 0.2%
+        spread_pct = Decimal(str(context.get('spread_pct', 0.002)))  # Default 0.2%, convert to Decimal
 
         # Determine spread level
-        if spread_pct < 0.001:  # < 0.1%
+        if spread_pct < Decimal('0.001'):  # < 0.1%
             factor = self.spread_factors['tight']
-        elif spread_pct < 0.005:  # < 0.5%
+        elif spread_pct < Decimal('0.005'):  # < 0.5%
             factor = self.spread_factors['normal']
-        elif spread_pct < 0.01:  # < 1%
+        elif spread_pct < Decimal('0.01'):  # < 1%
             factor = self.spread_factors['wide']
         else:
             factor = self.spread_factors['very_wide']
 
         # Calculate adjustment based on spread
         current_price = signal.current_price or signal.price or Decimal(100)
-        spread_adjustment = current_price * spread_pct * Decimal(str(factor))
+        spread_adjustment = current_price * spread_pct * factor
 
         # Direction depends on signal type
         if signal.signal_type and signal.signal_type.value == 'ENTRY_LONG':

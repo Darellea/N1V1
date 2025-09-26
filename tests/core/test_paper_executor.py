@@ -156,10 +156,11 @@ class TestPaperOrderExecutor:
 
         # Check balance update (price with slippage + fee)
         # Expected price: 50000 * (1 + 0.0005) = 50025
-        # Fee: 1.0 * 0.001 = 1
-        # Total cost: 50025 + 1 = 50026
-        expected_balance = Decimal("1000000") - Decimal("50026")
-        assert abs(paper_executor_with_balance.paper_balance - expected_balance) < Decimal("1")
+        # Fee: 1.0 * 0.001 = 0.001
+        # Total cost: 50025 + 0.001 = 50025.001
+        # Balance: 1000000 - 50025.001 = 999974.999, quantized to 999975.00
+        expected_balance = Decimal("999975")
+        assert abs(paper_executor_with_balance.paper_balance - expected_balance) < Decimal("0.1")
 
     @pytest.mark.asyncio
     async def test_execute_paper_order_sell_signal(self, paper_executor_with_balance):
@@ -186,10 +187,11 @@ class TestPaperOrderExecutor:
 
         # Check balance update (price with slippage - fee)
         # Expected price: 3000 * (1 - 0.0005) = 2998.5
-        # Fee: 2.0 * 0.001 = 2
-        # Total credit: 5997 - 2 = 5995
-        expected_balance = Decimal("1000000") + Decimal("5995")
-        assert abs(paper_executor_with_balance.paper_balance - expected_balance) < Decimal("2")
+        # Fee: 2.0 * 0.001 = 0.002
+        # Total credit: 5997 - 0.002 = 5996.998
+        # Balance: 1000000 + 5996.998 = 1000596.998, quantized to 1000597.00
+        expected_balance = Decimal("1000597")
+        assert abs(paper_executor_with_balance.paper_balance - expected_balance) < Decimal("0.1")
 
     @pytest.mark.asyncio
     async def test_execute_paper_order_insufficient_balance(self, paper_executor, sample_signal):
@@ -331,9 +333,10 @@ class TestPaperOrderExecutor:
 
         # ETH balance should be increased
         initial_eth_balance = Decimal("500000")  # 1000000 / 2
-        # Credit: 3000 * 2.0 * (1 - 0.0005) - 2.0 * 0.001 = 5997 - 2 = 5995
-        expected_eth_balance = initial_eth_balance + Decimal("5995")
-        assert abs(paper_executor_with_balance.paper_balances["ETH/USDT"] - expected_eth_balance) < Decimal("2")
+        # Credit: 3000 * 2.0 * (1 - 0.0005) - 2.0 * 0.001 = 5997 - 0.002 = 5996.998
+        # Balance: 500000 + 5996.998 = 505996.998, quantized to 505997.00
+        expected_eth_balance = Decimal("505997")
+        assert abs(paper_executor_with_balance.paper_balances["ETH/USDT"] - expected_eth_balance) < Decimal("0.1")
 
         # BTC balance should remain unchanged
         assert paper_executor_with_balance.paper_balances["BTC/USDT"] == Decimal("500000")

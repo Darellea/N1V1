@@ -20,6 +20,7 @@ class MockSignal:
         self.signal_type = signal_type
         self.amount = amount
         self.price = price
+        self.current_price = price  # For paper executor slippage calculation
         self.order_type = order_type
         self.strategy_id = "test_strategy"
         self.signal_strength = "STRONG"

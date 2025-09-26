@@ -117,35 +117,12 @@ class JournalWriter:
                 logger.exception("JournalWriter failed to write entry (sync fallback)")
             return
 
-        # If loop is running, ensure worker is started and push to queue thread-safely
+        # If loop is running, schedule the task
         if loop.is_running():
-            # lazily create the worker on the running loop if needed
-            if not self._task or self._task.done():
-                try:
-                    if self.task_manager:
-                        loop.call_soon_threadsafe(lambda: self.task_manager.create_task(self._worker(), name="JournalWriter"))
-                    else:
-                        loop.call_soon_threadsafe(lambda: asyncio.create_task(self._worker()))
-                except Exception:
-                    # fallback to synchronous write
-                    try:
-                        self.path.parent.mkdir(parents=True, exist_ok=True)
-                        with open(self.path, "a", encoding="utf-8") as f:
-                            f.write(json.dumps(entry, default=str) + "\n")
-                    except Exception:
-                        logger.exception("JournalWriter failed to write entry (fallback)")
-                    return
-            # enqueue without awaiting
-            try:
-                loop.call_soon_threadsafe(self._queue.put_nowait, entry)
-            except Exception:
-                # final fallback to synchronous write
-                try:
-                    self.path.parent.mkdir(parents=True, exist_ok=True)
-                    with open(self.path, "a", encoding="utf-8") as f:
-                        f.write(json.dumps(entry, default=str) + "\n")
-                except Exception:
-                    logger.exception("JournalWriter failed to write entry (fallback)")
+            if self.task_manager and hasattr(self.task_manager, "create_task"):
+                self.task_manager.create_task(self._queue.put(entry))
+            else:
+                asyncio.create_task(self._queue.put(entry))
         else:
             # No running loop - synchronous write
             try:
@@ -160,19 +137,7 @@ class JournalWriter:
         Stop the background worker, flush pending entries and wait for the task
         to finish. Best-effort: will not raise on failure.
         """
-        try:
-            # Put sentinel and wait for the worker to consume it
-            try:
-                await self._queue.put(None)
-            except Exception:
-                pass
-            if self._task:
-                try:
-                    await self._task
-                except Exception:
-                    pass
-        except Exception:
-            logger.exception("Error while stopping JournalWriter")
+        await self._queue.put(None)
 
 
 class SignalRouter:

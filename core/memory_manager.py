@@ -15,10 +15,12 @@ from typing import Dict, Any, Optional, List, Set
 from weakref import WeakSet, ref
 import tracemalloc
 
+from .interfaces import MemoryManagerInterface
+
 logger = logging.getLogger(__name__)
 
 
-class MemoryManager:
+class MemoryManager(MemoryManagerInterface):
     """
     Comprehensive memory management system with resource cleanup,
     object pooling, and memory monitoring capabilities.

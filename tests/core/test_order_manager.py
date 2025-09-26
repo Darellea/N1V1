@@ -113,7 +113,7 @@ class TestOrderManager:
         assert om.mode_name == "paper"
         assert om.live_executor is None
         assert om.paper_executor is not None
-        assert om.backtest_executor is not None
+        assert om.backtest_executor is None
 
     def test_init_live_mode(self, config, mock_executors, mock_managers):
         """Test OrderManager initialization in live mode."""
@@ -671,7 +671,7 @@ class TestOrderManager:
             amount=Decimal("1.0")
         )
 
-        with pytest.raises(ValueError, match="Symbol must be in format"):
+        with pytest.raises(ValueError, match="does not match"):
             om._validate_order_payload(invalid_signal)
 
     def test_validate_order_payload_business_rules_negative_amount(self, config, mock_executors, mock_managers):
@@ -716,7 +716,8 @@ class TestOrderManager:
             signal_type="ENTRY_LONG",
             signal_strength="STRONG",
             order_type="STOP",  # Entry signal with stop order
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
+            stop_loss=Decimal("49000")  # Provide stop_loss to pass stop order check
         )
 
         with pytest.raises(ValueError, match="Entry signals should use MARKET or LIMIT"):
@@ -738,7 +739,9 @@ class TestOrderManager:
 
         result = await om.execute_order(invalid_signal)
 
-        assert result is None
+        assert result is not None
+        assert result["status"] == "validation_failed"
+        assert "error" in result
         # Verify that execution was not attempted
         mock_executors['paper'].execute_paper_order.assert_not_called()
 

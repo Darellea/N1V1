@@ -540,9 +540,9 @@ async def collect_trading_metrics(collector: MetricsCollector) -> None:
     )
 
     # Calculate order failure rate excluding safe mode skips
-    total_orders = await collector.get_metric_value("trading_orders_total", {"account": "main", "status": "filled"}) or 0
-    skipped_orders = await collector.get_metric_value("trading_orders_skipped_safe_mode_total", {"account": "main"}) or 0
-    failed_orders = await collector.get_metric_value("trading_orders_failed_total", {"account": "main"}) or 0
+    total_orders = collector.get_metric_value("trading_orders_total", {"account": "main", "status": "filled"}) or 0
+    skipped_orders = collector.get_metric_value("trading_orders_skipped_safe_mode_total", {"account": "main"}) or 0
+    failed_orders = collector.get_metric_value("trading_orders_failed_total", {"account": "main"}) or 0
 
     # Failure rate calculation: failed orders / (total orders - skipped orders)
     if total_orders > skipped_orders:

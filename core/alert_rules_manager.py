@@ -34,7 +34,12 @@ class AlertRule:
             self.channels = ["log"]
 
     async def evaluate(self, metrics_data: Dict[str, Any]) -> bool:
-        """Evaluate the alert rule against metrics data."""
+        """Evaluate the alert rule against metrics data with deduplication."""
+        # Check if this alert should be deduplicated
+        if self._is_deduplicated():
+            logger.debug(f"Alert {self.name} deduplicated")
+            return False
+
         # Simple query evaluation for basic > comparison
         # In production, this would be a proper query parser
         logger.debug(f"Evaluating rule {self.name} with query: {self.query}")
@@ -70,6 +75,20 @@ class AlertRule:
                                 return False
                         except (ValueError, TypeError):
                             return False
+
+                    # Record the alert if triggered
+                    if triggered:
+                        alert = {
+                            'rule_name': self.name,
+                            'severity': self.severity,
+                            'description': self.description,
+                            'timestamp': time.time(),
+                            'metrics_data': metrics_data
+                        }
+                        self._record_alert(alert)
+                        # Deliver notifications
+                        if self.manager:
+                            await self.manager._deliver_notifications(alert, self.channels)
 
                     return triggered
         except (KeyError, TypeError):

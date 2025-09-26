@@ -206,7 +206,7 @@ class RealTimePerformanceMonitor:
                 a for a in self.anomaly_history
                 if current_time - a.timestamp < 3600  # Last hour
             ]),
-            "system_health": await self._calculate_system_health_score(),
+            "system_health": self._calculate_system_health_score(),
             "performance_summary": {}
         }
 
@@ -244,7 +244,7 @@ class RealTimePerformanceMonitor:
 
                 # Perform anomaly detection
                 if self.anomaly_detection_enabled:
-                    anomalies = await self._detect_anomalies(metrics)
+                    anomalies = self._detect_anomalies(metrics)
                     for anomaly in anomalies:
                         await self._handle_anomaly(anomaly)
 

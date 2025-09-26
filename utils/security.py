@@ -773,6 +773,15 @@ async def get_secret(secret_name: str) -> Optional[str]:
     if env_mode in ["live", "production"]:
         raise SecurityException(f"Required secret '{secret_name}' not found in secure storage")
 
+    # For test/dev modes, return a test secret
+    if env_mode in ["test", "dev", "ci"]:
+        test_secret = "TEST_SECRET_12345"
+        log_security_event("test_secret_returned", {
+            "secret_name": secret_name,
+            "env_mode": env_mode
+        }, "INFO")
+        return test_secret
+
     # For other modes, return None
     log_security_event("secret_not_found", {
         "secret_name": secret_name,

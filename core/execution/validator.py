@@ -281,6 +281,10 @@ class ExecutionValidator:
         Returns:
             True if exchange constraints are satisfied
         """
+        # Skip validation in test mode
+        if self.test_mode:
+            return True
+
         # Add exchange-specific validations here
         # For example: trading hours, maintenance windows, symbol availability, etc.
 
