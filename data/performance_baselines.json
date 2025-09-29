@@ -8,7 +8,7 @@
     "percentile_95": 16.327371802122855,
     "percentile_99": 16.836325348624136,
     "sample_count": 10,
-    "last_updated": 1758879919.7272332,
+    "last_updated": 1759132937.4089496,
     "trend_slope": 0.0,
     "is_stable": true
   },
@@ -21,7 +21,7 @@
     "percentile_95": 178225263.26381588,
     "percentile_99": 182836629.30839923,
     "sample_count": 10,
-    "last_updated": 1758879919.7272332,
+    "last_updated": 1759132937.4089496,
     "trend_slope": 0.0,
     "is_stable": true
   },
@@ -34,7 +34,7 @@
     "percentile_95": 29.919506400158618,
     "percentile_99": 30.327167341051446,
     "sample_count": 10,
-    "last_updated": 1758879919.7272332,
+    "last_updated": 1759132937.4089496,
     "trend_slope": 0.0,
     "is_stable": true
   },
@@ -47,7 +47,7 @@
     "percentile_95": 5067256890.676857,
     "percentile_99": 5228227515.228709,
     "sample_count": 10,
-    "last_updated": 1758879919.7272332,
+    "last_updated": 1759132937.4089496,
     "trend_slope": 0.0,
     "is_stable": true
   }

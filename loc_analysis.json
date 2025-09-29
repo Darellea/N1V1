@@ -1,55 +1,55 @@
 {
-  "timestamp": "2025-09-25T12:26:07.643431",
+  "timestamp": "2025-09-29T14:58:35.114719",
   "summary": {
-    "total_files": 886,
-    "total_lines": 1128166,
-    "code_lines": 1045347,
-    "comment_lines": 32377,
-    "comment_ratio_percent": 3.1,
-    "avg_lines_per_file": 1273.33
+    "total_files": 951,
+    "total_lines": 1554649,
+    "code_lines": 1471692,
+    "comment_lines": 32310,
+    "comment_ratio_percent": 2.2,
+    "avg_lines_per_file": 1634.75
   },
   "by_type": {
     "other": {
-      "files": 179,
-      "total_lines": 872954,
-      "code_lines": 853238,
-      "comment_lines": 6799
+      "files": 191,
+      "total_lines": 1289088,
+      "code_lines": 1269163,
+      "comment_lines": 6802
     },
     "config": {
-      "files": 331,
-      "total_lines": 57245,
-      "code_lines": 55888,
+      "files": 387,
+      "total_lines": 68665,
+      "code_lines": 67077,
       "comment_lines": 174
     },
     "code": {
-      "files": 335,
-      "total_lines": 174931,
-      "code_lines": 118902,
-      "comment_lines": 22901
+      "files": 331,
+      "total_lines": 173869,
+      "code_lines": 118182,
+      "comment_lines": 22813
     },
     "docs": {
-      "files": 41,
-      "total_lines": 23036,
-      "code_lines": 17319,
-      "comment_lines": 2503
+      "files": 42,
+      "total_lines": 23027,
+      "code_lines": 17270,
+      "comment_lines": 2521
     }
   },
   "by_language": {
     "Other": {
-      "files": 179,
-      "lines": 872954
+      "files": 191,
+      "lines": 1289088
     },
     "JSON": {
-      "files": 315,
-      "lines": 54235
+      "files": 371,
+      "lines": 65655
     },
     "Python": {
-      "files": 335,
-      "lines": 174931
+      "files": 331,
+      "lines": 173869
     },
     "Markdown": {
-      "files": 29,
-      "lines": 15640
+      "files": 30,
+      "lines": 15631
     },
     "Text": {
       "files": 11,
@@ -74,28 +74,28 @@
   },
   "by_component": {
     "other": {
-      "files": 799,
-      "total_lines": 1087511,
-      "code_lines": 1011276,
-      "comment_lines": 29874
+      "files": 852,
+      "total_lines": 1507876,
+      "code_lines": 1431774,
+      "comment_lines": 29789
     },
     "docs": {
-      "files": 29,
-      "total_lines": 15640,
-      "code_lines": 9983,
-      "comment_lines": 2486
+      "files": 30,
+      "total_lines": 15631,
+      "code_lines": 9934,
+      "comment_lines": 2504
     },
     "config": {
-      "files": 58,
-      "total_lines": 25015,
-      "code_lines": 24088,
+      "files": 69,
+      "total_lines": 31142,
+      "code_lines": 29984,
       "comment_lines": 17
     }
   },
   "largest_files": [
     {
       "path": "logs\\core.log",
-      "lines": 536101,
+      "lines": 942129,
       "extension": ".log"
     },
     {
@@ -129,6 +129,11 @@
       "extension": ".log"
     },
     {
+      "path": "logs\\trades.csv",
+      "lines": 10153,
+      "extension": ".csv"
+    },
+    {
       "path": ".ruff_cache\\content\\1879841978194122611",
       "lines": 7586,
       "extension": ""
@@ -137,27 +142,22 @@
       "path": "test_output.log",
       "lines": 6103,
       "extension": ".log"
-    },
-    {
-      "path": "logs\\anomalies.json",
-      "lines": 6078,
-      "extension": ".json"
     }
   ],
   "quality_metrics": {
     "test_to_production_ratio": 0.0,
     "component_distribution": {
       "other": {
-        "lines": 1011276,
-        "percentage": 850.51
+        "lines": 1431774,
+        "percentage": 1211.5
       },
       "docs": {
-        "lines": 9983,
-        "percentage": 8.4
+        "lines": 9934,
+        "percentage": 8.41
       },
       "config": {
-        "lines": 24088,
-        "percentage": 20.26
+        "lines": 29984,
+        "percentage": 25.37
       }
     }
   }

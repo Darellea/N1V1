@@ -636,22 +636,41 @@ class ConfigManager:
         """
         updated_config = config_dict.copy()
 
+        # Check if config is complete - only apply defaults if incomplete
+        config_incomplete = False
+
         for section, defaults in SAFE_DEFAULTS.items():
             if section not in updated_config:
-                updated_config[section] = defaults.copy()
-                logger.info(f"Applied safe defaults for missing section: {section}")
+                config_incomplete = True
+                break
             else:
-                # Apply defaults for missing fields within sections
+                # Check if all required fields are present
                 section_config = updated_config[section]
-                for key, default_value in defaults.items():
+                for key in defaults.keys():
                     if key not in section_config:
-                        section_config[key] = default_value
-                        logger.info(f"Applied safe default for {section}.{key}: {default_value}")
+                        config_incomplete = True
+                        break
+                if config_incomplete:
+                    break
 
-        # Special handling for performance tracker starting balance
-        if "performance_tracker" not in updated_config:
-            updated_config["performance_tracker"] = {}
-        updated_config["performance_tracker"].setdefault("starting_balance", 2000.0)
+        # Only apply defaults if config is incomplete
+        if config_incomplete:
+            for section, defaults in SAFE_DEFAULTS.items():
+                if section not in updated_config:
+                    updated_config[section] = defaults.copy()
+                    logger.info(f"Applied safe defaults for missing section: {section}")
+                else:
+                    # Apply defaults for missing fields within sections
+                    section_config = updated_config[section]
+                    for key, default_value in defaults.items():
+                        if key not in section_config:
+                            section_config[key] = default_value
+                            logger.info(f"Applied safe default for {section}.{key}: {default_value}")
+
+            # Special handling for performance tracker starting balance only when incomplete
+            if "performance_tracker" not in updated_config:
+                updated_config["performance_tracker"] = {}
+            updated_config["performance_tracker"].setdefault("starting_balance", 2000.0)
 
         return updated_config
 

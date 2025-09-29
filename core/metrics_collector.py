@@ -238,6 +238,10 @@ class MetricsCollector:
         self._collection_task: Optional[asyncio.Task] = None
         self._lock = asyncio.Lock()
 
+        # Async queue for batched recording to reduce CPU overhead
+        self._record_queue: asyncio.Queue = asyncio.Queue(maxsize=10000)
+        self._record_task: Optional[asyncio.Task] = None
+
         # System metrics
         self.process = psutil.Process()
 
@@ -250,6 +254,7 @@ class MetricsCollector:
 
         self._running = True
         self._collection_task = asyncio.create_task(self._collection_loop())
+        self._record_task = asyncio.create_task(self._record_loop())
 
         # Register system metrics collectors
         await self._register_system_collectors()
@@ -267,6 +272,13 @@ class MetricsCollector:
             self._collection_task.cancel()
             try:
                 await self._collection_task
+            except asyncio.CancelledError:
+                pass
+
+        if self._record_task:
+            self._record_task.cancel()
+            try:
+                await self._record_task
             except asyncio.CancelledError:
                 pass
 
@@ -297,30 +309,22 @@ class MetricsCollector:
 
     async def record_metric(self, name: str, value: float,
                            labels: Dict[str, str] = None) -> None:
-        """Record a metric value."""
-        async with self._lock:
-            # Register metric if it doesn't exist
-            if name not in self.metrics:
-                self.register_metric(name)
-            series = self.metrics[name]
+        """Record a metric value asynchronously without lock for performance."""
+        # Register metric if it doesn't exist
+        if name not in self.metrics:
+            self.register_metric(name)
+        series = self.metrics[name]
 
-            series.add_sample(value, labels)
+        series.add_sample(value, labels)
 
     async def increment_counter(self, name: str, labels: Dict[str, str] = None) -> None:
         """Increment a counter metric."""
-        async with self._lock:
-            if name not in self.metrics:
-                self.register_metric(name, help_text=f"Counter for {name}")
+        # Get current value (this needs to be synchronous for accuracy)
+        current_value = self.get_metric_value(name, labels) or 0
+        new_value = current_value + 1
 
-            series = self.metrics[name]
-            latest = series.get_latest_sample()
-
-            if latest:
-                new_value = latest.value + 1
-            else:
-                new_value = 1
-
-            series.add_sample(new_value, labels)
+        # Use async recording for the increment
+        await self.record_metric(name, new_value, labels)
 
     async def observe_histogram(self, name: str, value: float,
                                labels: Dict[str, str] = None) -> None:
@@ -361,6 +365,43 @@ class MetricsCollector:
                 output_lines.append(latest_sample.to_prometheus())
 
         return "\n".join(output_lines)
+
+    async def _record_loop(self) -> None:
+        """Background loop for processing queued metric recordings."""
+        while self._running:
+            try:
+                # Get batch of recordings from queue
+                batch = []
+                try:
+                    # Try to get first item with timeout
+                    item = await asyncio.wait_for(self._record_queue.get(), timeout=0.1)
+                    batch.append(item)
+
+                    # Get more items if available (batching)
+                    while len(batch) < 100:  # Process up to 100 items at once
+                        try:
+                            item = self._record_queue.get_nowait()
+                            batch.append(item)
+                        except asyncio.QueueEmpty:
+                            break
+                except asyncio.TimeoutError:
+                    continue  # No items, continue loop
+
+                # Process the batch
+                async with self._lock:
+                    for name, value, labels in batch:
+                        # Register metric if it doesn't exist
+                        if name not in self.metrics:
+                            self.register_metric(name)
+                        series = self.metrics[name]
+                        series.add_sample(value, labels)
+
+                        # Mark task as done
+                        self._record_queue.task_done()
+
+            except Exception as e:
+                logger.exception(f"Error in record loop: {e}")
+                await asyncio.sleep(0.1)  # Brief pause before retry
 
     async def _collection_loop(self) -> None:
         """Main metrics collection loop."""

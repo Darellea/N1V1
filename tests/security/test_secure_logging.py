@@ -127,7 +127,7 @@ class TestStructuredLogger:
         self.logger.info("Test message", symbol="BTC/USDT", amount=1000.50, user_id="user123")
 
         log_output = self.stream.getvalue()
-        log_data = json.loads(log_output.split(" - ", 3)[-1])
+        log_data = json.loads(log_output.split(" | ", 1)[-1].strip())
 
         assert log_data["message"] == "Test message"
         assert log_data["symbol"] == "BTC/USDT"
@@ -161,7 +161,7 @@ class TestStructuredLogger:
         debug_logger.info("Debug message", api_key="sk-test123", balance=1000.50)
 
         log_output = debug_stream.getvalue()
-        log_data = json.loads(log_output.split(" - ", 3)[-1])
+        log_data = json.loads(log_output.split(" | ", 1)[-1].strip())
 
         assert log_data["api_key"] == "sk-test123"  # Should NOT be sanitized
         assert log_data["balance"] == 1000.50  # Should NOT be sanitized
@@ -210,7 +210,7 @@ class TestCoreLoggerIntegration:
             log_message = call_args[0]
 
             # Parse the structured log message
-            log_data = json.loads(log_message.split(" | ")[-1])
+            log_data = json.loads(log_message.split(" | ")[-1].strip())
 
             assert log_data["symbol"] == "BTC/USDT"
             assert log_data["amount"] == "***AMOUNT_MASKED***"

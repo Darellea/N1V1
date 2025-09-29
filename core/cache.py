@@ -1027,7 +1027,9 @@ class CacheContext:
                 # Reset global instance
                 global _cache_instance
                 _cache_instance = None
-        # Global cache cleanup is handled by atexit or explicit close_cache() calls
+
+        # Always call close_cache() to ensure cleanup
+        close_cache()
 
 # Import asyncio for async operations
 import asyncio

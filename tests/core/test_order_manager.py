@@ -4,7 +4,7 @@ import warnings
 import time
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
-from core.order_manager import OrderManager
+from core.order_manager import OrderManager, MockLiveExecutor
 from core.contracts import TradingSignal, SignalType, SignalStrength
 from core.types import TradingMode
 from core.types.order_types import OrderType, OrderStatus
@@ -111,7 +111,7 @@ class TestOrderManager:
 
         assert om.mode == TradingMode.PAPER
         assert om.mode_name == "paper"
-        assert om.live_executor is None
+        assert isinstance(om.live_executor, MockLiveExecutor)
         assert om.paper_executor is not None
         assert om.backtest_executor is None
 

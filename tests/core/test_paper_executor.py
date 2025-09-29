@@ -156,10 +156,10 @@ class TestPaperOrderExecutor:
 
         # Check balance update (price with slippage + fee)
         # Expected price: 50000 * (1 + 0.0005) = 50025
-        # Fee: 1.0 * 0.001 = 0.001
-        # Total cost: 50025 + 0.001 = 50025.001
-        # Balance: 1000000 - 50025.001 = 999974.999, quantized to 999975.00
-        expected_balance = Decimal("999975")
+        # Fee: 50025 * 0.001 = 50.025
+        # Total cost: 50025 + 50.025 = 50075.025
+        # Balance: 1000000 - 50075.025 = 949924.975, quantized to 949925.00
+        expected_balance = Decimal("949925")
         assert abs(paper_executor_with_balance.paper_balance - expected_balance) < Decimal("0.1")
 
     @pytest.mark.asyncio
@@ -187,10 +187,10 @@ class TestPaperOrderExecutor:
 
         # Check balance update (price with slippage - fee)
         # Expected price: 3000 * (1 - 0.0005) = 2998.5
-        # Fee: 2.0 * 0.001 = 0.002
-        # Total credit: 5997 - 0.002 = 5996.998
-        # Balance: 1000000 + 5996.998 = 1000596.998, quantized to 1000597.00
-        expected_balance = Decimal("1000597")
+        # Fee: 5997 * 0.001 = 5.997
+        # Total credit: 5997 - 5.997 = 5991.003
+        # Balance: 1000000 + 5991.003 = 1005991.003, quantized to 1005991.00
+        expected_balance = Decimal("1005991")
         assert abs(paper_executor_with_balance.paper_balance - expected_balance) < Decimal("0.1")
 
     @pytest.mark.asyncio
@@ -240,8 +240,8 @@ class TestPaperOrderExecutor:
 
         result = await paper_executor_with_balance.execute_paper_order(signal)
 
-        # Fee should be 1.0 * 0.001 = 0.001
-        assert result.fee == {"cost": 0.001, "currency": "USDT"}
+        # Fee should be 50025 * 0.001 = 50.025
+        assert result.fee == {"cost": 50.025, "currency": "USDT"}
 
     @pytest.mark.asyncio
     async def test_execute_paper_order_with_params(self, paper_executor_with_balance):
@@ -305,8 +305,10 @@ class TestPaperOrderExecutor:
 
         # BTC balance should be reduced
         initial_btc_balance = Decimal("500000")  # 1000000 / 2
-        # Cost: 50000 * 0.05 * (1 + 0.0005) + 0.05 * 0.001 = 2501.25 + 0.05 = 2501.30
-        expected_btc_balance = initial_btc_balance - Decimal("2501.30")
+        # Cost: 50000 * 0.05 * (1 + 0.0005) = 2501.25
+        # Fee: 2501.25 * 0.001 = 2.50125
+        # Total cost: 2501.25 + 2.50125 = 2503.75125
+        expected_btc_balance = initial_btc_balance - Decimal("2503.75")
         assert abs(paper_executor_with_balance.paper_balances["BTC/USDT"] - expected_btc_balance) < Decimal("0.1")
 
         # ETH balance should remain unchanged
@@ -333,9 +335,11 @@ class TestPaperOrderExecutor:
 
         # ETH balance should be increased
         initial_eth_balance = Decimal("500000")  # 1000000 / 2
-        # Credit: 3000 * 2.0 * (1 - 0.0005) - 2.0 * 0.001 = 5997 - 0.002 = 5996.998
-        # Balance: 500000 + 5996.998 = 505996.998, quantized to 505997.00
-        expected_eth_balance = Decimal("505997")
+        # Credit: 3000 * 2.0 * (1 - 0.0005) = 5997
+        # Fee: 5997 * 0.001 = 5.997
+        # Total credit: 5997 - 5.997 = 5991.003
+        # Balance: 500000 + 5991.003 = 505991.003, quantized to 505991.00
+        expected_eth_balance = Decimal("505991")
         assert abs(paper_executor_with_balance.paper_balances["ETH/USDT"] - expected_eth_balance) < Decimal("0.1")
 
         # BTC balance should remain unchanged
@@ -362,47 +366,44 @@ class TestPaperOrderExecutor:
 
         # New symbol should get the current paper balance as initial
         initial_eth_balance = Decimal("1000000")  # Current paper balance
-        # Cost: 3000 * 1.0 * (1 + 0.0005) + 1.0 * 0.001 = 3001.5 + 1 = 3002.5
-        expected_eth_balance = initial_eth_balance - Decimal("3002.5")
+        # Cost: 3000 * 1.0 * (1 + 0.0005) = 3001.5
+        # Fee: 3001.5 * 0.001 = 3.0015
+        # Total cost: 3001.5 + 3.0015 = 3004.5015
+        expected_eth_balance = initial_eth_balance - Decimal("3004.5")
         assert abs(paper_executor_with_balance.paper_balances["ETH/USDT"] - expected_eth_balance) < Decimal("2")
 
     def test_calculate_fee_with_signal_object(self, paper_executor):
         """Test fee calculation with signal object."""
-        signal = MagicMock()
-        signal.amount = Decimal("1.0")
+        cost = Decimal("1.0")
 
-        fee = paper_executor._calculate_fee(signal)
+        fee = paper_executor._calculate_fee(cost)
 
         # 1.0 * 0.001 = 0.001
         assert fee == Decimal("0.001")
 
     def test_calculate_fee_with_dict_signal(self, paper_executor):
         """Test fee calculation with dict signal."""
-        signal = {"amount": Decimal("2.0")}
+        cost = Decimal("2.0")
 
-        fee = paper_executor._calculate_fee(signal)
+        fee = paper_executor._calculate_fee(cost)
 
         # 2.0 * 0.001 = 0.002
         assert fee == Decimal("0.002")
 
     def test_calculate_fee_with_missing_amount(self, paper_executor):
         """Test fee calculation when amount is missing."""
-        signal = MagicMock()
-        # Remove the amount attribute entirely
-        del signal.amount
-        signal.get = MagicMock(return_value=None)
+        cost = Decimal("0")
 
-        fee = paper_executor._calculate_fee(signal)
+        fee = paper_executor._calculate_fee(cost)
 
         # Should default to 0
         assert fee == Decimal("0")
 
     def test_calculate_fee_with_zero_amount(self, paper_executor):
         """Test fee calculation with zero amount."""
-        signal = MagicMock()
-        signal.amount = Decimal("0")
+        cost = Decimal("0")
 
-        fee = paper_executor._calculate_fee(signal)
+        fee = paper_executor._calculate_fee(cost)
 
         assert fee == Decimal("0")
 

@@ -94,13 +94,14 @@ class PaperOrderExecutor:
             else:
                 side = "buy"
 
-        # Calculate fees and slippage
-        fee = self._calculate_fee(signal)
+        # Calculate slippage
         executed_price = self._apply_slippage(signal, side)
 
         # Calculate order cost
         cost = Decimal(signal.amount) * Decimal(executed_price)
-        total_cost = cost + fee if side == "buy" else cost - fee
+
+        # Calculate fees
+        fee = self._calculate_fee(cost)
 
         # Check balance
         symbol = getattr(signal, "symbol", None) or (signal.get("symbol") if isinstance(signal, dict) else None)
@@ -112,7 +113,7 @@ class PaperOrderExecutor:
                 # Check main balance in single mode
                 available_balance = self.paper_balance
 
-            if total_cost > available_balance:
+            if (cost + fee) > available_balance:
                 raise ValueError("Insufficient balance for paper trading order")
 
         # Convert order_type to OrderType enum
@@ -156,25 +157,25 @@ class PaperOrderExecutor:
             # ensure per-symbol balance exists
             bal = self.paper_balances.setdefault(symbol, Decimal(self.paper_balance))
             if side == "buy":
-                bal = bal - total_cost
+                bal -= (cost + fee)
             else:
-                bal = bal + total_cost
+                bal += (cost - fee)
             self.paper_balances[symbol] = bal.quantize(Decimal("0.01"))
         else:
             if side == "buy":
-                self.paper_balance -= total_cost
+                self.paper_balance -= (cost + fee)
             else:
-                self.paper_balance += total_cost
+                self.paper_balance += (cost - fee)
             self.paper_balance = self.paper_balance.quantize(Decimal("0.01"))
 
         self.trade_count += 1
         return order
 
-    def _calculate_fee(self, signal: Any) -> Decimal:
+    def _calculate_fee(self, cost: Decimal) -> Decimal:
         """Calculate trading fee based on config.
 
         Args:
-            signal: Object providing an 'amount' attribute or key.
+            cost: Order cost.
 
         Returns:
             Decimal fee amount.
@@ -183,10 +184,19 @@ class PaperOrderExecutor:
         paper_config = self.config.get("paper", {})
         fee_rate = paper_config.get("trade_fee") or self.config.get("order", {}).get("trade_fee") or self.config.get("trade_fee", "0.001")
         fee_rate = Decimal(str(fee_rate))
-        amt = getattr(
-            signal, "amount", signal.get("amount") if isinstance(signal, dict) else 0
-        )
-        return Decimal(amt) * fee_rate
+        return cost * fee_rate
+
+    def _extract_price(self, signal: Any):
+        for key in ("price", "current_price"):
+            # Attribute style access
+            if hasattr(signal, key):
+                value = getattr(signal, key)
+                if value is not None:
+                    return value
+            # Dict-style access
+            if isinstance(signal, dict) and key in signal:
+                return signal[key]
+        raise ValueError("Signal price required")
 
     def _apply_slippage(self, signal: Any, side: str) -> Decimal:
         """Apply simulated slippage to order price.
@@ -202,21 +212,16 @@ class PaperOrderExecutor:
         paper_config = self.config.get("paper", {})
         slippage = paper_config.get("slippage") or self.config.get("order", {}).get("slippage") or self.config.get("slippage", "0.0005")
         slippage = Decimal(str(slippage))
+        price = self._extract_price(signal)
+        try:
+            price_d = Decimal(str(price))
+        except Exception:
+            raise ValueError("Signal price required")
         if side == "buy":
-            price = getattr(
-                signal, "current_price", signal.get("current_price") if isinstance(signal, dict) else None
-            )
+            adjusted = price_d * (1 + slippage)
         else:
-            price = getattr(
-                signal, "price", signal.get("price") if isinstance(signal, dict) else None
-            )
-        if price is None:
-            raise ValueError("Signal price required for slippage calculation")
-        price_d = Decimal(price)
-        if side == "buy":
-            return price_d * (Decimal("1") + slippage)
-        else:
-            return price_d * (Decimal("1") - slippage)
+            adjusted = price_d * (1 - slippage)
+        return adjusted.quantize(Decimal("0.0001"))
 
 
     def get_balance(self) -> Decimal:

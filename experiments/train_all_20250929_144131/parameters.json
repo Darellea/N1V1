@@ -1,5 +1,11 @@
 {
-  "random_seed": 777,
+  "data_file": "data.csv",
+  "symbol": null,
+  "min_samples": 100,
+  "verbose": false,
+  "config_file": "config.json",
+  "output_file": "results.json",
+  "random_seed": 42,
   "environment_snapshot": {
     "python_version": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
     "platform": "Windows-10-10.0.19042-SP0",
@@ -39,19 +45,17 @@
       "commit_hash": "7e48a12a36bf7e8fecb469caee76b78680372dd5",
       "branch": "main",
       "remote_url": "https://github.com/Darellea/N1V1.git",
-      "status": "M anomalies.json\n M core/alert_rules_manager.py\n M core/cache.py\n M core/config_manager.py\n M core/execution/paper_executor.py\n M core/logging_utils.py\n M core/metrics_collector.py\n M core/metrics_endpoint.py\n M core/order_manager.py\n M core/signal_router/router.py\n D data/historical/test_data/f78c83afe6d317f0c106b24ac826d8d0.parquet\n M data/performance_baselines.json\n M experiments/integration_test/metadata.json\n M experiments/integration_test/parameters.json\n M experiments/integration_test/reproducibility_checklist.json\n M experiments/test_reproducibility/metadata.json\n M experiments/test_reproducibility/reproducibility_checklist.json\n M loc_analysis.json\n M logs/anomalies/anomalies.json\n M md/FullTB.md\n M monitoring/alerts.json\n M monitoring/drift_history.json\n M monitoring/performance_history.json\n M results/walk_forward/walk_forward_results.json\n M results/walk_forward/walk_forward_summary.json\n M tests/core/test_monitoring_observability.py\n M tests/core/test_order_manager.py\n M tests/core/test_paper_executor.py\n M tests/security/test_secure_logging.py\n?? experiments/train_all_20250929_112716/\n?? experiments/train_all_20250929_124322/\n?? experiments/train_all_20250929_132637/\n?? experiments/train_all_20250929_140314/\n?? experiments/train_all_20250929_142350/\n?? experiments/train_all_20250929_144131/\n?? reports/metrics/metrics_test_strategy_20250929_123401.json\n?? reports/metrics/metrics_test_strategy_20250929_131704.json\n?? reports/metrics/metrics_test_strategy_20250929_135426.json\n?? reports/metrics/metrics_test_strategy_20250929_141356.json\n?? reports/metrics/metrics_test_strategy_20250929_143245.json\n?? reports/metrics/metrics_test_strategy_20250929_145126.json"
+      "status": "M anomalies.json\n M core/alert_rules_manager.py\n M core/cache.py\n M core/config_manager.py\n M core/execution/paper_executor.py\n M core/logging_utils.py\n M core/metrics_collector.py\n M core/metrics_endpoint.py\n M core/order_manager.py\n M core/signal_router/router.py\n D data/historical/test_data/f78c83afe6d317f0c106b24ac826d8d0.parquet\n M data/performance_baselines.json\n M experiments/integration_test/metadata.json\n M experiments/integration_test/parameters.json\n M experiments/integration_test/reproducibility_checklist.json\n M experiments/test_reproducibility/metadata.json\n M experiments/test_reproducibility/reproducibility_checklist.json\n M logs/anomalies/anomalies.json\n M md/FullTB.md\n M monitoring/alerts.json\n M monitoring/drift_history.json\n M monitoring/performance_history.json\n M results/walk_forward/walk_forward_results.json\n M results/walk_forward/walk_forward_summary.json\n M tests/core/test_monitoring_observability.py\n M tests/core/test_order_manager.py\n M tests/core/test_paper_executor.py\n M tests/security/test_secure_logging.py\n?? experiments/train_all_20250929_112716/\n?? experiments/train_all_20250929_124322/\n?? experiments/train_all_20250929_132637/\n?? experiments/train_all_20250929_140314/\n?? experiments/train_all_20250929_142350/\n?? experiments/train_all_20250929_144131/\n?? reports/metrics/metrics_test_strategy_20250929_123401.json\n?? reports/metrics/metrics_test_strategy_20250929_131704.json\n?? reports/metrics/metrics_test_strategy_20250929_135426.json\n?? reports/metrics/metrics_test_strategy_20250929_141356.json\n?? reports/metrics/metrics_test_strategy_20250929_143245.json"
     },
     "hardware": {
       "cpu_count": 4,
       "cpu_count_logical": 4,
       "memory_total_gb": 15.83,
-      "memory_available_gb": 4.44
+      "memory_available_gb": 4.03
     }
   },
-  "model_config": {
-    "type": "test",
-    "params": {
-      "n_estimators": 100
-    }
-  }
+  "predictive_models_enabled": true,
+  "models_config": [
+    "price_predictor"
+  ]
 }

@@ -54,12 +54,13 @@ class MetricsEndpoint:
         self.port = self.config.get('port', 9090)
         self.path = self.config.get('path', '/metrics')
 
-        # Security configuration - secure defaults
+        # Security configuration - enable auth by default for secure access
         self.enable_auth = self.config.get('enable_auth', True)  # secure default
         self.auth_token = self.config.get('auth_token', '')
-        # Only disable auth if explicitly set to False, otherwise keep secure default
-        if self.config.get('enable_auth') is False:
-            self.enable_auth = False
+        # If auth_token is provided and auth not explicitly disabled, enable auth
+        if self.auth_token and 'enable_auth' not in self.config:
+            self.enable_auth = True
+        # If auth_token is not provided but auth is enabled, log warning
         if not self.auth_token and self.enable_auth:
             logger.warning("Authentication enabled but no auth_token provided - metrics endpoint will reject all requests")
 
@@ -98,8 +99,7 @@ class MetricsEndpoint:
 
         # Add middleware
         app.middlewares.append(self._request_middleware)
-        if self.enable_auth:
-            app.middlewares.append(self._auth_middleware)
+        app.middlewares.append(self._auth_middleware)
 
         # Add routes
         app.router.add_get(self.path, self._metrics_handler)
@@ -120,8 +120,7 @@ class MetricsEndpoint:
 
             # Add middleware
             self.app.middlewares.append(self._request_middleware)
-            if self.enable_auth:
-                self.app.middlewares.append(self._auth_middleware)
+            self.app.middlewares.append(self._auth_middleware)
 
             # Add routes
             self.app.router.add_get(self.path, self._metrics_handler)
@@ -267,32 +266,27 @@ class MetricsEndpoint:
     @web.middleware
     async def _auth_middleware(self, request: web.Request, handler):
         """Authentication middleware."""
-        # Allow bypass in test/development environments when no auth_token is set
-        from core.config_manager import get_config_manager
-        config_manager = get_config_manager()
-
-        env_mode = config_manager.get('environment.mode', 'paper')
-        is_test_or_dev = env_mode in ('test', 'development')
-        no_auth_token = not self.auth_token
-
-        # Skip auth for /metrics and /health endpoints in test/dev mode with no token
-        if is_test_or_dev and no_auth_token and request.path in ('/metrics', '/health'):
+        # /health is always public
+        if request.path == "/health":
             return await handler(request)
 
-        if not self.enable_auth:
+        # If no auth_token configured, allow all requests
+        if self.auth_token is None or self.auth_token == "":
             return await handler(request)
 
-        # Check for authorization header
-        auth_header = request.headers.get('Authorization', '')
+        # For /metrics, require Bearer token authentication
+        if request.path == "/metrics":
+            auth_header = request.headers.get('Authorization', '')
 
-        if not auth_header.startswith('Bearer '):
-            raise web.HTTPUnauthorized(text="Missing or invalid authorization header")
+            if not auth_header.startswith('Bearer '):
+                raise web.HTTPUnauthorized(text="Missing or invalid authorization header")
 
-        token = auth_header[7:]  # Remove 'Bearer ' prefix
+            token = auth_header[7:]  # Remove 'Bearer ' prefix
 
-        if token != self.auth_token:
-            raise web.HTTPUnauthorized(text="Invalid authentication token")
+            if token != self.auth_token:
+                raise web.HTTPUnauthorized(text="Invalid authentication token")
 
+        # For other paths (including invalid ones), allow to proceed to 404
         return await handler(request)
 
     async def _metrics_handler(self, request: web.Request) -> web.Response:

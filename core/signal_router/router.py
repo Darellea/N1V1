@@ -105,6 +105,9 @@ class JournalWriter:
         and safe to call from non-async code; it will fall back to a
         synchronous write if no running event loop is available.
         """
+        # Ensure background worker is started and file is created
+        self._ensure_task()
+
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
@@ -117,12 +120,9 @@ class JournalWriter:
                 logger.exception("JournalWriter failed to write entry (sync fallback)")
             return
 
-        # If loop is running, schedule the task
+        # If loop is running, enqueue synchronously (worker task handles async writing)
         if loop.is_running():
-            if self.task_manager and hasattr(self.task_manager, "create_task"):
-                self.task_manager.create_task(self._queue.put(entry))
-            else:
-                asyncio.create_task(self._queue.put(entry))
+            self._queue.put_nowait(entry)
         else:
             # No running loop - synchronous write
             try:
@@ -138,6 +138,11 @@ class JournalWriter:
         to finish. Best-effort: will not raise on failure.
         """
         await self._queue.put(None)
+        if self._task and not self._task.done():
+            try:
+                await self._task
+            except Exception:
+                logger.exception("Error waiting for journal writer task completion")
 
 
 class SignalRouter:

@@ -466,12 +466,12 @@ class TestAlertingSystem:
         metrics_data = {"error_rate": 10}
 
         # First trigger
-        triggered1 = await rule.evaluate(metrics_data)
-        assert triggered1
+        alerts1 = await self.alert_manager.evaluate_rules(metrics_data)
+        assert len(alerts1) == 1
 
         # Second trigger (should be deduplicated)
-        triggered2 = await rule.evaluate(metrics_data)
-        assert not triggered2  # Should be suppressed due to deduplication
+        alerts2 = await self.alert_manager.evaluate_rules(metrics_data)
+        assert len(alerts2) == 0  # Should be suppressed due to deduplication
 
     @pytest.mark.asyncio
     async def test_notification_delivery(self):
@@ -492,7 +492,8 @@ class TestAlertingSystem:
 
             # Trigger alert
             metrics_data = {"memory_usage": 95}
-            await rule.evaluate(metrics_data)
+            alerts = await self.alert_manager.evaluate_rules(metrics_data)
+            assert len(alerts) == 1
 
             # Verify notifications were sent
             mock_discord.assert_called_once()
