@@ -4,6 +4,7 @@
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Code Style](https://img.shields.io/badge/code_style-black-black)
+![Test Coverage](https://img.shields.io/badge/tests-2924_passed-success)
 
 ```mermaid
 flowchart TD
