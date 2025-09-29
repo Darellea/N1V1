@@ -147,6 +147,465 @@ sequenceDiagram
     BE->>BE: Update state & repeat
 ```
 
+## Repository Structure
+
+```text
+├── .coverage
+├── .coveragerc
+├── .env
+├── .gitignore
+├── ENHANCED_BINARY_MODEL_README.md
+├── ENSEMBLE_README.md
+├── INFO.txt
+├── README
+│   ├── README_CIRCUIT_BREAKER.md
+│   ├── README_MONITORING_OBSERVABILITY.md
+│   ├── README_REGIME_FORECASTING.md
+│   ├── README_SELF_HEALING_ENGINE.md
+│   ├── README_STRATEGY_GENERATOR.md
+│   └── README_TESTING_FRAMEWORK.md
+├── README.md
+├── TODO.md
+├── acceptance_reports
+│   └── acceptance_summary.json
+├── anomalies.json
+├── api
+│   ├── __init__.py
+│   ├── app.py
+│   ├── middleware.py
+│   ├── models.py
+│   └── schemas.py
+├── backtest
+│   ├── __init__.py
+│   └── backtester.py
+├── benchmark_data_optimizations.py
+├── benchmark_results.json
+├── chaos_reports.json
+├── check_sizes.py
+├── config.json
+├── config_binary_integration_example.json
+├── config_data_expansion.json
+├── config_ensemble_example.json
+├── config_retraining_scheduler.json
+├── core
+│   ├── __init__.py
+│   ├── alert_rules_manager.py
+│   ├── async_optimizer.py
+│   ├── binary_model_integration.py
+│   ├── binary_model_metrics.py
+│   ├── bot_engine.py
+│   ├── cache.py
+│   ├── circuit_breaker.py
+│   ├── component_factory.py
+│   ├── config_manager.py
+│   ├── contracts.py
+│   ├── dashboard_manager.py
+│   ├── data_expansion_manager.py
+│   ├── data_manager.py
+│   ├── data_processor.py
+│   ├── diagnostics.py
+│   ├── distributed_system.py
+│   ├── ensemble_manager.py
+│   ├── execution
+│   │   ├── __init__.py
+│   │   ├── adaptive_pricer.py
+│   │   ├── backtest_executor.py
+│   │   ├── base_executor.py
+│   │   ├── dca_executor.py
+│   │   ├── execution_types.py
+│   │   ├── live_executor.py
+│   │   ├── order_processor.py
+│   │   ├── paper_executor.py
+│   │   ├── retry_manager.py
+│   │   ├── smart_layer.py
+│   │   ├── smart_order_executor.py
+│   │   ├── twap_executor.py
+│   │   ├── validator.py
+│   │   └── vwap_executor.py
+│   ├── healthcheck.py
+│   ├── interfaces.py
+│   ├── logging_utils.py
+│   ├── management
+│   │   ├── __init__.py
+│   │   ├── portfolio_manager.py
+│   │   └── reliability_manager.py
+│   ├── memory_manager.py
+│   ├── metrics_collector.py
+│   ├── metrics_endpoint.py
+│   ├── model_monitor.py
+│   ├── order_executor.py
+│   ├── order_manager.py
+│   ├── performance_monitor.py
+│   ├── performance_profiler.py
+│   ├── performance_reports.py
+│   ├── performance_tracker.py
+│   ├── self_healing_engine.py
+│   ├── signal_processor.py
+│   ├── signal_router
+│   │   ├── __init__.py
+│   │   ├── event_bus.py
+│   │   ├── events.py
+│   │   ├── retry_hooks.py
+│   │   ├── route_policies.py
+│   │   ├── router.py
+│   │   └── signal_validators.py
+│   ├── signal_router.py
+│   ├── state_manager.py
+│   ├── task_manager.py
+│   ├── timeframe_manager.py
+│   ├── trading_coordinator.py
+│   ├── types
+│   │   ├── __init__.py
+│   │   └── order_types.py
+│   ├── types.py
+│   ├── utils
+│   │   ├── __init__.py
+│   │   ├── config_utils.py
+│   │   └── error_utils.py
+│   └── watchdog.py
+├── data
+│   ├── __init__.py
+│   ├── constants.py
+│   ├── data_fetcher.py
+│   ├── dataset_versioning.py
+│   ├── historical_loader.py
+│   ├── interfaces.py
+│   └── performance_baselines.json
+├── debug_regression.py
+├── demo
+│   ├── demo_circuit_breaker.py
+│   ├── demo_cross_pair_validation.py
+│   ├── demo_monitoring_integration.py
+│   ├── demo_performance_optimization.py
+│   ├── demo_regime_forecasting.py
+│   ├── demo_self_healing_engine.py
+│   ├── demo_strategy_generator.py
+│   ├── demo_time_utils.py
+│   ├── test_anomaly_integration.py
+│   ├── test_execution_demo.py
+│   ├── test_metrics_demo.py
+│   └── test_simple_metrics.py
+├── demo_calibrated_model_config.json
+├── demo_docstring_standardization.py
+├── demo_duplication_elimination.py
+├── demo_training_results.json
+├── deploy
+│   ├── Dockerfile.api
+│   ├── Dockerfile.core
+│   ├── Dockerfile.ml
+│   ├── Dockerfile.ml-serving
+│   ├── Dockerfile.monitoring
+│   ├── canary.sh
+│   ├── docker-compose.dev.yml
+│   └── k8s
+│       ├── configmap.yaml
+│       ├── deployment-api.yaml
+│       ├── deployment-core.yaml
+│       ├── hpa.yaml
+│       ├── ingress.yaml
+│       ├── ml-serving.yaml
+│       ├── namespace.yaml
+│       ├── services.yaml
+│       └── statefulset-ml.yaml
+├── error1.txt
+├── etc
+│   └── passwd
+├── feature_importance.png
+├── horizon_threshold_test.txt
+├── knowledge_base
+│   ├── __init__.py
+│   ├── adaptive.py
+│   ├── manager.py
+│   ├── schema.py
+│   └── storage.py
+├── loc_analysis.json
+├── main.py
+├── ml
+│   ├── __init__.py
+│   ├── features.py
+│   ├── indicators.py
+│   ├── ml_filter.py
+│   ├── model_loader.py
+│   ├── model_monitor.py
+│   ├── serving.py
+│   ├── train.py
+│   └── trainer.py
+├── notifier
+│   ├── __init__.py
+│   ├── discord_bot.py
+│   └── test_discord_send.py
+├── optimization
+│   ├── __init__.py
+│   ├── asset_selector.py
+│   ├── base_optimizer.py
+│   ├── bayesian_optimizer.py
+│   ├── config.py
+│   ├── cross_asset_validation.py
+│   ├── cross_asset_validator.py
+│   ├── distributed_evaluator.py
+│   ├── genetic_optimizer.py
+│   ├── genome.py
+│   ├── market_data_fetcher.py
+│   ├── optimizer_factory.py
+│   ├── rl_optimizer.py
+│   ├── strategy_factory.py
+│   ├── strategy_generator.py
+│   ├── validation_criteria.py
+│   ├── validation_results.py
+│   └── walk_forward.py
+├── portfolio
+│   ├── __init__.py
+│   ├── allocation_engine.py
+│   ├── allocator.py
+│   ├── hedging.py
+│   ├── performance_aggregator.py
+│   ├── portfolio_manager.py
+│   └── strategy_ensemble.py
+├── predictive_models
+│   ├── __init__.py
+│   ├── predictive_model_manager.py
+│   ├── price_predictor.py
+│   ├── types.py
+│   ├── volatility_predictor.py
+│   └── volume_predictor.py
+├── pyproject.toml
+├── pytest.ini
+├── reporting
+│   ├── __init__.py
+│   ├── metrics.py
+│   ├── scheduler.py
+│   └── sync.py
+├── requirements-dev.txt
+├── requirements.txt
+├── risk
+│   ├── __init__.py
+│   ├── adaptive_policy.py
+│   ├── anomaly_detector.py
+│   ├── risk_manager.py
+│   └── utils.py
+├── scheduler
+│   ├── diagnostic_scheduler.py
+│   └── retraining_scheduler.py
+├── scripts
+│   ├── __init__.py
+│   ├── chaos_test.sh
+│   ├── count_loc.py
+│   ├── demo_binary_integration.py
+│   ├── demo_binary_monitoring.py
+│   ├── demo_binary_training.py
+│   ├── demo_calibration_threshold.py
+│   ├── migrate_to_binary_labels.py
+│   ├── run_acceptance_tests.py
+│   ├── run_data_expansion.py
+│   ├── run_final_audit.py
+│   ├── run_model_benchmarks.py
+│   ├── run_profiling.py
+│   ├── run_retraining_scheduler.py
+│   ├── test_binary_labels.py
+│   └── tree.py
+├── shap_feature_importance.txt
+├── start.bat
+├── strategies
+│   ├── __init__.py
+│   ├── atr_breakout_strategy.py
+│   ├── base_strategy.py
+│   ├── bollinger_reversion_strategy.py
+│   ├── donchian_breakout_strategy.py
+│   ├── ema_cross_strategy.py
+│   ├── generated
+│   │   └── __init__.py
+│   ├── indicators_cache.py
+│   ├── keltner_channel_strategy.py
+│   ├── macd_strategy.py
+│   ├── mixins.py
+│   ├── obv_strategy.py
+│   ├── regime
+│   │   ├── market_regime.py
+│   │   ├── regime_forecaster.py
+│   │   └── strategy_selector.py
+│   ├── rsi_strategy.py
+│   ├── stochastic_strategy.py
+│   └── vwap_pullback_strategy.py
+├── test_benchmark_results.json
+├── test_data.csv
+├── test_logging_demo.py
+├── test_model.model_card.json
+├── test_model_config.json
+├── test_model_new.model_card.json
+├── test_model_new_config.json
+├── test_output.log.1
+├── test_results.json
+├── test_system_validation.py
+├── test_validation_data.csv
+├── tests
+│   ├── acceptance
+│   │   ├── test_docs.py
+│   │   ├── test_ml_quality.py
+│   │   ├── test_scalability.py
+│   │   ├── test_slo.py
+│   │   └── test_stability.py
+│   ├── api
+│   │   ├── test_api_app.py
+│   │   └── test_endpoints.py
+│   ├── backtest
+│   │   ├── test_backtest_executor.py
+│   │   ├── test_backtester.py
+│   │   └── test_regime_aware_backtester.py
+│   ├── conftest.py
+│   ├── core
+│   │   ├── test_alert_rules_manager.py
+│   │   ├── test_alerting.py
+│   │   ├── test_algorithmic_correctness.py
+│   │   ├── test_binary_integration_enhanced.py
+│   │   ├── test_binary_model_metrics.py
+│   │   ├── test_bot_engine_comprehensive.py
+│   │   ├── test_cache_comprehensive.py
+│   │   ├── test_circuit_breaker.py
+│   │   ├── test_config_manager.py
+│   │   ├── test_dashboard_manager.py
+│   │   ├── test_dependency_injection.py
+│   │   ├── test_diagnostics.py
+│   │   ├── test_ensemble_manager.py
+│   │   ├── test_event_driven_architecture.py
+│   │   ├── test_execution.py
+│   │   ├── test_journal_writer.py
+│   │   ├── test_live_executor.py
+│   │   ├── test_logging_and_resources.py
+│   │   ├── test_memory_leak_stress.py
+│   │   ├── test_monitoring_observability.py
+│   │   ├── test_order_manager.py
+│   │   ├── test_order_processor.py
+│   │   ├── test_paper_executor.py
+│   │   ├── test_performance_optimization.py
+│   │   ├── test_regression.py
+│   │   ├── test_reliability_manager.py
+│   │   ├── test_safe_mode.py
+│   │   ├── test_self_healing_engine.py
+│   │   ├── test_signal_router.py
+│   │   ├── test_signal_router_facade.py
+│   │   ├── test_task_manager.py
+│   │   ├── test_timeframe_manager.py
+│   │   ├── test_trading_signal_amount.py
+│   └── test_types.py
+│   ├── data
+│   │   ├── test_data.py
+│   │   ├── test_data_fetcher.py
+│   │   ├── test_data_fixes.py
+│   │   ├── test_data_module_refactoring.py
+│   │   ├── test_data_security.py
+│   │   └── test_historical_loader.py
+│   ├── edge_case_testing.py
+│   ├── execution
+│   │   ├── test_smart_layer.py
+│   │   └── test_validator.py
+│   ├── integration
+│   │   ├── test_cross_feature_integration.py
+│   │   ├── test_distributed_system.py
+│   │   ├── test_ml_serving_integration.py
+│   │   └── test_order_flow_integration.py
+│   ├── integration_test_framework.py
+│   ├── knowledge_base
+│   │   └── test_knowledge_base.py
+│   ├── ml
+│   │   ├── test_features.py
+│   │   ├── test_indicators.py
+│   │   ├── test_ml.py
+│   │   ├── test_ml_artifact_model_card.py
+│   │   ├── test_ml_filter.py
+│   │   ├── test_ml_signal_router.py
+│   │   ├── test_model_loader.py
+│   │   ├── test_model_monitor.py
+│   │   ├── test_predictive_models.py
+│   │   ├── test_reproducibility.py
+│   │   ├── test_serving.py
+│   │   ├── test_train.py
+│   │   └── test_trainer.py
+│   ├── notifier
+│   │   ├── test_discord_integration.py
+│   │   └── test_discord_notifier.py
+│   ├── optimization
+│   │   ├── test_asset_selector.py
+│   │   ├── test_async_optimizer.py
+│   │   ├── test_cross_asset_validation.py
+│   │   ├── test_optimization.py
+│   │   └── test_walk_forward.py
+│   ├── portfolio
+│   │   ├── test_allocation_engine.py
+│   │   ├── test_portfolio.py
+│   │   ├── test_strategy_ensemble.py
+│   ├── reporting
+│   ├── risk
+│   │   ├── test_adaptive_policy.py
+│   │   ├── test_adaptive_risk.py
+│   │   ├── test_anomaly_detection.py
+│   │   ├── test_anomaly_detector.py
+│   │   ├── test_risk.py
+│   │   └── test_risk_manager_integration.py
+│   ├── run_comprehensive_tests.py
+│   ├── run_smoke_tests.py
+│   ├── scheduler
+│   ├── security
+│   │   ├── test_core_security.py
+│   │   ├── test_key_management.py
+│   │   ├── test_order_invariants.py
+│   │   ├── test_secret_manager.py
+│   │   └── test_secure_logging.py
+│   ├── strategies
+│   │   ├── test_market_regime.py
+│   │   ├── test_regime_forecaster.py
+│   │   ├── test_strategies.py
+│   │   ├── test_strategy.py
+│   │   ├── test_strategy_generator.py
+│   │   ├── test_strategy_integration.py
+│   │   └── test_strategy_selector.py
+│   ├── stress
+│   │   ├── chaos_tests.py
+│   │   ├── test_cluster_scaling.py
+│   │   └── test_load.py
+│   ├── test_integration.py
+│   ├── test_main.py
+│   └── utils
+│       ├── test_adapter.py
+│       ├── test_circular_import_fix.py
+│       ├── test_config_loader.py
+│       ├── test_demo_time_utils.py
+│       ├── test_docstring_standardization.py
+│       ├── test_logger.py
+│       ├── test_retry.py
+│       ├── test_time.py
+│       └── test_time_utils.py
+├── tools
+│   └── check_imports.py
+├── training_results.json
+├── training_results_backtest.json
+├── training_results_new.json
+├── training_results_shap12.json
+├── training_results_stress.json
+├── training_results_unbalance.json
+├── training_results_weights.json
+├── tree.txt
+├── utils
+│   ├── __init__.py
+│   ├── adapter.py
+│   ├── code_quality.py
+│   ├── config_factory.py
+│   ├── config_generator.py
+│   ├── config_loader.py
+│   ├── constants.py
+│   ├── dependency_manager.py
+│   ├── docstring_standardizer.py
+│   ├── duplication_analyzer.py
+│   ├── error_handler.py
+│   ├── error_handling_utils.py
+│   ├── final_auditor.py
+│   ├── logger.py
+│   ├── logging_manager.py
+│   ├── logging_utils.py
+│   ├── retry.py
+│   ├── security.py
+│   └── time.py
+```
+
 ## Module Breakdown
 
 ### Core Framework (`core/`)

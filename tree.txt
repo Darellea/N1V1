@@ -2,8 +2,6 @@
 ├── .coveragerc
 ├── .env
 ├── .gitignore
-├── BINARY_INTEGRATION_README.md
-├── BINARY_MIGRATION_DOCUMENTATION.md
 ├── ENHANCED_BINARY_MODEL_README.md
 ├── ENSEMBLE_README.md
 ├── INFO.txt
@@ -22,6 +20,7 @@
 ├── api
 │   ├── __init__.py
 │   ├── app.py
+│   ├── middleware.py
 │   ├── models.py
 │   └── schemas.py
 ├── backtest
@@ -137,7 +136,6 @@
 │   │   ├── data-2023
 │   │   ├── my_data_dir
 │   │   ├── test_data
-│   │   │   ├── 64c4ae2a5f518653450ba28dcae77eab.parquet
 │   │   │   └── f78c83afe6d317f0c106b24ac826d8d0.parquet
 │   │   └── test_unknown
 │   ├── historical_loader.py
@@ -430,7 +428,127 @@
 │   │   ├── metadata.json
 │   │   ├── parameters.json
 │   │   └── reproducibility_checklist.json
-│   └── train_all_20250924_095021
+│   ├── train_all_20250924_095021
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250924_171050
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250925_085620
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250925_101543
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250925_120900
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250925_141652
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250925_164223
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250926_102025
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250926_155144
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250926_163012
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250929_112716
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250929_124322
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250929_132637
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250929_140314
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250929_142350
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250929_144131
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250929_145951
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250929_151630
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250929_153418
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   ├── train_all_20250929_155153
+│   │   ├── artifacts
+│   │   │   └── config.json
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   │   └── reproducibility_checklist.json
+│   └── train_all_20250929_160515
 │       ├── artifacts
 │       │   └── config.json
 │       ├── metadata.json
@@ -582,12 +700,47 @@
 │   │   ├── test_slo.py
 │   │   └── test_stability.py
 │   ├── api
+│   │   ├── test_api_app.py
+│   │   └── test_endpoints.py
 │   ├── backtest
 │   │   ├── test_backtest_executor.py
 │   │   ├── test_backtester.py
 │   │   └── test_regime_aware_backtester.py
 │   ├── conftest.py
 │   ├── core
+│   │   ├── test_alert_rules_manager.py
+│   │   ├── test_alerting.py
+│   │   ├── test_algorithmic_correctness.py
+│   │   ├── test_binary_integration_enhanced.py
+│   │   ├── test_binary_model_metrics.py
+│   │   ├── test_bot_engine_comprehensive.py
+│   │   ├── test_cache_comprehensive.py
+│   │   ├── test_circuit_breaker.py
+│   │   ├── test_config_manager.py
+│   │   ├── test_dashboard_manager.py
+│   │   ├── test_dependency_injection.py
+│   │   ├── test_diagnostics.py
+│   │   ├── test_ensemble_manager.py
+│   │   ├── test_event_driven_architecture.py
+│   │   ├── test_execution.py
+│   │   ├── test_journal_writer.py
+│   │   ├── test_live_executor.py
+│   │   ├── test_logging_and_resources.py
+│   │   ├── test_memory_leak_stress.py
+│   │   ├── test_monitoring_observability.py
+│   │   ├── test_order_manager.py
+│   │   ├── test_order_processor.py
+│   │   ├── test_paper_executor.py
+│   │   ├── test_performance_optimization.py
+│   │   ├── test_regression.py
+│   │   ├── test_reliability_manager.py
+│   │   ├── test_safe_mode.py
+│   │   ├── test_self_healing_engine.py
+│   │   ├── test_signal_router.py
+│   │   ├── test_signal_router_facade.py
+│   │   ├── test_task_manager.py
+│   │   ├── test_timeframe_manager.py
+│   │   └── test_trading_signal_amount.py
 │   ├── data
 │   │   ├── test_data.py
 │   │   ├── test_data_fetcher.py
@@ -600,6 +753,7 @@
 │   │   ├── test_smart_layer.py
 │   │   └── test_validator.py
 │   ├── integration
+│   │   ├── test_cross_feature_integration.py
 │   │   ├── test_distributed_system.py
 │   │   ├── test_ml_serving_integration.py
 │   │   └── test_order_flow_integration.py
@@ -625,6 +779,7 @@
 │   │   └── test_discord_notifier.py
 │   ├── optimization
 │   │   ├── test_asset_selector.py
+│   │   ├── test_async_optimizer.py
 │   │   ├── test_cross_asset_validation.py
 │   │   ├── test_optimization.py
 │   │   └── test_walk_forward.py
@@ -636,6 +791,7 @@
 │   ├── risk
 │   │   ├── test_adaptive_policy.py
 │   │   ├── test_adaptive_risk.py
+│   │   ├── test_anomaly_detection.py
 │   │   ├── test_anomaly_detector.py
 │   │   ├── test_risk.py
 │   │   └── test_risk_manager_integration.py
@@ -643,9 +799,11 @@
 │   ├── run_smoke_tests.py
 │   ├── scheduler
 │   ├── security
+│   │   ├── test_core_security.py
 │   │   ├── test_key_management.py
 │   │   ├── test_order_invariants.py
-│   │   └── test_secret_manager.py
+│   │   ├── test_secret_manager.py
+│   │   └── test_secure_logging.py
 │   ├── strategies
 │   │   ├── test_market_regime.py
 │   │   ├── test_regime_forecaster.py
@@ -660,51 +818,6 @@
 │   │   └── test_load.py
 │   ├── test_integration.py
 │   ├── test_main.py
-│   ├── unit
-│   │   ├── test_alert_rules_manager.py
-│   │   ├── test_alerting.py
-│   │   ├── test_algorithmic_correctness.py
-│   │   ├── test_anomaly_detection.py
-│   │   ├── test_api_app.py
-│   │   ├── test_async_optimizer.py
-│   │   ├── test_binary_integration.py
-│   │   ├── test_binary_integration_enhanced.py
-│   │   ├── test_binary_model_metrics.py
-│   │   ├── test_bot_engine.py
-│   │   ├── test_bot_engine_comprehensive.py
-│   │   ├── test_cache_comprehensive.py
-│   │   ├── test_cache_eviction.py
-│   │   ├── test_circuit_breaker.py
-│   │   ├── test_config_manager.py
-│   │   ├── test_core_security.py
-│   │   ├── test_cross_feature_integration.py
-│   │   ├── test_dashboard_manager.py
-│   │   ├── test_dependency_injection.py
-│   │   ├── test_diagnostics.py
-│   │   ├── test_endpoints.py
-│   │   ├── test_ensemble_manager.py
-│   │   ├── test_event_driven_architecture.py
-│   │   ├── test_execution.py
-│   │   ├── test_journal_writer.py
-│   │   ├── test_live_executor.py
-│   │   ├── test_logging_and_resources.py
-│   │   ├── test_memory_leak_stress.py
-│   │   ├── test_monitoring_observability.py
-│   │   ├── test_order_manager.py
-│   │   ├── test_order_processor.py
-│   │   ├── test_paper_executor.py
-│   │   ├── test_performance_optimization.py
-│   │   ├── test_regression.py
-│   │   ├── test_reliability_manager.py
-│   │   ├── test_safe_mode.py
-│   │   ├── test_secure_logging.py
-│   │   ├── test_self_healing_engine.py
-│   │   ├── test_signal_router.py
-│   │   ├── test_signal_router_facade.py
-│   │   ├── test_task_manager.py
-│   │   ├── test_timeframe_manager.py
-│   │   ├── test_trading_signal_amount.py
-│   │   └── test_types.py
 │   └── utils
 │       ├── test_adapter.py
 │       ├── test_circular_import_fix.py
