@@ -9,6 +9,7 @@ from enum import Enum
 
 class ExecutionPolicy(Enum):
     """Available execution policies."""
+
     TWAP = "twap"
     VWAP = "vwap"
     DCA = "dca"
@@ -19,6 +20,7 @@ class ExecutionPolicy(Enum):
 
 class ExecutionStatus(Enum):
     """Execution status."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"

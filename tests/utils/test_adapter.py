@@ -1,12 +1,12 @@
-import pytest
-from decimal import Decimal
-from unittest.mock import MagicMock
 import dataclasses
-from enum import Enum
 from datetime import datetime
+from decimal import Decimal
+from enum import Enum
 
-from utils.adapter import signal_to_dict, _normalize_timestamp
-from core.contracts import TradingSignal, SignalType, SignalStrength
+import pytest
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
+from utils.adapter import _normalize_timestamp, signal_to_dict
 
 
 class MockOrderType(Enum):
@@ -189,6 +189,7 @@ def test_signal_to_dict_with_broken_property():
 
 def test_signal_to_dict_empty_object():
     """Test signal_to_dict with object that has no useful attributes."""
+
     class EmptyObject:
         pass
 
@@ -200,6 +201,7 @@ def test_signal_to_dict_empty_object():
 
 def test_signal_to_dict_with_callable_attributes():
     """Test that callable attributes are included in __dict__ fallback (current behavior)."""
+
     class ObjectWithCallable:
         def __init__(self):
             self.symbol = "BTC/USDT"
@@ -217,6 +219,7 @@ def test_signal_to_dict_with_callable_attributes():
 
 def test_signal_to_dict_with_private_attributes():
     """Test that private attributes (starting with _) are not included."""
+
     class ObjectWithPrivate:
         def __init__(self):
             self.symbol = "BTC/USDT"
@@ -233,6 +236,7 @@ def test_signal_to_dict_with_private_attributes():
 
 def test_signal_to_dict_with_none_values():
     """Test signal_to_dict handles None values properly."""
+
     class ObjectWithNone:
         def __init__(self):
             self.symbol = "BTC/USDT"
@@ -249,6 +253,7 @@ def test_signal_to_dict_with_none_values():
 
 def test_signal_to_dict_precedence():
     """Test that to_dict() takes precedence over attribute probing."""
+
     class SignalWithBoth:
         def __init__(self):
             self.symbol = "FROM_ATTR"
@@ -270,6 +275,7 @@ def test_signal_to_dict_precedence():
 
 def test_signal_to_dict_dataclass_precedence():
     """Test that dataclass conversion takes precedence over to_dict()."""
+
     @dataclasses.dataclass
     class DataclassWithToDict:
         symbol: str
@@ -288,6 +294,7 @@ def test_signal_to_dict_dataclass_precedence():
 
 def test_signal_to_dict_with_complex_enum():
     """Test enum conversion with value attribute."""
+
     class ComplexEnum(Enum):
         BUY = 1
         SELL = 2
@@ -305,6 +312,7 @@ def test_signal_to_dict_with_complex_enum():
 
 def test_signal_to_dict_with_non_enum_value_attr():
     """Test handling of objects with 'value' attribute that are not enums."""
+
     class NotAnEnum:
         def __init__(self):
             self.value = "not_an_enum"
@@ -341,6 +349,7 @@ def test_normalize_timestamp_float():
 def test_normalize_timestamp_datetime():
     """Test _normalize_timestamp with datetime input."""
     from datetime import timezone
+
     dt = datetime(2021, 10, 1, 12, 0, 0, tzinfo=timezone.utc)
     result = _normalize_timestamp(dt)
     expected = int(dt.timestamp() * 1000)
@@ -351,7 +360,7 @@ def test_normalize_timestamp_datetime():
 def test_normalize_timestamp_str():
     """Test _normalize_timestamp with ISO string input."""
     iso_str = "2021-10-01T12:00:00Z"
-    dt = datetime.fromisoformat(iso_str.replace('Z', '+00:00'))
+    dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
     expected = int(dt.timestamp() * 1000)
     result = _normalize_timestamp(iso_str)
     assert result == expected
@@ -366,6 +375,7 @@ def test_normalize_timestamp_unsupported():
 
 def test_signal_to_dict_with_float_timestamp():
     """Test signal_to_dict normalizes float timestamp in attribute probe."""
+
     class SignalWithFloatTimestamp:
         def __init__(self):
             self.symbol = "BTC/USDT"

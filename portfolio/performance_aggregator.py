@@ -5,13 +5,12 @@ Aggregates performance metrics across strategies, calculates portfolio-level sta
 and provides comprehensive reporting capabilities.
 """
 
-import logging
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, Tuple
-from decimal import Decimal
-import statistics
 import json
+import logging
 import os
+import statistics
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
 # Import metrics functions or implement locally
 from utils.logger import get_trade_logger
@@ -32,7 +31,7 @@ def calculate_sharpe_ratio(returns, risk_free_rate=0.02):
             return 0.0
 
         # Annualized Sharpe ratio (assuming daily returns)
-        sharpe_ratio = (avg_return - risk_free_rate) / std_return * (252 ** 0.5)
+        sharpe_ratio = (avg_return - risk_free_rate) / std_return * (252**0.5)
         return sharpe_ratio
     except:
         return 0.0
@@ -56,7 +55,7 @@ def calculate_sortino_ratio(returns, risk_free_rate=0.02):
             return 0.0
 
         # Annualized Sortino ratio
-        sortino_ratio = (avg_return - risk_free_rate) / downside_std * (252 ** 0.5)
+        sortino_ratio = (avg_return - risk_free_rate) / downside_std * (252**0.5)
         return sortino_ratio
     except:
         return 0.0
@@ -124,10 +123,10 @@ class PerformanceAggregator:
         self.logger = get_trade_logger()
 
         # Configuration with defaults
-        self.output_dir = self.config.get('output_dir', 'reports/portfolio')
-        self.save_interval_hours = self.config.get('save_interval_hours', 24)
-        self.risk_free_rate = self.config.get('risk_free_rate', 0.02)
-        self.benchmark_symbol = self.config.get('benchmark_symbol', 'SPY')
+        self.output_dir = self.config.get("output_dir", "reports/portfolio")
+        self.save_interval_hours = self.config.get("save_interval_hours", 24)
+        self.risk_free_rate = self.config.get("risk_free_rate", 0.02)
+        self.benchmark_symbol = self.config.get("benchmark_symbol", "SPY")
 
         # Ensure output directory exists
         os.makedirs(self.output_dir, exist_ok=True)
@@ -144,8 +143,11 @@ class PerformanceAggregator:
 
         logger.info("PerformanceAggregator initialized")
 
-    def aggregate_performance(self, strategy_performance: Dict[str, List[Dict[str, Any]]],
-                            allocations: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    def aggregate_performance(
+        self,
+        strategy_performance: Dict[str, List[Dict[str, Any]]],
+        allocations: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Any]:
         """
         Aggregate performance across all strategies.
 
@@ -168,47 +170,64 @@ class PerformanceAggregator:
                 )
 
             # Calculate portfolio-level metrics
-            portfolio_metrics = self._calculate_portfolio_metrics(strategy_metrics, allocations)
+            portfolio_metrics = self._calculate_portfolio_metrics(
+                strategy_metrics, allocations
+            )
 
             # Calculate contribution analysis
-            contribution_analysis = self._calculate_contribution_analysis(strategy_metrics, allocations)
+            contribution_analysis = self._calculate_contribution_analysis(
+                strategy_metrics, allocations
+            )
 
             # Update correlation matrix
             self._update_correlation_matrix(strategy_performance)
 
             # Store portfolio history
-            self._store_portfolio_snapshot(portfolio_metrics, strategy_metrics, allocations)
+            self._store_portfolio_snapshot(
+                portfolio_metrics, strategy_metrics, allocations
+            )
 
             # Compile final result
             result = {
-                'portfolio_metrics': portfolio_metrics,
-                'strategy_metrics': strategy_metrics,
-                'contribution_analysis': contribution_analysis,
-                'allocations': allocations,
-                'correlation_matrix': self.correlation_matrix,
-                'risk_metrics': self._calculate_risk_metrics(strategy_performance),
-                'timestamp': datetime.now()
+                "portfolio_metrics": portfolio_metrics,
+                "strategy_metrics": strategy_metrics,
+                "contribution_analysis": contribution_analysis,
+                "allocations": allocations,
+                "correlation_matrix": self.correlation_matrix,
+                "risk_metrics": self._calculate_risk_metrics(strategy_performance),
+                "timestamp": datetime.now(),
             }
 
-            logger.info(f"Aggregated performance for {len(strategy_performance)} strategies")
+            logger.info(
+                f"Aggregated performance for {len(strategy_performance)} strategies"
+            )
             return result
 
         except Exception as e:
             logger.exception(f"Error aggregating performance: {e}")
             return self._get_empty_portfolio_performance()
 
-    def _calculate_strategy_metrics(self, strategy_id: str,
-                                  performance_history: List[Dict[str, Any]],
-                                  allocation: Dict[str, Any]) -> Dict[str, Any]:
+    def _calculate_strategy_metrics(
+        self,
+        strategy_id: str,
+        performance_history: List[Dict[str, Any]],
+        allocation: Dict[str, Any],
+    ) -> Dict[str, Any]:
         """Calculate comprehensive metrics for a single strategy."""
         if not performance_history:
             return self._get_empty_strategy_metrics(strategy_id)
 
         try:
             # Extract key metrics
-            returns = [p.get('daily_return', 0.0) for p in performance_history if 'daily_return' in p]
-            pnl_values = [p.get('pnl', 0.0) for p in performance_history if 'pnl' in p]
-            trade_counts = [p.get('trades', 0) for p in performance_history if 'trades' in p]
+            returns = [
+                p.get("daily_return", 0.0)
+                for p in performance_history
+                if "daily_return" in p
+            ]
+            pnl_values = [p.get("pnl", 0.0) for p in performance_history if "pnl" in p]
+            trade_counts = [
+                p.get("trades", 0) for p in performance_history if "trades" in p
+            ]
 
             if not returns:
                 return self._get_empty_strategy_metrics(strategy_id)
@@ -239,33 +258,40 @@ class PerformanceAggregator:
             # Profit factor
             gross_profit = sum(pnl for pnl in pnl_values if pnl > 0)
             gross_loss = abs(sum(pnl for pnl in pnl_values if pnl < 0))
-            profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
+            profit_factor = (
+                gross_profit / gross_loss if gross_loss > 0 else float("inf")
+            )
 
             return {
-                'strategy_id': strategy_id,
-                'total_return': total_return,
-                'total_pnl': total_pnl,
-                'total_trades': total_trades,
-                'volatility': volatility,
-                'sharpe_ratio': sharpe_ratio,
-                'sortino_ratio': sortino_ratio,
-                'max_drawdown': max_dd,
-                'calmar_ratio': calmar_ratio,
-                'win_rate': win_rate,
-                'profit_factor': profit_factor,
-                'avg_trade_pnl': total_pnl / total_trades if total_trades > 0 else 0.0,
-                'allocation_weight': allocation.get('weight', 0.0),
-                'capital_allocated': float(allocation.get('capital_allocated', 0.0)),
-                'performance_score': allocation.get('performance_score', 0.5),
-                'data_points': len(performance_history)
+                "strategy_id": strategy_id,
+                "total_return": total_return,
+                "total_pnl": total_pnl,
+                "total_trades": total_trades,
+                "volatility": volatility,
+                "sharpe_ratio": sharpe_ratio,
+                "sortino_ratio": sortino_ratio,
+                "max_drawdown": max_dd,
+                "calmar_ratio": calmar_ratio,
+                "win_rate": win_rate,
+                "profit_factor": profit_factor,
+                "avg_trade_pnl": total_pnl / total_trades if total_trades > 0 else 0.0,
+                "allocation_weight": allocation.get("weight", 0.0),
+                "capital_allocated": float(allocation.get("capital_allocated", 0.0)),
+                "performance_score": allocation.get("performance_score", 0.5),
+                "data_points": len(performance_history),
             }
 
         except Exception as e:
-            logger.exception(f"Error calculating metrics for strategy {strategy_id}: {e}")
+            logger.exception(
+                f"Error calculating metrics for strategy {strategy_id}: {e}"
+            )
             return self._get_empty_strategy_metrics(strategy_id)
 
-    def _calculate_portfolio_metrics(self, strategy_metrics: Dict[str, Dict[str, Any]],
-                                   allocations: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    def _calculate_portfolio_metrics(
+        self,
+        strategy_metrics: Dict[str, Dict[str, Any]],
+        allocations: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Any]:
         """Calculate portfolio-level aggregated metrics."""
         if not strategy_metrics:
             return self._get_empty_portfolio_metrics()
@@ -279,96 +305,127 @@ class PerformanceAggregator:
             total_wins = 0
 
             for strategy_id, metrics in strategy_metrics.items():
-                weight = allocations.get(strategy_id, {}).get('weight', 0.0)
+                weight = allocations.get(strategy_id, {}).get("weight", 0.0)
 
-                total_weighted_return += metrics['total_return'] * weight
-                total_weighted_volatility += metrics['volatility'] * weight
-                total_pnl += metrics['total_pnl']
-                total_trades += metrics['total_trades']
-                total_wins += metrics['win_rate'] * metrics['total_trades']
+                total_weighted_return += metrics["total_return"] * weight
+                total_weighted_volatility += metrics["volatility"] * weight
+                total_pnl += metrics["total_pnl"]
+                total_trades += metrics["total_trades"]
+                total_wins += metrics["win_rate"] * metrics["total_trades"]
 
             # Portfolio-level ratios
-            portfolio_sharpe = total_weighted_return / total_weighted_volatility if total_weighted_volatility > 0 else 0.0
+            portfolio_sharpe = (
+                total_weighted_return / total_weighted_volatility
+                if total_weighted_volatility > 0
+                else 0.0
+            )
             portfolio_win_rate = total_wins / total_trades if total_trades > 0 else 0.0
 
             # Calculate portfolio drawdown (simplified)
-            portfolio_max_dd = max((metrics['max_drawdown'] for metrics in strategy_metrics.values()), default=0.0)
+            portfolio_max_dd = max(
+                (metrics["max_drawdown"] for metrics in strategy_metrics.values()),
+                default=0.0,
+            )
 
             return {
-                'total_return': total_weighted_return,
-                'total_pnl': total_pnl,
-                'total_trades': total_trades,
-                'portfolio_volatility': total_weighted_volatility,
-                'portfolio_sharpe_ratio': portfolio_sharpe,
-                'portfolio_win_rate': portfolio_win_rate,
-                'portfolio_max_drawdown': portfolio_max_dd,
-                'active_strategies': len(strategy_metrics),
-                'total_allocated_capital': sum(float(a.get('capital_allocated', 0.0)) for a in allocations.values()),
-                'diversification_ratio': self._calculate_diversification_ratio(strategy_metrics)
+                "total_return": total_weighted_return,
+                "total_pnl": total_pnl,
+                "total_trades": total_trades,
+                "portfolio_volatility": total_weighted_volatility,
+                "portfolio_sharpe_ratio": portfolio_sharpe,
+                "portfolio_win_rate": portfolio_win_rate,
+                "portfolio_max_drawdown": portfolio_max_dd,
+                "active_strategies": len(strategy_metrics),
+                "total_allocated_capital": sum(
+                    float(a.get("capital_allocated", 0.0)) for a in allocations.values()
+                ),
+                "diversification_ratio": self._calculate_diversification_ratio(
+                    strategy_metrics
+                ),
             }
 
         except Exception as e:
             logger.exception(f"Error calculating portfolio metrics: {e}")
             return self._get_empty_portfolio_metrics()
 
-    def _calculate_contribution_analysis(self, strategy_metrics: Dict[str, Dict[str, Any]],
-                                       allocations: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    def _calculate_contribution_analysis(
+        self,
+        strategy_metrics: Dict[str, Dict[str, Any]],
+        allocations: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Any]:
         """Calculate contribution analysis for each strategy."""
         try:
             contributions = {}
 
             for strategy_id, metrics in strategy_metrics.items():
-                weight = allocations.get(strategy_id, {}).get('weight', 0.0)
+                weight = allocations.get(strategy_id, {}).get("weight", 0.0)
 
                 contributions[strategy_id] = {
-                    'pnl_contribution': metrics['total_pnl'] * weight,
-                    'return_contribution': metrics['total_return'] * weight,
-                    'volatility_contribution': metrics['volatility'] * weight,
-                    'sharpe_contribution': metrics['sharpe_ratio'] * weight,
-                    'weight': weight,
-                    'relative_performance': self._calculate_relative_performance(strategy_id, strategy_metrics)
+                    "pnl_contribution": metrics["total_pnl"] * weight,
+                    "return_contribution": metrics["total_return"] * weight,
+                    "volatility_contribution": metrics["volatility"] * weight,
+                    "sharpe_contribution": metrics["sharpe_ratio"] * weight,
+                    "weight": weight,
+                    "relative_performance": self._calculate_relative_performance(
+                        strategy_id, strategy_metrics
+                    ),
                 }
 
             # Sort by contribution
-            sorted_contributions = dict(sorted(
-                contributions.items(),
-                key=lambda x: x[1]['pnl_contribution'],
-                reverse=True
-            ))
+            sorted_contributions = dict(
+                sorted(
+                    contributions.items(),
+                    key=lambda x: x[1]["pnl_contribution"],
+                    reverse=True,
+                )
+            )
 
             return {
-                'strategy_contributions': sorted_contributions,
-                'top_performer': max(contributions.items(), key=lambda x: x[1]['pnl_contribution'])[0],
-                'worst_performer': min(contributions.items(), key=lambda x: x[1]['pnl_contribution'])[0],
-                'contribution_diversity': self._calculate_contribution_diversity(contributions)
+                "strategy_contributions": sorted_contributions,
+                "top_performer": max(
+                    contributions.items(), key=lambda x: x[1]["pnl_contribution"]
+                )[0],
+                "worst_performer": min(
+                    contributions.items(), key=lambda x: x[1]["pnl_contribution"]
+                )[0],
+                "contribution_diversity": self._calculate_contribution_diversity(
+                    contributions
+                ),
             }
 
         except Exception as e:
             logger.exception(f"Error calculating contribution analysis: {e}")
-            return {'strategy_contributions': {}, 'error': str(e)}
+            return {"strategy_contributions": {}, "error": str(e)}
 
-    def _calculate_relative_performance(self, strategy_id: str,
-                                      strategy_metrics: Dict[str, Dict[str, Any]]) -> float:
+    def _calculate_relative_performance(
+        self, strategy_id: str, strategy_metrics: Dict[str, Dict[str, Any]]
+    ) -> float:
         """Calculate relative performance compared to portfolio average."""
         if strategy_id not in strategy_metrics:
             return 0.0
 
-        strategy_sharpe = strategy_metrics[strategy_id]['sharpe_ratio']
-        avg_sharpe = statistics.mean(m['sharpe_ratio'] for m in strategy_metrics.values())
+        strategy_sharpe = strategy_metrics[strategy_id]["sharpe_ratio"]
+        avg_sharpe = statistics.mean(
+            m["sharpe_ratio"] for m in strategy_metrics.values()
+        )
 
         if avg_sharpe == 0:
             return 0.0
 
         return (strategy_sharpe - avg_sharpe) / abs(avg_sharpe)
 
-    def _calculate_diversification_ratio(self, strategy_metrics: Dict[str, Dict[str, Any]]) -> float:
+    def _calculate_diversification_ratio(
+        self, strategy_metrics: Dict[str, Dict[str, Any]]
+    ) -> float:
         """Calculate portfolio diversification ratio."""
         if not strategy_metrics:
             return 0.0
 
         try:
             # Diversification ratio = portfolio volatility / weighted average of individual volatilities
-            individual_volatilities = [m['volatility'] for m in strategy_metrics.values()]
+            individual_volatilities = [
+                m["volatility"] for m in strategy_metrics.values()
+            ]
             avg_individual_vol = statistics.mean(individual_volatilities)
 
             # Simplified portfolio volatility (would need correlation in full implementation)
@@ -382,13 +439,15 @@ class PerformanceAggregator:
         except Exception:
             return 1.0
 
-    def _calculate_contribution_diversity(self, contributions: Dict[str, Dict[str, Any]]) -> float:
+    def _calculate_contribution_diversity(
+        self, contributions: Dict[str, Dict[str, Any]]
+    ) -> float:
         """Calculate diversity of strategy contributions."""
         if not contributions:
             return 0.0
 
         try:
-            pnl_contributions = [c['pnl_contribution'] for c in contributions.values()]
+            pnl_contributions = [c["pnl_contribution"] for c in contributions.values()]
 
             if len(pnl_contributions) < 2:
                 return 0.0
@@ -405,7 +464,9 @@ class PerformanceAggregator:
         except Exception:
             return 0.0
 
-    def _update_correlation_matrix(self, strategy_performance: Dict[str, List[Dict[str, Any]]]) -> None:
+    def _update_correlation_matrix(
+        self, strategy_performance: Dict[str, List[Dict[str, Any]]]
+    ) -> None:
         """Update correlation matrix between strategies."""
         try:
             if len(strategy_performance) < 2:
@@ -415,7 +476,11 @@ class PerformanceAggregator:
             # Extract returns for correlation calculation
             strategy_returns = {}
             for strategy_id, performance_history in strategy_performance.items():
-                returns = [p.get('daily_return', 0.0) for p in performance_history if 'daily_return' in p]
+                returns = [
+                    p.get("daily_return", 0.0)
+                    for p in performance_history
+                    if "daily_return" in p
+                ]
                 if len(returns) >= 5:
                     strategy_returns[strategy_id] = returns
 
@@ -453,20 +518,26 @@ class PerformanceAggregator:
             logger.exception(f"Error updating correlation matrix: {e}")
             self.correlation_matrix = None
 
-    def _calculate_risk_metrics(self, strategy_performance: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
+    def _calculate_risk_metrics(
+        self, strategy_performance: Dict[str, List[Dict[str, Any]]]
+    ) -> Dict[str, Any]:
         """Calculate portfolio risk metrics."""
         try:
             # Extract all returns for VaR calculation
             all_returns = []
             for performance_history in strategy_performance.values():
-                returns = [p.get('daily_return', 0.0) for p in performance_history if 'daily_return' in p]
+                returns = [
+                    p.get("daily_return", 0.0)
+                    for p in performance_history
+                    if "daily_return" in p
+                ]
                 all_returns.extend(returns)
 
             if len(all_returns) < 10:
                 return {
-                    'portfolio_volatility': 0.0,
-                    'value_at_risk_95': 0.0,
-                    'expected_shortfall_95': 0.0
+                    "portfolio_volatility": 0.0,
+                    "value_at_risk_95": 0.0,
+                    "expected_shortfall_95": 0.0,
                 }
 
             # Calculate volatility
@@ -478,34 +549,37 @@ class PerformanceAggregator:
             value_at_risk = abs(sorted_returns[var_index])
 
             # Calculate Expected Shortfall (CVaR)
-            tail_returns = sorted_returns[:var_index + 1]
+            tail_returns = sorted_returns[: var_index + 1]
             expected_shortfall = abs(statistics.mean(tail_returns))
 
             return {
-                'portfolio_volatility': portfolio_volatility,
-                'value_at_risk_95': value_at_risk,
-                'expected_shortfall_95': expected_shortfall
+                "portfolio_volatility": portfolio_volatility,
+                "value_at_risk_95": value_at_risk,
+                "expected_shortfall_95": expected_shortfall,
             }
 
         except Exception as e:
             logger.exception(f"Error calculating risk metrics: {e}")
             return {
-                'portfolio_volatility': 0.0,
-                'value_at_risk_95': 0.0,
-                'expected_shortfall_95': 0.0
+                "portfolio_volatility": 0.0,
+                "value_at_risk_95": 0.0,
+                "expected_shortfall_95": 0.0,
             }
 
-    def _store_portfolio_snapshot(self, portfolio_metrics: Dict[str, Any],
-                                strategy_metrics: Dict[str, Dict[str, Any]],
-                                allocations: Dict[str, Dict[str, Any]]) -> None:
+    def _store_portfolio_snapshot(
+        self,
+        portfolio_metrics: Dict[str, Any],
+        strategy_metrics: Dict[str, Dict[str, Any]],
+        allocations: Dict[str, Dict[str, Any]],
+    ) -> None:
         """Store portfolio performance snapshot."""
         try:
             snapshot = {
-                'timestamp': datetime.now().isoformat(),
-                'portfolio_metrics': portfolio_metrics,
-                'strategy_metrics': strategy_metrics,
-                'allocations': allocations,
-                'correlation_matrix': self.correlation_matrix
+                "timestamp": datetime.now().isoformat(),
+                "portfolio_metrics": portfolio_metrics,
+                "strategy_metrics": strategy_metrics,
+                "allocations": allocations,
+                "correlation_matrix": self.correlation_matrix,
             }
 
             self.portfolio_history.append(snapshot)
@@ -526,16 +600,18 @@ class PerformanceAggregator:
 
             # Add metadata
             report = {
-                'metadata': {
-                    'generated_at': datetime.now().isoformat(),
-                    'report_type': 'portfolio_performance',
-                    'strategies_count': len(aggregated_performance.get('strategy_metrics', {})),
-                    'time_period': self.config.get('performance_window_days', 30)
+                "metadata": {
+                    "generated_at": datetime.now().isoformat(),
+                    "report_type": "portfolio_performance",
+                    "strategies_count": len(
+                        aggregated_performance.get("strategy_metrics", {})
+                    ),
+                    "time_period": self.config.get("performance_window_days", 30),
                 },
-                'data': aggregated_performance
+                "data": aggregated_performance,
             }
 
-            with open(filepath, 'w') as f:
+            with open(filepath, "w") as f:
                 json.dump(report, f, indent=2, default=str)
 
             logger.info(f"Performance report saved to {filepath}")
@@ -550,89 +626,102 @@ class PerformanceAggregator:
         try:
             cutoff_date = datetime.now() - timedelta(days=days)
             recent_history = [
-                h for h in self.portfolio_history
-                if datetime.fromisoformat(h['timestamp']) > cutoff_date
+                h
+                for h in self.portfolio_history
+                if datetime.fromisoformat(h["timestamp"]) > cutoff_date
             ]
 
             if not recent_history:
-                return {'error': 'No performance data available for the specified period'}
+                return {
+                    "error": "No performance data available for the specified period"
+                }
 
             # Calculate summary statistics
-            pnl_values = [h['portfolio_metrics'].get('total_pnl', 0) for h in recent_history]
-            return_values = [h['portfolio_metrics'].get('total_return', 0) for h in recent_history]
+            pnl_values = [
+                h["portfolio_metrics"].get("total_pnl", 0) for h in recent_history
+            ]
+            return_values = [
+                h["portfolio_metrics"].get("total_return", 0) for h in recent_history
+            ]
 
             summary = {
-                'period_days': days,
-                'data_points': len(recent_history),
-                'total_pnl': sum(pnl_values),
-                'avg_daily_return': statistics.mean(return_values) if return_values else 0.0,
-                'volatility': statistics.stdev(return_values) if len(return_values) > 1 else 0.0,
-                'max_pnl': max(pnl_values) if pnl_values else 0.0,
-                'min_pnl': min(pnl_values) if pnl_values else 0.0,
-                'best_day': max(return_values) if return_values else 0.0,
-                'worst_day': min(return_values) if return_values else 0.0
+                "period_days": days,
+                "data_points": len(recent_history),
+                "total_pnl": sum(pnl_values),
+                "avg_daily_return": statistics.mean(return_values)
+                if return_values
+                else 0.0,
+                "volatility": statistics.stdev(return_values)
+                if len(return_values) > 1
+                else 0.0,
+                "max_pnl": max(pnl_values) if pnl_values else 0.0,
+                "min_pnl": min(pnl_values) if pnl_values else 0.0,
+                "best_day": max(return_values) if return_values else 0.0,
+                "worst_day": min(return_values) if return_values else 0.0,
             }
 
             return summary
 
         except Exception as e:
             logger.exception(f"Error generating performance summary: {e}")
-            return {'error': str(e)}
+            return {"error": str(e)}
 
     def _get_empty_portfolio_performance(self) -> Dict[str, Any]:
         """Get empty portfolio performance structure."""
         return {
-            'portfolio_metrics': self._get_empty_portfolio_metrics(),
-            'strategy_metrics': {},
-            'contribution_analysis': {'strategy_contributions': {}},
-            'allocations': {},
-            'correlation_matrix': None,
-            'risk_metrics': {
-                'portfolio_volatility': 0.0,
-                'value_at_risk_95': 0.0,
-                'expected_shortfall_95': 0.0
+            "portfolio_metrics": self._get_empty_portfolio_metrics(),
+            "strategy_metrics": {},
+            "contribution_analysis": {"strategy_contributions": {}},
+            "allocations": {},
+            "correlation_matrix": None,
+            "risk_metrics": {
+                "portfolio_volatility": 0.0,
+                "value_at_risk_95": 0.0,
+                "expected_shortfall_95": 0.0,
             },
-            'timestamp': datetime.now()
+            "timestamp": datetime.now(),
         }
 
     def _get_empty_portfolio_metrics(self) -> Dict[str, Any]:
         """Get empty portfolio metrics structure."""
         return {
-            'total_return': 0.0,
-            'total_pnl': 0.0,
-            'total_trades': 0,
-            'portfolio_volatility': 0.0,
-            'portfolio_sharpe_ratio': 0.0,
-            'portfolio_win_rate': 0.0,
-            'portfolio_max_drawdown': 0.0,
-            'active_strategies': 0,
-            'total_allocated_capital': 0.0,
-            'diversification_ratio': 0.0
+            "total_return": 0.0,
+            "total_pnl": 0.0,
+            "total_trades": 0,
+            "portfolio_volatility": 0.0,
+            "portfolio_sharpe_ratio": 0.0,
+            "portfolio_win_rate": 0.0,
+            "portfolio_max_drawdown": 0.0,
+            "active_strategies": 0,
+            "total_allocated_capital": 0.0,
+            "diversification_ratio": 0.0,
         }
 
     def _get_empty_strategy_metrics(self, strategy_id: str) -> Dict[str, Any]:
         """Get empty strategy metrics structure."""
         return {
-            'strategy_id': strategy_id,
-            'total_return': 0.0,
-            'total_pnl': 0.0,
-            'total_trades': 0,
-            'volatility': 0.0,
-            'sharpe_ratio': 0.0,
-            'sortino_ratio': 0.0,
-            'max_drawdown': 0.0,
-            'calmar_ratio': 0.0,
-            'win_rate': 0.0,
-            'profit_factor': 0.0,
-            'avg_trade_pnl': 0.0,
-            'allocation_weight': 0.0,
-            'capital_allocated': 0.0,
-            'performance_score': 0.5,
-            'data_points': 0
+            "strategy_id": strategy_id,
+            "total_return": 0.0,
+            "total_pnl": 0.0,
+            "total_trades": 0,
+            "volatility": 0.0,
+            "sharpe_ratio": 0.0,
+            "sortino_ratio": 0.0,
+            "max_drawdown": 0.0,
+            "calmar_ratio": 0.0,
+            "win_rate": 0.0,
+            "profit_factor": 0.0,
+            "avg_trade_pnl": 0.0,
+            "allocation_weight": 0.0,
+            "capital_allocated": 0.0,
+            "performance_score": 0.5,
+            "data_points": 0,
         }
 
 
 # Factory function for creating performance aggregators
-def create_performance_aggregator(config: Optional[Dict[str, Any]] = None) -> PerformanceAggregator:
+def create_performance_aggregator(
+    config: Optional[Dict[str, Any]] = None
+) -> PerformanceAggregator:
     """Create a performance aggregator instance."""
     return PerformanceAggregator(config)

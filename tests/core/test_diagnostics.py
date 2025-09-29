@@ -5,22 +5,21 @@ Tests cover health checks, anomaly detection, alerting, and system monitoring.
 """
 
 import asyncio
-import pytest
-import pytest_asyncio
-import aiohttp
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
-from typing import Dict, Any
+
+import aiohttp
+import pytest
 
 from core.diagnostics import (
-    DiagnosticsManager,
-    HealthStatus,
     AlertSeverity,
-    HealthCheckResult,
     AnomalyDetection,
+    DiagnosticsManager,
+    HealthCheckResult,
+    HealthStatus,
     check_api_connectivity,
+    create_diagnostics_manager,
     detect_latency_anomalies,
-    create_diagnostics_manager
 )
 
 
@@ -51,7 +50,7 @@ class TestHealthCheckResult:
             status=HealthStatus.HEALTHY,
             latency_ms=150.5,
             message="Test passed",
-            details={"test": "data"}
+            details={"test": "data"},
         )
 
         assert result.component == "test_component"
@@ -73,7 +72,7 @@ class TestAnomalyDetection:
             value=2500.0,
             threshold=2000.0,
             severity=AlertSeverity.WARNING,
-            description="Latency spike detected"
+            description="Latency spike detected",
         )
 
         assert anomaly.component == "api_connectivity"
@@ -108,9 +107,9 @@ class TestDiagnosticsManager:
     def test_custom_config(self):
         """Test diagnostics manager with custom config."""
         config = {
-            'interval_sec': 30,
-            'latency_threshold_ms': 3000,
-            'drawdown_threshold_pct': 10.0
+            "interval_sec": 30,
+            "latency_threshold_ms": 3000,
+            "drawdown_threshold_pct": 10.0,
         }
         diagnostics = DiagnosticsManager(config)
 
@@ -121,11 +120,12 @@ class TestDiagnosticsManager:
     @pytest.mark.asyncio
     async def test_register_health_check(self, diagnostics_manager):
         """Test registering health check functions."""
+
         async def mock_check():
             return HealthCheckResult(
                 component="mock",
                 status=HealthStatus.HEALTHY,
-                message="Mock check passed"
+                message="Mock check passed",
             )
 
         diagnostics_manager.register_health_check("mock_check", mock_check)
@@ -136,6 +136,7 @@ class TestDiagnosticsManager:
     @pytest.mark.asyncio
     async def test_register_anomaly_detector(self, diagnostics_manager):
         """Test registering anomaly detector functions."""
+
         async def mock_detector():
             return []
 
@@ -155,12 +156,13 @@ class TestDiagnosticsManager:
     @pytest.mark.asyncio
     async def test_run_health_check_with_healthy_component(self, diagnostics_manager):
         """Test running health check with healthy component."""
+
         async def healthy_check():
             return HealthCheckResult(
                 component="test_component",
                 status=HealthStatus.HEALTHY,
                 latency_ms=100.0,
-                message="All good"
+                message="All good",
             )
 
         diagnostics_manager.register_health_check("test_component", healthy_check)
@@ -174,11 +176,12 @@ class TestDiagnosticsManager:
     @pytest.mark.asyncio
     async def test_run_health_check_with_critical_component(self, diagnostics_manager):
         """Test running health check with critical component."""
+
         async def critical_check():
             return HealthCheckResult(
                 component="failing_component",
                 status=HealthStatus.CRITICAL,
-                message="Component failed"
+                message="Component failed",
             )
 
         diagnostics_manager.register_health_check("failing_component", critical_check)
@@ -186,23 +189,23 @@ class TestDiagnosticsManager:
 
         assert state.overall_status == HealthStatus.CRITICAL
         assert state.check_count == 1
-        assert state.component_statuses["failing_component"].status == HealthStatus.CRITICAL
+        assert (
+            state.component_statuses["failing_component"].status
+            == HealthStatus.CRITICAL
+        )
 
     @pytest.mark.asyncio
     async def test_run_health_check_with_mixed_statuses(self, diagnostics_manager):
         """Test running health check with mixed component statuses."""
+
         async def healthy_check():
             return HealthCheckResult(
-                component="healthy_comp",
-                status=HealthStatus.HEALTHY,
-                message="OK"
+                component="healthy_comp", status=HealthStatus.HEALTHY, message="OK"
             )
 
         async def degraded_check():
             return HealthCheckResult(
-                component="degraded_comp",
-                status=HealthStatus.DEGRADED,
-                message="Slow"
+                component="degraded_comp", status=HealthStatus.DEGRADED, message="Slow"
             )
 
         diagnostics_manager.register_health_check("healthy_comp", healthy_check)
@@ -210,12 +213,15 @@ class TestDiagnosticsManager:
 
         state = await diagnostics_manager.run_health_check()
 
-        assert state.overall_status == HealthStatus.DEGRADED  # Degraded takes precedence over healthy
+        assert (
+            state.overall_status == HealthStatus.DEGRADED
+        )  # Degraded takes precedence over healthy
         assert state.check_count == 1
 
     @pytest.mark.asyncio
     async def test_run_health_check_with_exception(self, diagnostics_manager):
         """Test running health check when component throws exception."""
+
         async def failing_check():
             raise Exception("Test exception")
 
@@ -232,8 +238,13 @@ class TestDiagnosticsManager:
         status = diagnostics_manager.get_health_status()
 
         expected_keys = [
-            "overall_status", "last_check", "check_count",
-            "error_count", "anomaly_count", "component_count", "running"
+            "overall_status",
+            "last_check",
+            "check_count",
+            "error_count",
+            "anomaly_count",
+            "component_count",
+            "running",
         ]
 
         for key in expected_keys:
@@ -249,7 +260,7 @@ class TestDiagnosticsManager:
             component="test_comp",
             status=HealthStatus.HEALTHY,
             latency_ms=150.0,
-            message="Test message"
+            message="Test message",
         )
 
         status = diagnostics_manager.get_detailed_status()
@@ -288,7 +299,7 @@ class TestBuiltInHealthChecks:
         mock_session.__aexit__ = AsyncMock(return_value=None)
         mock_session.get.return_value = mock_response
 
-        with patch('aiohttp.ClientSession', return_value=mock_session):
+        with patch("aiohttp.ClientSession", return_value=mock_session):
             result = await check_api_connectivity("https://api.example.com", 5000)
 
             assert result.component == "api_connectivity"
@@ -306,7 +317,7 @@ class TestBuiltInHealthChecks:
         mock_session.__aexit__ = AsyncMock(return_value=None)
         mock_session.get.side_effect = asyncio.TimeoutError()
 
-        with patch('aiohttp.ClientSession', return_value=mock_session):
+        with patch("aiohttp.ClientSession", return_value=mock_session):
             result = await check_api_connectivity("https://api.example.com", 1000)
 
             assert result.component == "api_connectivity"
@@ -322,9 +333,11 @@ class TestBuiltInHealthChecks:
         mock_session = MagicMock()
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
-        mock_session.get.side_effect = aiohttp.ClientConnectionError("Connection failed")
+        mock_session.get.side_effect = aiohttp.ClientConnectionError(
+            "Connection failed"
+        )
 
-        with patch('aiohttp.ClientSession', return_value=mock_session):
+        with patch("aiohttp.ClientSession", return_value=mock_session):
             result = await check_api_connectivity("https://api.example.com", 5000)
 
             assert result.component == "api_connectivity"
@@ -352,9 +365,7 @@ class TestAnomalyDetectors:
 
         # Add normal latency data
         diagnostics.state.component_statuses["api"] = HealthCheckResult(
-            component="api",
-            status=HealthStatus.HEALTHY,
-            latency_ms=100.0
+            component="api", status=HealthStatus.HEALTHY, latency_ms=100.0
         )
 
         # Add historical data
@@ -373,7 +384,7 @@ class TestAnomalyDetectors:
         diagnostics.state.component_statuses["api"] = HealthCheckResult(
             component="api",
             status=HealthStatus.DEGRADED,
-            latency_ms=500.0  # Much higher than normal
+            latency_ms=500.0,  # Much higher than normal
         )
 
         # Add historical data with low variance
@@ -395,13 +406,14 @@ class TestAnomalyDetectors:
 
         # Add latency data
         diagnostics.state.component_statuses["api"] = HealthCheckResult(
-            component="api",
-            status=HealthStatus.HEALTHY,
-            latency_ms=200.0
+            component="api", status=HealthStatus.HEALTHY, latency_ms=200.0
         )
 
         # Add insufficient historical data
-        diagnostics.state.performance_metrics["api"] = [100.0, 110.0]  # Less than 5 samples
+        diagnostics.state.performance_metrics["api"] = [
+            100.0,
+            110.0,
+        ]  # Less than 5 samples
 
         anomalies = await detect_latency_anomalies(diagnostics)
 
@@ -413,7 +425,7 @@ class TestGlobalFunctions:
 
     def test_create_diagnostics_manager(self):
         """Test creating a diagnostics manager."""
-        config = {'interval_sec': 30}
+        config = {"interval_sec": 30}
         diagnostics = create_diagnostics_manager(config)
 
         assert isinstance(diagnostics, DiagnosticsManager)
@@ -445,7 +457,7 @@ class TestIntegration:
                 component="api",
                 status=HealthStatus.HEALTHY,
                 latency_ms=120.0,
-                message="API OK"
+                message="API OK",
             )
 
         async def db_check():
@@ -453,14 +465,16 @@ class TestIntegration:
                 component="database",
                 status=HealthStatus.HEALTHY,
                 latency_ms=50.0,
-                message="DB OK"
+                message="DB OK",
             )
 
         diagnostics.register_health_check("api", api_check)
         diagnostics.register_health_check("database", db_check)
 
         # Register anomaly detector (wrap in lambda to provide diagnostics parameter)
-        diagnostics.register_anomaly_detector(lambda: detect_latency_anomalies(diagnostics))
+        diagnostics.register_anomaly_detector(
+            lambda: detect_latency_anomalies(diagnostics)
+        )
 
         # Run health check
         state = await diagnostics.run_health_check()
@@ -481,13 +495,14 @@ class TestIntegration:
 
         # Register a simple health check
         call_count = 0
+
         async def counting_check():
             nonlocal call_count
             call_count += 1
             return HealthCheckResult(
                 component="counter",
                 status=HealthStatus.HEALTHY,
-                message=f"Call {call_count}"
+                message=f"Call {call_count}",
             )
 
         diagnostics.register_health_check("counter", counting_check)

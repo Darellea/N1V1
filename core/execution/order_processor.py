@@ -5,16 +5,13 @@ Handles order processing, position tracking, and related calculations.
 """
 
 import logging
-import asyncio
 from decimal import Decimal
-from typing import Dict, Any, Optional
-import numpy as np
+from typing import Any, Dict, Optional
 
 from core.types.order_types import Order, OrderStatus, OrderType
-from utils.logger import get_trade_logger
-from utils.adapter import signal_to_dict
 from risk.risk_manager import _safe_quantize
-from utils.time import to_ms, now_ms
+from utils.logger import get_trade_logger
+from utils.time import now_ms, to_ms
 
 logger = logging.getLogger(__name__)
 trade_logger = get_trade_logger()
@@ -80,7 +77,9 @@ class OrderProcessor:
                 otype = OrderType.MARKET
 
         try:
-            status = OrderStatus(status_raw) if status_raw is not None else OrderStatus.OPEN
+            status = (
+                OrderStatus(status_raw) if status_raw is not None else OrderStatus.OPEN
+            )
         except Exception:
             try:
                 status = OrderStatus(str(status_raw).lower())
@@ -185,7 +184,9 @@ class OrderProcessor:
                             trend_strength = float(params.get("trend_strength") or 0.0)
                         else:
                             # attempt to estimate trend strength from market data (live mode)
-                            trend_strength = await self._estimate_trend_strength(order.symbol)
+                            trend_strength = await self._estimate_trend_strength(
+                                order.symbol
+                            )
                     except Exception:
                         trend_strength = 0.0
                     trend_strength = max(0.0, min(1.0, float(trend_strength)))
@@ -202,7 +203,9 @@ class OrderProcessor:
                             trend_strength = float(params.get("trend_strength") or 0.0)
                         else:
                             # attempt to estimate trend strength (magnitude) for short
-                            trend_strength = await self._estimate_trend_strength(order.symbol)
+                            trend_strength = await self._estimate_trend_strength(
+                                order.symbol
+                            )
                     except Exception:
                         trend_strength = 0.0
                     trend_strength = max(0.0, min(1.0, float(trend_strength)))
@@ -293,7 +296,9 @@ class OrderProcessor:
 
         return float(net_pnl)
 
-    async def _estimate_trend_strength(self, symbol: str, timeframe: str = "1h", lookback: int = 20) -> float:
+    async def _estimate_trend_strength(
+        self, symbol: str, timeframe: str = "1h", lookback: int = 20
+    ) -> float:
         """
         Estimate trend strength for a symbol using recent OHLCV data.
 

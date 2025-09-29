@@ -9,32 +9,30 @@ This module provides comprehensive risk management functionality including:
 - Anomaly detection and market condition monitoring
 """
 
-from .risk_manager import RiskManager
 from .adaptive_policy import (
     AdaptiveRiskPolicy,
+    DefensiveMode,
     MarketConditionMonitor,
     PerformanceMonitor,
     RiskLevel,
-    DefensiveMode,
     get_adaptive_risk_policy,
-    get_risk_multiplier
+    get_risk_multiplier,
 )
-from .anomaly_detector import get_anomaly_detector, AnomalyResponse
+from .anomaly_detector import AnomalyResponse, get_anomaly_detector
+from .risk_manager import RiskManager
 
 __all__ = [
     # Main risk manager
-    'RiskManager',
-
+    "RiskManager",
     # Adaptive risk policy
-    'AdaptiveRiskPolicy',
-    'MarketConditionMonitor',
-    'PerformanceMonitor',
-    'RiskLevel',
-    'DefensiveMode',
-    'get_adaptive_risk_policy',
-    'get_risk_multiplier',
-
+    "AdaptiveRiskPolicy",
+    "MarketConditionMonitor",
+    "PerformanceMonitor",
+    "RiskLevel",
+    "DefensiveMode",
+    "get_adaptive_risk_policy",
+    "get_risk_multiplier",
     # Anomaly detection
-    'get_anomaly_detector',
-    'AnomalyResponse'
+    "get_anomaly_detector",
+    "AnomalyResponse",
 ]

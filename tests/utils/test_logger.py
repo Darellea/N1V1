@@ -6,33 +6,30 @@ Tests specific lines: 112-131, 139-141, 152-153, 161-167, 175-180, 187-192,
 199-204, 235-236, 267-281, 291-296, 300, 307-317, 321-325, 431, 442-452, 463-479.
 """
 
-import pytest
-import logging
-import json
 import csv
-import tempfile
+import json
+import logging
 import os
 import sys
-from pathlib import Path
-from unittest.mock import patch, MagicMock, mock_open
-import uuid
+import tempfile
 from datetime import datetime
-from typing import Dict, Any
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from utils.logger import (
-    TradeLogger,
-    setup_logging,
-    get_trade_logger,
-    generate_correlation_id,
-    generate_request_id,
-    get_logger_with_context,
-    log_to_file,
+    PERF_LEVEL,
+    TRADE_LEVEL,
     ColorFormatter,
     JSONFormatter,
     PrettyFormatter,
-    LOGS_DIR,
-    TRADE_LEVEL,
-    PERF_LEVEL
+    TradeLogger,
+    generate_correlation_id,
+    generate_request_id,
+    get_logger_with_context,
+    get_trade_logger,
+    log_to_file,
+    setup_logging,
 )
 
 
@@ -52,7 +49,7 @@ class TestColorFormatter:
             lineno=0,
             msg="Debug message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = self.formatter.format(record)
         assert "Debug message" in formatted
@@ -68,7 +65,7 @@ class TestColorFormatter:
             lineno=0,
             msg="Info message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = self.formatter.format(record)
         assert "Info message" in formatted
@@ -84,7 +81,7 @@ class TestColorFormatter:
             lineno=0,
             msg="Warning message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = self.formatter.format(record)
         assert "Warning message" in formatted
@@ -100,7 +97,7 @@ class TestColorFormatter:
             lineno=0,
             msg="Error message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = self.formatter.format(record)
         assert "Error message" in formatted
@@ -116,7 +113,7 @@ class TestColorFormatter:
             lineno=0,
             msg="Critical message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = self.formatter.format(record)
         assert "Critical message" in formatted
@@ -132,7 +129,7 @@ class TestColorFormatter:
             lineno=0,
             msg="Trade message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = self.formatter.format(record)
         assert "Trade message" in formatted
@@ -148,7 +145,7 @@ class TestColorFormatter:
             lineno=0,
             msg="Performance message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = self.formatter.format(record)
         assert "Performance message" in formatted
@@ -164,7 +161,7 @@ class TestColorFormatter:
             lineno=0,
             msg="Unknown level message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
         formatted = self.formatter.format(record)
         assert "Unknown level message" in formatted
@@ -182,7 +179,7 @@ class TestTradeLogger:
     def teardown_method(self):
         """Clean up after each test."""
         # Clean up any created log files
-        if hasattr(self.logger, 'trade_csv') and self.logger.trade_csv.exists():
+        if hasattr(self.logger, "trade_csv") and self.logger.trade_csv.exists():
             try:
                 self.logger.trade_csv.unlink()
             except:
@@ -191,9 +188,9 @@ class TestTradeLogger:
     def test_init_trade_logger(self):
         """Test TradeLogger initialization (lines 139-141)."""
         assert self.logger.name == "test_logger"
-        assert hasattr(self.logger, 'trades')
-        assert hasattr(self.logger, 'performance_stats')
-        assert hasattr(self.logger, 'trade_csv')
+        assert hasattr(self.logger, "trades")
+        assert hasattr(self.logger, "performance_stats")
+        assert hasattr(self.logger, "trade_csv")
         assert isinstance(self.logger.trades, list)
         assert isinstance(self.logger.performance_stats, dict)
 
@@ -209,22 +206,30 @@ class TestTradeLogger:
         assert self.logger.trade_csv.exists()
 
         # Check header
-        with open(self.logger.trade_csv, 'r', newline='', encoding='utf-8') as f:
+        with open(self.logger.trade_csv, "r", newline="", encoding="utf-8") as f:
             reader = csv.reader(f)
             header = next(reader)
-            expected_header = ["timestamp", "pair", "action", "size", "entry_price", "exit_price", "pnl"]
+            expected_header = [
+                "timestamp",
+                "pair",
+                "action",
+                "size",
+                "entry_price",
+                "exit_price",
+                "pnl",
+            ]
             assert header == expected_header
 
     def test_init_trade_csv_handles_io_error(self):
         """Test _init_trade_csv handles I/O errors gracefully."""
-        with patch('pathlib.Path.mkdir', side_effect=OSError("Permission denied")):
+        with patch("pathlib.Path.mkdir", side_effect=OSError("Permission denied")):
             # Should not raise exception
             self.logger._init_trade_csv()
 
     def test_trade_method_logs_message(self):
         """Test trade method logs messages (lines 161-167)."""
-        with patch.object(self.logger, 'log') as mock_log:
-            with patch.object(self.logger, '_record_trade') as mock_record:
+        with patch.object(self.logger, "log") as mock_log:
+            with patch.object(self.logger, "_record_trade") as mock_record:
                 trade_data = {"pair": "BTC/USDT", "action": "BUY"}
                 extra = {"symbol": "BTC/USDT"}
 
@@ -235,7 +240,7 @@ class TestTradeLogger:
                 call_args = mock_log.call_args
                 assert call_args[0][0] == TRADE_LEVEL  # 21
                 assert call_args[0][1] == "Test trade"
-                assert call_args[1]['extra'] == extra
+                assert call_args[1]["extra"] == extra
 
                 # Verify _record_trade was called
                 mock_record.assert_called_once()
@@ -244,13 +249,14 @@ class TestTradeLogger:
         """Test trade method handles TypeError gracefully."""
         # Mock the log method to simulate old Python logging behavior
         original_log = self.logger.log
+
         def mock_log(level, msg, *args, **kwargs):
-            if 'extra' in kwargs:
+            if "extra" in kwargs:
                 raise TypeError("Old Python logging")
             return original_log(level, msg, *args, **kwargs)
 
-        with patch.object(self.logger, 'log', mock_log):
-            with patch.object(self.logger, '_record_trade') as mock_record:
+        with patch.object(self.logger, "log", mock_log):
+            with patch.object(self.logger, "_record_trade") as mock_record:
                 trade_data = {"pair": "BTC/USDT"}
 
                 # Should not raise exception
@@ -261,8 +267,8 @@ class TestTradeLogger:
 
     def test_performance_method_logs_metrics(self):
         """Test performance method logs metrics (lines 175-180)."""
-        with patch.object(self.logger, 'log') as mock_log:
-            with patch.object(self.logger, '_update_performance') as mock_update:
+        with patch.object(self.logger, "log") as mock_log:
+            with patch.object(self.logger, "_update_performance") as mock_update:
                 metrics = {"win_rate": 0.75, "total_pnl": 100.0}
                 extra = {"component": "backtester"}
 
@@ -273,7 +279,7 @@ class TestTradeLogger:
                 call_args = mock_log.call_args
                 assert call_args[0][0] == PERF_LEVEL  # 22
                 assert call_args[0][1] == "Performance update"
-                assert call_args[1]['extra'] == extra
+                assert call_args[1]["extra"] == extra
 
                 # Verify _update_performance was called
                 mock_update.assert_called_once_with(metrics)
@@ -282,13 +288,14 @@ class TestTradeLogger:
         """Test performance method handles TypeError gracefully."""
         # Mock the log method to simulate old Python logging behavior
         original_log = self.logger.log
+
         def mock_log(level, msg, *args, **kwargs):
-            if 'extra' in kwargs:
+            if "extra" in kwargs:
                 raise TypeError("Old Python logging")
             return original_log(level, msg, *args, **kwargs)
 
-        with patch.object(self.logger, 'log', mock_log):
-            with patch.object(self.logger, '_update_performance') as mock_update:
+        with patch.object(self.logger, "log", mock_log):
+            with patch.object(self.logger, "_update_performance") as mock_update:
                 metrics = {"win_rate": 0.75}
 
                 # Should not raise exception
@@ -299,7 +306,7 @@ class TestTradeLogger:
 
     def test_log_signal_with_dict(self):
         """Test log_signal with dictionary input (lines 187-192)."""
-        with patch.object(self.logger, 'trade') as mock_trade:
+        with patch.object(self.logger, "trade") as mock_trade:
             signal = {"symbol": "BTC/USDT", "action": "BUY", "price": 50000}
 
             self.logger.log_signal(signal, extra={"component": "strategy"})
@@ -308,23 +315,28 @@ class TestTradeLogger:
             call_args = mock_trade.call_args
             assert call_args[0][0] == "New trading signal"
             assert call_args[0][1] == {"signal": signal}
-            assert call_args[1]['extra'] == {"component": "strategy"}
+            assert call_args[1]["extra"] == {"component": "strategy"}
 
     def test_log_signal_with_object(self):
         """Test log_signal with object input."""
-        with patch.object(self.logger, 'trade') as mock_trade:
+        with patch.object(self.logger, "trade") as mock_trade:
             # Mock signal object
             signal_obj = MagicMock()
             signal_obj.__dict__ = {"symbol": "BTC/USDT", "action": "BUY"}
 
-            with patch('utils.logger.signal_to_dict', return_value={"symbol": "BTC/USDT", "action": "BUY"}):
+            with patch(
+                "utils.logger.signal_to_dict",
+                return_value={"symbol": "BTC/USDT", "action": "BUY"},
+            ):
                 self.logger.log_signal(signal_obj)
 
                 mock_trade.assert_called_once()
 
     def test_log_signal_handles_conversion_error(self):
         """Test log_signal handles conversion errors."""
-        with patch('utils.logger.signal_to_dict', side_effect=TypeError("Conversion failed")):
+        with patch(
+            "utils.logger.signal_to_dict", side_effect=TypeError("Conversion failed")
+        ):
             signal_obj = MagicMock()
 
             with pytest.raises(TypeError):
@@ -332,7 +344,7 @@ class TestTradeLogger:
 
     def test_log_order_with_dict(self):
         """Test log_order with dictionary input (lines 199-204)."""
-        with patch.object(self.logger, 'trade') as mock_trade:
+        with patch.object(self.logger, "trade") as mock_trade:
             order = {"id": "12345", "symbol": "BTC/USDT", "side": "BUY"}
             extra = {"correlation_id": "abc123"}
 
@@ -340,13 +352,18 @@ class TestTradeLogger:
 
             mock_trade.assert_called_once()
             call_args = mock_trade.call_args
-            expected_order_data = {"id": "12345", "symbol": "BTC/USDT", "side": "BUY", "mode": "live"}
+            expected_order_data = {
+                "id": "12345",
+                "symbol": "BTC/USDT",
+                "side": "BUY",
+                "mode": "live",
+            }
             assert call_args[0][1] == expected_order_data
-            assert call_args[1]['extra'] == extra
+            assert call_args[1]["extra"] == extra
 
     def test_log_order_with_non_dict(self):
         """Test log_order with non-dictionary input."""
-        with patch.object(self.logger, 'trade') as mock_trade:
+        with patch.object(self.logger, "trade") as mock_trade:
             order = "order_string"
 
             self.logger.log_order(order, "paper")
@@ -357,7 +374,9 @@ class TestTradeLogger:
 
     def test_log_order_handles_error(self):
         """Test log_order handles errors gracefully."""
-        with patch.object(self.logger, 'trade', side_effect=TypeError("Trade logging failed")):
+        with patch.object(
+            self.logger, "trade", side_effect=TypeError("Trade logging failed")
+        ):
             order = {"id": "12345"}
 
             with pytest.raises(TypeError):
@@ -365,7 +384,7 @@ class TestTradeLogger:
 
     def test_log_rejected_signal(self):
         """Test log_rejected_signal method."""
-        with patch.object(self.logger, 'trade') as mock_trade:
+        with patch.object(self.logger, "trade") as mock_trade:
             signal = {"symbol": "BTC/USDT"}
             reason = "Insufficient balance"
 
@@ -379,7 +398,7 @@ class TestTradeLogger:
 
     def test_log_failed_order(self):
         """Test log_failed_order method."""
-        with patch.object(self.logger, 'trade') as mock_trade:
+        with patch.object(self.logger, "trade") as mock_trade:
             signal = {"symbol": "BTC/USDT"}
             error = "Exchange timeout"
 
@@ -401,7 +420,7 @@ class TestTradeLogger:
             "pnl": 100.0,
             "size": 1.0,
             "entry_price": 50000,
-            "exit_price": 51000
+            "exit_price": 51000,
         }
 
         self.logger._record_trade(trade_data)
@@ -411,18 +430,20 @@ class TestTradeLogger:
         assert self.logger.trades[0] == trade_data
 
         # Verify stats were updated
-        assert self.logger.performance_stats["total_trades"] == initial_stats["total_trades"] + 1
+        assert (
+            self.logger.performance_stats["total_trades"]
+            == initial_stats["total_trades"] + 1
+        )
         assert self.logger.performance_stats["wins"] == initial_stats["wins"] + 1
-        assert self.logger.performance_stats["total_pnl"] == initial_stats["total_pnl"] + 100.0
+        assert (
+            self.logger.performance_stats["total_pnl"]
+            == initial_stats["total_pnl"] + 100.0
+        )
         assert self.logger.performance_stats["max_win"] == 100.0
 
     def test_record_trade_loss_updates_stats(self):
         """Test _record_trade updates stats for losing trades."""
-        trade_data = {
-            "pair": "BTC/USDT",
-            "action": "SELL",
-            "pnl": -50.0
-        }
+        trade_data = {"pair": "BTC/USDT", "action": "SELL", "pnl": -50.0}
 
         self.logger._record_trade(trade_data)
 
@@ -439,7 +460,7 @@ class TestTradeLogger:
             "size": 1.0,
             "entry_price": 50000,
             "exit_price": 51000,
-            "timestamp": "2023-01-01T00:00:00Z"
+            "timestamp": "2023-01-01T00:00:00Z",
         }
 
         self.logger._record_trade(trade_data)
@@ -447,7 +468,7 @@ class TestTradeLogger:
         # Verify CSV was written
         assert self.logger.trade_csv.exists()
 
-        with open(self.logger.trade_csv, 'r', newline='', encoding='utf-8') as f:
+        with open(self.logger.trade_csv, "r", newline="", encoding="utf-8") as f:
             reader = csv.reader(f)
             rows = list(reader)
 
@@ -460,7 +481,7 @@ class TestTradeLogger:
 
     def test_record_trade_handles_csv_io_error(self):
         """Test _record_trade handles CSV I/O errors gracefully."""
-        with patch('builtins.open', side_effect=OSError("Disk full")):
+        with patch("builtins.open", side_effect=OSError("Disk full")):
             trade_data = {"pair": "BTC/USDT", "pnl": 100.0}
 
             # Should not raise exception
@@ -551,7 +572,9 @@ class TestTradeLogger:
 
     def test_get_performance_stats_wrapper(self):
         """Test get_performance_stats wrapper (lines 307-317)."""
-        with patch.object(self.logger, 'display_performance', return_value={"test": "data"}) as mock_display:
+        with patch.object(
+            self.logger, "display_performance", return_value={"test": "data"}
+        ) as mock_display:
             result = self.logger.get_performance_stats()
 
             mock_display.assert_called_once()
@@ -565,6 +588,7 @@ class TestSetupLogging:
         """Clean up after each test."""
         # Reset global logger
         import utils.logger
+
         utils.logger._GLOBAL_TRADE_LOGGER = None
 
         # Clear any existing handlers
@@ -591,7 +615,7 @@ class TestSetupLogging:
             "console": True,
             "log_file": "custom.log",
             "max_size": 1024,
-            "backup_count": 2
+            "backup_count": 2,
         }
 
         logger = setup_logging(config)
@@ -602,14 +626,14 @@ class TestSetupLogging:
 
     def test_setup_logging_creates_file_handler(self):
         """Test setup_logging creates rotating file handler."""
-        import tempfile
         import os
+        import tempfile
 
         # Ensure not in test mode
         os.environ["TESTING"] = "0"
 
         # Create a temporary file
-        with tempfile.NamedTemporaryFile(suffix='.log', delete=False) as temp_file:
+        with tempfile.NamedTemporaryFile(suffix=".log", delete=False) as temp_file:
             log_file = temp_file.name
 
         try:
@@ -617,13 +641,17 @@ class TestSetupLogging:
                 "file_logging": True,
                 "log_file": log_file,
                 "max_size": 1024,
-                "backup_count": 1
+                "backup_count": 1,
             }
 
             logger = setup_logging(config)
 
             # Should have file handler
-            file_handlers = [h for h in logger.handlers if isinstance(h, logging.handlers.RotatingFileHandler)]
+            file_handlers = [
+                h
+                for h in logger.handlers
+                if isinstance(h, logging.handlers.RotatingFileHandler)
+            ]
             assert len(file_handlers) == 1
 
             file_handler = file_handlers[0]
@@ -660,6 +688,7 @@ class TestGlobalFunctions:
         """Clean up after each test."""
         # Reset global logger
         import utils.logger
+
         utils.logger._GLOBAL_TRADE_LOGGER = None
 
     def test_get_trade_logger_creates_instance(self):
@@ -695,16 +724,14 @@ class TestGlobalFunctions:
     def test_get_logger_with_context(self):
         """Test get_logger_with_context creates LoggerAdapter."""
         adapter = get_logger_with_context(
-            symbol="BTC/USDT",
-            component="order_manager",
-            correlation_id="test123"
+            symbol="BTC/USDT", component="order_manager", correlation_id="test123"
         )
 
         assert isinstance(adapter, logging.LoggerAdapter)
         assert adapter.extra == {
             "symbol": "BTC/USDT",
             "component": "order_manager",
-            "correlation_id": "test123"
+            "correlation_id": "test123",
         }
 
     def test_get_logger_with_context_partial_args(self):
@@ -734,7 +761,7 @@ class TestLogToFile:
 
             assert os.path.exists(test_file)
 
-            with open(test_file, 'r') as f:
+            with open(test_file, "r") as f:
                 content = json.load(f)
 
             assert content == data
@@ -746,7 +773,7 @@ class TestLogToFile:
 
             # Create initial file
             initial_data = {"first": "entry"}
-            with open(test_file, 'w') as f:
+            with open(test_file, "w") as f:
                 json.dump(initial_data, f)
 
             # Append new data
@@ -754,7 +781,7 @@ class TestLogToFile:
             log_to_file(new_data, os.path.join(temp_dir, "test"))
 
             # File should contain both entries
-            with open(test_file, 'r') as f:
+            with open(test_file, "r") as f:
                 content = f.read()
 
             # The content should contain both JSON objects
@@ -764,7 +791,7 @@ class TestLogToFile:
 
     def test_log_to_file_handles_io_error(self):
         """Test log_to_file handles I/O errors gracefully."""
-        with patch('builtins.open', side_effect=OSError("Permission denied")):
+        with patch("builtins.open", side_effect=OSError("Permission denied")):
             data = {"test": "data"}
 
             # Should not raise exception for I/O errors
@@ -784,7 +811,7 @@ class TestLogToFile:
             assert os.path.exists(test_file)
 
             # Verify the lambda was converted to string
-            with open(test_file, 'r') as f:
+            with open(test_file, "r") as f:
                 content = json.load(f)
 
             assert "bad_data" in content
@@ -819,7 +846,7 @@ class TestJSONFormatter:
             lineno=10,
             msg="Test message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         formatted = self.formatter.format(record)
@@ -842,7 +869,7 @@ class TestJSONFormatter:
             lineno=10,
             msg="Test message with context",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         # Add context fields
@@ -875,7 +902,7 @@ class TestJSONFormatter:
             lineno=10,
             msg="Error occurred",
             args=(),
-            exc_info=exc_info
+            exc_info=exc_info,
         )
 
         formatted = self.formatter.format(record)
@@ -902,7 +929,7 @@ class TestPrettyFormatter:
             lineno=10,
             msg="Test message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         formatted = self.formatter.format(record)
@@ -920,7 +947,7 @@ class TestPrettyFormatter:
             lineno=10,
             msg="Test message",
             args=(),
-            exc_info=None
+            exc_info=None,
         )
 
         # Add context fields
@@ -945,6 +972,7 @@ class TestEnvironmentVariables:
         """Clean up after each test."""
         # Reset global logger
         import utils.logger
+
         utils.logger._GLOBAL_TRADE_LOGGER = None
 
         # Clear environment variables
@@ -963,7 +991,7 @@ class TestEnvironmentVariables:
         """Test setup_logging handles invalid LOG_LEVEL gracefully."""
         os.environ["LOG_LEVEL"] = "INVALID"
 
-        with patch('builtins.print') as mock_print:
+        with patch("builtins.print") as mock_print:
             logger = setup_logging()
 
             # Should default to INFO
@@ -972,7 +1000,9 @@ class TestEnvironmentVariables:
 
     def test_setup_logging_with_env_log_file(self):
         """Test setup_logging uses LOG_FILE environment variable."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as temp_file:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".log", delete=False
+        ) as temp_file:
             log_file = temp_file.name
 
         try:
@@ -981,7 +1011,11 @@ class TestEnvironmentVariables:
             logger = setup_logging()
 
             # Should have file handler with correct path
-            file_handlers = [h for h in logger.handlers if isinstance(h, logging.handlers.RotatingFileHandler)]
+            file_handlers = [
+                h
+                for h in logger.handlers
+                if isinstance(h, logging.handlers.RotatingFileHandler)
+            ]
             assert len(file_handlers) == 1
             assert file_handlers[0].baseFilename == log_file
         finally:
@@ -997,7 +1031,9 @@ class TestEnvironmentVariables:
         logger = setup_logging()
 
         # Console handler should use JSONFormatter
-        console_handlers = [h for h in logger.handlers if isinstance(h, logging.StreamHandler)]
+        console_handlers = [
+            h for h in logger.handlers if isinstance(h, logging.StreamHandler)
+        ]
         assert len(console_handlers) == 1
         assert isinstance(console_handlers[0].formatter, JSONFormatter)
 
@@ -1008,7 +1044,12 @@ class TestEnvironmentVariables:
         logger = setup_logging()
 
         # Console handler should use PrettyFormatter
-        console_handlers = [h for h in logger.handlers if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)]
+        console_handlers = [
+            h
+            for h in logger.handlers
+            if isinstance(h, logging.StreamHandler)
+            and not isinstance(h, logging.FileHandler)
+        ]
         assert len(console_handlers) == 1
         assert isinstance(console_handlers[0].formatter, PrettyFormatter)
 
@@ -1019,7 +1060,12 @@ class TestEnvironmentVariables:
         logger = setup_logging()
 
         # Console handler should use ColorFormatter
-        console_handlers = [h for h in logger.handlers if isinstance(h, logging.StreamHandler) and not isinstance(h, logging.FileHandler)]
+        console_handlers = [
+            h
+            for h in logger.handlers
+            if isinstance(h, logging.StreamHandler)
+            and not isinstance(h, logging.FileHandler)
+        ]
         assert len(console_handlers) == 1
         assert isinstance(console_handlers[0].formatter, ColorFormatter)
 
@@ -1048,7 +1094,7 @@ class TestCorrelationIdSupport:
             component="order_manager",
             correlation_id="corr_123",
             request_id="req_456",
-            strategy_id="momentum_v1"
+            strategy_id="momentum_v1",
         )
 
         expected_extra = {
@@ -1056,7 +1102,7 @@ class TestCorrelationIdSupport:
             "component": "order_manager",
             "correlation_id": "corr_123",
             "request_id": "req_456",
-            "strategy_id": "momentum_v1"
+            "strategy_id": "momentum_v1",
         }
 
         assert adapter.extra == expected_extra
@@ -1064,25 +1110,18 @@ class TestCorrelationIdSupport:
     def test_get_logger_with_context_partial_args(self):
         """Test get_logger_with_context with partial arguments."""
         adapter = get_logger_with_context(
-            correlation_id="corr_123",
-            request_id="req_456"
+            correlation_id="corr_123", request_id="req_456"
         )
 
-        expected_extra = {
-            "correlation_id": "corr_123",
-            "request_id": "req_456"
-        }
+        expected_extra = {"correlation_id": "corr_123", "request_id": "req_456"}
 
         assert adapter.extra == expected_extra
 
     def test_logger_adapter_preserves_context(self):
         """Test that LoggerAdapter preserves context across log calls."""
-        adapter = get_logger_with_context(
-            symbol="BTC/USDT",
-            correlation_id="corr_123"
-        )
+        adapter = get_logger_with_context(symbol="BTC/USDT", correlation_id="corr_123")
 
-        with patch.object(adapter.logger, 'log') as mock_log:
+        with patch.object(adapter.logger, "log") as mock_log:
             adapter.info("First message")
             adapter.warning("Second message")
 
@@ -1090,10 +1129,10 @@ class TestCorrelationIdSupport:
             first_call = mock_log.call_args_list[0]
             second_call = mock_log.call_args_list[1]
 
-            assert first_call[1]['extra']['symbol'] == "BTC/USDT"
-            assert first_call[1]['extra']['correlation_id'] == "corr_123"
-            assert second_call[1]['extra']['symbol'] == "BTC/USDT"
-            assert second_call[1]['extra']['correlation_id'] == "corr_123"
+            assert first_call[1]["extra"]["symbol"] == "BTC/USDT"
+            assert first_call[1]["extra"]["correlation_id"] == "corr_123"
+            assert second_call[1]["extra"]["symbol"] == "BTC/USDT"
+            assert second_call[1]["extra"]["correlation_id"] == "corr_123"
 
 
 class TestLoggerIntegration:
@@ -1106,7 +1145,7 @@ class TestLoggerIntegration:
     def teardown_method(self):
         """Clean up after each test."""
         # Clean up log files
-        if hasattr(self.logger, 'trade_csv') and self.logger.trade_csv.exists():
+        if hasattr(self.logger, "trade_csv") and self.logger.trade_csv.exists():
             try:
                 self.logger.trade_csv.unlink()
             except:
@@ -1121,7 +1160,7 @@ class TestLoggerIntegration:
             "size": 1.0,
             "entry_price": 50000,
             "exit_price": 51000,
-            "pnl": 1000.0
+            "pnl": 1000.0,
         }
 
         self.logger.trade("Executed trade", trade_data)
@@ -1141,11 +1180,7 @@ class TestLoggerIntegration:
     def test_performance_tracking_workflow(self):
         """Test performance tracking workflow."""
         # Log multiple trades
-        trades = [
-            {"pnl": 100.0},
-            {"pnl": -50.0},
-            {"pnl": 200.0}
-        ]
+        trades = [{"pnl": 100.0}, {"pnl": -50.0}, {"pnl": 200.0}]
 
         for trade in trades:
             self.logger._record_trade(trade)
@@ -1180,20 +1215,18 @@ class TestLoggerIntegration:
         """Test context-aware logging workflow."""
         # Create logger with context
         adapter = get_logger_with_context(
-            symbol="BTC/USDT",
-            component="test_component",
-            correlation_id="test123"
+            symbol="BTC/USDT", component="test_component", correlation_id="test123"
         )
 
         # Log with context
-        with patch.object(adapter.logger, 'log') as mock_log:
+        with patch.object(adapter.logger, "log") as mock_log:
             adapter.info("Test message")
 
             # Verify context was included
             call_args = mock_log.call_args
-            assert call_args[1]['extra']['symbol'] == "BTC/USDT"
-            assert call_args[1]['extra']['component'] == "test_component"
-            assert call_args[1]['extra']['correlation_id'] == "test123"
+            assert call_args[1]["extra"]["symbol"] == "BTC/USDT"
+            assert call_args[1]["extra"]["component"] == "test_component"
+            assert call_args[1]["extra"]["correlation_id"] == "test123"
 
     def test_structured_logging_integration(self):
         """Test structured logging with JSON output."""
@@ -1207,7 +1240,7 @@ class TestLoggerIntegration:
             component="order_executor",
             correlation_id="corr_123",
             request_id="req_456",
-            strategy_id="momentum_v1"
+            strategy_id="momentum_v1",
         )
 
         # Capture console output

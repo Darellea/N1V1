@@ -7,21 +7,19 @@ covering core functionality, state management, integration, and edge cases.
 """
 
 import asyncio
-import time
-import pytest
-import unittest.mock as mock
-from unittest.mock import AsyncMock, MagicMock, patch
-import tempfile
 import json
 import os
-from pathlib import Path
+import tempfile
+import time
 from decimal import Decimal
-import pandas as pd
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from core.signal_router import SignalRouter, JournalWriter
-from core.contracts import TradingSignal, SignalType, SignalStrength
+import pytest
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
+from core.signal_router import JournalWriter, SignalRouter
 from core.types import OrderType
-from utils.adapter import signal_to_dict
 from utils.time import now_ms
 
 
@@ -31,16 +29,17 @@ class TestSignalRouterFacade:
     def test_imports(self):
         """Test that SignalRouter and JournalWriter can be imported from facade."""
         # This covers the import lines in core/signal_router.py
-        from core.signal_router import SignalRouter, JournalWriter
+        from core.signal_router import JournalWriter, SignalRouter
+
         assert SignalRouter is not None
         assert JournalWriter is not None
 
     def test_re_exports(self):
         """Test that re-exports match the actual classes."""
-        from core.signal_router.router import SignalRouter as RealSignalRouter
-        from core.signal_router.router import JournalWriter as RealJournalWriter
-        from core.signal_router import SignalRouter as FacadeSignalRouter
         from core.signal_router import JournalWriter as FacadeJournalWriter
+        from core.signal_router import SignalRouter as FacadeSignalRouter
+        from core.signal_router.router import JournalWriter as RealJournalWriter
+        from core.signal_router.router import SignalRouter as RealSignalRouter
 
         assert FacadeSignalRouter is RealSignalRouter
         assert FacadeJournalWriter is RealJournalWriter
@@ -77,7 +76,7 @@ class TestJournalWriter:
 
         # Verify entry was written
         assert self.journal_path.exists()
-        with open(self.journal_path, 'r') as f:
+        with open(self.journal_path, "r") as f:
             lines = f.readlines()
             assert len(lines) == 1
             data = json.loads(lines[0])
@@ -123,14 +122,14 @@ class TestJournalWriter:
         entries = [
             {"id": 1, "action": "store"},
             {"id": 2, "action": "cancel"},
-            {"id": 3, "action": "store"}
+            {"id": 3, "action": "store"},
         ]
 
         for entry in entries:
             jw.append(entry)
 
         # Verify all entries written
-        with open(self.journal_path, 'r') as f:
+        with open(self.journal_path, "r") as f:
             lines = f.readlines()
             assert len(lines) == 3
             for i, line in enumerate(lines):
@@ -149,12 +148,12 @@ class TestSignalRouterCore:
         self.task_manager = MagicMock()
 
         # Mock get_config
-        self.config_patcher = patch('core.signal_router.router.get_config')
+        self.config_patcher = patch("core.signal_router.router.get_config")
         self.mock_get_config = self.config_patcher.start()
         self.mock_get_config.return_value = {
             "predictive_models": {"enabled": False},
             "ml": {"enabled": False},
-            "journal": {"enabled": False}
+            "journal": {"enabled": False},
         }
 
     def teardown_method(self):
@@ -186,7 +185,7 @@ class TestSignalRouterCore:
             amount=Decimal("1.0"),
             price=Decimal("50000"),
             stop_loss=Decimal("49000"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
 
         result = await router.process_signal(signal)
@@ -210,7 +209,7 @@ class TestSignalRouterCore:
             order_type="market",
             amount=Decimal("1.0"),
             stop_loss=Decimal("49000"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
 
         result = await router.process_signal(signal)
@@ -231,7 +230,7 @@ class TestSignalRouterCore:
             order_type="market",
             amount=Decimal("1.0"),
             stop_loss=Decimal("49000"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
         assert router._validate_signal(valid_signal)
 
@@ -243,7 +242,7 @@ class TestSignalRouterCore:
             signal_strength=SignalStrength.WEAK,
             order_type="market",
             amount=Decimal("1.0"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
         assert not router._validate_signal(invalid_signal)
 
@@ -255,7 +254,7 @@ class TestSignalRouterCore:
             signal_strength=SignalStrength.WEAK,
             order_type="market",
             amount=Decimal("0"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
         assert not router._validate_signal(invalid_signal2)
 
@@ -272,7 +271,7 @@ class TestSignalRouterCore:
             order_type=OrderType.MARKET,
             amount=Decimal("1.0"),
             stop_loss=Decimal("49000"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
         assert router._validate_timestamp(signal)
 
@@ -284,7 +283,7 @@ class TestSignalRouterCore:
             signal_strength=SignalStrength.WEAK,
             order_type="market",
             amount=Decimal("1.0"),
-            timestamp=0
+            timestamp=0,
         )
         assert not router._validate_timestamp(signal_invalid)
 
@@ -304,7 +303,7 @@ class TestSignalRouterCore:
             order_type=OrderType.MARKET,
             amount=Decimal("1.0"),
             stop_loss=Decimal("49000"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
         signal_id = router._generate_signal_id(signal)
         router.active_signals[signal_id] = signal
@@ -337,7 +336,7 @@ class TestSignalRouterCore:
             order_type=OrderType.MARKET,
             amount=Decimal("1.0"),
             stop_loss=Decimal("49000"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
         router.signal_history.append(signal)
 
@@ -360,7 +359,7 @@ class TestSignalRouterCore:
             signal_strength=SignalStrength.WEAK,
             order_type=OrderType.MARKET,
             amount=Decimal("1.0"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
         signal_id = router._generate_signal_id(signal)
         router.active_signals[signal_id] = signal
@@ -383,7 +382,7 @@ class TestSignalRouterCore:
             signal_strength=SignalStrength.WEAK,
             order_type=OrderType.MARKET,
             amount=Decimal("1.0"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
         signal_id = router._generate_signal_id(signal)
         router.active_signals[signal_id] = signal
@@ -406,13 +405,16 @@ class TestSignalRouterCore:
             signal_strength=SignalStrength.WEAK,
             order_type="market",
             amount=Decimal("1.0"),
-            timestamp=timestamp
+            timestamp=timestamp,
         )
 
         signal_id = router._generate_signal_id(signal)
         # The timestamp is converted to datetime, so it will be a datetime string
         import datetime
-        expected_timestamp = datetime.datetime.fromtimestamp(timestamp, tz=datetime.timezone.utc)
+
+        expected_timestamp = datetime.datetime.fromtimestamp(
+            timestamp, tz=datetime.timezone.utc
+        )
         expected = f"test_strategy_BTC/USD_{expected_timestamp}"
         assert signal_id == expected
 
@@ -428,12 +430,12 @@ class TestSignalRouterConflictResolution:
         self.risk_manager.require_stop_loss = False
         self.task_manager = MagicMock()
 
-        self.config_patcher = patch('core.signal_router.router.get_config')
+        self.config_patcher = patch("core.signal_router.router.get_config")
         self.mock_get_config = self.config_patcher.start()
         self.mock_get_config.return_value = {
             "predictive_models": {"enabled": False},
             "ml": {"enabled": False},
-            "journal": {"enabled": False}
+            "journal": {"enabled": False},
         }
 
     def teardown_method(self):
@@ -451,7 +453,7 @@ class TestSignalRouterConflictResolution:
             signal_strength=SignalStrength.WEAK,
             order_type=OrderType.MARKET,
             amount=Decimal("1.0"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
 
         conflicts = router._check_signal_conflicts(signal)
@@ -469,7 +471,7 @@ class TestSignalRouterConflictResolution:
             signal_strength=SignalStrength.WEAK,
             order_type="market",
             amount=Decimal("1.0"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
         existing_id = router._generate_signal_id(existing_signal)
         router.active_signals[existing_id] = existing_signal
@@ -482,7 +484,7 @@ class TestSignalRouterConflictResolution:
             signal_strength=SignalStrength.WEAK,
             order_type="market",
             amount=Decimal("1.0"),
-            timestamp=int(time.time()) + 1
+            timestamp=int(time.time()) + 1,
         )
 
         conflicts = router._check_signal_conflicts(new_signal)
@@ -500,7 +502,7 @@ class TestSignalRouterConflictResolution:
             signal_strength=SignalStrength.WEAK,
             order_type="market",
             amount=Decimal("1.0"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
 
         short_entry = TradingSignal(
@@ -510,7 +512,7 @@ class TestSignalRouterConflictResolution:
             signal_strength=SignalStrength.WEAK,
             order_type="market",
             amount=Decimal("1.0"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
 
         long_exit = TradingSignal(
@@ -520,7 +522,7 @@ class TestSignalRouterConflictResolution:
             signal_strength=SignalStrength.WEAK,
             order_type="market",
             amount=Decimal("1.0"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
 
         # Entry signals should be opposite
@@ -545,12 +547,12 @@ class TestSignalRouterIntegration:
         self.risk_manager.require_stop_loss = False
         self.task_manager = MagicMock()
 
-        self.config_patcher = patch('core.signal_router.router.get_config')
+        self.config_patcher = patch("core.signal_router.router.get_config")
         self.mock_get_config = self.config_patcher.start()
         self.mock_get_config.return_value = {
             "predictive_models": {"enabled": False},
             "ml": {"enabled": False},
-            "journal": {"enabled": False}
+            "journal": {"enabled": False},
         }
 
     def teardown_method(self):
@@ -561,7 +563,9 @@ class TestSignalRouterIntegration:
     async def test_retry_mechanism(self):
         """Test retry mechanism for risk manager calls."""
         # Make risk manager fail twice then succeed
-        self.risk_manager.evaluate_signal = AsyncMock(side_effect=[Exception("Fail1"), Exception("Fail2"), True])
+        self.risk_manager.evaluate_signal = AsyncMock(
+            side_effect=[Exception("Fail1"), Exception("Fail2"), True]
+        )
 
         router = SignalRouter(self.risk_manager, self.task_manager)
 
@@ -572,7 +576,7 @@ class TestSignalRouterIntegration:
             signal_strength=SignalStrength.WEAK,
             order_type=OrderType.MARKET,
             amount=Decimal("1.0"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
 
         result = await router.process_signal(signal)
@@ -584,9 +588,13 @@ class TestSignalRouterIntegration:
     @pytest.mark.asyncio
     async def test_critical_error_blocking(self):
         """Test blocking signals after critical errors."""
-        self.risk_manager.evaluate_signal = AsyncMock(side_effect=Exception("Critical failure"))
+        self.risk_manager.evaluate_signal = AsyncMock(
+            side_effect=Exception("Critical failure")
+        )
 
-        router = SignalRouter(self.risk_manager, self.task_manager, safe_mode_threshold=2)
+        router = SignalRouter(
+            self.risk_manager, self.task_manager, safe_mode_threshold=2
+        )
 
         signal = TradingSignal(
             strategy_id="test",
@@ -596,7 +604,7 @@ class TestSignalRouterIntegration:
             order_type="market",
             amount=Decimal("1.0"),
             stop_loss=Decimal("49000"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
 
         # First failure
@@ -628,12 +636,12 @@ class TestSignalRouterEdgeCases:
         self.risk_manager.validate_signal = MagicMock(return_value=True)
         self.task_manager = MagicMock()
 
-        self.config_patcher = patch('core.signal_router.router.get_config')
+        self.config_patcher = patch("core.signal_router.router.get_config")
         self.mock_get_config = self.config_patcher.start()
         self.mock_get_config.return_value = {
             "predictive_models": {"enabled": False},
             "ml": {"enabled": False},
-            "journal": {"enabled": False}
+            "journal": {"enabled": False},
         }
 
     def teardown_method(self):
@@ -654,7 +662,7 @@ class TestSignalRouterEdgeCases:
             amount=None,
             quantity=Decimal("1.0"),  # Use deprecated field
             stop_loss=Decimal("49000"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
 
         assert router._validate_signal(signal)
@@ -674,7 +682,7 @@ class TestSignalRouterEdgeCases:
             signal_strength=SignalStrength.WEAK,
             order_type="market",
             amount=Decimal("1.0"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
 
         assert not router._validate_signal(signal)
@@ -695,7 +703,7 @@ class TestSignalRouterEdgeCases:
             signal_strength=SignalStrength.WEAK,
             order_type="market",
             amount=Decimal("1.0"),
-            timestamp=int(time.time())
+            timestamp=int(time.time()),
         )
         signal._original_timestamp = -1000  # Modify the original timestamp
         assert not router._validate_timestamp(signal)

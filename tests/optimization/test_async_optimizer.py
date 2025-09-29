@@ -5,24 +5,23 @@ Tests async file operations, thread/process pools, performance monitoring,
 memory management, blocking operation detection, and health checks.
 """
 
-import pytest
 import asyncio
-import tempfile
-import os
 import json
+import os
+import tempfile
 import time
-import psutil
-import gc
-from unittest.mock import Mock, patch, AsyncMock
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from unittest.mock import patch
+
+import pytest
 
 from core.async_optimizer import (
     AsyncOptimizer,
-    get_async_optimizer,
     async_read_file,
     async_write_file,
+    get_async_optimizer,
+    monitor_performance,
     run_async,
-    monitor_performance
 )
 
 
@@ -68,7 +67,7 @@ class TestAsyncOptimizerInitialization:
         expected_thresholds = {
             "warning_mb": 500,
             "critical_mb": 1000,
-            "cleanup_interval": 300
+            "cleanup_interval": 300,
         }
 
         assert optimizer._memory_thresholds == expected_thresholds
@@ -89,7 +88,7 @@ class TestAsyncFileOperations:
     @pytest.fixture
     def temp_file(self):
         """Create a temporary file for testing."""
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
             f.write("test content")
             temp_path = f.name
 
@@ -107,6 +106,7 @@ class TestAsyncFileOperations:
 
         # Cleanup
         import shutil
+
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
 
@@ -128,7 +128,7 @@ class TestAsyncFileOperations:
         """Test async file reading with custom encoding."""
         optimizer = AsyncOptimizer()
 
-        content = await optimizer.async_file_read(temp_file, encoding='utf-8')
+        content = await optimizer.async_file_read(temp_file, encoding="utf-8")
 
         assert content == "test content"
 
@@ -150,7 +150,7 @@ class TestAsyncFileOperations:
 
         # Verify file was created and has correct content
         assert os.path.exists(file_path)
-        with open(file_path, 'r') as f:
+        with open(file_path, "r") as f:
             assert f.read() == "new content"
 
         # Check that operation was recorded
@@ -165,7 +165,7 @@ class TestAsyncFileOperations:
         await optimizer.async_file_write(nested_path, "content")
 
         assert os.path.exists(nested_path)
-        with open(nested_path, 'r') as f:
+        with open(nested_path, "r") as f:
             assert f.read() == "content"
 
     @pytest.mark.asyncio
@@ -174,7 +174,7 @@ class TestAsyncFileOperations:
         optimizer = AsyncOptimizer()
         file_path = os.path.join(temp_dir, "encoded.txt")
 
-        await optimizer.async_file_write(file_path, "content", encoding='utf-8')
+        await optimizer.async_file_write(file_path, "content", encoding="utf-8")
 
         assert os.path.exists(file_path)
 
@@ -185,7 +185,7 @@ class TestAsyncFileOperations:
         json_path = os.path.join(temp_dir, "test.json")
 
         test_data = {"key": "value", "number": 42}
-        with open(json_path, 'w') as f:
+        with open(json_path, "w") as f:
             json.dump(test_data, f)
 
         loaded_data = await optimizer.async_json_load(json_path)
@@ -203,7 +203,7 @@ class TestAsyncFileOperations:
         await optimizer.async_json_dump(test_data, json_path)
 
         assert os.path.exists(json_path)
-        with open(json_path, 'r') as f:
+        with open(json_path, "r") as f:
             loaded = json.load(f)
             assert loaded == test_data
 
@@ -218,7 +218,7 @@ class TestAsyncFileOperations:
         await optimizer.async_json_dump(test_data, json_path, indent=4)
 
         assert os.path.exists(json_path)
-        with open(json_path, 'r') as f:
+        with open(json_path, "r") as f:
             content = f.read()
             assert "    " in content  # Check for indentation
 
@@ -258,6 +258,7 @@ class TestThreadAndProcessOperations:
 
         # Use a module-level function that can be pickled
         import math
+
         result = await optimizer.run_in_process(math.sqrt, 144)
 
         assert result == 12.0
@@ -372,11 +373,11 @@ class TestPerformanceMonitoring:
 
         @optimizer.monitor_sync_function
         def blocking_function():
-            with open(__file__, 'r') as f:
+            with open(__file__, "r") as f:
                 content = f.read()
             return len(content)
 
-        with patch('core.async_optimizer.logger') as mock_logger:
+        with patch("core.async_optimizer.logger") as mock_logger:
             result = blocking_function()
 
             assert isinstance(result, int)
@@ -391,7 +392,7 @@ class TestPerformanceMonitoring:
             time.sleep(1.1)  # Longer than 1 second threshold
             return "slow"
 
-        with patch('core.async_optimizer.logger') as mock_logger:
+        with patch("core.async_optimizer.logger") as mock_logger:
             result = slow_function()
 
             assert result == "slow"
@@ -431,7 +432,9 @@ class TestMemoryManagement:
         """Test setting memory thresholds."""
         optimizer = AsyncOptimizer()
 
-        optimizer.set_memory_thresholds(warning_mb=600, critical_mb=1200, cleanup_interval=600)
+        optimizer.set_memory_thresholds(
+            warning_mb=600, critical_mb=1200, cleanup_interval=600
+        )
 
         assert optimizer._memory_thresholds["warning_mb"] == 600
         assert optimizer._memory_thresholds["critical_mb"] == 1200
@@ -445,7 +448,7 @@ class TestMemoryManagement:
         optimizer._operation_stats["test_op"] = list(range(600))  # More than 500
         optimizer._blocking_operations = list(range(150))  # More than 100
 
-        with patch('core.async_optimizer.gc') as mock_gc:
+        with patch("core.async_optimizer.gc") as mock_gc:
             mock_gc.collect.return_value = 42
             optimizer._perform_memory_cleanup()
 
@@ -461,7 +464,7 @@ class TestMemoryManagement:
         # Set last cleanup to be old
         optimizer._last_cleanup = time.time() - 400
 
-        with patch('core.async_optimizer.gc') as mock_gc:
+        with patch("core.async_optimizer.gc") as mock_gc:
             mock_gc.collect.return_value = 10
             optimizer._perform_periodic_cleanup()
 
@@ -558,7 +561,7 @@ class TestPerformanceReporting:
         # Add some blocking operations
         optimizer._blocking_operations = [
             {"timestamp": 1000, "patterns": ["open("], "code_sample": "test"},
-            {"timestamp": 1001, "patterns": ["time.sleep"], "code_sample": "test2"}
+            {"timestamp": 1001, "patterns": ["time.sleep"], "code_sample": "test2"},
         ]
 
         report = optimizer.get_blocking_operations_report()
@@ -613,7 +616,9 @@ class TestHealthChecks:
         optimizer = AsyncOptimizer()
 
         # Mock thread pool to fail
-        with patch.object(optimizer, 'run_in_thread', side_effect=Exception("Thread pool error")):
+        with patch.object(
+            optimizer, "run_in_thread", side_effect=Exception("Thread pool error")
+        ):
             health = await optimizer.health_check()
 
             assert health["thread_pool_working"] is False
@@ -634,7 +639,7 @@ class TestGlobalFunctions:
     async def test_async_read_file_convenience_function(self):
         """Test async_read_file convenience function."""
         # Create a temporary file for this test
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".txt") as f:
             f.write("test content")
             temp_path = f.name
 
@@ -654,12 +659,13 @@ class TestGlobalFunctions:
         await async_write_file(file_path, "convenience content")
 
         assert os.path.exists(file_path)
-        with open(file_path, 'r') as f:
+        with open(file_path, "r") as f:
             assert f.read() == "convenience content"
 
     @pytest.mark.asyncio
     async def test_run_async_decorator(self):
         """Test run_async decorator."""
+
         @run_async
         def blocking_add(x, y):
             time.sleep(0.01)
@@ -671,6 +677,7 @@ class TestGlobalFunctions:
 
     def test_monitor_performance_decorator_async(self):
         """Test monitor_performance decorator with async function."""
+
         @monitor_performance
         async def async_test():
             await asyncio.sleep(0.01)
@@ -681,6 +688,7 @@ class TestGlobalFunctions:
 
     def test_monitor_performance_decorator_sync(self):
         """Test monitor_performance decorator with sync function."""
+
         @monitor_performance
         def sync_test():
             time.sleep(0.01)
@@ -704,7 +712,11 @@ class TestShutdownAndCleanup:
         # Check that pools are shutdown
         assert optimizer._thread_pool._shutdown
         # Note: ProcessPoolExecutor may not have _shutdown in all Python versions
-        assert optimizer._process_pool._shutdown if hasattr(optimizer._process_pool, '_shutdown') else True
+        assert (
+            optimizer._process_pool._shutdown
+            if hasattr(optimizer._process_pool, "_shutdown")
+            else True
+        )
 
         # Check that data is cleared
         assert optimizer._operation_stats == {}
@@ -740,7 +752,7 @@ class TestErrorHandling:
         """Test error handling in async file read."""
         optimizer = AsyncOptimizer()
 
-        with patch('aiofiles.open', side_effect=IOError("Read error")):
+        with patch("aiofiles.open", side_effect=IOError("Read error")):
             with pytest.raises(IOError):
                 await optimizer.async_file_read("test.txt")
 
@@ -750,7 +762,7 @@ class TestErrorHandling:
         optimizer = AsyncOptimizer()
         file_path = os.path.join(temp_dir, "test.txt")
 
-        with patch('aiofiles.open', side_effect=PermissionError("Write error")):
+        with patch("aiofiles.open", side_effect=PermissionError("Write error")):
             with pytest.raises(PermissionError):
                 await optimizer.async_file_write(file_path, "content")
 
@@ -773,7 +785,7 @@ class TestErrorHandling:
         """Test error handling in memory report generation."""
         optimizer = AsyncOptimizer()
 
-        with patch('psutil.Process', side_effect=Exception("PSUtil error")):
+        with patch("psutil.Process", side_effect=Exception("PSUtil error")):
             report = optimizer.get_memory_report()
 
             assert "error" in report
@@ -791,8 +803,7 @@ class TestDataOptimization:
             return f"data_for_{symbol}"
 
         optimized_fetch = optimizer.optimize_data_fetching(
-            ["BTC", "ETH", "ADA"],
-            mock_fetch
+            ["BTC", "ETH", "ADA"], mock_fetch
         )
 
         # Should return a coroutine function
@@ -837,11 +848,13 @@ class TestEdgeCases:
 
         # Add many blocking operations
         for i in range(150):
-            optimizer._blocking_operations.append({
-                "timestamp": time.time(),
-                "patterns": ["test"],
-                "code_sample": f"code_{i}"
-            })
+            optimizer._blocking_operations.append(
+                {
+                    "timestamp": time.time(),
+                    "patterns": ["test"],
+                    "code_sample": f"code_{i}",
+                }
+            )
 
         # Trigger cleanup
         optimizer._perform_memory_cleanup()

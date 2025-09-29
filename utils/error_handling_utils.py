@@ -5,14 +5,13 @@ Provides standardized error handling patterns, context preservation,
 and structured logging to eliminate duplication across the codebase.
 """
 
-import logging
-import functools
 import asyncio
-from typing import Dict, Any, Optional, Callable, Type, Union, List
-from dataclasses import dataclass
-from contextlib import contextmanager
+import functools
+import logging
 import traceback
-import sys
+from contextlib import contextmanager
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional
 
 from utils.logger import get_trade_logger
 
@@ -39,7 +38,7 @@ class ErrorContext:
             "user_id": self.user_id,
             "symbol": self.symbol,
             "trade_id": self.trade_id,
-            "additional_data": self.additional_data or {}
+            "additional_data": self.additional_data or {},
         }
 
 
@@ -52,8 +51,13 @@ class ErrorHandler:
         self.error_counts: Dict[str, int] = {}
         self.component_errors: Dict[str, List[Dict[str, Any]]] = {}
 
-    async def handle_error(self, exception: Exception, context: ErrorContext,
-                          log_level: str = "ERROR", notify: bool = False) -> None:
+    async def handle_error(
+        self,
+        exception: Exception,
+        context: ErrorContext,
+        log_level: str = "ERROR",
+        notify: bool = False,
+    ) -> None:
         """
         Handle an exception with structured logging and optional notification.
 
@@ -79,7 +83,7 @@ class ErrorHandler:
             "error_type": error_type,
             "message": error_message,
             "operation": context.operation,
-            "traceback": traceback.format_exc()
+            "traceback": traceback.format_exc(),
         }
 
         # Keep only last 100 errors per component
@@ -94,7 +98,7 @@ class ErrorHandler:
             "component": component,
             "operation": context.operation,
             "message": error_message,
-            "traceback": traceback.format_exc()
+            "traceback": traceback.format_exc(),
         }
 
         if context.user_id:
@@ -108,13 +112,17 @@ class ErrorHandler:
 
         # Log at specified level
         log_method = getattr(logger, log_level.lower())
-        log_method(f"Error in {component}.{context.operation}: {error_message}", extra=log_data)
+        log_method(
+            f"Error in {component}.{context.operation}: {error_message}", extra=log_data
+        )
 
         # Send notification for critical errors
         if notify and log_level in ["ERROR", "CRITICAL"]:
             await self._send_error_notification(exception, context)
 
-    async def _send_error_notification(self, exception: Exception, context: ErrorContext) -> None:
+    async def _send_error_notification(
+        self, exception: Exception, context: ErrorContext
+    ) -> None:
         """Send notification for critical errors."""
         try:
             # Use trade logger for notifications
@@ -125,8 +133,8 @@ class ErrorHandler:
                     "component": context.component,
                     "operation": context.operation,
                     "symbol": context.symbol,
-                    "trade_id": context.trade_id
-                }
+                    "trade_id": context.trade_id,
+                },
             )
         except Exception as e:
             logger.error(f"Failed to send error notification: {e}")
@@ -139,10 +147,12 @@ class ErrorHandler:
             "component_errors": {
                 component: len(errors)
                 for component, errors in self.component_errors.items()
-            }
+            },
         }
 
-    def get_recent_errors(self, component: str, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_recent_errors(
+        self, component: str, limit: int = 10
+    ) -> List[Dict[str, Any]]:
         """Get recent errors for a specific component."""
         if component not in self.component_errors:
             return []
@@ -154,14 +164,20 @@ class ErrorHandler:
 # Global error handler instance
 _error_handler = ErrorHandler()
 
+
 def get_error_handler() -> ErrorHandler:
     """Get the global error handler instance."""
     return _error_handler
 
 
 # Decorator for consistent error handling
-def handle_errors(component: str, operation: str, log_level: str = "ERROR",
-                 notify: bool = False, reraise: bool = True):
+def handle_errors(
+    component: str,
+    operation: str,
+    log_level: str = "ERROR",
+    notify: bool = False,
+    reraise: bool = True,
+):
     """
     Decorator for consistent error handling across functions.
 
@@ -175,13 +191,11 @@ def handle_errors(component: str, operation: str, log_level: str = "ERROR",
     Returns:
         Decorated function with error handling
     """
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
-            context = ErrorContext(
-                component=component,
-                operation=operation
-            )
+            context = ErrorContext(component=component, operation=operation)
 
             try:
                 return await func(*args, **kwargs)
@@ -193,10 +207,7 @@ def handle_errors(component: str, operation: str, log_level: str = "ERROR",
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
-            context = ErrorContext(
-                component=component,
-                operation=operation
-            )
+            context = ErrorContext(component=component, operation=operation)
 
             try:
                 return func(*args, **kwargs)
@@ -235,9 +246,7 @@ def error_context(component: str, operation: str, **context_kwargs):
         **context_kwargs: Additional context data
     """
     context = ErrorContext(
-        component=component,
-        operation=operation,
-        additional_data=context_kwargs
+        component=component, operation=operation, additional_data=context_kwargs
     )
 
     try:
@@ -256,8 +265,12 @@ def error_context(component: str, operation: str, **context_kwargs):
 
 
 # Utility functions for common error scenarios
-async def handle_network_error(operation: str, exception: Exception,
-                              component: str = "network", retry_count: int = 0) -> None:
+async def handle_network_error(
+    operation: str,
+    exception: Exception,
+    component: str = "network",
+    retry_count: int = 0,
+) -> None:
     """
     Handle network-related errors with structured logging.
 
@@ -270,17 +283,18 @@ async def handle_network_error(operation: str, exception: Exception,
     context = ErrorContext(
         component=component,
         operation=operation,
-        additional_data={
-            "retry_count": retry_count,
-            "error_category": "network"
-        }
+        additional_data={"retry_count": retry_count, "error_category": "network"},
     )
 
     await _error_handler.handle_error(exception, context, "WARNING", False)
 
 
-async def handle_data_error(operation: str, exception: Exception,
-                           component: str = "data_processor", symbol: str = None) -> None:
+async def handle_data_error(
+    operation: str,
+    exception: Exception,
+    component: str = "data_processor",
+    symbol: str = None,
+) -> None:
     """
     Handle data processing errors with structured logging.
 
@@ -294,14 +308,18 @@ async def handle_data_error(operation: str, exception: Exception,
         component=component,
         operation=operation,
         symbol=symbol,
-        additional_data={"error_category": "data"}
+        additional_data={"error_category": "data"},
     )
 
     await _error_handler.handle_error(exception, context, "ERROR", False)
 
 
-async def handle_security_error(operation: str, exception: Exception,
-                               component: str = "security", user_id: str = None) -> None:
+async def handle_security_error(
+    operation: str,
+    exception: Exception,
+    component: str = "security",
+    user_id: str = None,
+) -> None:
     """
     Handle security-related errors with structured logging and notification.
 
@@ -315,16 +333,20 @@ async def handle_security_error(operation: str, exception: Exception,
         component=component,
         operation=operation,
         user_id=user_id,
-        additional_data={"error_category": "security"}
+        additional_data={"error_category": "security"},
     )
 
     # Security errors always trigger notifications
     await _error_handler.handle_error(exception, context, "CRITICAL", True)
 
 
-async def handle_trading_error(operation: str, exception: Exception,
-                              component: str = "trading", symbol: str = None,
-                              trade_id: str = None) -> None:
+async def handle_trading_error(
+    operation: str,
+    exception: Exception,
+    component: str = "trading",
+    symbol: str = None,
+    trade_id: str = None,
+) -> None:
     """
     Handle trading-related errors with structured logging.
 
@@ -340,15 +362,20 @@ async def handle_trading_error(operation: str, exception: Exception,
         operation=operation,
         symbol=symbol,
         trade_id=trade_id,
-        additional_data={"error_category": "trading"}
+        additional_data={"error_category": "trading"},
     )
 
     await _error_handler.handle_error(exception, context, "ERROR", False)
 
 
 # Safe execution utilities
-async def safe_execute_async(func: Callable, *args, component: str = "unknown",
-                           operation: str = "execution", **kwargs) -> Any:
+async def safe_execute_async(
+    func: Callable,
+    *args,
+    component: str = "unknown",
+    operation: str = "execution",
+    **kwargs,
+) -> Any:
     """
     Safely execute an async function with error handling.
 
@@ -371,8 +398,13 @@ async def safe_execute_async(func: Callable, *args, component: str = "unknown",
         return None
 
 
-def safe_execute_sync(func: Callable, *args, component: str = "unknown",
-                     operation: str = "execution", **kwargs) -> Any:
+def safe_execute_sync(
+    func: Callable,
+    *args,
+    component: str = "unknown",
+    operation: str = "execution",
+    **kwargs,
+) -> Any:
     """
     Safely execute a sync function with error handling.
 
@@ -404,8 +436,9 @@ def safe_execute_sync(func: Callable, *args, component: str = "unknown",
 
 
 # Error recovery utilities
-async def with_retry_async(func: Callable, max_retries: int = 3,
-                          backoff_factor: float = 1.0, *args, **kwargs) -> Any:
+async def with_retry_async(
+    func: Callable, max_retries: int = 3, backoff_factor: float = 1.0, *args, **kwargs
+) -> Any:
     """
     Execute an async function with retry logic and error handling.
 
@@ -431,7 +464,7 @@ async def with_retry_async(func: Callable, max_retries: int = 3,
             last_exception = e
 
             if attempt < max_retries:
-                delay = backoff_factor * (2 ** attempt)
+                delay = backoff_factor * (2**attempt)
                 await asyncio.sleep(delay)
 
                 logger.warning(
@@ -448,8 +481,9 @@ async def with_retry_async(func: Callable, max_retries: int = 3,
     raise last_exception
 
 
-def with_retry_sync(func: Callable, max_retries: int = 3,
-                   backoff_factor: float = 1.0, *args, **kwargs) -> Any:
+def with_retry_sync(
+    func: Callable, max_retries: int = 3, backoff_factor: float = 1.0, *args, **kwargs
+) -> Any:
     """
     Execute a sync function with retry logic and error handling.
 
@@ -477,7 +511,7 @@ def with_retry_sync(func: Callable, max_retries: int = 3,
             last_exception = e
 
             if attempt < max_retries:
-                delay = backoff_factor * (2 ** attempt)
+                delay = backoff_factor * (2**attempt)
                 time.sleep(delay)
 
                 logger.warning(

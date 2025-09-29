@@ -6,8 +6,9 @@ executors, or other components based on signal characteristics.
 """
 
 import logging
-from typing import Dict, List, Optional, Any, TYPE_CHECKING
-from core.contracts import TradingSignal, SignalType, SignalStrength
+from typing import TYPE_CHECKING, Any, Dict, Optional
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
 
 if TYPE_CHECKING:
     from core.ensemble_manager import EnsembleManager
@@ -21,9 +22,11 @@ class RoutePolicy:
     Defines routing policies for trading signals.
     """
 
-    def __init__(self,
-                 ensemble_manager: Optional["EnsembleManager"] = None,
-                 predictive_manager: Optional["PredictiveModelManager"] = None):
+    def __init__(
+        self,
+        ensemble_manager: Optional["EnsembleManager"] = None,
+        predictive_manager: Optional["PredictiveModelManager"] = None,
+    ):
         """
         Initialize the route policy.
 
@@ -34,7 +37,9 @@ class RoutePolicy:
         self.ensemble_manager = ensemble_manager
         self.predictive_manager = predictive_manager
 
-    def get_routing_decision(self, signal: TradingSignal, market_data: Dict = None) -> Dict[str, Any]:
+    def get_routing_decision(
+        self, signal: TradingSignal, market_data: Dict = None
+    ) -> Dict[str, Any]:
         """
         Determine how a signal should be routed.
 
@@ -51,7 +56,7 @@ class RoutePolicy:
             "route_to_ensemble": False,
             "route_to_predictive": False,
             "priority": "normal",
-            "reason": ""
+            "reason": "",
         }
 
         try:
@@ -99,12 +104,13 @@ class RoutePolicy:
         # Route to ensemble if:
         # 1. Signal is from individual strategy (not already ensemble)
         # 2. Ensemble is configured for this signal type
-        if (signal.strategy_id != "ensemble" and
-            hasattr(signal, 'metadata') and
-            not signal.metadata.get('ensemble', False)):
-
+        if (
+            signal.strategy_id != "ensemble"
+            and hasattr(signal, "metadata")
+            and not signal.metadata.get("ensemble", False)
+        ):
             # Check if ensemble supports this signal type
-            if hasattr(self.ensemble_manager, 'supports_signal_type'):
+            if hasattr(self.ensemble_manager, "supports_signal_type"):
                 return self.ensemble_manager.supports_signal_type(signal.signal_type)
 
             return True
@@ -138,15 +144,19 @@ class RoutePolicy:
             True if should route to executor
         """
         # Basic checks for executor routing
-        if signal.signal_type not in {SignalType.ENTRY_LONG, SignalType.ENTRY_SHORT,
-                                    SignalType.EXIT_LONG, SignalType.EXIT_SHORT}:
+        if signal.signal_type not in {
+            SignalType.ENTRY_LONG,
+            SignalType.ENTRY_SHORT,
+            SignalType.EXIT_LONG,
+            SignalType.EXIT_SHORT,
+        }:
             return False
 
         # Check signal strength - very weak signals might not go to executor
         if signal.signal_strength == SignalStrength.WEAK:
             # Only route weak signals if they have special metadata
-            if hasattr(signal, 'metadata') and signal.metadata:
-                if signal.metadata.get('force_execute', False):
+            if hasattr(signal, "metadata") and signal.metadata:
+                if signal.metadata.get("force_execute", False):
                     return True
             return False
 
@@ -210,7 +220,9 @@ class MLRoutePolicy:
         # Apply ML filter to entry signals
         return signal.signal_type in {SignalType.ENTRY_LONG, SignalType.ENTRY_SHORT}
 
-    def handle_ml_result(self, signal: TradingSignal, ml_result: Dict[str, Any]) -> Dict[str, Any]:
+    def handle_ml_result(
+        self, signal: TradingSignal, ml_result: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Handle ML filtering result and determine next steps.
 
@@ -225,7 +237,7 @@ class MLRoutePolicy:
             "approved": True,
             "modified_signal": signal,
             "reason": "",
-            "confidence": ml_result.get("confidence", 0.0)
+            "confidence": ml_result.get("confidence", 0.0),
         }
 
         if not ml_result.get("approved", True):
@@ -239,15 +251,24 @@ class MLRoutePolicy:
         if confidence < self.confidence_threshold:
             if not self.fallback_to_raw:
                 decision["approved"] = False
-                decision["reason"] = f"Low confidence: {confidence:.3f} < {self.confidence_threshold}"
+                decision[
+                    "reason"
+                ] = f"Low confidence: {confidence:.3f} < {self.confidence_threshold}"
                 return decision
             else:
-                logger.info(f"ML confidence low ({confidence:.3f}), proceeding with raw signal")
+                logger.info(
+                    f"ML confidence low ({confidence:.3f}), proceeding with raw signal"
+                )
 
         # Apply ML-driven signal modifications
-        if signal.signal_strength == SignalStrength.WEAK and confidence >= self.confidence_threshold:
+        if (
+            signal.signal_strength == SignalStrength.WEAK
+            and confidence >= self.confidence_threshold
+        ):
             # Upgrade weak signal if ML has high confidence
-            decision["modified_signal"] = signal._replace(signal_strength=SignalStrength.MODERATE)
+            decision["modified_signal"] = signal._replace(
+                signal_strength=SignalStrength.MODERATE
+            )
             decision["reason"] = "Signal strength upgraded by ML"
 
         return decision
@@ -287,23 +308,28 @@ class MarketRegimeRoutePolicy:
 
         if adjustment_factor != 1.0:
             new_amount = signal.amount * adjustment_factor
-            logger.info(f"Adjusted signal amount for {regime} regime: "
-                       f"{signal.amount} -> {new_amount}")
+            logger.info(
+                f"Adjusted signal amount for {regime} regime: "
+                f"{signal.amount} -> {new_amount}"
+            )
 
             # Create adjusted signal
             adjusted_signal = signal._replace(amount=new_amount)
 
             # Add regime info to metadata
-            if not hasattr(adjusted_signal, 'metadata') or adjusted_signal.metadata is None:
+            if (
+                not hasattr(adjusted_signal, "metadata")
+                or adjusted_signal.metadata is None
+            ):
                 adjusted_signal = adjusted_signal._replace(metadata={})
 
             if adjusted_signal.metadata is None:
                 adjusted_signal = adjusted_signal._replace(metadata={})
 
-            adjusted_signal.metadata['regime_adjustment'] = {
-                'original_amount': signal.amount,
-                'adjustment_factor': adjustment_factor,
-                'regime': regime
+            adjusted_signal.metadata["regime_adjustment"] = {
+                "original_amount": signal.amount,
+                "adjustment_factor": adjustment_factor,
+                "regime": regime,
             }
 
             return adjusted_signal
@@ -321,18 +347,20 @@ class MarketRegimeRoutePolicy:
             Adjustment factor
         """
         regime_adjustments = {
-            'bull': 1.2,      # Increase position in bull markets
-            'bear': 0.7,      # Reduce position in bear markets
-            'sideways': 0.9,  # Slightly reduce in sideways markets
-            'volatile': 0.6,  # Significantly reduce in volatile markets
-            'calm': 1.1       # Slightly increase in calm markets
+            "bull": 1.2,  # Increase position in bull markets
+            "bear": 0.7,  # Reduce position in bear markets
+            "sideways": 0.9,  # Slightly reduce in sideways markets
+            "volatile": 0.6,  # Significantly reduce in volatile markets
+            "calm": 1.1,  # Slightly increase in calm markets
         }
 
         return regime_adjustments.get(regime, 1.0)
 
 
 # Convenience functions
-def get_default_route_policy(ensemble_manager=None, predictive_manager=None) -> RoutePolicy:
+def get_default_route_policy(
+    ensemble_manager=None, predictive_manager=None
+) -> RoutePolicy:
     """
     Get default routing policy instance.
 

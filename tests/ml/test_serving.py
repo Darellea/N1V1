@@ -1,12 +1,11 @@
-import pytest
 import asyncio
-import json
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
+
 import pandas as pd
-import numpy as np
+import pytest
 from fastapi.testclient import TestClient
+
 from ml.serving import app, load_model, process_single_prediction
-from pydantic import ValidationError
 
 
 @pytest.fixture
@@ -21,7 +20,7 @@ def sample_features():
     return {
         "feature1": [1.0, 2.0, 3.0],
         "feature2": [0.5, 1.5, 2.5],
-        "feature3": [10, 20, 30]
+        "feature3": [10, 20, 30],
     }
 
 
@@ -31,7 +30,7 @@ def sample_prediction_request(sample_features):
     return {
         "model_name": "test_model",
         "features": sample_features,
-        "correlation_id": "test-123"
+        "correlation_id": "test-123",
     }
 
 
@@ -53,21 +52,25 @@ class TestServingAPI:
         assert response.status_code == 200
         assert "inference_requests_total" in response.text
 
-    @patch('ml.serving.load_model')
-    @patch('ml.serving.local_predict')
-    def test_predict_single_success(self, mock_predict, mock_load_model, client, sample_prediction_request):
+    @patch("ml.serving.load_model")
+    @patch("ml.serving.local_predict")
+    def test_predict_single_success(
+        self, mock_predict, mock_load_model, client, sample_prediction_request
+    ):
         """Test successful single prediction."""
         # Mock the model and prediction
         mock_model = Mock()
         mock_load_model.return_value = mock_model
 
         # Mock prediction result
-        mock_result = pd.DataFrame({
-            'prediction': [1, 0, 1],
-            'confidence': [0.9, 0.8, 0.95],
-            'proba_0': [0.1, 0.2, 0.05],
-            'proba_1': [0.9, 0.8, 0.95]
-        })
+        mock_result = pd.DataFrame(
+            {
+                "prediction": [1, 0, 1],
+                "confidence": [0.9, 0.8, 0.95],
+                "proba_0": [0.1, 0.2, 0.05],
+                "proba_1": [0.9, 0.8, 0.95],
+            }
+        )
         mock_predict.return_value = mock_result
 
         response = client.post("/predict", json=sample_prediction_request)
@@ -86,14 +89,16 @@ class TestServingAPI:
         """Test prediction with invalid request data."""
         invalid_request = {
             "model_name": "",  # Empty model name
-            "features": {"invalid": "data"}
+            "features": {"invalid": "data"},
         }
 
         response = client.post("/predict", json=invalid_request)
         assert response.status_code == 422  # Validation error
 
-    @patch('ml.serving.load_model')
-    def test_predict_single_model_not_found(self, mock_load_model, client, sample_prediction_request):
+    @patch("ml.serving.load_model")
+    def test_predict_single_model_not_found(
+        self, mock_load_model, client, sample_prediction_request
+    ):
         """Test prediction when model is not found."""
         mock_load_model.side_effect = Exception("Model not found")
 
@@ -108,16 +113,16 @@ class TestServingAPI:
         """Test successful batch prediction."""
         batch_request = {
             "requests": [sample_prediction_request, sample_prediction_request],
-            "batch_size": 2
+            "batch_size": 2,
         }
 
-        with patch('ml.serving.process_single_prediction') as mock_process:
+        with patch("ml.serving.process_single_prediction") as mock_process:
             mock_process.return_value = {
                 "prediction": [1, 0],
                 "confidence": [0.9, 0.8],
                 "correlation_id": "test-123",
                 "model_version": "1.0.0",
-                "latency_ms": 45.2
+                "latency_ms": 45.2,
             }
 
             response = client.post("/predict/batch", json=batch_request)
@@ -130,10 +135,7 @@ class TestServingAPI:
 
     def test_predict_batch_empty_requests(self, client):
         """Test batch prediction with empty request list."""
-        batch_request = {
-            "requests": [],
-            "batch_size": 10
-        }
+        batch_request = {"requests": [], "batch_size": 10}
 
         response = client.post("/predict/batch", json=batch_request)
         assert response.status_code == 200
@@ -141,7 +143,7 @@ class TestServingAPI:
         data = response.json()
         assert data == []
 
-    @patch('ml.serving.load_model')
+    @patch("ml.serving.load_model")
     def test_reload_model_success(self, mock_load_model, client):
         """Test successful model reload."""
         mock_load_model.return_value = Mock()
@@ -162,7 +164,7 @@ class TestServingAPI:
 class TestModelLoading:
     """Test cases for model loading functionality."""
 
-    @patch('ml.serving.load_model_with_fallback')
+    @patch("ml.serving.load_model_with_fallback")
     def test_load_model_success(self, mock_load_fallback):
         """Test successful model loading."""
         mock_model = Mock()
@@ -178,7 +180,7 @@ class TestModelLoading:
         # Should only call load_model_with_fallback once due to caching
         assert mock_load_fallback.call_count == 1
 
-    @patch('ml.serving.load_model_with_fallback')
+    @patch("ml.serving.load_model_with_fallback")
     def test_load_model_failure(self, mock_load_fallback):
         """Test model loading failure."""
         mock_load_fallback.side_effect = Exception("Load failed")
@@ -190,20 +192,17 @@ class TestModelLoading:
 class TestPredictionProcessing:
     """Test cases for prediction processing logic."""
 
-    @patch('ml.serving.load_model')
-    @patch('ml.serving.local_predict')
+    @patch("ml.serving.load_model")
+    @patch("ml.serving.local_predict")
     def test_process_single_prediction_success(self, mock_predict, mock_load_model):
         """Test successful single prediction processing."""
         # Setup mocks
         mock_model = Mock()
         mock_load_model.return_value = mock_model
 
-        mock_result = pd.DataFrame({
-            'prediction': [1],
-            'confidence': [0.9],
-            'proba_0': [0.1],
-            'proba_1': [0.9]
-        })
+        mock_result = pd.DataFrame(
+            {"prediction": [1], "confidence": [0.9], "proba_0": [0.1], "proba_1": [0.9]}
+        )
         mock_predict.return_value = mock_result
 
         request = Mock()
@@ -218,7 +217,7 @@ class TestPredictionProcessing:
         assert "correlation_id" in result
         assert result["correlation_id"] == "test-123"
 
-    @patch('ml.serving.load_model')
+    @patch("ml.serving.load_model")
     def test_process_single_prediction_model_error(self, mock_load_model):
         """Test prediction processing with model loading error."""
         mock_load_model.side_effect = Exception("Model error")
@@ -235,18 +234,17 @@ class TestPredictionProcessing:
 class TestPerformanceMetrics:
     """Test cases for performance metrics collection."""
 
-    @patch('ml.serving.load_model')
-    @patch('ml.serving.local_predict')
-    def test_metrics_collection_success(self, mock_predict, mock_load_model, client, sample_prediction_request):
+    @patch("ml.serving.load_model")
+    @patch("ml.serving.local_predict")
+    def test_metrics_collection_success(
+        self, mock_predict, mock_load_model, client, sample_prediction_request
+    ):
         """Test that metrics are collected for successful predictions."""
         # Setup mocks
         mock_model = Mock()
         mock_load_model.return_value = mock_model
 
-        mock_result = pd.DataFrame({
-            'prediction': [1],
-            'confidence': [0.9]
-        })
+        mock_result = pd.DataFrame({"prediction": [1], "confidence": [0.9]})
         mock_predict.return_value = mock_result
 
         # Make request
@@ -281,15 +279,19 @@ class TestErrorHandling:
         response = client.post("/predict", json=incomplete_request)
         assert response.status_code == 422
 
-    @patch('ml.serving.load_model')
-    @patch('ml.serving.local_predict')
-    def test_prediction_timeout_simulation(self, mock_predict, mock_load_model, client, sample_prediction_request):
+    @patch("ml.serving.load_model")
+    @patch("ml.serving.local_predict")
+    def test_prediction_timeout_simulation(
+        self, mock_predict, mock_load_model, client, sample_prediction_request
+    ):
         """Test handling of prediction timeouts (simulated)."""
         mock_model = Mock()
         mock_load_model.return_value = mock_model
 
         # Simulate slow prediction
-        mock_predict.side_effect = lambda *args, **kwargs: asyncio.sleep(35)  # Exceeds timeout
+        mock_predict.side_effect = lambda *args, **kwargs: asyncio.sleep(
+            35
+        )  # Exceeds timeout
 
         # Note: In real scenario, this would be handled by request timeout
         # Here we just verify the error handling works

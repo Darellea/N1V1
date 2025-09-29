@@ -5,22 +5,21 @@ Abstract base class for all trading strategies.
 Defines the required interface and common functionality.
 """
 
-from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any, Union
+import asyncio
 import logging
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from utils.time import now_ms, to_iso
-import asyncio
-
-import pandas as pd
-import numpy as np
 from decimal import Decimal
-from typing import Any
+from typing import Any, Dict, List, Optional, Union
 
-from core.contracts import TradingSignal, SignalType, SignalStrength
+import numpy as np
+import pandas as pd
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
 from core.types import OrderType
 from data.data_fetcher import DataFetcher
+from utils.time import now_ms
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +62,9 @@ class BaseStrategy(ABC):
         self.config = config
         # Use ms-based timestamp for deterministic IDs across processes
         # Handle both StrategyConfig objects and dict configs
-        config_name = config.name if hasattr(config, 'name') else config.get('name', 'unknown')
+        config_name = (
+            config.name if hasattr(config, "name") else config.get("name", "unknown")
+        )
         self.id = f"{config_name}_{now_ms()}"
         self.data_fetcher: Optional[DataFetcher] = None
         self.initialized = False
@@ -77,7 +78,11 @@ class BaseStrategy(ABC):
 
     def _setup_logging(self) -> None:
         """Setup strategy-specific logging."""
-        config_name = self.config.name if hasattr(self.config, 'name') else self.config.get('name', 'unknown')
+        config_name = (
+            self.config.name
+            if hasattr(self.config, "name")
+            else self.config.get("name", "unknown")
+        )
         self.logger = logging.getLogger(f"strategy.{config_name.lower()}")
         self.logger.info(f"Initializing {config_name} strategy")
 
@@ -116,8 +121,8 @@ class BaseStrategy(ABC):
                     raise ValueError("Insufficient data for indicator calculation")
                 return orig(self, data, *args, **kw)
 
-        setattr(cls, "calculate_indicators", wrapped)
-        setattr(cls, "_calculate_wrapped", True)
+        cls.calculate_indicators = wrapped
+        cls._calculate_wrapped = True
 
     async def initialize(self, data_fetcher: DataFetcher) -> None:
         """
@@ -128,7 +133,11 @@ class BaseStrategy(ABC):
         """
         self.data_fetcher = data_fetcher
         self.initialized = True
-        config_name = self.config.name if hasattr(self.config, 'name') else self.config.get('name', 'unknown')
+        config_name = (
+            self.config.name
+            if hasattr(self.config, "name")
+            else self.config.get("name", "unknown")
+        )
         self.logger.info(f"{config_name} strategy initialized")
 
     @abstractmethod
@@ -145,7 +154,9 @@ class BaseStrategy(ABC):
         pass
 
     @abstractmethod
-    async def generate_signals(self, data: pd.DataFrame, multi_tf_data: Optional[Dict[str, Any]] = None) -> List[TradingSignal]:
+    async def generate_signals(
+        self, data: pd.DataFrame, multi_tf_data: Optional[Dict[str, Any]] = None
+    ) -> List[TradingSignal]:
         """
         Generate trading signals based on calculated indicators.
 
@@ -243,12 +254,16 @@ class BaseStrategy(ABC):
             except Exception as e:
                 if attempt == max_retries - 1:
                     # Last attempt failed
-                    self.logger.error(f"Failed to get data for {symbol} after {max_retries} attempts: {str(e)}")
+                    self.logger.error(
+                        f"Failed to get data for {symbol} after {max_retries} attempts: {str(e)}"
+                    )
                     return None
                 else:
                     # Calculate exponential backoff delay
-                    delay = base_delay * (2 ** attempt)
-                    self.logger.warning(f"Failed to get data for {symbol} (attempt {attempt + 1}/{max_retries}): {str(e)}. Retrying in {delay:.1f}s")
+                    delay = base_delay * (2**attempt)
+                    self.logger.warning(
+                        f"Failed to get data for {symbol} (attempt {attempt + 1}/{max_retries}): {str(e)}. Retrying in {delay:.1f}s"
+                    )
                     await asyncio.sleep(delay)
 
     def _log_signals(self, signals: List[TradingSignal]) -> None:
@@ -331,7 +346,11 @@ class BaseStrategy(ABC):
 
     async def shutdown(self) -> None:
         """Cleanup strategy resources."""
-        config_name = self.config.name if hasattr(self.config, 'name') else self.config.get('name', 'unknown')
+        config_name = (
+            self.config.name
+            if hasattr(self.config, "name")
+            else self.config.get("name", "unknown")
+        )
         self.logger.info(f"Shutting down {config_name} strategy")
         self.initialized = False
 
@@ -348,8 +367,9 @@ class BaseStrategy(ABC):
 
     # Multi-Timeframe Analysis Helper Methods
 
-    def get_higher_timeframe_trend(self, multi_tf_data: Dict[str, Any],
-                                  current_tf: str, higher_tf: str) -> Optional[str]:
+    def get_higher_timeframe_trend(
+        self, multi_tf_data: Dict[str, Any], current_tf: str, higher_tf: str
+    ) -> Optional[str]:
         """
         Analyze trend direction on a higher timeframe.
 
@@ -362,19 +382,19 @@ class BaseStrategy(ABC):
             Trend direction: 'bullish', 'bearish', or 'sideways'
         """
         try:
-            if not multi_tf_data or higher_tf not in multi_tf_data.get('data', {}):
+            if not multi_tf_data or higher_tf not in multi_tf_data.get("data", {}):
                 return None
 
-            higher_data = multi_tf_data['data'][higher_tf]
+            higher_data = multi_tf_data["data"][higher_tf]
             if higher_data.empty or len(higher_data) < 20:
                 return None
 
             # Calculate trend using moving averages
-            sma_short = higher_data['close'].rolling(10).mean()
-            sma_long = higher_data['close'].rolling(20).mean()
+            sma_short = higher_data["close"].rolling(10).mean()
+            sma_long = higher_data["close"].rolling(20).mean()
 
             if len(sma_short) < 2 or len(sma_long) < 2:
-                return 'sideways'
+                return "sideways"
 
             # Check recent trend
             recent_short = sma_short.iloc[-1]
@@ -383,19 +403,22 @@ class BaseStrategy(ABC):
             prev_long = sma_long.iloc[-2]
 
             if recent_short > recent_long and prev_short > prev_long:
-                return 'bullish'
+                return "bullish"
             elif recent_short < recent_long and prev_short < prev_long:
-                return 'bearish'
+                return "bearish"
             else:
-                return 'sideways'
+                return "sideways"
 
         except Exception as e:
             self.logger.warning(f"Failed to analyze higher timeframe trend: {e}")
             return None
 
-    def validate_across_timeframes(self, signal: TradingSignal,
-                                 multi_tf_data: Dict[str, Any],
-                                 required_timeframes: List[str]) -> Dict[str, Any]:
+    def validate_across_timeframes(
+        self,
+        signal: TradingSignal,
+        multi_tf_data: Dict[str, Any],
+        required_timeframes: List[str],
+    ) -> Dict[str, Any]:
         """
         Validate a signal across multiple timeframes.
 
@@ -409,11 +432,11 @@ class BaseStrategy(ABC):
         """
         try:
             validation_result = {
-                'is_valid': False,
-                'confidence_score': 0.0,
-                'confirming_timeframes': [],
-                'conflicting_timeframes': [],
-                'details': {}
+                "is_valid": False,
+                "confidence_score": 0.0,
+                "confirming_timeframes": [],
+                "conflicting_timeframes": [],
+                "details": {},
             }
 
             if not multi_tf_data or not required_timeframes:
@@ -423,27 +446,33 @@ class BaseStrategy(ABC):
             confirming_count = 0
 
             for tf in required_timeframes:
-                if tf not in multi_tf_data.get('data', {}):
-                    validation_result['conflicting_timeframes'].append(tf)
+                if tf not in multi_tf_data.get("data", {}):
+                    validation_result["conflicting_timeframes"].append(tf)
                     continue
 
-                tf_data = multi_tf_data['data'][tf]
-                trend = self.get_higher_timeframe_trend(multi_tf_data, signal.metadata.get('timeframe', '15m'), tf)
+                tf_data = multi_tf_data["data"][tf]
+                trend = self.get_higher_timeframe_trend(
+                    multi_tf_data, signal.metadata.get("timeframe", "15m"), tf
+                )
 
                 if trend:
-                    if signal_type in ['BUY', 'LONG'] and trend == 'bullish':
+                    if signal_type in ["BUY", "LONG"] and trend == "bullish":
                         confirming_count += 1
-                        validation_result['confirming_timeframes'].append(tf)
-                    elif signal_type in ['SELL', 'SHORT'] and trend == 'bearish':
+                        validation_result["confirming_timeframes"].append(tf)
+                    elif signal_type in ["SELL", "SHORT"] and trend == "bearish":
                         confirming_count += 1
-                        validation_result['confirming_timeframes'].append(tf)
+                        validation_result["confirming_timeframes"].append(tf)
                     else:
-                        validation_result['conflicting_timeframes'].append(tf)
+                        validation_result["conflicting_timeframes"].append(tf)
 
             # Calculate confidence score
             if required_timeframes:
-                validation_result['confidence_score'] = confirming_count / len(required_timeframes)
-                validation_result['is_valid'] = validation_result['confidence_score'] >= 0.7  # 70% threshold
+                validation_result["confidence_score"] = confirming_count / len(
+                    required_timeframes
+                )
+                validation_result["is_valid"] = (
+                    validation_result["confidence_score"] >= 0.7
+                )  # 70% threshold
 
             return validation_result
 
@@ -451,8 +480,9 @@ class BaseStrategy(ABC):
             self.logger.error(f"Failed to validate signal across timeframes: {e}")
             return validation_result
 
-    def calculate_multi_tf_indicators(self, multi_tf_data: Dict[str, Any],
-                                    indicator_name: str, **kwargs) -> Dict[str, float]:
+    def calculate_multi_tf_indicators(
+        self, multi_tf_data: Dict[str, Any], indicator_name: str, **kwargs
+    ) -> Dict[str, float]:
         """
         Calculate indicators across multiple timeframes.
 
@@ -467,30 +497,34 @@ class BaseStrategy(ABC):
         try:
             results = {}
 
-            if not multi_tf_data or 'data' not in multi_tf_data:
+            if not multi_tf_data or "data" not in multi_tf_data:
                 return results
 
-            for tf, tf_data in multi_tf_data['data'].items():
+            for tf, tf_data in multi_tf_data["data"].items():
                 if tf_data.empty:
                     continue
 
                 try:
-                    if indicator_name == 'trend_strength':
-                        period = kwargs.get('period', 14)
-                        strength = self.calculate_trend_strength(tf_data['close'], period)
+                    if indicator_name == "trend_strength":
+                        period = kwargs.get("period", 14)
+                        strength = self.calculate_trend_strength(
+                            tf_data["close"], period
+                        )
                         results[tf] = strength
-                    elif indicator_name == 'volatility':
-                        period = kwargs.get('period', 20)
-                        vol = self.calculate_volatility(tf_data['close'], period)
+                    elif indicator_name == "volatility":
+                        period = kwargs.get("period", 20)
+                        vol = self.calculate_volatility(tf_data["close"], period)
                         results[tf] = vol
-                    elif indicator_name == 'atr':
-                        period = kwargs.get('period', 14)
+                    elif indicator_name == "atr":
+                        period = kwargs.get("period", 14)
                         atr = self.calculate_atr(tf_data, period)
                         results[tf] = atr
                     # Add more indicators as needed
 
                 except Exception as e:
-                    self.logger.warning(f"Failed to calculate {indicator_name} for {tf}: {e}")
+                    self.logger.warning(
+                        f"Failed to calculate {indicator_name} for {tf}: {e}"
+                    )
 
             return results
 
@@ -498,8 +532,9 @@ class BaseStrategy(ABC):
             self.logger.error(f"Failed to calculate multi-timeframe indicators: {e}")
             return {}
 
-    def get_multi_tf_consensus_score(self, multi_tf_data: Dict[str, Any],
-                                   signal_type: str, timeframes: List[str]) -> float:
+    def get_multi_tf_consensus_score(
+        self, multi_tf_data: Dict[str, Any], signal_type: str, timeframes: List[str]
+    ) -> float:
         """
         Calculate consensus score across multiple timeframes for a signal type.
 
@@ -519,12 +554,13 @@ class BaseStrategy(ABC):
             total_timeframes = len(timeframes)
 
             for tf in timeframes:
-                trend = self.get_higher_timeframe_trend(multi_tf_data,
-                                                       self.config.timeframe, tf)
+                trend = self.get_higher_timeframe_trend(
+                    multi_tf_data, self.config.timeframe, tf
+                )
                 if trend:
-                    if signal_type in ['BUY', 'LONG'] and trend == 'bullish':
+                    if signal_type in ["BUY", "LONG"] and trend == "bullish":
                         consensus_count += 1
-                    elif signal_type in ['SELL', 'SHORT'] and trend == 'bearish':
+                    elif signal_type in ["SELL", "SHORT"] and trend == "bearish":
                         consensus_count += 1
 
             return consensus_count / total_timeframes if total_timeframes > 0 else 0.0
@@ -664,7 +700,11 @@ class VolatilityAnalysisMixin:
 class SignalGenerationMixin:
     """Mixin class providing common signal generation methods."""
 
-    def _merge_params(self, default_params: Dict[str, Any], config: Union[StrategyConfig, Dict[str, Any]]) -> Dict[str, Any]:
+    def _merge_params(
+        self,
+        default_params: Dict[str, Any],
+        config: Union[StrategyConfig, Dict[str, Any]],
+    ) -> Dict[str, Any]:
         """
         Merge default parameters with config parameters.
 
@@ -675,10 +715,18 @@ class SignalGenerationMixin:
         Returns:
             Merged parameters dictionary
         """
-        config_params = config.params if hasattr(config, 'params') else config.get('params', {})
+        config_params = (
+            config.params if hasattr(config, "params") else config.get("params", {})
+        )
         return {**default_params, **(config_params or {})}
 
-    def _check_volume_confirmation(self, data: pd.DataFrame, symbol: str, volume_period: int, volume_threshold: float) -> bool:
+    def _check_volume_confirmation(
+        self,
+        data: pd.DataFrame,
+        symbol: str,
+        volume_period: int,
+        volume_threshold: float,
+    ) -> bool:
         """
         Check if volume confirms the signal.
 
@@ -692,7 +740,9 @@ class SignalGenerationMixin:
             True if volume confirms, False otherwise
         """
         try:
-            symbol_data = data[data["symbol"] == symbol] if "symbol" in data.columns else data
+            symbol_data = (
+                data[data["symbol"] == symbol] if "symbol" in data.columns else data
+            )
             if len(symbol_data) < volume_period or "volume" not in symbol_data.columns:
                 return True  # Default to allowing signal if no volume data
 
@@ -715,7 +765,7 @@ class SignalGenerationMixin:
         position_size: float,
         stop_loss_pct: float,
         take_profit_pct: float,
-        metadata: Dict[str, Any]
+        metadata: Dict[str, Any],
     ) -> TradingSignal:
         """
         Create a breakout trading signal.
@@ -733,8 +783,16 @@ class SignalGenerationMixin:
         Returns:
             TradingSignal object
         """
-        stop_loss = current_price * (1 - stop_loss_pct) if signal_type == SignalType.ENTRY_LONG else current_price * (1 + stop_loss_pct)
-        take_profit = current_price * (1 + take_profit_pct) if signal_type == SignalType.ENTRY_LONG else current_price * (1 - take_profit_pct)
+        stop_loss = (
+            current_price * (1 - stop_loss_pct)
+            if signal_type == SignalType.ENTRY_LONG
+            else current_price * (1 + stop_loss_pct)
+        )
+        take_profit = (
+            current_price * (1 + take_profit_pct)
+            if signal_type == SignalType.ENTRY_LONG
+            else current_price * (1 - take_profit_pct)
+        )
 
         return self.create_signal(
             symbol=symbol,

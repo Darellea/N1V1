@@ -6,12 +6,13 @@ This script demonstrates the centralized utilities that eliminate
 duplication across error handling, configuration loading, and logging setup.
 """
 
-import sys
-import os
 import asyncio
+import os
+import sys
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 
 async def demonstrate_error_handling_utils():
     """Demonstrate centralized error handling utilities."""
@@ -22,14 +23,25 @@ async def demonstrate_error_handling_utils():
     try:
         # Import the error handling utilities
         from utils.error_handling_utils import (
-            ErrorContext, ErrorHandler, get_error_handler,
-            handle_errors, error_context, safe_execute_async,
-            handle_network_error, handle_data_error, handle_security_error
+            ErrorContext,
+            ErrorHandler,
+            error_context,
+            get_error_handler,
+            handle_data_error,
+            handle_errors,
+            handle_network_error,
+            handle_security_error,
+            safe_execute_async,
         )
+
         print("✅ Successfully imported error handling utilities")
     except ImportError:
-        print("❌ Could not import error handling utilities due to circular import issues")
-        print("This is expected in the current state - demonstrating functionality manually...")
+        print(
+            "❌ Could not import error handling utilities due to circular import issues"
+        )
+        print(
+            "This is expected in the current state - demonstrating functionality manually..."
+        )
         await demonstrate_manual_error_handling()
         return
 
@@ -43,7 +55,7 @@ async def demonstrate_error_handling_utils():
         operation="execute_trade",
         symbol="BTC/USDT",
         trade_id="12345",
-        additional_data={"strategy": "momentum", "confidence": 0.85}
+        additional_data={"strategy": "momentum", "confidence": 0.85},
     )
     print(f"Context: {context.to_dict()}")
 
@@ -87,11 +99,15 @@ async def demonstrate_manual_error_handling():
     print("\n🔧 Manual Error Handling Demonstration")
 
     print("\n📋 Simulated Error Context:")
-    print("ErrorContext(component='trading_engine', operation='execute_trade', symbol='BTC/USDT')")
+    print(
+        "ErrorContext(component='trading_engine', operation='execute_trade', symbol='BTC/USDT')"
+    )
 
     print("\n📋 Simulated Error Handling:")
     print("✅ Error: ValueError('Insufficient balance') handled with context")
-    print("✅ Logged with: component=trading_engine, operation=execute_trade, symbol=BTC/USDT")
+    print(
+        "✅ Logged with: component=trading_engine, operation=execute_trade, symbol=BTC/USDT"
+    )
 
     print("\n📋 Simulated Decorator Usage:")
     print("@handle_errors('risk_manager', 'calculate_position_size')")
@@ -112,13 +128,19 @@ def demonstrate_config_factory():
 
     try:
         from utils.config_factory import (
-            ConfigFactory, get_config_factory,
-            get_trading_config, get_risk_config, get_logging_config
+            ConfigFactory,
+            get_config_factory,
+            get_logging_config,
+            get_risk_config,
+            get_trading_config,
         )
+
         print("✅ Successfully imported configuration factory")
     except ImportError:
         print("❌ Could not import configuration factory due to circular import issues")
-        print("This is expected in the current state - demonstrating functionality manually...")
+        print(
+            "This is expected in the current state - demonstrating functionality manually..."
+        )
         demonstrate_manual_config_factory()
         return
 
@@ -135,11 +157,14 @@ def demonstrate_config_factory():
 
     # Load risk configuration
     risk_config = factory.get_config("risk")
-    print(f"Risk config loaded: max_position_size = {risk_config.get('max_position_size', 'N/A')}")
+    print(
+        f"Risk config loaded: max_position_size = {risk_config.get('max_position_size', 'N/A')}"
+    )
 
     # Demonstrate caching
     print("\n📋 Configuration Caching:")
     import time
+
     start_time = time.time()
     config1 = factory.get_config("trading")  # Should use cache
     cache_time = time.time() - start_time
@@ -192,14 +217,20 @@ def demonstrate_logging_utils():
 
     try:
         from utils.logging_utils import (
-            LoggingManager, get_logging_manager,
-            get_component_logger, create_operation_logger,
-            log_trade_execution, log_error_with_context
+            LoggingManager,
+            create_operation_logger,
+            get_component_logger,
+            get_logging_manager,
+            log_error_with_context,
+            log_trade_execution,
         )
+
         print("✅ Successfully imported logging utilities")
     except ImportError:
         print("❌ Could not import logging utilities due to circular import issues")
-        print("This is expected in the current state - demonstrating functionality manually...")
+        print(
+            "This is expected in the current state - demonstrating functionality manually..."
+        )
         demonstrate_manual_logging_utils()
         return
 
@@ -207,11 +238,13 @@ def demonstrate_logging_utils():
     logging_manager = get_logging_manager()
 
     # Initialize logging
-    logging_manager.initialize({
-        "level": "INFO",
-        "console": True,
-        "file_logging": False  # Disable file logging for demo
-    })
+    logging_manager.initialize(
+        {
+            "level": "INFO",
+            "console": True,
+            "file_logging": False,  # Disable file logging for demo
+        }
+    )
 
     # Demonstrate component logger creation
     print("\n📋 Component Logger Creation:")
@@ -224,8 +257,7 @@ def demonstrate_logging_utils():
     # Demonstrate operation logger
     print("\n📋 Operation Logger with Context:")
     order_logger = logging_manager.create_operation_logger(
-        "execution", "place_order",
-        symbol="BTC/USDT", trade_id="12345"
+        "execution", "place_order", symbol="BTC/USDT", trade_id="12345"
     )
     print("✅ Order execution logger created with symbol and trade context")
 
@@ -241,7 +273,7 @@ def demonstrate_logging_utils():
         "side": "BUY",
         "quantity": 0.001,
         "price": 45000.0,
-        "timestamp": "2025-01-08T10:30:00Z"
+        "timestamp": "2025-01-08T10:30:00Z",
     }
     log_trade_execution(order_logger, trade_data)
     print("✅ Trade execution logged with structured data")
@@ -252,8 +284,7 @@ def demonstrate_logging_utils():
         raise ValueError("Invalid order parameters")
     except ValueError as e:
         log_error_with_context(
-            order_logger, e, "validate_order",
-            symbol="BTC/USDT", order_type="limit"
+            order_logger, e, "validate_order", symbol="BTC/USDT", order_type="limit"
         )
         print("✅ Error logged with full context and stack trace")
 
@@ -269,17 +300,23 @@ def demonstrate_manual_logging_utils():
     print("✅ risk_logger = get_component_logger('risk', 'position_sizing')")
 
     print("\n📋 Simulated Operation Logger:")
-    print("✅ order_logger = create_operation_logger('execution', 'place_order', symbol='BTC/USDT')")
+    print(
+        "✅ order_logger = create_operation_logger('execution', 'place_order', symbol='BTC/USDT')"
+    )
 
     print("\n📋 Simulated Structured Logging:")
     print("✅ trading_logger.info('Starting trading session')")
     print("✅ risk_logger.warning('High volatility detected')")
 
     print("\n📋 Simulated Trade Execution Logging:")
-    print("✅ log_trade_execution(logger, {'symbol': 'BTC/USDT', 'side': 'BUY', 'quantity': 0.001})")
+    print(
+        "✅ log_trade_execution(logger, {'symbol': 'BTC/USDT', 'side': 'BUY', 'quantity': 0.001})"
+    )
 
     print("\n📋 Simulated Error Logging:")
-    print("✅ log_error_with_context(logger, ValueError('Invalid params'), 'validate_order')")
+    print(
+        "✅ log_error_with_context(logger, ValueError('Invalid params'), 'validate_order')"
+    )
 
     print("\n✅ Manual logging utilities demonstration completed!")
 
@@ -300,7 +337,7 @@ def demonstrate_duplication_elimination_benefits():
         "✅ Better Monitoring: Centralized error statistics and logging",
         "✅ Configuration Validation: Schema enforcement and type checking",
         "✅ Dynamic Log Levels: Runtime log level adjustments per component",
-        "✅ Environment Support: Automatic environment-specific configuration"
+        "✅ Environment Support: Automatic environment-specific configuration",
     ]
 
     for benefit in benefits:

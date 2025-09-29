@@ -5,14 +5,15 @@ Handles performance calculation, equity progression tracking,
 and performance statistics management.
 """
 
-import numpy as np
-from typing import Dict, Any, Optional, List
-from utils.time import now_ms, to_ms, to_iso
+from typing import Any, Dict, List, Optional
 
-from .logging_utils import get_structured_logger, LogSensitivity
-from .utils.error_utils import ErrorHandler, ErrorContext, ErrorSeverity, ErrorCategory
-from .utils.config_utils import get_config
+import numpy as np
+
+from utils.time import now_ms
+
 from .interfaces import PerformanceTrackerInterface
+from .logging_utils import LogSensitivity, get_structured_logger
+from .utils.error_utils import ErrorHandler
 
 logger = get_structured_logger("core.performance_tracker", LogSensitivity.SECURE)
 error_handler = ErrorHandler("performance_tracker")
@@ -40,12 +41,15 @@ class PerformanceTracker(PerformanceTrackerInterface):
 
         # Import configuration from centralized system
         from .config_manager import get_config_manager
+
         config_manager = get_config_manager()
         pt_config = config_manager.get_performance_tracker_config()
 
         # Starting balance from configuration (with fallback to config file)
         config_balance = float(
-            self.config.get("trading", {}).get("initial_balance", pt_config.starting_balance)
+            self.config.get("trading", {}).get(
+                "initial_balance", pt_config.starting_balance
+            )
         )
         self.starting_balance: float = config_balance
 
@@ -65,7 +69,9 @@ class PerformanceTracker(PerformanceTrackerInterface):
         # Trading mode for context
         self.mode = config.get("environment", {}).get("mode", "paper")
 
-    def update_performance_metrics(self, pnl: float, current_equity: Optional[float] = None):
+    def update_performance_metrics(
+        self, pnl: float, current_equity: Optional[float] = None
+    ):
         """Update performance tracking metrics after a trade.
 
         Args:
@@ -125,7 +131,9 @@ class PerformanceTracker(PerformanceTrackerInterface):
                 # Safe division: handle zero or very small standard deviation (constant returns)
                 if std_returns > 0.001:  # Consider small std as constant
                     sharpe = float(np.mean(excess_returns) / std_returns)
-                    self.performance_stats["sharpe_ratio"] = sharpe * np.sqrt(252)  # Annualize
+                    self.performance_stats["sharpe_ratio"] = sharpe * np.sqrt(
+                        252
+                    )  # Annualize
                 else:
                     # For constant returns, Sharpe ratio is undefined, use 0
                     self.performance_stats["sharpe_ratio"] = 0.0
@@ -154,12 +162,16 @@ class PerformanceTracker(PerformanceTrackerInterface):
 
             # Get current equity - this will need to be passed in or retrieved from order manager
             # For now, we'll calculate it from total_pnl + starting_balance
-            current_equity = self.starting_balance + self.performance_stats.get("total_pnl", 0.0)
+            current_equity = self.starting_balance + self.performance_stats.get(
+                "total_pnl", 0.0
+            )
 
             # For backtest/paper modes, use the calculated equity
             if self.mode in ("backtest", "paper"):
                 if current_equity == 0.0:
-                    current_equity = float(self.starting_balance) + float(self.performance_stats.get("total_pnl", 0.0))
+                    current_equity = float(self.starting_balance) + float(
+                        self.performance_stats.get("total_pnl", 0.0)
+                    )
 
             # Normalize values
             trade_id = order_result.get("id", f"trade_{now_ms()}")
@@ -170,7 +182,9 @@ class PerformanceTracker(PerformanceTrackerInterface):
             try:
                 cumulative_return = 0.0
                 if self.starting_balance and float(self.starting_balance) > 0:
-                    cumulative_return = (current_equity - float(self.starting_balance)) / float(self.starting_balance)
+                    cumulative_return = (
+                        current_equity - float(self.starting_balance)
+                    ) / float(self.starting_balance)
             except Exception:
                 cumulative_return = 0.0
 
@@ -181,7 +195,9 @@ class PerformanceTracker(PerformanceTrackerInterface):
             record: Dict[str, Any] = {
                 "trade_id": trade_id,
                 "timestamp": ts_raw,
-                "symbol": order_result.get("symbol") if isinstance(order_result, dict) else None,
+                "symbol": order_result.get("symbol")
+                if isinstance(order_result, dict)
+                else None,
                 "equity": current_equity,
                 "pnl": pnl,
                 "cumulative_return": cumulative_return,
@@ -219,8 +235,16 @@ class PerformanceTracker(PerformanceTrackerInterface):
                 return {"profit_factor": 0.0}
 
             # Calculate additional metrics
-            equity_values = [record.get("equity", 0) for record in equity_prog if record.get("equity")]
-            pnl_values = [record.get("pnl", 0) for record in equity_prog if record.get("pnl") is not None]
+            equity_values = [
+                record.get("equity", 0)
+                for record in equity_prog
+                if record.get("equity")
+            ]
+            pnl_values = [
+                record.get("pnl", 0)
+                for record in equity_prog
+                if record.get("pnl") is not None
+            ]
 
             additional_metrics = {}
 
@@ -230,10 +254,20 @@ class PerformanceTracker(PerformanceTrackerInterface):
                 additional_metrics["lowest_equity"] = min(equity_values)
 
             if pnl_values:
-                additional_metrics["avg_win"] = np.mean([p for p in pnl_values if p > 0]) if any(p > 0 for p in pnl_values) else 0
-                additional_metrics["avg_loss"] = np.mean([p for p in pnl_values if p < 0]) if any(p < 0 for p in pnl_values) else 0
+                additional_metrics["avg_win"] = (
+                    np.mean([p for p in pnl_values if p > 0])
+                    if any(p > 0 for p in pnl_values)
+                    else 0
+                )
+                additional_metrics["avg_loss"] = (
+                    np.mean([p for p in pnl_values if p < 0])
+                    if any(p < 0 for p in pnl_values)
+                    else 0
+                )
                 additional_metrics["largest_win"] = max(pnl_values) if pnl_values else 0
-                additional_metrics["largest_loss"] = min(pnl_values) if pnl_values else 0
+                additional_metrics["largest_loss"] = (
+                    min(pnl_values) if pnl_values else 0
+                )
 
                 # Profit factor - safe division
                 total_wins = sum(p for p in pnl_values if p > 0)
@@ -243,7 +277,7 @@ class PerformanceTracker(PerformanceTrackerInterface):
                     additional_metrics["profit_factor"] = total_wins / total_losses
                 elif total_wins > 0:
                     # Wins but no losses - infinite profit factor
-                    additional_metrics["profit_factor"] = float('inf')
+                    additional_metrics["profit_factor"] = float("inf")
                 else:
                     # No wins and no losses - undefined, use 0
                     additional_metrics["profit_factor"] = 0.0
@@ -285,10 +319,11 @@ class PerformanceTracker(PerformanceTrackerInterface):
                 "starting_balance": self.starting_balance,
                 "total_return_pct": (
                     (base_stats.get("total_pnl", 0) / self.starting_balance * 100)
-                    if self.starting_balance and self.starting_balance > 0 else 0.0
+                    if self.starting_balance and self.starting_balance > 0
+                    else 0.0
                 ),
                 "total_trades": base_stats.get("wins", 0) + base_stats.get("losses", 0),
-                "report_generated_at": now_ms()
+                "report_generated_at": now_ms(),
             }
 
             return report

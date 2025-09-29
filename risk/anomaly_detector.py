@@ -28,29 +28,29 @@ PERFORMANCE OPTIMIZATIONS:
 - Fallback mechanisms: Gracefully handles missing aiofiles dependency with warnings
 """
 
-import logging
-import json
-import os
 import asyncio
+import json
+import logging
+import os
 import traceback
-from typing import Dict, List, Optional, Tuple, Any, Callable
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
-from pathlib import Path
 from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
 import pandas as pd
-from statistics import mean, stdev
 
 try:
     import aiofiles
 except ImportError:
-    logger.warning("aiofiles not installed. Falling back to synchronous file operations.")
+    logger.warning(
+        "aiofiles not installed. Falling back to synchronous file operations."
+    )
     aiofiles = None
 
-from utils.config_loader import get_config
 from utils.logger import get_trade_logger
-from risk.utils import calculate_z_score, calculate_returns, enhanced_validate_market_data
 
 # Security constants for file path validation
 LOG_DIR = "logs/anomalies"
@@ -71,11 +71,12 @@ class TrimmingList(list):
     def append(self, item):
         super().append(item)
         if len(self) > self.max_length:
-            self[:] = self[-self.max_length:]
+            self[:] = self[-self.max_length :]
 
 
 class AnomalyType(Enum):
     """Types of anomalies that can be detected."""
+
     PRICE_ZSCORE = "price_zscore"
     VOLUME_ZSCORE = "volume_zscore"
     PRICE_GAP = "price_gap"
@@ -84,6 +85,7 @@ class AnomalyType(Enum):
 
 class AnomalySeverity(Enum):
     """Severity levels for detected anomalies."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -92,6 +94,7 @@ class AnomalySeverity(Enum):
 
 class AnomalyResponse(Enum):
     """Possible responses to detected anomalies."""
+
     SKIP_TRADE = "skip_trade"
     SCALE_DOWN = "scale_down"
     LOG_ONLY = "log_only"
@@ -101,6 +104,7 @@ class AnomalyResponse(Enum):
 @dataclass
 class AnomalyResult:
     """Result of anomaly detection."""
+
     is_anomaly: bool
     anomaly_type: AnomalyType
     severity: AnomalySeverity
@@ -117,15 +121,16 @@ class AnomalyResult:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         data = asdict(self)
-        data['anomaly_type'] = self.anomaly_type.value
-        data['severity'] = self.severity.value
-        data['timestamp'] = self.timestamp.isoformat() if self.timestamp else None
+        data["anomaly_type"] = self.anomaly_type.value
+        data["severity"] = self.severity.value
+        data["timestamp"] = self.timestamp.isoformat() if self.timestamp else None
         return data
 
 
 @dataclass
 class AnomalyLog:
     """Log entry for detected anomaly."""
+
     symbol: str
     anomaly_result: AnomalyResult
     market_data: Optional[Dict[str, Any]] = None
@@ -140,12 +145,12 @@ class AnomalyLog:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
-            'symbol': self.symbol,
-            'anomaly_result': self.anomaly_result.to_dict(),
-            'market_data': self.market_data,
-            'action_taken': self.action_taken,
-            'original_signal': self.original_signal,
-            'timestamp': self.timestamp.isoformat() if self.timestamp else None
+            "symbol": self.symbol,
+            "anomaly_result": self.anomaly_result.to_dict(),
+            "market_data": self.market_data,
+            "action_taken": self.action_taken,
+            "original_signal": self.original_signal,
+            "timestamp": self.timestamp.isoformat() if self.timestamp else None,
         }
 
 
@@ -154,7 +159,7 @@ class BaseAnomalyDetector:
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
-        self.enabled = self.config.get('enabled', True)
+        self.enabled = self.config.get("enabled", True)
         self.name = self.__class__.__name__
 
     def detect(self, data: pd.DataFrame, symbol: str = "") -> AnomalyResult:
@@ -170,15 +175,17 @@ class BaseAnomalyDetector:
         """
         raise NotImplementedError("Subclasses must implement detect method")
 
-    def _calculate_severity(self, z_score: float, thresholds: Dict[str, float]) -> AnomalySeverity:
+    def _calculate_severity(
+        self, z_score: float, thresholds: Dict[str, float]
+    ) -> AnomalySeverity:
         """Calculate severity based on z-score and thresholds."""
         abs_z = abs(z_score)
 
-        if abs_z >= thresholds.get('critical', 5.0):
+        if abs_z >= thresholds.get("critical", 5.0):
             return AnomalySeverity.CRITICAL
-        elif abs_z >= thresholds.get('high', 3.0):
+        elif abs_z >= thresholds.get("high", 3.0):
             return AnomalySeverity.HIGH
-        elif abs_z >= thresholds.get('medium', 2.0):
+        elif abs_z >= thresholds.get("medium", 2.0):
             return AnomalySeverity.MEDIUM
         else:
             return AnomalySeverity.LOW
@@ -190,14 +197,12 @@ class PriceZScoreDetector(BaseAnomalyDetector):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(config)
         # Use centralized configuration values
-        self.lookback_period = self.config.get('lookback_period', 50)
-        self.z_threshold = self.config.get('z_threshold', 3.0)
-        self.severity_thresholds = self.config.get('severity_thresholds', {
-            'low': 2.0,
-            'medium': 3.0,
-            'high': 4.0,
-            'critical': 5.0
-        })
+        self.lookback_period = self.config.get("lookback_period", 50)
+        self.z_threshold = self.config.get("z_threshold", 3.0)
+        self.severity_thresholds = self.config.get(
+            "severity_thresholds",
+            {"low": 2.0, "medium": 3.0, "high": 4.0, "critical": 5.0},
+        )
 
     def detect(self, data: pd.DataFrame, symbol: str = "") -> AnomalyResult:
         """
@@ -230,7 +235,9 @@ class PriceZScoreDetector(BaseAnomalyDetector):
                 return self._create_conservative_result("cannot calculate z-score")
 
             # Process anomaly detection
-            return self._process_anomaly_detection(z_score_result, AnomalyType.PRICE_ZSCORE)
+            return self._process_anomaly_detection(
+                z_score_result, AnomalyType.PRICE_ZSCORE
+            )
 
         except Exception as e:
             logger.warning(f"Error in price z-score detection for {symbol}: {e}")
@@ -248,10 +255,12 @@ class PriceZScoreDetector(BaseAnomalyDetector):
         Returns:
             True if prerequisites are met
         """
-        return (self.enabled and
-                not data.empty and
-                len(data) >= self.lookback_period and
-                'close' in data.columns)
+        return (
+            self.enabled
+            and not data.empty
+            and len(data) >= self.lookback_period
+            and "close" in data.columns
+        )
 
     def _create_empty_result(self) -> AnomalyResult:
         """
@@ -264,7 +273,7 @@ class PriceZScoreDetector(BaseAnomalyDetector):
             is_anomaly=False,
             anomaly_type=AnomalyType.NONE,
             severity=AnomalySeverity.LOW,
-            confidence_score=0.0
+            confidence_score=0.0,
         )
 
     def _calculate_returns(self, data: pd.DataFrame) -> Optional[pd.Series]:
@@ -277,7 +286,7 @@ class PriceZScoreDetector(BaseAnomalyDetector):
         Returns:
             Returns series or None if invalid
         """
-        returns = data['close'].pct_change().dropna()
+        returns = data["close"].pct_change().dropna()
         if len(returns) < self.lookback_period:
             return None
         return returns
@@ -301,7 +310,7 @@ class PriceZScoreDetector(BaseAnomalyDetector):
             prices = prices.reset_index(drop=True)
 
             # Use rolling window for z-score calculation
-            window = self.config.get('window', self.lookback_period)
+            window = self.config.get("window", self.lookback_period)
 
             if len(prices) < window:
                 return None
@@ -329,12 +338,14 @@ class PriceZScoreDetector(BaseAnomalyDetector):
                 if current_price == historical_mean:
                     z_score = 0.0  # No change from mean
                 else:
-                    z_score = 10.0 if current_price > historical_mean else -10.0  # Extreme deviation
+                    z_score = (
+                        10.0 if current_price > historical_mean else -10.0
+                    )  # Extreme deviation
                 return {
-                    'z_score': z_score,
-                    'current_price': float(current_price),
-                    'mean_price': float(historical_mean),
-                    'std_price': float(historical_std)
+                    "z_score": z_score,
+                    "current_price": float(current_price),
+                    "mean_price": float(historical_mean),
+                    "std_price": float(historical_std),
                 }
 
             # Add small epsilon guard to prevent division by very small numbers
@@ -346,17 +357,19 @@ class PriceZScoreDetector(BaseAnomalyDetector):
             z_score = (current_price - historical_mean) / historical_std
 
             return {
-                'z_score': float(z_score),
-                'current_price': float(current_price),
-                'mean_price': float(historical_mean),
-                'std_price': float(historical_std)
+                "z_score": float(z_score),
+                "current_price": float(current_price),
+                "mean_price": float(historical_mean),
+                "std_price": float(historical_std),
             }
 
         except Exception as e:
             logger.warning(f"Error calculating z-score: {e}")
             return None
 
-    def _process_anomaly_detection(self, z_score_result: Dict[str, Any], anomaly_type: AnomalyType) -> AnomalyResult:
+    def _process_anomaly_detection(
+        self, z_score_result: Dict[str, Any], anomaly_type: AnomalyType
+    ) -> AnomalyResult:
         """
         Process the anomaly detection based on z-score results.
 
@@ -367,14 +380,16 @@ class PriceZScoreDetector(BaseAnomalyDetector):
         Returns:
             AnomalyResult with detection details
         """
-        z_score = z_score_result['z_score']
+        z_score = z_score_result["z_score"]
         abs_z_score = abs(z_score)
 
         # Determine if it's an anomaly
         is_anomaly = abs_z_score >= self.z_threshold
 
         if is_anomaly:
-            confidence_score = min(abs_z_score / self.severity_thresholds['critical'], 1.0)
+            confidence_score = min(
+                abs_z_score / self.severity_thresholds["critical"], 1.0
+            )
             severity = self._calculate_severity(z_score, self.severity_thresholds)
         else:
             confidence_score = 0.0
@@ -388,7 +403,7 @@ class PriceZScoreDetector(BaseAnomalyDetector):
             confidence_score=confidence_score,
             z_score=float(z_score) if is_anomaly else None,
             threshold=self.z_threshold if is_anomaly else None,
-            context=z_score_result
+            context=z_score_result,
         )
 
     def _handle_detection_error(self, error: Exception, symbol: str) -> AnomalyResult:
@@ -406,7 +421,9 @@ class PriceZScoreDetector(BaseAnomalyDetector):
         logger.error(f"Stack trace: {traceback.format_exc()}")
         return self._create_empty_result()
 
-    def _check_prerequisites_with_fallback(self, data: pd.DataFrame, symbol: str) -> bool:
+    def _check_prerequisites_with_fallback(
+        self, data: pd.DataFrame, symbol: str
+    ) -> bool:
         """
         Check basic prerequisites for detection with fallback mechanisms.
 
@@ -431,7 +448,9 @@ class PriceZScoreDetector(BaseAnomalyDetector):
             # Return False to trigger conservative fallback
             return False
 
-    def _calculate_returns_with_fallback(self, data: pd.DataFrame, symbol: str) -> Optional[pd.Series]:
+    def _calculate_returns_with_fallback(
+        self, data: pd.DataFrame, symbol: str
+    ) -> Optional[pd.Series]:
         """
         Calculate price returns from market data with fallback mechanisms.
 
@@ -452,7 +471,9 @@ class PriceZScoreDetector(BaseAnomalyDetector):
             logger.warning(f"Error calculating returns for {symbol}: {e}")
             return None
 
-    def _calculate_z_score_with_fallback(self, returns: pd.Series, symbol: str) -> Optional[Dict[str, Any]]:
+    def _calculate_z_score_with_fallback(
+        self, returns: pd.Series, symbol: str
+    ) -> Optional[Dict[str, Any]]:
         """
         Calculate z-score for the most recent return with fallback mechanisms.
 
@@ -494,7 +515,7 @@ class PriceZScoreDetector(BaseAnomalyDetector):
             anomaly_type=AnomalyType.NONE,
             severity=AnomalySeverity.LOW,  # Lowest severity
             confidence_score=0.0,  # No confidence in detection
-            context={'fallback_reason': reason}
+            context={"fallback_reason": reason},
         )
 
 
@@ -504,14 +525,12 @@ class VolumeZScoreDetector(BaseAnomalyDetector):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(config)
         # Use centralized configuration values
-        self.lookback_period = self.config.get('lookback_period', 20)
-        self.z_threshold = self.config.get('z_threshold', 3.0)
-        self.severity_thresholds = self.config.get('severity_thresholds', {
-            'low': 2.0,
-            'medium': 3.0,
-            'high': 4.0,
-            'critical': 15.0
-        })
+        self.lookback_period = self.config.get("lookback_period", 20)
+        self.z_threshold = self.config.get("z_threshold", 3.0)
+        self.severity_thresholds = self.config.get(
+            "severity_thresholds",
+            {"low": 2.0, "medium": 3.0, "high": 4.0, "critical": 15.0},
+        )
 
     def detect(self, data: pd.DataFrame, symbol: str = "") -> AnomalyResult:
         """
@@ -543,7 +562,9 @@ class VolumeZScoreDetector(BaseAnomalyDetector):
                 return self._create_empty_result()
 
             # Process anomaly detection
-            return self._process_anomaly_detection(z_score_result, AnomalyType.VOLUME_ZSCORE)
+            return self._process_anomaly_detection(
+                z_score_result, AnomalyType.VOLUME_ZSCORE
+            )
 
         except Exception as e:
             return self._handle_detection_error(e, symbol)
@@ -558,10 +579,12 @@ class VolumeZScoreDetector(BaseAnomalyDetector):
         Returns:
             True if prerequisites are met
         """
-        return (self.enabled and
-                not data.empty and
-                len(data) >= self.lookback_period and
-                'volume' in data.columns)
+        return (
+            self.enabled
+            and not data.empty
+            and len(data) >= self.lookback_period
+            and "volume" in data.columns
+        )
 
     def _create_empty_result(self) -> AnomalyResult:
         """
@@ -574,7 +597,7 @@ class VolumeZScoreDetector(BaseAnomalyDetector):
             is_anomaly=False,
             anomaly_type=AnomalyType.NONE,
             severity=AnomalySeverity.LOW,
-            confidence_score=0.0
+            confidence_score=0.0,
         )
 
     def _calculate_volumes(self, data: pd.DataFrame) -> Optional[pd.Series]:
@@ -587,7 +610,7 @@ class VolumeZScoreDetector(BaseAnomalyDetector):
         Returns:
             Volume series or None if invalid
         """
-        volumes = data['volume'].dropna()
+        volumes = data["volume"].dropna()
         if len(volumes) < self.lookback_period:
             return None
         return volumes
@@ -604,7 +627,7 @@ class VolumeZScoreDetector(BaseAnomalyDetector):
         """
         try:
             # Use rolling window for z-score calculation
-            window = self.config.get('window', self.lookback_period)
+            window = self.config.get("window", self.lookback_period)
 
             if len(volumes) < window:
                 return None
@@ -636,17 +659,19 @@ class VolumeZScoreDetector(BaseAnomalyDetector):
                 z_score = (current_volume - current_mean) / current_std
 
             return {
-                'z_score': float(z_score),
-                'current_volume': float(current_volume),
-                'mean_volume': float(current_mean),
-                'std_volume': float(current_std)
+                "z_score": float(z_score),
+                "current_volume": float(current_volume),
+                "mean_volume": float(current_mean),
+                "std_volume": float(current_std),
             }
 
         except Exception as e:
             logger.warning(f"Error calculating volume z-score: {e}")
             return None
 
-    def _process_anomaly_detection(self, z_score_result: Dict[str, Any], anomaly_type: AnomalyType) -> AnomalyResult:
+    def _process_anomaly_detection(
+        self, z_score_result: Dict[str, Any], anomaly_type: AnomalyType
+    ) -> AnomalyResult:
         """
         Process the anomaly detection based on z-score results.
 
@@ -657,14 +682,16 @@ class VolumeZScoreDetector(BaseAnomalyDetector):
         Returns:
             AnomalyResult with detection details
         """
-        z_score = z_score_result['z_score']
+        z_score = z_score_result["z_score"]
         abs_z_score = abs(z_score)
 
         # Determine if it's an anomaly
         is_anomaly = abs_z_score >= self.z_threshold
 
         if is_anomaly:
-            confidence_score = min(abs_z_score / self.severity_thresholds['critical'], 1.0)
+            confidence_score = min(
+                abs_z_score / self.severity_thresholds["critical"], 1.0
+            )
             severity = self._calculate_severity(z_score, self.severity_thresholds)
         else:
             confidence_score = 0.0
@@ -678,7 +705,7 @@ class VolumeZScoreDetector(BaseAnomalyDetector):
             confidence_score=confidence_score,
             z_score=float(z_score) if is_anomaly else None,
             threshold=self.z_threshold if is_anomaly else None,
-            context=z_score_result
+            context=z_score_result,
         )
 
     def _handle_detection_error(self, error: Exception, symbol: str) -> AnomalyResult:
@@ -703,13 +730,11 @@ class PriceGapDetector(BaseAnomalyDetector):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(config)
         # Use centralized configuration values
-        self.gap_threshold_pct = self.config.get('gap_threshold_pct', 5.0)
-        self.severity_thresholds = self.config.get('severity_thresholds', {
-            'low': 3.0,
-            'medium': 5.0,
-            'high': 10.0,
-            'critical': 15.0
-        })
+        self.gap_threshold_pct = self.config.get("gap_threshold_pct", 5.0)
+        self.severity_thresholds = self.config.get(
+            "severity_thresholds",
+            {"low": 3.0, "medium": 5.0, "high": 10.0, "critical": 15.0},
+        )
 
     def detect(self, data: pd.DataFrame, symbol: str = "") -> AnomalyResult:
         """
@@ -751,10 +776,12 @@ class PriceGapDetector(BaseAnomalyDetector):
         Returns:
             True if prerequisites are met
         """
-        return (self.enabled and
-                not data.empty and
-                len(data) >= 2 and
-                'close' in data.columns)
+        return (
+            self.enabled
+            and not data.empty
+            and len(data) >= 2
+            and "close" in data.columns
+        )
 
     def _create_empty_result(self) -> AnomalyResult:
         """
@@ -767,7 +794,7 @@ class PriceGapDetector(BaseAnomalyDetector):
             is_anomaly=False,
             anomaly_type=AnomalyType.NONE,
             severity=AnomalySeverity.LOW,
-            confidence_score=0.0
+            confidence_score=0.0,
         )
 
     def _calculate_price_gap(self, data: pd.DataFrame) -> Optional[Dict[str, Any]]:
@@ -780,7 +807,7 @@ class PriceGapDetector(BaseAnomalyDetector):
         Returns:
             Dictionary with gap calculation results or None if invalid
         """
-        closes = data['close']
+        closes = data["close"]
         prev_close = closes.iloc[-2]
         current_close = closes.iloc[-1]
 
@@ -791,9 +818,9 @@ class PriceGapDetector(BaseAnomalyDetector):
         gap_pct = abs((current_close - prev_close) / prev_close) * 100
 
         return {
-            'prev_close': prev_close,
-            'current_close': current_close,
-            'gap_pct': gap_pct
+            "prev_close": prev_close,
+            "current_close": current_close,
+            "gap_pct": gap_pct,
         }
 
     def _calculate_max_price_gap(self, data: pd.DataFrame) -> Optional[Dict[str, Any]]:
@@ -806,7 +833,7 @@ class PriceGapDetector(BaseAnomalyDetector):
         Returns:
             Dictionary with maximum gap calculation results or None if invalid
         """
-        closes = data['close']
+        closes = data["close"]
         if len(closes) < 2:
             return None
 
@@ -815,7 +842,7 @@ class PriceGapDetector(BaseAnomalyDetector):
 
         # Check all consecutive pairs
         for i in range(1, len(closes)):
-            prev_close = closes.iloc[i-1]
+            prev_close = closes.iloc[i - 1]
             current_close = closes.iloc[i]
 
             if prev_close == 0:
@@ -827,15 +854,17 @@ class PriceGapDetector(BaseAnomalyDetector):
             if gap_pct > max_gap_pct:
                 max_gap_pct = gap_pct
                 max_gap_info = {
-                    'prev_close': prev_close,
-                    'current_close': current_close,
-                    'gap_pct': gap_pct,
-                    'position': i
+                    "prev_close": prev_close,
+                    "current_close": current_close,
+                    "gap_pct": gap_pct,
+                    "position": i,
                 }
 
         return max_gap_info
 
-    def _process_gap_anomaly_detection(self, gap_result: Dict[str, Any]) -> AnomalyResult:
+    def _process_gap_anomaly_detection(
+        self, gap_result: Dict[str, Any]
+    ) -> AnomalyResult:
         """
         Process the gap anomaly detection based on gap results.
 
@@ -845,13 +874,13 @@ class PriceGapDetector(BaseAnomalyDetector):
         Returns:
             AnomalyResult with detection details
         """
-        gap_pct = gap_result['gap_pct']
+        gap_pct = gap_result["gap_pct"]
 
         # Determine if it's an anomaly
         is_anomaly = gap_pct >= self.gap_threshold_pct
 
         if is_anomaly:
-            confidence_score = min(gap_pct / self.severity_thresholds['critical'], 1.0)
+            confidence_score = min(gap_pct / self.severity_thresholds["critical"], 1.0)
             severity = self._calculate_gap_severity(gap_pct)
             anomaly_type = AnomalyType.PRICE_GAP
         else:
@@ -866,7 +895,7 @@ class PriceGapDetector(BaseAnomalyDetector):
             confidence_score=confidence_score,
             z_score=None,  # Not applicable for gaps
             threshold=self.gap_threshold_pct if is_anomaly else None,
-            context=gap_result
+            context=gap_result,
         )
 
     def _calculate_gap_severity(self, gap_pct: float) -> AnomalySeverity:
@@ -879,11 +908,11 @@ class PriceGapDetector(BaseAnomalyDetector):
         Returns:
             AnomalySeverity level
         """
-        if gap_pct >= self.severity_thresholds.get('critical', 15.0):
+        if gap_pct >= self.severity_thresholds.get("critical", 15.0):
             return AnomalySeverity.CRITICAL
-        elif gap_pct >= self.severity_thresholds.get('high', 10.0):
+        elif gap_pct >= self.severity_thresholds.get("high", 10.0):
             return AnomalySeverity.HIGH
-        elif gap_pct >= self.severity_thresholds.get('medium', 5.0):
+        elif gap_pct >= self.severity_thresholds.get("medium", 5.0):
             return AnomalySeverity.MEDIUM
         else:
             return AnomalySeverity.LOW
@@ -912,50 +941,50 @@ class AnomalyDetector:
 
     # Centralized configuration constants
     DEFAULT_CONFIG = {
-        'enabled': True,
-        'price_zscore': {
-            'enabled': True,
-            'lookback_period': 50,
-            'z_threshold': -10.0,
-            'severity_thresholds': {
-                'low': 2.0,
-                'medium': 3.0,
-                'high': 4.0,
-                'critical': 5.0
-            }
+        "enabled": True,
+        "price_zscore": {
+            "enabled": True,
+            "lookback_period": 50,
+            "z_threshold": -10.0,
+            "severity_thresholds": {
+                "low": 2.0,
+                "medium": 3.0,
+                "high": 4.0,
+                "critical": 5.0,
+            },
         },
-        'volume_zscore': {
-            'enabled': True,
-            'lookback_period': 20,
-            'z_threshold': 3.0,
-            'severity_thresholds': {
-                'low': 2.0,
-                'medium': 3.0,
-                'high': 4.0,
-                'critical': 15.0
-            }
+        "volume_zscore": {
+            "enabled": True,
+            "lookback_period": 20,
+            "z_threshold": 3.0,
+            "severity_thresholds": {
+                "low": 2.0,
+                "medium": 3.0,
+                "high": 4.0,
+                "critical": 15.0,
+            },
         },
-        'price_gap': {
-            'enabled': True,
-            'gap_threshold_pct': 5.0,
-            'severity_thresholds': {
-                'low': 3.0,
-                'medium': 5.0,
-                'high': 10.0,
-                'critical': 15.0
-            }
+        "price_gap": {
+            "enabled": True,
+            "gap_threshold_pct": 5.0,
+            "severity_thresholds": {
+                "low": 3.0,
+                "medium": 5.0,
+                "high": 10.0,
+                "critical": 15.0,
+            },
         },
-        'response': {
-            'skip_trade_threshold': 'critical',
-            'scale_down_threshold': 'medium',
-            'scale_down_factor': 0.5
+        "response": {
+            "skip_trade_threshold": "critical",
+            "scale_down_threshold": "medium",
+            "scale_down_factor": 0.5,
         },
-        'logging': {
-            'enabled': True,
-            'file': DEFAULT_LOG_FILE,
-            'json_file': DEFAULT_JSON_LOG_FILE
+        "logging": {
+            "enabled": True,
+            "file": DEFAULT_LOG_FILE,
+            "json_file": DEFAULT_JSON_LOG_FILE,
         },
-        'max_history': 1000
+        "max_history": 1000,
     }
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -973,31 +1002,35 @@ class AnomalyDetector:
 
         # Validate configuration parameters
         self._validate_config(self.config)
-        self.enabled = self.config['enabled']
+        self.enabled = self.config["enabled"]
 
         # Initialize detection methods
-        self.price_detector = PriceZScoreDetector(self.config['price_zscore'])
-        self.volume_detector = VolumeZScoreDetector(self.config['volume_zscore'])
-        self.gap_detector = PriceGapDetector(self.config['price_gap'])
+        self.price_detector = PriceZScoreDetector(self.config["price_zscore"])
+        self.volume_detector = VolumeZScoreDetector(self.config["volume_zscore"])
+        self.gap_detector = PriceGapDetector(self.config["price_gap"])
 
         # Response configuration with safe defaults
-        self.response_config = self.config.get('response', {})
-        self.skip_trade_threshold = self._string_to_severity(self.response_config.get('skip_trade_threshold', 'critical'))
-        self.scale_down_threshold = self._string_to_severity(self.response_config.get('scale_down_threshold', 'medium'))
-        self.scale_down_factor = self.response_config.get('scale_down_factor', 0.5)
+        self.response_config = self.config.get("response", {})
+        self.skip_trade_threshold = self._string_to_severity(
+            self.response_config.get("skip_trade_threshold", "critical")
+        )
+        self.scale_down_threshold = self._string_to_severity(
+            self.response_config.get("scale_down_threshold", "medium")
+        )
+        self.scale_down_factor = self.response_config.get("scale_down_factor", 0.5)
 
         # Logging configuration with secure path validation and safe defaults
-        self.log_config = self.config.get('logging', {})
-        self.log_anomalies = self.log_config.get('enabled', False)
-        log_file_path = self.log_config.get('file', DEFAULT_LOG_FILE)
-        json_log_file_path = self.log_config.get('json_file', DEFAULT_JSON_LOG_FILE)
+        self.log_config = self.config.get("logging", {})
+        self.log_anomalies = self.log_config.get("enabled", False)
+        log_file_path = self.log_config.get("file", DEFAULT_LOG_FILE)
+        json_log_file_path = self.log_config.get("json_file", DEFAULT_JSON_LOG_FILE)
 
         # Validate and secure file paths
         self.log_file = self._secure_file_path(log_file_path)
         self.json_log_file = self._secure_file_path(json_log_file_path)
 
         # Anomaly history
-        self.max_history = self.config['max_history']
+        self.max_history = self.config["max_history"]
         self.anomaly_history = TrimmingList(self.max_history)
 
         logger.info(f"AnomalyDetector initialized: enabled={self.enabled}")
@@ -1024,7 +1057,7 @@ class AnomalyDetector:
 
             # Allow temp directory paths for testing (contains 'temp' or 'tmp' in path)
             path_str = str(resolved_path).lower()
-            if 'temp' in path_str or 'tmp' in path_str:
+            if "temp" in path_str or "tmp" in path_str:
                 # For temp files, allow the original path
                 secure_path = str(resolved_path)
             elif not str(resolved_path).startswith(str(allowed_base)):
@@ -1035,7 +1068,7 @@ class AnomalyDetector:
                 secure_path = str(resolved_path)
 
             # Additional security: ensure no directory traversal patterns remain
-            if '..' in secure_path or not secure_path:
+            if ".." in secure_path or not secure_path:
                 raise ValueError(f"Invalid file path: {file_path}")
 
             return secure_path
@@ -1061,25 +1094,25 @@ class AnomalyDetector:
             raise ValueError("Market data DataFrame is empty")
 
         # Check for required columns
-        required_columns = ['close']
+        required_columns = ["close"]
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
             raise ValueError(f"Missing required columns: {missing_columns}")
 
         # Validate data types
-        if not pd.api.types.is_numeric_dtype(data['close']):
+        if not pd.api.types.is_numeric_dtype(data["close"]):
             raise ValueError("Column 'close' must contain numeric data")
 
         # Check for NaN values in critical columns
-        if data['close'].isna().any():
+        if data["close"].isna().any():
             raise ValueError("Column 'close' contains NaN values")
 
         # Check for infinite values
-        if np.isinf(data['close']).any():
+        if np.isinf(data["close"]).any():
             raise ValueError("Column 'close' contains infinite values")
 
         # Validate reasonable value ranges (optional but recommended)
-        if (data['close'] <= 0).any():
+        if (data["close"] <= 0).any():
             raise ValueError("Column 'close' contains non-positive values")
 
     def _validate_config(self, config: Dict[str, Any]) -> None:
@@ -1115,12 +1148,12 @@ class AnomalyDetector:
             ValueError: If basic parameters are invalid
         """
         # Validate enabled flag
-        enabled = config.get('enabled', self.DEFAULT_CONFIG['enabled'])
+        enabled = config.get("enabled", self.DEFAULT_CONFIG["enabled"])
         if not isinstance(enabled, bool):
             raise ValueError(f"enabled must be a boolean, got {type(enabled)}")
 
         # Validate max_history
-        max_history = config.get('max_history', self.DEFAULT_CONFIG['max_history'])
+        max_history = config.get("max_history", self.DEFAULT_CONFIG["max_history"])
         if not isinstance(max_history, int):
             raise ValueError(f"max_history must be an integer, got {type(max_history)}")
         if max_history <= 0:
@@ -1138,25 +1171,41 @@ class AnomalyDetector:
         Raises:
             ValueError: If response parameters are invalid
         """
-        response_config = config.get('response', self.DEFAULT_CONFIG['response'])
+        response_config = config.get("response", self.DEFAULT_CONFIG["response"])
         if not isinstance(response_config, dict):
             raise ValueError("response configuration must be a dictionary")
 
-        scale_down_factor = response_config.get('scale_down_factor', self.DEFAULT_CONFIG['response']['scale_down_factor'])
+        scale_down_factor = response_config.get(
+            "scale_down_factor", self.DEFAULT_CONFIG["response"]["scale_down_factor"]
+        )
         if not isinstance(scale_down_factor, (int, float)):
-            raise ValueError(f"scale_down_factor must be numeric, got {type(scale_down_factor)}")
+            raise ValueError(
+                f"scale_down_factor must be numeric, got {type(scale_down_factor)}"
+            )
         if not 0 < scale_down_factor <= 1:
-            raise ValueError(f"scale_down_factor must be between 0 and 1, got {scale_down_factor}")
+            raise ValueError(
+                f"scale_down_factor must be between 0 and 1, got {scale_down_factor}"
+            )
 
         # Validate severity thresholds
-        valid_severities = ['low', 'medium', 'high', 'critical']
-        skip_threshold = response_config.get('skip_trade_threshold', self.DEFAULT_CONFIG['response']['skip_trade_threshold'])
-        scale_threshold = response_config.get('scale_down_threshold', self.DEFAULT_CONFIG['response']['scale_down_threshold'])
+        valid_severities = ["low", "medium", "high", "critical"]
+        skip_threshold = response_config.get(
+            "skip_trade_threshold",
+            self.DEFAULT_CONFIG["response"]["skip_trade_threshold"],
+        )
+        scale_threshold = response_config.get(
+            "scale_down_threshold",
+            self.DEFAULT_CONFIG["response"]["scale_down_threshold"],
+        )
 
         if skip_threshold not in valid_severities:
-            raise ValueError(f"skip_trade_threshold must be one of {valid_severities}, got '{skip_threshold}'")
+            raise ValueError(
+                f"skip_trade_threshold must be one of {valid_severities}, got '{skip_threshold}'"
+            )
         if scale_threshold not in valid_severities:
-            raise ValueError(f"scale_down_threshold must be one of {valid_severities}, got '{scale_threshold}'")
+            raise ValueError(
+                f"scale_down_threshold must be one of {valid_severities}, got '{scale_threshold}'"
+            )
 
     def _validate_detector_configs(self, config: Dict[str, Any]) -> None:
         """
@@ -1168,22 +1217,26 @@ class AnomalyDetector:
         Raises:
             ValueError: If detector parameters are invalid
         """
-        detectors = ['price_zscore', 'volume_zscore', 'price_gap']
+        detectors = ["price_zscore", "volume_zscore", "price_gap"]
         for detector_name in detectors:
-            detector_config = config.get(detector_name, self.DEFAULT_CONFIG.get(detector_name, {}))
+            detector_config = config.get(
+                detector_name, self.DEFAULT_CONFIG.get(detector_name, {})
+            )
             if not isinstance(detector_config, dict):
                 raise ValueError(f"{detector_name} configuration must be a dictionary")
 
             # Validate parameters based on detector type
-            if detector_name in ['price_zscore', 'volume_zscore']:
+            if detector_name in ["price_zscore", "volume_zscore"]:
                 self._validate_zscore_detector_config(detector_name, detector_config)
-            elif detector_name == 'price_gap':
+            elif detector_name == "price_gap":
                 self._validate_gap_detector_config(detector_name, detector_config)
 
             # Validate severity thresholds for all detectors
             self._validate_severity_thresholds(detector_name, detector_config)
 
-    def _validate_zscore_detector_config(self, detector_name: str, detector_config: Dict[str, Any]) -> None:
+    def _validate_zscore_detector_config(
+        self, detector_name: str, detector_config: Dict[str, Any]
+    ) -> None:
         """
         Validate z-score detector configuration parameters.
 
@@ -1194,27 +1247,37 @@ class AnomalyDetector:
         Raises:
             ValueError: If parameters are invalid
         """
-        default_lookback = 50 if detector_name == 'price_zscore' else 20
-        lookback_period = detector_config.get('lookback_period', default_lookback)
+        default_lookback = 50 if detector_name == "price_zscore" else 20
+        lookback_period = detector_config.get("lookback_period", default_lookback)
         if not isinstance(lookback_period, int):
-            raise ValueError(f"{detector_name}.lookback_period must be an integer, got {type(lookback_period)}")
+            raise ValueError(
+                f"{detector_name}.lookback_period must be an integer, got {type(lookback_period)}"
+            )
         if lookback_period <= 0:
-            raise ValueError(f"{detector_name}.lookback_period must be positive, got {lookback_period}")
+            raise ValueError(
+                f"{detector_name}.lookback_period must be positive, got {lookback_period}"
+            )
         if lookback_period > 1000:  # Reasonable upper limit
-            raise ValueError(f"{detector_name}.lookback_period seems too high (>1000), got {lookback_period}")
+            raise ValueError(
+                f"{detector_name}.lookback_period seems too high (>1000), got {lookback_period}"
+            )
 
         # Validate z_threshold - log warning and set default instead of raising error
-        z_threshold = detector_config.get('z_threshold', 3.0)
+        z_threshold = detector_config.get("z_threshold", 3.0)
         if not isinstance(z_threshold, (int, float)) or z_threshold <= 0:
             logger.warning(
                 f"{detector_name}.z_threshold invalid ({z_threshold}), defaulting to 3.0"
             )
-            detector_config['z_threshold'] = 3.0
+            detector_config["z_threshold"] = 3.0
         elif z_threshold > 10:  # Reasonable upper limit for z-score
-            logger.warning(f"{detector_name}.z_threshold seems too high (>10), got {z_threshold}, defaulting to 3.0")
-            detector_config['z_threshold'] = 3.0
+            logger.warning(
+                f"{detector_name}.z_threshold seems too high (>10), got {z_threshold}, defaulting to 3.0"
+            )
+            detector_config["z_threshold"] = 3.0
 
-    def _validate_gap_detector_config(self, detector_name: str, detector_config: Dict[str, Any]) -> None:
+    def _validate_gap_detector_config(
+        self, detector_name: str, detector_config: Dict[str, Any]
+    ) -> None:
         """
         Validate gap detector configuration parameters.
 
@@ -1225,15 +1288,23 @@ class AnomalyDetector:
         Raises:
             ValueError: If parameters are invalid
         """
-        gap_threshold_pct = detector_config.get('gap_threshold_pct', 5.0)
+        gap_threshold_pct = detector_config.get("gap_threshold_pct", 5.0)
         if not isinstance(gap_threshold_pct, (int, float)):
-            raise ValueError(f"{detector_name}.gap_threshold_pct must be numeric, got {type(gap_threshold_pct)}")
+            raise ValueError(
+                f"{detector_name}.gap_threshold_pct must be numeric, got {type(gap_threshold_pct)}"
+            )
         if gap_threshold_pct <= 0:
-            raise ValueError(f"{detector_name}.gap_threshold_pct must be positive, got {gap_threshold_pct}")
+            raise ValueError(
+                f"{detector_name}.gap_threshold_pct must be positive, got {gap_threshold_pct}"
+            )
         if gap_threshold_pct > 100:  # Reasonable upper limit for percentage
-            raise ValueError(f"{detector_name}.gap_threshold_pct seems too high (>100%), got {gap_threshold_pct}")
+            raise ValueError(
+                f"{detector_name}.gap_threshold_pct seems too high (>100%), got {gap_threshold_pct}"
+            )
 
-    def _validate_severity_thresholds(self, detector_name: str, detector_config: Dict[str, Any]) -> None:
+    def _validate_severity_thresholds(
+        self, detector_name: str, detector_config: Dict[str, Any]
+    ) -> None:
         """
         Validate severity thresholds for a detector.
 
@@ -1244,20 +1315,28 @@ class AnomalyDetector:
         Raises:
             ValueError: If severity thresholds are invalid
         """
-        severity_thresholds = detector_config.get('severity_thresholds', {})
+        severity_thresholds = detector_config.get("severity_thresholds", {})
         if not isinstance(severity_thresholds, dict):
-            raise ValueError(f"{detector_name}.severity_thresholds must be a dictionary")
+            raise ValueError(
+                f"{detector_name}.severity_thresholds must be a dictionary"
+            )
 
-        valid_severities = ['low', 'medium', 'high', 'critical']
+        valid_severities = ["low", "medium", "high", "critical"]
         for level in valid_severities:
             if level in severity_thresholds:
                 threshold_value = severity_thresholds[level]
                 if not isinstance(threshold_value, (int, float)):
-                    raise ValueError(f"{detector_name}.severity_thresholds.{level} must be numeric, got {type(threshold_value)}")
+                    raise ValueError(
+                        f"{detector_name}.severity_thresholds.{level} must be numeric, got {type(threshold_value)}"
+                    )
                 if threshold_value <= 0:
-                    raise ValueError(f"{detector_name}.severity_thresholds.{level} must be positive, got {threshold_value}")
+                    raise ValueError(
+                        f"{detector_name}.severity_thresholds.{level} must be positive, got {threshold_value}"
+                    )
 
-    def detect_anomalies(self, data: pd.DataFrame, symbol: str = "") -> List[AnomalyResult]:
+    def detect_anomalies(
+        self, data: pd.DataFrame, symbol: str = ""
+    ) -> List[AnomalyResult]:
         """
         Run all anomaly detection methods on the data.
 
@@ -1306,7 +1385,9 @@ class AnomalyDetector:
 
         return True
 
-    def _run_all_detectors(self, data: pd.DataFrame, symbol: str) -> List[AnomalyResult]:
+    def _run_all_detectors(
+        self, data: pd.DataFrame, symbol: str
+    ) -> List[AnomalyResult]:
         """
         Run all enabled anomaly detectors.
 
@@ -1346,8 +1427,9 @@ class AnomalyDetector:
         """
         return [result for result in results if result.is_anomaly]
 
-    def check_signal_anomaly(self, signal: Dict[str, Any], data: pd.DataFrame,
-                           symbol: str = "") -> Tuple[bool, Optional[AnomalyResponse], Optional[AnomalyResult]]:
+    def check_signal_anomaly(
+        self, signal: Dict[str, Any], data: pd.DataFrame, symbol: str = ""
+    ) -> Tuple[bool, Optional[AnomalyResponse], Optional[AnomalyResult]]:
         """
         Check if a trading signal should be modified due to anomalies.
 
@@ -1376,9 +1458,13 @@ class AnomalyDetector:
         response = self._determine_response(most_severe)
 
         # Step 3: Handle logging and return result
-        return self._handle_anomaly_response(symbol, most_severe, data, signal, response)
+        return self._handle_anomaly_response(
+            symbol, most_severe, data, signal, response
+        )
 
-    def _find_most_severe_anomaly(self, anomalies: List[AnomalyResult]) -> AnomalyResult:
+    def _find_most_severe_anomaly(
+        self, anomalies: List[AnomalyResult]
+    ) -> AnomalyResult:
         """
         Find the most severe anomaly from a list of anomalies.
 
@@ -1396,7 +1482,7 @@ class AnomalyDetector:
         anomaly: AnomalyResult,
         data: pd.DataFrame,
         signal: Dict[str, Any],
-        response: AnomalyResponse
+        response: AnomalyResponse,
     ) -> Tuple[bool, Optional[AnomalyResponse], Optional[AnomalyResult]]:
         """
         Handle the anomaly response, including logging.
@@ -1416,7 +1502,9 @@ class AnomalyDetector:
             try:
                 # Check if there's a running event loop
                 loop = asyncio.get_running_loop()
-                asyncio.create_task(self._log_anomaly_async(symbol, anomaly, data, signal, response))
+                asyncio.create_task(
+                    self._log_anomaly_async(symbol, anomaly, data, signal, response)
+                )
             except RuntimeError:
                 # No event loop running, log synchronously
                 logger.warning("No event loop running, logging anomaly synchronously")
@@ -1424,7 +1512,9 @@ class AnomalyDetector:
                     # Create a new event loop for this operation
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-                    loop.run_until_complete(self._log_anomaly_async(symbol, anomaly, data, signal, response))
+                    loop.run_until_complete(
+                        self._log_anomaly_async(symbol, anomaly, data, signal, response)
+                    )
                     loop.close()
                 except Exception as e:
                     logger.error(f"Failed to log anomaly even synchronously: {e}")
@@ -1438,7 +1528,7 @@ class AnomalyDetector:
             AnomalySeverity.LOW: 1,
             AnomalySeverity.MEDIUM: 2,
             AnomalySeverity.HIGH: 3,
-            AnomalySeverity.CRITICAL: 4
+            AnomalySeverity.CRITICAL: 4,
         }
         return scores.get(severity, 0)
 
@@ -1459,10 +1549,10 @@ class AnomalyDetector:
     def _string_to_severity(self, severity_str: str) -> AnomalySeverity:
         """Convert string to AnomalySeverity enum."""
         mapping = {
-            'low': AnomalySeverity.LOW,
-            'medium': AnomalySeverity.MEDIUM,
-            'high': AnomalySeverity.HIGH,
-            'critical': AnomalySeverity.CRITICAL
+            "low": AnomalySeverity.LOW,
+            "medium": AnomalySeverity.MEDIUM,
+            "high": AnomalySeverity.HIGH,
+            "critical": AnomalySeverity.CRITICAL,
         }
         return mapping.get(severity_str.lower(), AnomalySeverity.LOW)
 
@@ -1477,7 +1567,7 @@ class AnomalyDetector:
             "total_anomalies": len(self.anomaly_history),
             "by_type": {},
             "by_severity": {},
-            "by_response": {}
+            "by_response": {},
         }
 
         for log in self.anomaly_history:
@@ -1497,8 +1587,14 @@ class AnomalyDetector:
 
         return stats
 
-    def _log_anomaly(self, symbol: str, anomaly_result: AnomalyResult, data: pd.DataFrame,
-                    extra: Optional[Dict[str, Any]] = None, response: Optional[AnomalyResponse] = None):
+    def _log_anomaly(
+        self,
+        symbol: str,
+        anomaly_result: AnomalyResult,
+        data: pd.DataFrame,
+        extra: Optional[Dict[str, Any]] = None,
+        response: Optional[AnomalyResponse] = None,
+    ):
         """
         Log anomaly details to configured outputs.
 
@@ -1516,11 +1612,13 @@ class AnomalyDetector:
             if "file" in self.log_config:
                 try:
                     with open(self.log_config["file"], "a") as f:
-                        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        f.write(f"[{timestamp}] {symbol}: {anomaly_result.anomaly_type.value} "
-                               f"(severity: {anomaly_result.severity.value}, "
-                               f"confidence: {anomaly_result.confidence_score:.3f}) "
-                               f"Action: {response.value if response else 'none'}\n")
+                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        f.write(
+                            f"[{timestamp}] {symbol}: {anomaly_result.anomaly_type.value} "
+                            f"(severity: {anomaly_result.severity.value}, "
+                            f"confidence: {anomaly_result.confidence_score:.3f}) "
+                            f"Action: {response.value if response else 'none'}\n"
+                        )
                 except Exception as e:
                     logger.error(f"Failed to log to file: {e}")
 
@@ -1538,12 +1636,14 @@ class AnomalyDetector:
 
                     # Create log entry
                     log_entry = {
-                        'symbol': symbol,
-                        'anomaly_result': anomaly_result.to_dict(),
-                        'market_data': data.tail(5).to_dict('records') if not data.empty else None,
-                        'action_taken': response.value if response else None,
-                        'original_signal': extra,
-                        'timestamp': datetime.now().isoformat()
+                        "symbol": symbol,
+                        "anomaly_result": anomaly_result.to_dict(),
+                        "market_data": data.tail(5).to_dict("records")
+                        if not data.empty
+                        else None,
+                        "action_taken": response.value if response else None,
+                        "original_signal": extra,
+                        "timestamp": datetime.now().isoformat(),
                     }
 
                     # Add to history
@@ -1551,7 +1651,7 @@ class AnomalyDetector:
 
                     # Keep only recent logs
                     if len(existing_logs) > self.max_history:
-                        existing_logs = existing_logs[-self.max_history:]
+                        existing_logs = existing_logs[-self.max_history :]
 
                     # Write back
                     with open(self.log_config["json_file"], "w") as f:
@@ -1565,14 +1665,14 @@ class AnomalyDetector:
             trade_logger.performance(
                 f"Anomaly detected: {anomaly_result.anomaly_type.value}",
                 {
-                    'symbol': symbol,
-                    'anomaly_type': anomaly_result.anomaly_type.value,
-                    'severity': anomaly_result.severity.value,
-                    'confidence': anomaly_result.confidence_score,
-                    'action': response.value if response else 'none',
-                    'z_score': anomaly_result.z_score,
-                    'threshold': anomaly_result.threshold
-                }
+                    "symbol": symbol,
+                    "anomaly_type": anomaly_result.anomaly_type.value,
+                    "severity": anomaly_result.severity.value,
+                    "confidence": anomaly_result.confidence_score,
+                    "action": response.value if response else "none",
+                    "z_score": anomaly_result.z_score,
+                    "threshold": anomaly_result.threshold,
+                },
             )
         except Exception as e:
             logger.error(f"Failed to log to trade logger: {e}")
@@ -1588,14 +1688,20 @@ class AnomalyDetector:
             # Ensure directory exists
             os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
 
-            timestamp = log_entry.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log_entry.timestamp else 'Unknown'
+            timestamp = (
+                log_entry.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                if log_entry.timestamp
+                else "Unknown"
+            )
 
-            log_line = f"[{timestamp}] {log_entry.symbol}: {log_entry.anomaly_result.anomaly_type.value} " \
-                      f"(severity: {log_entry.anomaly_result.severity.value}, " \
-                      f"confidence: {log_entry.anomaly_result.confidence_score:.3f}) " \
-                      f"Action: {log_entry.action_taken or 'none'}\n"
+            log_line = (
+                f"[{timestamp}] {log_entry.symbol}: {log_entry.anomaly_result.anomaly_type.value} "
+                f"(severity: {log_entry.anomaly_result.severity.value}, "
+                f"confidence: {log_entry.anomaly_result.confidence_score:.3f}) "
+                f"Action: {log_entry.action_taken or 'none'}\n"
+            )
 
-            with open(self.log_file, 'a', encoding='utf-8') as f:
+            with open(self.log_file, "a", encoding="utf-8") as f:
                 f.write(log_line)
 
         except Exception as e:
@@ -1616,7 +1722,7 @@ class AnomalyDetector:
             existing_logs = []
             if os.path.exists(self.json_log_file):
                 try:
-                    with open(self.json_log_file, 'r', encoding='utf-8') as f:
+                    with open(self.json_log_file, "r", encoding="utf-8") as f:
                         existing_logs = json.load(f)
                 except (json.JSONDecodeError, FileNotFoundError):
                     existing_logs = []
@@ -1626,17 +1732,23 @@ class AnomalyDetector:
 
             # Keep only recent logs
             if len(existing_logs) > self.max_history:
-                existing_logs = existing_logs[-self.max_history:]
+                existing_logs = existing_logs[-self.max_history :]
 
             # Write back
-            with open(self.json_log_file, 'w', encoding='utf-8') as f:
+            with open(self.json_log_file, "w", encoding="utf-8") as f:
                 json.dump(existing_logs, f, indent=2, default=str)
 
         except Exception as e:
             logger.error(f"Failed to write to JSON log file: {e}")
 
-    async def _log_anomaly_async(self, symbol: str, anomaly: AnomalyResult, market_data: pd.DataFrame,
-                                signal: Optional[Dict[str, Any]] = None, response: Optional[AnomalyResponse] = None):
+    async def _log_anomaly_async(
+        self,
+        symbol: str,
+        anomaly: AnomalyResult,
+        market_data: pd.DataFrame,
+        signal: Optional[Dict[str, Any]] = None,
+        response: Optional[AnomalyResponse] = None,
+    ):
         """
         Asynchronously log anomaly details to prevent blocking the main thread.
 
@@ -1657,9 +1769,11 @@ class AnomalyDetector:
             log_entry = AnomalyLog(
                 symbol=symbol,
                 anomaly_result=anomaly,
-                market_data=market_data.tail(5).to_dict('records') if not market_data.empty else None,
+                market_data=market_data.tail(5).to_dict("records")
+                if not market_data.empty
+                else None,
                 action_taken=response.value if response else None,
-                original_signal=signal
+                original_signal=signal,
             )
 
             # Add to history
@@ -1675,14 +1789,14 @@ class AnomalyDetector:
             trade_logger.performance(
                 f"Anomaly detected: {anomaly.anomaly_type.value}",
                 {
-                    'symbol': symbol,
-                    'anomaly_type': anomaly.anomaly_type.value,
-                    'severity': anomaly.severity.value,
-                    'confidence': anomaly.confidence_score,
-                    'action': response.value if response else 'none',
-                    'z_score': anomaly.z_score,
-                    'threshold': anomaly.threshold
-                }
+                    "symbol": symbol,
+                    "anomaly_type": anomaly.anomaly_type.value,
+                    "severity": anomaly.severity.value,
+                    "confidence": anomaly.confidence_score,
+                    "action": response.value if response else "none",
+                    "z_score": anomaly.z_score,
+                    "threshold": anomaly.threshold,
+                },
             )
 
         except Exception as e:
@@ -1703,21 +1817,29 @@ class AnomalyDetector:
             # Ensure directory exists
             os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
 
-            timestamp = log_entry.timestamp.strftime('%Y-%m-%d %H:%M:%S') if log_entry.timestamp else 'Unknown'
+            timestamp = (
+                log_entry.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                if log_entry.timestamp
+                else "Unknown"
+            )
 
-            log_line = f"[{timestamp}] {log_entry.symbol}: {log_entry.anomaly_result.anomaly_type.value} " \
-                      f"(severity: {log_entry.anomaly_result.severity.value}, " \
-                      f"confidence: {log_entry.anomaly_result.confidence_score:.3f}) " \
-                      f"Action: {log_entry.action_taken or 'none'}\n"
+            log_line = (
+                f"[{timestamp}] {log_entry.symbol}: {log_entry.anomaly_result.anomaly_type.value} "
+                f"(severity: {log_entry.anomaly_result.severity.value}, "
+                f"confidence: {log_entry.anomaly_result.confidence_score:.3f}) "
+                f"Action: {log_entry.action_taken or 'none'}\n"
+            )
 
             if aiofiles:
                 # Use async file operations for better performance
-                async with aiofiles.open(self.log_file, 'a', encoding='utf-8') as f:
+                async with aiofiles.open(self.log_file, "a", encoding="utf-8") as f:
                     await f.write(log_line)
             else:
                 # Fallback to synchronous operations with warning
-                logger.warning("Using synchronous file I/O - consider installing aiofiles for better performance")
-                with open(self.log_file, 'a', encoding='utf-8') as f:
+                logger.warning(
+                    "Using synchronous file I/O - consider installing aiofiles for better performance"
+                )
+                with open(self.log_file, "a", encoding="utf-8") as f:
                     f.write(log_line)
 
         except Exception as e:
@@ -1741,7 +1863,9 @@ class AnomalyDetector:
             existing_logs = []
             if aiofiles and os.path.exists(self.json_log_file):
                 try:
-                    async with aiofiles.open(self.json_log_file, 'r', encoding='utf-8') as f:
+                    async with aiofiles.open(
+                        self.json_log_file, "r", encoding="utf-8"
+                    ) as f:
                         content = await f.read()
                         existing_logs = json.loads(content) if content.strip() else []
                 except (json.JSONDecodeError, FileNotFoundError):
@@ -1749,7 +1873,7 @@ class AnomalyDetector:
             elif os.path.exists(self.json_log_file):
                 # Fallback for reading
                 try:
-                    with open(self.json_log_file, 'r', encoding='utf-8') as f:
+                    with open(self.json_log_file, "r", encoding="utf-8") as f:
                         existing_logs = json.load(f)
                 except (json.JSONDecodeError, FileNotFoundError):
                     existing_logs = []
@@ -1759,17 +1883,19 @@ class AnomalyDetector:
 
             # Keep only recent logs
             if len(existing_logs) > self.max_history:
-                existing_logs = existing_logs[-self.max_history:]
+                existing_logs = existing_logs[-self.max_history :]
 
             # Write back to file
             json_content = json.dumps(existing_logs, indent=2, default=str)
 
             if aiofiles:
-                async with aiofiles.open(self.json_log_file, 'w', encoding='utf-8') as f:
+                async with aiofiles.open(
+                    self.json_log_file, "w", encoding="utf-8"
+                ) as f:
                     await f.write(json_content)
             else:
                 # Fallback to synchronous operations
-                with open(self.json_log_file, 'w', encoding='utf-8') as f:
+                with open(self.json_log_file, "w", encoding="utf-8") as f:
                     json.dump(existing_logs, f, indent=2, default=str)
 
         except Exception as e:
@@ -1777,7 +1903,9 @@ class AnomalyDetector:
 
 
 # Convenience functions
-def detect_anomalies(data: pd.DataFrame, symbol: str = "", config: Optional[Dict[str, Any]] = None) -> List[AnomalyResult]:
+def detect_anomalies(
+    data: pd.DataFrame, symbol: str = "", config: Optional[Dict[str, Any]] = None
+) -> List[AnomalyResult]:
     """
     Convenience function to detect anomalies using the global detector instance.
 
@@ -1793,8 +1921,12 @@ def detect_anomalies(data: pd.DataFrame, symbol: str = "", config: Optional[Dict
     return detector.detect_anomalies(data, symbol)
 
 
-def check_signal_anomaly(signal: Dict[str, Any], data: pd.DataFrame, symbol: str = "",
-                        config: Optional[Dict[str, Any]] = None) -> Tuple[bool, Optional[AnomalyResponse], Optional[AnomalyResult]]:
+def check_signal_anomaly(
+    signal: Dict[str, Any],
+    data: pd.DataFrame,
+    symbol: str = "",
+    config: Optional[Dict[str, Any]] = None,
+) -> Tuple[bool, Optional[AnomalyResponse], Optional[AnomalyResult]]:
     """
     Convenience function to check if a signal should be modified due to anomalies.
 
@@ -1821,6 +1953,7 @@ def get_anomaly_detector(config: Optional[Dict[str, Any]] = None) -> AnomalyDete
     if _anomaly_detector is None:
         if config is None:
             from utils.config_loader import get_config
-            config = get_config('risk.anomaly_detector', {})
+
+            config = get_config("risk.anomaly_detector", {})
         _anomaly_detector = AnomalyDetector(config)
     return _anomaly_detector

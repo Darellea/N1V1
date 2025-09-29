@@ -1,22 +1,22 @@
 """
 Tests for regime-aware backtester functionality.
 """
-import pytest
-import pandas as pd
-import json
 import csv
+import json
 import os
-from unittest.mock import Mock, patch
-from pathlib import Path
 import tempfile
+from unittest.mock import Mock, patch
+
+import pandas as pd
+import pytest
 
 from backtest.backtester import (
+    _export_regime_csv_summary,
+    _generate_regime_recommendations,
     compute_regime_aware_metrics,
+    export_regime_aware_equity_from_botengine,
     export_regime_aware_equity_progression,
     export_regime_aware_report,
-    export_regime_aware_equity_from_botengine,
-    _generate_regime_recommendations,
-    _export_regime_csv_summary
 )
 
 
@@ -37,7 +37,7 @@ class TestRegimeAwareMetrics:
         """Test handling when no regime data is provided."""
         equity_data = [
             {"trade_id": "1", "equity": 1000.0, "pnl": 0.0},
-            {"trade_id": "2", "equity": 1100.0, "pnl": 100.0}
+            {"trade_id": "2", "equity": 1100.0, "pnl": 100.0},
         ]
 
         result = compute_regime_aware_metrics(equity_data, None)
@@ -53,14 +53,14 @@ class TestRegimeAwareMetrics:
             {"trade_id": "1", "equity": 1000.0, "pnl": 0.0},
             {"trade_id": "2", "equity": 1100.0, "pnl": 100.0},
             {"trade_id": "3", "equity": 1050.0, "pnl": -50.0},
-            {"trade_id": "4", "equity": 1150.0, "pnl": 100.0}
+            {"trade_id": "4", "equity": 1150.0, "pnl": 100.0},
         ]
 
         regime_data = [
             {"regime_name": "trend_up", "confidence_score": 0.8},
             {"regime_name": "trend_up", "confidence_score": 0.9},
             {"regime_name": "range_tight", "confidence_score": 0.7},
-            {"regime_name": "range_tight", "confidence_score": 0.6}
+            {"regime_name": "range_tight", "confidence_score": 0.6},
         ]
 
         result = compute_regime_aware_metrics(equity_data, regime_data)
@@ -77,12 +77,16 @@ class TestRegimeAwareMetrics:
         # Check trend_up regime
         trend_up = result["per_regime"]["trend_up"]
         assert trend_up["trade_count"] == 2
-        assert trend_up["avg_confidence"] == pytest.approx(0.85, rel=1e-6)  # (0.8 + 0.9) / 2
+        assert trend_up["avg_confidence"] == pytest.approx(
+            0.85, rel=1e-6
+        )  # (0.8 + 0.9) / 2
 
         # Check range_tight regime
         range_tight = result["per_regime"]["range_tight"]
         assert range_tight["trade_count"] == 2  # Records 2 and 3
-        assert range_tight["avg_confidence"] == pytest.approx(0.65, rel=1e-6)  # (0.7 + 0.6) / 2
+        assert range_tight["avg_confidence"] == pytest.approx(
+            0.65, rel=1e-6
+        )  # (0.7 + 0.6) / 2
 
         # Check regime summary
         assert "regime_summary" in result
@@ -95,12 +99,12 @@ class TestRegimeAwareMetrics:
         """Test metrics with only one regime."""
         equity_data = [
             {"trade_id": "1", "equity": 1000.0, "pnl": 100.0},
-            {"trade_id": "2", "equity": 1100.0, "pnl": 200.0}
+            {"trade_id": "2", "equity": 1100.0, "pnl": 200.0},
         ]
 
         regime_data = [
             {"regime_name": "trend_up", "confidence_score": 0.8},
-            {"regime_name": "trend_up", "confidence_score": 0.9}
+            {"regime_name": "trend_up", "confidence_score": 0.9},
         ]
 
         result = compute_regime_aware_metrics(equity_data, regime_data)
@@ -114,7 +118,7 @@ class TestRegimeAwareMetrics:
         equity_data = [
             {"trade_id": "1", "equity": 1000.0, "pnl": 0.0},
             {"trade_id": "2", "equity": 1100.0, "pnl": 100.0},
-            {"trade_id": "3", "equity": 1050.0, "pnl": -50.0}
+            {"trade_id": "3", "equity": 1050.0, "pnl": -50.0},
         ]
 
         regime_data = [
@@ -142,7 +146,7 @@ class TestRegimeAwareExport:
                 "cumulative_return": 0.0,
                 "regime_name": "trend_up",
                 "confidence_score": 0.8,
-                "regime_features": {"adx": 25.0}
+                "regime_features": {"adx": 25.0},
             }
         ]
 
@@ -153,7 +157,7 @@ class TestRegimeAwareExport:
             assert os.path.exists(result_path)
 
             # Verify CSV content
-            with open(result_path, 'r', newline='') as f:
+            with open(result_path, "r", newline="") as f:
                 reader = csv.DictReader(f)
                 rows = list(reader)
 
@@ -170,7 +174,7 @@ class TestRegimeAwareExport:
                 "total_return": 0.15,
                 "sharpe_ratio": 1.2,
                 "win_rate": 0.6,
-                "total_trades": 10
+                "total_trades": 10,
             },
             "per_regime": {
                 "trend_up": {
@@ -178,21 +182,21 @@ class TestRegimeAwareExport:
                     "sharpe_ratio": 1.8,
                     "win_rate": 0.8,
                     "total_trades": 5,
-                    "avg_confidence": 0.85
+                    "avg_confidence": 0.85,
                 },
                 "range_tight": {
                     "total_return": 0.05,
                     "sharpe_ratio": 0.5,
                     "win_rate": 0.4,
                     "total_trades": 3,
-                    "avg_confidence": 0.7
-                }
+                    "avg_confidence": 0.7,
+                },
             },
             "regime_summary": {
                 "total_regimes": 2,
                 "best_performing_regime": "trend_up",
-                "worst_performing_regime": "range_tight"
-            }
+                "worst_performing_regime": "range_tight",
+            },
         }
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -202,7 +206,7 @@ class TestRegimeAwareExport:
             assert os.path.exists(result_path)
 
             # Verify JSON content
-            with open(result_path, 'r') as f:
+            with open(result_path, "r") as f:
                 report = json.load(f)
 
             assert report["report_type"] == "regime_aware_backtest_report"
@@ -238,18 +242,9 @@ class TestRegimeRecommendations:
         """Test recommendations with complete regime data."""
         metrics = {
             "per_regime": {
-                "trend_up": {
-                    "total_return": 0.25,
-                    "sharpe_ratio": 1.8
-                },
-                "range_tight": {
-                    "total_return": 0.05,
-                    "sharpe_ratio": 0.5
-                },
-                "volatile_spike": {
-                    "total_return": -0.1,
-                    "sharpe_ratio": -0.3
-                }
+                "trend_up": {"total_return": 0.25, "sharpe_ratio": 1.8},
+                "range_tight": {"total_return": 0.05, "sharpe_ratio": 0.5},
+                "volatile_spike": {"total_return": -0.1, "sharpe_ratio": -0.3},
             }
         }
 
@@ -264,7 +259,9 @@ class TestRegimeRecommendations:
         assert recommendations["worst_regime"]["return"] == -0.1
 
         assert "risk_analysis" in recommendations
-        assert recommendations["risk_analysis"]["most_volatile_regime"] == "volatile_spike"
+        assert (
+            recommendations["risk_analysis"]["most_volatile_regime"] == "volatile_spike"
+        )
 
 
 class TestCSVSummaryExport:
@@ -278,7 +275,7 @@ class TestCSVSummaryExport:
                 "sharpe_ratio": 1.2,
                 "win_rate": 0.6,
                 "max_drawdown": 0.05,
-                "total_trades": 10
+                "total_trades": 10,
             },
             "per_regime": {
                 "trend_up": {
@@ -287,9 +284,9 @@ class TestCSVSummaryExport:
                     "win_rate": 0.8,
                     "max_drawdown": 0.03,
                     "total_trades": 5,
-                    "avg_confidence": 0.85
+                    "avg_confidence": 0.85,
                 }
-            }
+            },
         }
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -299,13 +296,20 @@ class TestCSVSummaryExport:
             assert os.path.exists(csv_path)
 
             # Verify CSV content
-            with open(csv_path, 'r', newline='') as f:
+            with open(csv_path, "r", newline="") as f:
                 reader = csv.reader(f)
                 rows = list(reader)
 
             # Check header
-            assert rows[0] == ["Regime", "Total Return", "Sharpe Ratio", "Win Rate",
-                              "Max Drawdown", "Total Trades", "Avg Confidence"]
+            assert rows[0] == [
+                "Regime",
+                "Total Return",
+                "Sharpe Ratio",
+                "Win Rate",
+                "Max Drawdown",
+                "Total Trades",
+                "Avg Confidence",
+            ]
 
             # Check overall row
             assert rows[1][0] == "OVERALL"
@@ -321,19 +325,17 @@ class TestCSVSummaryExport:
 class TestBotEngineIntegration:
     """Test integration with BotEngine."""
 
-    @patch('backtest.backtester.export_regime_aware_equity_progression')
-    @patch('backtest.backtester.compute_regime_aware_metrics')
-    @patch('backtest.backtester.export_regime_aware_report')
-    def test_export_regime_aware_equity_from_botengine(self, mock_export_report,
-                                                       mock_compute_metrics,
-                                                       mock_export_csv):
+    @patch("backtest.backtester.export_regime_aware_equity_progression")
+    @patch("backtest.backtester.compute_regime_aware_metrics")
+    @patch("backtest.backtester.export_regime_aware_report")
+    def test_export_regime_aware_equity_from_botengine(
+        self, mock_export_report, mock_compute_metrics, mock_export_csv
+    ):
         """Test BotEngine integration function."""
         # Mock bot engine
         mock_bot = Mock()
         mock_bot.performance_stats = {
-            "equity_progression": [
-                {"trade_id": "1", "equity": 1000.0, "pnl": 0.0}
-            ]
+            "equity_progression": [{"trade_id": "1", "equity": 1000.0, "pnl": 0.0}]
         }
 
         # Mock regime detector
@@ -345,18 +347,24 @@ class TestBotEngineIntegration:
         mock_detector.detect_enhanced_regime.return_value = mock_regime_result
 
         # Mock data
-        data = pd.DataFrame({
-            'timestamp': pd.date_range('2023-01-01', periods=50, freq='D'),
-            'open': [100] * 50,
-            'high': [105] * 50,
-            'low': [95] * 50,
-            'close': [102] * 50,
-            'volume': [1000] * 50
-        })
+        data = pd.DataFrame(
+            {
+                "timestamp": pd.date_range("2023-01-01", periods=50, freq="D"),
+                "open": [100] * 50,
+                "high": [105] * 50,
+                "low": [95] * 50,
+                "close": [102] * 50,
+                "volume": [1000] * 50,
+            }
+        )
 
         # Mock return values
         mock_export_csv.return_value = "/path/to/csv"
-        mock_compute_metrics.return_value = {"overall": {}, "per_regime": {}, "regime_summary": {}}
+        mock_compute_metrics.return_value = {
+            "overall": {},
+            "per_regime": {},
+            "regime_summary": {},
+        }
 
         with tempfile.TemporaryDirectory() as temp_dir:
             out_path = os.path.join(temp_dir, "test_output.csv")
@@ -378,7 +386,9 @@ class TestBotEngineIntegration:
         mock_detector = Mock()
         data = pd.DataFrame()
 
-        result = export_regime_aware_equity_from_botengine(mock_bot, mock_detector, data)
+        result = export_regime_aware_equity_from_botengine(
+            mock_bot, mock_detector, data
+        )
 
         assert result == ""
 
@@ -388,13 +398,14 @@ class TestEdgeCases:
 
     def test_regime_data_longer_than_equity(self):
         """Test when regime data is longer than equity progression."""
-        equity_data = [
-            {"trade_id": "1", "equity": 1000.0, "pnl": 0.0}
-        ]
+        equity_data = [{"trade_id": "1", "equity": 1000.0, "pnl": 0.0}]
 
         regime_data = [
             {"regime_name": "trend_up", "confidence_score": 0.8},
-            {"regime_name": "range_tight", "confidence_score": 0.7}  # Extra regime data
+            {
+                "regime_name": "range_tight",
+                "confidence_score": 0.7,
+            },  # Extra regime data
         ]
 
         result = compute_regime_aware_metrics(equity_data, regime_data)
@@ -404,12 +415,14 @@ class TestEdgeCases:
 
     def test_regime_data_with_errors(self):
         """Test handling of regime detection errors."""
-        equity_data = [
-            {"trade_id": "1", "equity": 1000.0, "pnl": 0.0}
-        ]
+        equity_data = [{"trade_id": "1", "equity": 1000.0, "pnl": 0.0}]
 
         regime_data = [
-            {"regime_name": "error", "confidence_score": 0.0, "regime_features": {"error": "detection failed"}}
+            {
+                "regime_name": "error",
+                "confidence_score": 0.0,
+                "regime_features": {"error": "detection failed"},
+            }
         ]
 
         result = compute_regime_aware_metrics(equity_data, regime_data)
@@ -419,12 +432,14 @@ class TestEdgeCases:
 
     def test_insufficient_data_regime(self):
         """Test handling of insufficient data regime."""
-        equity_data = [
-            {"trade_id": "1", "equity": 1000.0, "pnl": 0.0}
-        ]
+        equity_data = [{"trade_id": "1", "equity": 1000.0, "pnl": 0.0}]
 
         regime_data = [
-            {"regime_name": "insufficient_data", "confidence_score": 0.0, "regime_features": {}}
+            {
+                "regime_name": "insufficient_data",
+                "confidence_score": 0.0,
+                "regime_features": {},
+            }
         ]
 
         result = compute_regime_aware_metrics(equity_data, regime_data)

@@ -3,13 +3,14 @@ Pydantic schemas for API request/response models.
 Standardizes error responses and data validation.
 """
 
-from pydantic import BaseModel, ConfigDict, Field
 from typing import Any, Dict, Optional
-from decimal import Decimal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ErrorDetail(BaseModel):
     """Error detail model for standardized error responses."""
+
     code: int
     message: str
     details: Optional[Dict[str, Any]] = None
@@ -17,16 +18,13 @@ class ErrorDetail(BaseModel):
 
 class ErrorResponse(BaseModel):
     """Standardized error response model."""
+
     error: ErrorDetail
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "error": {
-                    "code": 401,
-                    "message": "Invalid API key",
-                    "details": None
-                }
+                "error": {"code": 401, "message": "Invalid API key", "details": None}
             }
         }
     )
@@ -34,6 +32,7 @@ class ErrorResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     """Health check response model."""
+
     status: str
     timestamp: str
     bot_running: bool
@@ -43,7 +42,7 @@ class HealthResponse(BaseModel):
             "example": {
                 "status": "healthy",
                 "timestamp": "2023-12-01T12:00:00.000000",
-                "bot_running": True
+                "bot_running": True,
             }
         }
     )
@@ -51,6 +50,7 @@ class HealthResponse(BaseModel):
 
 class StatusResponse(BaseModel):
     """Bot status response model."""
+
     running: bool
     paused: bool
     mode: str
@@ -64,7 +64,7 @@ class StatusResponse(BaseModel):
                 "paused": False,
                 "mode": "LIVE",
                 "pairs": ["BTC/USDT", "ETH/USDT"],
-                "timestamp": "2023-12-01T12:00:00.000000"
+                "timestamp": "2023-12-01T12:00:00.000000",
             }
         }
     )
@@ -72,8 +72,11 @@ class StatusResponse(BaseModel):
 
 class OrderResponse(BaseModel):
     """Order response model."""
+
     id: str = Field(..., min_length=1, max_length=100)
-    symbol: str = Field(..., min_length=1, max_length=20, pattern=r"^[A-Z0-9]+/[A-Z0-9]+$")
+    symbol: str = Field(
+        ..., min_length=1, max_length=20, pattern=r"^[A-Z0-9]+/[A-Z0-9]+$"
+    )
     timestamp: Optional[str]
     side: Optional[str] = Field(None, pattern=r"^(buy|sell)$")
     quantity: Optional[float] = Field(None, gt=0)
@@ -85,6 +88,7 @@ class OrderResponse(BaseModel):
 
 class OrdersListResponse(BaseModel):
     """Orders list response model."""
+
     orders: list[OrderResponse]
 
     model_config = ConfigDict(
@@ -100,7 +104,7 @@ class OrdersListResponse(BaseModel):
                         "price": 50000.0,
                         "pnl": 100.0,
                         "equity": 10500.0,
-                        "cumulative_return": 0.05
+                        "cumulative_return": 0.05,
                     }
                 ]
             }
@@ -110,8 +114,11 @@ class OrdersListResponse(BaseModel):
 
 class SignalResponse(BaseModel):
     """Signal response model."""
+
     id: str = Field(..., min_length=1, max_length=100)
-    symbol: str = Field(..., min_length=1, max_length=20, pattern=r"^[A-Z0-9]+/[A-Z0-9]+$")
+    symbol: str = Field(
+        ..., min_length=1, max_length=20, pattern=r"^[A-Z0-9]+/[A-Z0-9]+$"
+    )
     timestamp: Optional[str]
     confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
     signal_type: Optional[str] = Field(None, pattern=r"^(buy|sell|hold)$")
@@ -120,6 +127,7 @@ class SignalResponse(BaseModel):
 
 class SignalsListResponse(BaseModel):
     """Signals list response model."""
+
     signals: list[SignalResponse]
 
     model_config = ConfigDict(
@@ -132,7 +140,7 @@ class SignalsListResponse(BaseModel):
                         "timestamp": "2023-12-01T12:00:00.000000",
                         "confidence": 0.85,
                         "signal_type": "buy",
-                        "strategy": "RSIStrategy"
+                        "strategy": "RSIStrategy",
                     }
                 ]
             }
@@ -142,6 +150,7 @@ class SignalsListResponse(BaseModel):
 
 class EquityPointResponse(BaseModel):
     """Equity point response model."""
+
     timestamp: Optional[str]
     balance: Optional[float]
     equity: Optional[float]
@@ -150,6 +159,7 @@ class EquityPointResponse(BaseModel):
 
 class EquityCurveResponse(BaseModel):
     """Equity curve response model."""
+
     equity_curve: list[EquityPointResponse]
 
     model_config = ConfigDict(
@@ -160,7 +170,7 @@ class EquityCurveResponse(BaseModel):
                         "timestamp": "2023-12-01T12:00:00.000000",
                         "balance": 10000.0,
                         "equity": 10000.0,
-                        "cumulative_return": 0.0
+                        "cumulative_return": 0.0,
                     }
                 ]
             }
@@ -170,6 +180,7 @@ class EquityCurveResponse(BaseModel):
 
 class PerformanceResponse(BaseModel):
     """Performance metrics response model."""
+
     total_pnl: float
     win_rate: float
     wins: int
@@ -185,7 +196,7 @@ class PerformanceResponse(BaseModel):
                 "wins": 13,
                 "losses": 7,
                 "sharpe_ratio": 1.23,
-                "max_drawdown": 0.15
+                "max_drawdown": 0.15,
             }
         }
     )
@@ -193,12 +204,9 @@ class PerformanceResponse(BaseModel):
 
 class SuccessResponse(BaseModel):
     """Generic success response model."""
+
     message: str
 
     model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "message": "Bot paused successfully"
-            }
-        }
+        json_schema_extra={"example": {"message": "Bot paused successfully"}}
     )

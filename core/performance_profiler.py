@@ -14,30 +14,26 @@ Key Features:
 - Low-overhead sampling profiler
 """
 
-import time
-import psutil
-import gc
-import threading
 import functools
-import subprocess
-import os
-import tempfile
-from typing import Dict, List, Optional, Callable, Any, Union
-from dataclasses import dataclass, field
-from collections import defaultdict, deque
-import statistics
-import logging
-import tracemalloc
-import cProfile
-import pstats
-import io
-from contextlib import contextmanager
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-import numpy as np
-import pandas as pd
+import gc
 import json
+import logging
+import os
+import statistics
+import subprocess
+import tempfile
+import threading
+import time
+import tracemalloc
+from collections import defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
+
+import numpy as np
+import psutil
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +41,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PerformanceMetrics:
     """Container for performance metrics data."""
+
     function_name: str
     execution_time: float
     memory_usage: int
@@ -62,6 +59,7 @@ class PerformanceMetrics:
 @dataclass
 class ProfilingSession:
     """Represents a profiling session with collected metrics."""
+
     session_id: str
     start_time: float
     end_time: Optional[float] = None
@@ -141,15 +139,13 @@ class PerformanceProfiler:
                 self.stop_profiling()
 
             self.current_session = ProfilingSession(
-                session_id=session_id,
-                start_time=time.time()
+                session_id=session_id, start_time=time.time()
             )
             self.is_profiling = True
 
             # Start monitoring thread
             self.monitoring_thread = threading.Thread(
-                target=self._monitoring_loop,
-                daemon=True
+                target=self._monitoring_loop, daemon=True
             )
             self.monitoring_thread.start()
 
@@ -206,8 +202,12 @@ class PerformanceProfiler:
                 current_io = process.io_counters()
 
                 # Calculate I/O deltas
-                io_read_delta = current_io.read_bytes - last_io.read_bytes if last_io else 0
-                io_write_delta = current_io.write_bytes - last_io.write_bytes if last_io else 0
+                io_read_delta = (
+                    current_io.read_bytes - last_io.read_bytes if last_io else 0
+                )
+                io_write_delta = (
+                    current_io.write_bytes - last_io.write_bytes if last_io else 0
+                )
                 last_io = current_io
 
                 # Collect GC stats
@@ -281,7 +281,7 @@ class PerformanceProfiler:
                 io_read_bytes=io_read_delta,
                 io_write_bytes=io_write_delta,
                 gc_collections=gc_collections,
-                timestamp=end_time
+                timestamp=end_time,
             )
 
             # Store metrics
@@ -300,37 +300,40 @@ class PerformanceProfiler:
         Args:
             method_name: Optional custom name for the method
         """
+
         def decorator(func: Callable) -> Callable:
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
                 name = method_name or f"{func.__qualname__}"
                 with self.profile_function(name):
                     return func(*args, **kwargs)
+
             return wrapper
+
         return decorator
 
     def _update_baselines(self, function_name: str, execution_time: float):
         """Update statistical baselines for a function."""
         if function_name not in self.baseline_metrics:
             self.baseline_metrics[function_name] = {
-                'times': [],
-                'mean': 0.0,
-                'std': 0.0,
-                'count': 0
+                "times": [],
+                "mean": 0.0,
+                "std": 0.0,
+                "count": 0,
             }
 
         baseline = self.baseline_metrics[function_name]
-        baseline['times'].append(execution_time)
-        baseline['count'] += 1
+        baseline["times"].append(execution_time)
+        baseline["count"] += 1
 
         # Keep only recent measurements
-        if len(baseline['times']) > 100:
-            baseline['times'] = baseline['times'][-100:]
+        if len(baseline["times"]) > 100:
+            baseline["times"] = baseline["times"][-100:]
 
         # Update statistics
-        if len(baseline['times']) > 1:
-            baseline['mean'] = statistics.mean(baseline['times'])
-            baseline['std'] = statistics.stdev(baseline['times'])
+        if len(baseline["times"]) > 1:
+            baseline["mean"] = statistics.mean(baseline["times"])
+            baseline["std"] = statistics.stdev(baseline["times"])
 
     def detect_anomalies(self, function_name: str, current_time: float) -> bool:
         """
@@ -347,11 +350,11 @@ class PerformanceProfiler:
             return False
 
         baseline = self.baseline_metrics[function_name]
-        if baseline['count'] < 10:  # Need minimum samples
+        if baseline["count"] < 10:  # Need minimum samples
             return False
 
         threshold = self.anomaly_thresholds.get(function_name, 3.0)  # 3-sigma rule
-        z_score = abs(current_time - baseline['mean']) / baseline['std']
+        z_score = abs(current_time - baseline["mean"]) / baseline["std"]
 
         return z_score > threshold
 
@@ -389,10 +392,10 @@ class PerformanceProfiler:
                     "total_measurements": len(metrics),
                     "time_range": {
                         "start": min(m.timestamp for m in metrics),
-                        "end": max(m.timestamp for m in metrics)
-                    }
+                        "end": max(m.timestamp for m in metrics),
+                    },
                 },
-                "functions": {}
+                "functions": {},
             }
 
             for func_name, func_metrics in function_metrics.items():
@@ -407,14 +410,16 @@ class PerformanceProfiler:
                         "median": statistics.median(execution_times),
                         "min": min(execution_times),
                         "max": max(execution_times),
-                        "std": statistics.stdev(execution_times) if len(execution_times) > 1 else 0
+                        "std": statistics.stdev(execution_times)
+                        if len(execution_times) > 1
+                        else 0,
                     },
                     "memory_usage": {
                         "total": sum(memory_usages),
                         "mean": statistics.mean(memory_usages),
-                        "peak": max(m.memory_peak for m in func_metrics)
+                        "peak": max(m.memory_peak for m in func_metrics),
                     },
-                    "performance_trends": self._analyze_trends(func_metrics)
+                    "performance_trends": self._analyze_trends(func_metrics),
                 }
 
             return report
@@ -436,7 +441,7 @@ class PerformanceProfiler:
         return {
             "trend": "improving" if slope < 0 else "degrading",
             "slope": slope,
-            "volatility": statistics.stdev(times) if n > 1 else 0
+            "volatility": statistics.stdev(times) if n > 1 else 0,
         }
 
     def get_hotspots(self, top_n: int = 10) -> List[Dict]:
@@ -454,33 +459,37 @@ class PerformanceProfiler:
                 return []
 
             # Aggregate by function
-            function_stats = defaultdict(lambda: {
-                'total_time': 0.0,
-                'call_count': 0,
-                'avg_time': 0.0,
-                'memory_total': 0
-            })
+            function_stats = defaultdict(
+                lambda: {
+                    "total_time": 0.0,
+                    "call_count": 0,
+                    "avg_time": 0.0,
+                    "memory_total": 0,
+                }
+            )
 
             for metric in self.metrics_history:
                 stats = function_stats[metric.function_name]
-                stats['total_time'] += metric.execution_time
-                stats['call_count'] += 1
-                stats['memory_total'] += metric.memory_usage
+                stats["total_time"] += metric.execution_time
+                stats["call_count"] += 1
+                stats["memory_total"] += metric.memory_usage
 
             # Calculate averages
             hotspots = []
             for func_name, stats in function_stats.items():
-                stats['avg_time'] = stats['total_time'] / stats['call_count']
-                hotspots.append({
-                    'function': func_name,
-                    'total_time': stats['total_time'],
-                    'avg_time': stats['avg_time'],
-                    'call_count': stats['call_count'],
-                    'memory_total': stats['memory_total']
-                })
+                stats["avg_time"] = stats["total_time"] / stats["call_count"]
+                hotspots.append(
+                    {
+                        "function": func_name,
+                        "total_time": stats["total_time"],
+                        "avg_time": stats["avg_time"],
+                        "call_count": stats["call_count"],
+                        "memory_total": stats["memory_total"],
+                    }
+                )
 
             # Sort by total time (descending)
-            hotspots.sort(key=lambda x: x['total_time'], reverse=True)
+            hotspots.sort(key=lambda x: x["total_time"], reverse=True)
 
             return hotspots[:top_n]
 
@@ -514,7 +523,7 @@ class PerformanceProfiler:
 
         # Analyze memory snapshots
         current, peak = tracemalloc.get_traced_memory()
-        top_stats = tracemalloc.take_snapshot().statistics('lineno')
+        top_stats = tracemalloc.take_snapshot().statistics("lineno")
 
         return {
             "current_memory": current,
@@ -524,10 +533,10 @@ class PerformanceProfiler:
                     "file": stat.traceback[0].filename,
                     "line": stat.traceback[0].lineno,
                     "size": stat.size,
-                    "count": stat.count
+                    "count": stat.count,
                 }
                 for stat in top_stats[:10]
-            ]
+            ],
         }
 
     async def async_profile_function(self, coro, function_name: str):
@@ -546,7 +555,9 @@ class PerformanceProfiler:
             result = await coro
         end_time = time.time()
 
-        logger.debug(f"Async function {function_name} took {end_time - start_time:.4f}s")
+        logger.debug(
+            f"Async function {function_name} took {end_time - start_time:.4f}s"
+        )
         return result
 
     def cleanup(self):
@@ -569,8 +580,8 @@ class AdvancedProfiler:
 
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
-        self.profiling_enabled = self.config.get('enabled', True)
-        self.output_dir = Path(self.config.get('output_dir', 'performance_reports'))
+        self.profiling_enabled = self.config.get("enabled", True)
+        self.output_dir = Path(self.config.get("output_dir", "performance_reports"))
         self.output_dir.mkdir(exist_ok=True)
 
         # Tool availability
@@ -584,31 +595,41 @@ class AdvancedProfiler:
     def _check_tool_availability(self):
         """Check which profiling tools are available."""
         self.tools_available = {
-            'py_spy': self._is_tool_available('py-spy'),
-            'scalene': self._is_tool_available('scalene'),
-            'memory_profiler': self._is_tool_available('memory_profiler'),
-            'flamegraph': self._is_tool_available('flamegraph')
+            "py_spy": self._is_tool_available("py-spy"),
+            "scalene": self._is_tool_available("scalene"),
+            "memory_profiler": self._is_tool_available("memory_profiler"),
+            "flamegraph": self._is_tool_available("flamegraph"),
         }
 
-        available_tools = [tool for tool, available in self.tools_available.items() if available]
+        available_tools = [
+            tool for tool, available in self.tools_available.items() if available
+        ]
         logger.info(f"Available profiling tools: {available_tools}")
 
     def _is_tool_available(self, tool_name: str) -> bool:
         """Check if a profiling tool is available."""
         try:
-            if tool_name == 'py-spy':
-                subprocess.run(['py-spy', '--version'], capture_output=True, check=True)
-            elif tool_name == 'scalene':
-                subprocess.run(['scalene', '--version'], capture_output=True, check=True)
-            elif tool_name == 'memory_profiler':
-                subprocess.run(['python', '-c', 'import memory_profiler'], capture_output=True, check=True)
-            elif tool_name == 'flamegraph':
-                subprocess.run(['flamegraph'], capture_output=True, check=True)
+            if tool_name == "py-spy":
+                subprocess.run(["py-spy", "--version"], capture_output=True, check=True)
+            elif tool_name == "scalene":
+                subprocess.run(
+                    ["scalene", "--version"], capture_output=True, check=True
+                )
+            elif tool_name == "memory_profiler":
+                subprocess.run(
+                    ["python", "-c", "import memory_profiler"],
+                    capture_output=True,
+                    check=True,
+                )
+            elif tool_name == "flamegraph":
+                subprocess.run(["flamegraph"], capture_output=True, check=True)
             return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
 
-    def start_pyspy_profiling(self, pid: int = None, output_file: str = None) -> Optional[str]:
+    def start_pyspy_profiling(
+        self, pid: int = None, output_file: str = None
+    ) -> Optional[str]:
         """
         Start py-spy profiling.
 
@@ -619,7 +640,7 @@ class AdvancedProfiler:
         Returns:
             Process ID of the profiling process
         """
-        if not self.tools_available['py_spy']:
+        if not self.tools_available["py_spy"]:
             logger.warning("py-spy not available")
             return None
 
@@ -632,27 +653,38 @@ class AdvancedProfiler:
         output_path = self.output_dir / output_file
 
         cmd = [
-            'py-spy', 'record',
-            '--pid', str(pid),
-            '--format', 'speedscope',
-            '--output', str(output_path.with_suffix('.json')),
-            '--duration', '60'  # 60 seconds
+            "py-spy",
+            "record",
+            "--pid",
+            str(pid),
+            "--format",
+            "speedscope",
+            "--output",
+            str(output_path.with_suffix(".json")),
+            "--duration",
+            "60",  # 60 seconds
         ]
 
         try:
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            self._active_processes[f'pyspy_{pid}'] = process
+            process = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            self._active_processes[f"pyspy_{pid}"] = process
             logger.info(f"Started py-spy profiling for PID {pid}")
 
             # Generate flamegraph from speedscope
-            self._generate_flamegraph_from_speedscope(output_path.with_suffix('.json'), output_path)
+            self._generate_flamegraph_from_speedscope(
+                output_path.with_suffix(".json"), output_path
+            )
 
-            return f'pyspy_{pid}'
+            return f"pyspy_{pid}"
         except Exception as e:
             logger.error(f"Failed to start py-spy profiling: {e}")
             return None
 
-    def start_scalene_profiling(self, script_path: str = None, output_dir: str = None) -> Optional[str]:
+    def start_scalene_profiling(
+        self, script_path: str = None, output_dir: str = None
+    ) -> Optional[str]:
         """
         Start scalene profiling.
 
@@ -663,7 +695,7 @@ class AdvancedProfiler:
         Returns:
             Process ID of the profiling process
         """
-        if not self.tools_available['scalene']:
+        if not self.tools_available["scalene"]:
             logger.warning("scalene not available")
             return None
 
@@ -671,18 +703,21 @@ class AdvancedProfiler:
         output_dir.mkdir(exist_ok=True)
 
         cmd = [
-            'scalene',
-            '--cpu',
-            '--memory',
-            '--html',
-            '--outfile', str(output_dir / 'profile.html')
+            "scalene",
+            "--cpu",
+            "--memory",
+            "--html",
+            "--outfile",
+            str(output_dir / "profile.html"),
         ]
 
         if script_path:
             cmd.append(script_path)
 
         try:
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            process = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
             self._active_processes[f'scalene_{script_path or "main"}'] = process
             logger.info(f"Started scalene profiling for {script_path or 'main script'}")
             return f'scalene_{script_path or "main"}'
@@ -702,12 +737,13 @@ class AdvancedProfiler:
         Returns:
             Memory profiling results
         """
-        if not self.tools_available['memory_profiler']:
+        if not self.tools_available["memory_profiler"]:
             logger.warning("memory_profiler not available")
             return {}
 
         try:
-            from memory_profiler import profile as memory_profile, memory_usage
+            from memory_profiler import memory_usage
+            from memory_profiler import profile as memory_profile
 
             # Profile memory usage over time
             mem_usage = memory_usage((func, args, kwargs), interval=0.1, timeout=60)
@@ -722,8 +758,9 @@ class AdvancedProfiler:
                 return func(*args, **kwargs)
 
             # Redirect output to file
-            with open(output_file, 'w') as f:
+            with open(output_file, "w") as f:
                 import sys
+
                 old_stdout = sys.stdout
                 sys.stdout = f
                 try:
@@ -732,18 +769,20 @@ class AdvancedProfiler:
                     sys.stdout = old_stdout
 
             return {
-                'memory_usage_over_time': mem_usage,
-                'peak_memory': max(mem_usage) if mem_usage else 0,
-                'average_memory': sum(mem_usage) / len(mem_usage) if mem_usage else 0,
-                'profile_file': str(output_file),
-                'result': result
+                "memory_usage_over_time": mem_usage,
+                "peak_memory": max(mem_usage) if mem_usage else 0,
+                "average_memory": sum(mem_usage) / len(mem_usage) if mem_usage else 0,
+                "profile_file": str(output_file),
+                "result": result,
             }
 
         except Exception as e:
             logger.error(f"Failed to profile with memory_profiler: {e}")
             return {}
 
-    def generate_flamegraph(self, profile_data: Dict, output_file: str = None) -> Optional[str]:
+    def generate_flamegraph(
+        self, profile_data: Dict, output_file: str = None
+    ) -> Optional[str]:
         """
         Generate flamegraph from profiling data.
 
@@ -754,7 +793,7 @@ class AdvancedProfiler:
         Returns:
             Path to generated flamegraph
         """
-        if not self.tools_available['flamegraph']:
+        if not self.tools_available["flamegraph"]:
             logger.warning("flamegraph tool not available")
             return None
 
@@ -767,14 +806,16 @@ class AdvancedProfiler:
             stacks = self._convert_to_flamegraph_format(profile_data)
 
             # Write stacks to temporary file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".txt", delete=False
+            ) as f:
                 for stack in stacks:
-                    f.write(stack + '\n')
+                    f.write(stack + "\n")
                 temp_file = f.name
 
             # Generate flamegraph
-            cmd = ['flamegraph.pl', temp_file]
-            with open(output_path, 'w') as f:
+            cmd = ["flamegraph.pl", temp_file]
+            with open(output_path, "w") as f:
                 subprocess.run(cmd, stdout=f, check=True)
 
             # Clean up temp file
@@ -793,22 +834,27 @@ class AdvancedProfiler:
 
         # This is a simplified conversion - in practice, you'd need
         # to properly format the stack traces based on the profiler output
-        if 'functions' in profile_data:
-            for func_name, metrics in profile_data['functions'].items():
+        if "functions" in profile_data:
+            for func_name, metrics in profile_data["functions"].items():
                 # Create stack trace format: function1;function2;function3 count
                 stack = f"{func_name} {int(metrics.get('call_count', 1))}"
                 stacks.append(stack)
 
         return stacks
 
-    def _generate_flamegraph_from_speedscope(self, speedscope_file: Path, output_file: Path):
+    def _generate_flamegraph_from_speedscope(
+        self, speedscope_file: Path, output_file: Path
+    ):
         """Generate flamegraph from py-spy speedscope output."""
         try:
             # This would require additional tools to convert speedscope to flamegraph
             # For now, we'll just copy the speedscope file
             import shutil
-            shutil.copy2(speedscope_file, output_file.with_suffix('.json'))
-            logger.info(f"Generated speedscope file: {output_file.with_suffix('.json')}")
+
+            shutil.copy2(speedscope_file, output_file.with_suffix(".json"))
+            logger.info(
+                f"Generated speedscope file: {output_file.with_suffix('.json')}"
+            )
         except Exception as e:
             logger.error(f"Failed to generate flamegraph from speedscope: {e}")
 
@@ -854,11 +900,17 @@ class RegressionDetector:
 
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
-        self.baselines_file = Path(self.config.get('baselines_file', 'performance_baselines.json'))
+        self.baselines_file = Path(
+            self.config.get("baselines_file", "performance_baselines.json")
+        )
         self.thresholds = {
-            'latency_increase': self.config.get('latency_threshold', 0.20),  # 20% increase
-            'memory_increase': self.config.get('memory_threshold', 0.30),   # 30% increase
-            'cpu_increase': self.config.get('cpu_threshold', 0.25)          # 25% increase
+            "latency_increase": self.config.get(
+                "latency_threshold", 0.20
+            ),  # 20% increase
+            "memory_increase": self.config.get(
+                "memory_threshold", 0.30
+            ),  # 30% increase
+            "cpu_increase": self.config.get("cpu_threshold", 0.25),  # 25% increase
         }
 
         self.baselines = self._load_baselines()
@@ -868,70 +920,71 @@ class RegressionDetector:
         """Load performance baselines from file."""
         if self.baselines_file.exists():
             try:
-                with open(self.baselines_file, 'r') as f:
+                with open(self.baselines_file, "r") as f:
                     return json.load(f)
             except Exception as e:
                 logger.error(f"Failed to load baselines: {e}")
 
-        return {
-            'functions': {},
-            'last_updated': time.time()
-        }
+        return {"functions": {}, "last_updated": time.time()}
 
     def _save_baselines(self):
         """Save performance baselines to file."""
         try:
-            with open(self.baselines_file, 'w') as f:
+            with open(self.baselines_file, "w") as f:
                 json.dump(self.baselines, f, indent=2)
         except Exception as e:
             logger.error(f"Failed to save baselines: {e}")
 
     def update_baseline(self, function_name: str, metrics: Dict):
         """Update baseline for a function."""
-        if function_name not in self.baselines['functions']:
-            self.baselines['functions'][function_name] = {
-                'latency_mean': 0.0,
-                'latency_std': 0.0,
-                'memory_mean': 0,
-                'memory_std': 0,
-                'cpu_mean': 0.0,
-                'cpu_std': 0.0,
-                'samples': []
+        if function_name not in self.baselines["functions"]:
+            self.baselines["functions"][function_name] = {
+                "latency_mean": 0.0,
+                "latency_std": 0.0,
+                "memory_mean": 0,
+                "memory_std": 0,
+                "cpu_mean": 0.0,
+                "cpu_std": 0.0,
+                "samples": [],
             }
 
-        baseline = self.baselines['functions'][function_name]
-        baseline['samples'].append({
-            'timestamp': time.time(),
-            'latency': metrics.get('execution_time', 0),
-            'memory': metrics.get('memory_usage', 0),
-            'cpu': metrics.get('cpu_percent', 0)
-        })
+        baseline = self.baselines["functions"][function_name]
+        baseline["samples"].append(
+            {
+                "timestamp": time.time(),
+                "latency": metrics.get("execution_time", 0),
+                "memory": metrics.get("memory_usage", 0),
+                "cpu": metrics.get("cpu_percent", 0),
+            }
+        )
 
         # Keep only recent samples (last 100)
-        if len(baseline['samples']) > 100:
-            baseline['samples'] = baseline['samples'][-100:]
+        if len(baseline["samples"]) > 100:
+            baseline["samples"] = baseline["samples"][-100:]
 
         # Update statistics
         self._update_statistics(baseline)
-        self.baselines['last_updated'] = time.time()
+        self.baselines["last_updated"] = time.time()
         self._save_baselines()
 
     def _update_statistics(self, baseline: Dict):
         """Update statistical measures for a baseline."""
-        samples = baseline['samples']
+        samples = baseline["samples"]
         if not samples:
             return
 
-        latencies = [s['latency'] for s in samples]
-        memories = [s['memory'] for s in samples]
-        cpus = [s['cpu'] for s in samples]
+        latencies = [s["latency"] for s in samples]
+        memories = [s["memory"] for s in samples]
+        cpus = [s["cpu"] for s in samples]
 
-        baseline['latency_mean'] = statistics.mean(latencies)
-        baseline['latency_std'] = statistics.stdev(latencies) if len(latencies) > 1 else 0
-        baseline['memory_mean'] = statistics.mean(memories)
-        baseline['memory_std'] = statistics.stdev(memories) if len(memories) > 1 else 0
-        baseline['cpu_mean'] = statistics.mean(cpus)
-        baseline['cpu_std'] = statistics.stdev(cpus) if len(cpus) > 1 else 0
+        baseline["latency_mean"] = statistics.mean(latencies)
+        baseline["latency_std"] = (
+            statistics.stdev(latencies) if len(latencies) > 1 else 0
+        )
+        baseline["memory_mean"] = statistics.mean(memories)
+        baseline["memory_std"] = statistics.stdev(memories) if len(memories) > 1 else 0
+        baseline["cpu_mean"] = statistics.mean(cpus)
+        baseline["cpu_std"] = statistics.stdev(cpus) if len(cpus) > 1 else 0
 
     def detect_regression(self, function_name: str, current_metrics: Dict) -> Dict:
         """
@@ -944,71 +997,84 @@ class RegressionDetector:
         Returns:
             Regression detection results
         """
-        if function_name not in self.baselines['functions']:
-            return {'regression_detected': False, 'reason': 'no_baseline'}
+        if function_name not in self.baselines["functions"]:
+            return {"regression_detected": False, "reason": "no_baseline"}
 
-        baseline = self.baselines['functions'][function_name]
-        if len(baseline['samples']) < 10:  # Need minimum samples
-            return {'regression_detected': False, 'reason': 'insufficient_samples'}
+        baseline = self.baselines["functions"][function_name]
+        if len(baseline["samples"]) < 10:  # Need minimum samples
+            return {"regression_detected": False, "reason": "insufficient_samples"}
 
         results = {
-            'regression_detected': False,
-            'issues': [],
-            'current_values': current_metrics,
-            'baseline_values': {
-                'latency_mean': baseline['latency_mean'],
-                'memory_mean': baseline['memory_mean'],
-                'cpu_mean': baseline['cpu_mean']
-            }
+            "regression_detected": False,
+            "issues": [],
+            "current_values": current_metrics,
+            "baseline_values": {
+                "latency_mean": baseline["latency_mean"],
+                "memory_mean": baseline["memory_mean"],
+                "cpu_mean": baseline["cpu_mean"],
+            },
         }
 
         # Check latency regression
-        current_latency = current_metrics.get('execution_time', 0)
-        latency_threshold = baseline['latency_mean'] * (1 + self.thresholds['latency_increase'])
+        current_latency = current_metrics.get("execution_time", 0)
+        latency_threshold = baseline["latency_mean"] * (
+            1 + self.thresholds["latency_increase"]
+        )
         if current_latency > latency_threshold:
-            results['regression_detected'] = True
-            results['issues'].append({
-                'type': 'latency',
-                'current': current_latency,
-                'baseline': baseline['latency_mean'],
-                'threshold': latency_threshold,
-                'increase_percent': (current_latency - baseline['latency_mean']) / baseline['latency_mean']
-            })
+            results["regression_detected"] = True
+            results["issues"].append(
+                {
+                    "type": "latency",
+                    "current": current_latency,
+                    "baseline": baseline["latency_mean"],
+                    "threshold": latency_threshold,
+                    "increase_percent": (current_latency - baseline["latency_mean"])
+                    / baseline["latency_mean"],
+                }
+            )
 
         # Check memory regression
-        current_memory = current_metrics.get('memory_usage', 0)
-        memory_threshold = baseline['memory_mean'] * (1 + self.thresholds['memory_increase'])
+        current_memory = current_metrics.get("memory_usage", 0)
+        memory_threshold = baseline["memory_mean"] * (
+            1 + self.thresholds["memory_increase"]
+        )
         if current_memory > memory_threshold:
-            results['regression_detected'] = True
-            results['issues'].append({
-                'type': 'memory',
-                'current': current_memory,
-                'baseline': baseline['memory_mean'],
-                'threshold': memory_threshold,
-                'increase_percent': (current_memory - baseline['memory_mean']) / baseline['memory_mean']
-            })
+            results["regression_detected"] = True
+            results["issues"].append(
+                {
+                    "type": "memory",
+                    "current": current_memory,
+                    "baseline": baseline["memory_mean"],
+                    "threshold": memory_threshold,
+                    "increase_percent": (current_memory - baseline["memory_mean"])
+                    / baseline["memory_mean"],
+                }
+            )
 
         # Check CPU regression
-        current_cpu = current_metrics.get('cpu_percent', 0)
-        cpu_threshold = baseline['cpu_mean'] * (1 + self.thresholds['cpu_increase'])
+        current_cpu = current_metrics.get("cpu_percent", 0)
+        cpu_threshold = baseline["cpu_mean"] * (1 + self.thresholds["cpu_increase"])
         if current_cpu > cpu_threshold:
-            results['regression_detected'] = True
-            results['issues'].append({
-                'type': 'cpu',
-                'current': current_cpu,
-                'baseline': baseline['cpu_mean'],
-                'threshold': cpu_threshold,
-                'increase_percent': (current_cpu - baseline['cpu_mean']) / baseline['cpu_mean']
-            })
+            results["regression_detected"] = True
+            results["issues"].append(
+                {
+                    "type": "cpu",
+                    "current": current_cpu,
+                    "baseline": baseline["cpu_mean"],
+                    "threshold": cpu_threshold,
+                    "increase_percent": (current_cpu - baseline["cpu_mean"])
+                    / baseline["cpu_mean"],
+                }
+            )
 
         return results
 
     def get_regression_report(self) -> Dict:
         """Generate a comprehensive regression report."""
         return {
-            'baselines': self.baselines,
-            'thresholds': self.thresholds,
-            'last_updated': self.baselines.get('last_updated', 0)
+            "baselines": self.baselines,
+            "thresholds": self.thresholds,
+            "last_updated": self.baselines.get("last_updated", 0),
         }
 
 
@@ -1049,13 +1115,16 @@ def profile_function(function_name: Optional[str] = None):
     Args:
         function_name: Optional custom name for the function
     """
+
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             name = function_name or f"{func.__qualname__}"
             with _profiler.profile_function(name):
                 return func(*args, **kwargs)
+
         return wrapper
+
     return decorator
 
 

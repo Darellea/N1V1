@@ -5,9 +5,7 @@ Centralized location for all hardcoded values, magic numbers,
 and configuration constants used throughout the application.
 """
 
-from typing import Dict, Any, List
 from pathlib import Path
-
 
 # ============================================================================
 # PATHS AND DIRECTORIES
@@ -40,7 +38,7 @@ TIMEFRAMES = {
     "1h": 3600,
     "4h": 14400,
     "1d": 86400,
-    "1w": 604800
+    "1w": 604800,
 }
 
 # Trading modes
@@ -88,16 +86,16 @@ STOCHASTIC_OVERSOLD = 20
 
 # Position sizing
 DEFAULT_POSITION_SIZE = 0.1  # 10% of portfolio
-MAX_POSITION_SIZE = 0.3      # 30% of portfolio
-MIN_POSITION_SIZE = 0.01     # 1% of portfolio
+MAX_POSITION_SIZE = 0.3  # 30% of portfolio
+MIN_POSITION_SIZE = 0.01  # 1% of portfolio
 
 # Stop loss defaults
-DEFAULT_STOP_LOSS_PCT = 0.05   # 5%
-DEFAULT_TAKE_PROFIT_PCT = 0.10 # 10%
+DEFAULT_STOP_LOSS_PCT = 0.05  # 5%
+DEFAULT_TAKE_PROFIT_PCT = 0.10  # 10%
 
 # Risk per trade
 DEFAULT_RISK_PER_TRADE = 0.02  # 2% of portfolio per trade
-MAX_DAILY_DRAWDOWN = 0.10      # 10% max daily drawdown
+MAX_DAILY_DRAWDOWN = 0.10  # 10% max daily drawdown
 
 # ============================================================================
 # PERFORMANCE METRICS CONSTANTS
@@ -119,12 +117,12 @@ MIN_TRADES_FOR_STATS = 10
 
 # Rate limiting
 DEFAULT_RATE_LIMIT = 10  # requests per second
-BURST_RATE_LIMIT = 50    # burst requests
+BURST_RATE_LIMIT = 50  # burst requests
 RATE_LIMIT_BACKOFF = 60  # seconds to wait after rate limit
 
 # Data caching
 CACHE_TTL_SECONDS = 300  # 5 minutes
-MAX_CACHE_SIZE = 1000    # maximum cached items
+MAX_CACHE_SIZE = 1000  # maximum cached items
 CACHE_CLEANUP_INTERVAL = 600  # 10 minutes
 
 # Historical data limits
@@ -138,8 +136,8 @@ MIN_HISTORICAL_LIMIT = 100
 
 # HTTP timeouts
 DEFAULT_TIMEOUT = 30000  # 30 seconds
-LONG_TIMEOUT = 60000     # 1 minute
-SHORT_TIMEOUT = 10000    # 10 seconds
+LONG_TIMEOUT = 60000  # 1 minute
+SHORT_TIMEOUT = 10000  # 10 seconds
 
 # Retry configuration
 DEFAULT_MAX_RETRIES = 3
@@ -155,17 +153,13 @@ MAX_BACKOFF_DELAY = 300  # 5 minutes
 # ============================================================================
 
 # Log levels
-LOG_LEVELS = {
-    "DEBUG": 10,
-    "INFO": 20,
-    "WARNING": 30,
-    "ERROR": 40,
-    "CRITICAL": 50
-}
+LOG_LEVELS = {"DEBUG": 10, "INFO": 20, "WARNING": 30, "ERROR": 40, "CRITICAL": 50}
 
 # Log format
 DEFAULT_LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-DETAILED_LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s"
+DETAILED_LOG_FORMAT = (
+    "%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s"
+)
 
 # Log rotation
 DEFAULT_MAX_LOG_SIZE = 10 * 1024 * 1024  # 10MB
@@ -211,14 +205,14 @@ TEST_SIZE_RATIO = 0.2
 
 # Health check intervals
 HEALTH_CHECK_INTERVAL = 60  # seconds
-COMPONENT_TIMEOUT = 30      # seconds
+COMPONENT_TIMEOUT = 30  # seconds
 
 # Alert thresholds
 CPU_WARNING_THRESHOLD = 80  # percent
-CPU_CRITICAL_THRESHOLD = 95 # percent
+CPU_CRITICAL_THRESHOLD = 95  # percent
 
 MEMORY_WARNING_THRESHOLD = 500  # MB
-MEMORY_CRITICAL_THRESHOLD = 1000 # MB
+MEMORY_CRITICAL_THRESHOLD = 1000  # MB
 
 DISK_WARNING_THRESHOLD = 80  # percent
 DISK_CRITICAL_THRESHOLD = 95  # percent
@@ -229,14 +223,14 @@ DISK_CRITICAL_THRESHOLD = 95  # percent
 
 # Commission and fees
 DEFAULT_COMMISSION = 0.001  # 0.1%
-DEFAULT_SPREAD = 0.0005    # 0.05%
+DEFAULT_SPREAD = 0.0005  # 0.05%
 
 # Slippage models
 SLIPPAGE_MODELS = ["fixed", "percentage", "volume_based"]
 
 # Walk-forward optimization
-DEFAULT_TRAIN_WINDOW = 90   # days
-DEFAULT_TEST_WINDOW = 30    # days
+DEFAULT_TRAIN_WINDOW = 90  # days
+DEFAULT_TEST_WINDOW = 30  # days
 MIN_OBSERVATIONS = 1000
 
 # ============================================================================
@@ -260,12 +254,7 @@ DEFAULT_EXCHANGE_RATE_LIMIT = 10  # requests per second
 # ============================================================================
 
 # Configuration validation
-REQUIRED_CONFIG_KEYS = [
-    "environment",
-    "exchange",
-    "trading",
-    "risk_management"
-]
+REQUIRED_CONFIG_KEYS = ["environment", "exchange", "trading", "risk_management"]
 
 # Environment validation
 VALID_ENVIRONMENTS = ["development", "staging", "production"]
@@ -276,12 +265,7 @@ VALID_MODES = ["paper", "live", "backtest"]
 # ============================================================================
 
 # Error severity mapping
-ERROR_SEVERITY_LEVELS = {
-    "low": 1,
-    "medium": 2,
-    "high": 3,
-    "critical": 4
-}
+ERROR_SEVERITY_LEVELS = {"low": 1, "medium": 2, "high": 3, "critical": 4}
 
 # Error categories
 ERROR_CATEGORIES = [
@@ -292,7 +276,7 @@ ERROR_CATEGORIES = [
     "performance",
     "business_logic",
     "system",
-    "external_api"
+    "external_api",
 ]
 
 # ============================================================================
@@ -325,7 +309,7 @@ DEFAULT_TRADING_CONFIG = {
     "slippage": 0.001,
     "order_timeout": 60,
     "trade_fee": 0.001,
-    "portfolio_mode": False
+    "portfolio_mode": False,
 }
 
 DEFAULT_RISK_CONFIG = {
@@ -334,7 +318,7 @@ DEFAULT_RISK_CONFIG = {
     "position_size": DEFAULT_POSITION_SIZE,
     "max_position_size": MAX_POSITION_SIZE,
     "risk_reward_ratio": 2.0,
-    "max_daily_drawdown": MAX_DAILY_DRAWDOWN
+    "max_daily_drawdown": MAX_DAILY_DRAWDOWN,
 }
 
 DEFAULT_LOGGING_CONFIG = {
@@ -342,7 +326,7 @@ DEFAULT_LOGGING_CONFIG = {
     "file_logging": True,
     "console_logging": True,
     "max_size": DEFAULT_MAX_LOG_SIZE,
-    "backup_count": DEFAULT_LOG_BACKUP_COUNT
+    "backup_count": DEFAULT_LOG_BACKUP_COUNT,
 }
 
 # ============================================================================
@@ -368,14 +352,14 @@ EXPERIMENTAL_FEATURES = {
     "advanced_ml": False,
     "multi_timeframe_analysis": True,
     "dynamic_position_sizing": False,
-    "auto_optimization": False
+    "auto_optimization": False,
 }
 
 # Beta features
 BETA_FEATURES = {
     "portfolio_optimization": False,
     "alternative_data": False,
-    "social_sentiment": False
+    "social_sentiment": False,
 }
 
 # ============================================================================
@@ -401,7 +385,7 @@ DEFAULT_DB_CONFIG = {
     "port": 5432,
     "database": "crypto_bot",
     "pool_size": 10,
-    "connection_timeout": 30
+    "connection_timeout": 30,
 }
 
 # Redis configuration
@@ -410,7 +394,7 @@ DEFAULT_REDIS_CONFIG = {
     "port": 6379,
     "db": 0,
     "password": None,
-    "socket_timeout": 5
+    "socket_timeout": 5,
 }
 
 # ============================================================================
@@ -420,7 +404,7 @@ DEFAULT_REDIS_CONFIG = {
 # Mark deprecated constants for future removal
 DEPRECATED_CONSTANTS = [
     "OLD_TIMEFRAME_MAPPING",  # Use TIMEFRAMES instead
-    "LEGACY_ORDER_TYPES"      # Use ORDER_TYPES instead
+    "LEGACY_ORDER_TYPES",  # Use ORDER_TYPES instead
 ]
 
 # ============================================================================
@@ -442,19 +426,7 @@ CONFIG_SCHEMA_VERSION = "1.0.0"
 
 # Environment-specific configurations
 ENVIRONMENT_OVERRIDES = {
-    "development": {
-        "debug": True,
-        "log_level": "DEBUG",
-        "cache_enabled": False
-    },
-    "staging": {
-        "debug": False,
-        "log_level": "INFO",
-        "cache_enabled": True
-    },
-    "production": {
-        "debug": False,
-        "log_level": "WARNING",
-        "cache_enabled": True
-    }
+    "development": {"debug": True, "log_level": "DEBUG", "cache_enabled": False},
+    "staging": {"debug": False, "log_level": "INFO", "cache_enabled": True},
+    "production": {"debug": False, "log_level": "WARNING", "cache_enabled": True},
 }

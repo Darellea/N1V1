@@ -25,8 +25,10 @@ class DistributedSystemManager:
             config: Configuration dictionary for distributed operations
         """
         self.config = config or {}
-        self.task_manager = TaskManager(self.config.get('task_manager', {}))
-        self.distributed_evaluator = DistributedEvaluator(self.config.get('evaluator', {}))
+        self.task_manager = TaskManager(self.config.get("task_manager", {}))
+        self.distributed_evaluator = DistributedEvaluator(
+            self.config.get("evaluator", {})
+        )
 
     async def initialize(self):
         """Initialize the distributed system components."""
@@ -58,6 +60,6 @@ class DistributedSystemManager:
     def get_status(self):
         """Get the status of the distributed system."""
         return {
-            'task_manager': self.task_manager.get_status(),
-            'evaluator': self.distributed_evaluator.get_worker_status()
+            "task_manager": self.task_manager.get_status(),
+            "evaluator": self.distributed_evaluator.get_worker_status(),
         }

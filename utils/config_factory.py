@@ -6,18 +6,17 @@ environment-specific support, and schema enforcement to eliminate
 duplication across the codebase.
 """
 
-import json
-import os
-import logging
-from typing import Dict, Any, Optional, List, Set, Union
-from pathlib import Path
-from dataclasses import dataclass
 import hashlib
+import json
+import logging
+import os
 import time
+from dataclasses import dataclass
+from pathlib import Path
 from threading import Lock
+from typing import Any, Dict, List, Optional
 
 from utils.constants import PROJECT_ROOT
-from utils.config_loader import ConfigLoader
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +49,8 @@ class ConfigValidator:
                 "symbols": list,
                 "timeframes": list,
                 "risk_management": dict,
-                "execution": dict
-            }
+                "execution": dict,
+            },
         }
 
         # Risk management schema
@@ -61,8 +60,8 @@ class ConfigValidator:
                 "max_position_size": (int, float),
                 "max_drawdown": (int, float),
                 "stop_loss_percentage": (int, float),
-                "take_profit_percentage": (int, float)
-            }
+                "take_profit_percentage": (int, float),
+            },
         }
 
         # Logging schema
@@ -72,7 +71,7 @@ class ConfigValidator:
                 "file_logging": bool,
                 "console": bool,
                 "max_size": int,
-                "backup_count": int
+                "backup_count": int,
             }
         }
 
@@ -139,7 +138,7 @@ class ConfigFactory:
             "logging": PROJECT_ROOT / "config_logging.json",
             "api": PROJECT_ROOT / "config_api.json",
             "database": PROJECT_ROOT / "config_database.json",
-            "notifications": PROJECT_ROOT / "config_notifications.json"
+            "notifications": PROJECT_ROOT / "config_notifications.json",
         }
 
         # Add environment-specific paths
@@ -148,8 +147,9 @@ class ConfigFactory:
             if env_path.exists():
                 self.config_paths[f"{config_type}_{self.environment}"] = env_path
 
-    def get_config(self, config_type: str = "main", use_cache: bool = True,
-                  validate: bool = True) -> Dict[str, Any]:
+    def get_config(
+        self, config_type: str = "main", use_cache: bool = True, validate: bool = True
+    ) -> Dict[str, Any]:
         """
         Get configuration with caching and validation.
 
@@ -184,18 +184,24 @@ class ConfigFactory:
         if validate and config_type in self.validator.schemas:
             errors = self.validator.validate_config(config, config_type)
             if errors:
-                logger.warning(f"Configuration validation errors for {config_type}: {errors}")
+                logger.warning(
+                    f"Configuration validation errors for {config_type}: {errors}"
+                )
 
         # Cache the result
         if use_cache:
             file_path = self.config_paths.get(config_type)
-            checksum = self._calculate_file_checksum(file_path) if file_path and file_path.exists() else ""
+            checksum = (
+                self._calculate_file_checksum(file_path)
+                if file_path and file_path.exists()
+                else ""
+            )
 
             entry = ConfigCacheEntry(
                 data=config.copy(),
                 timestamp=time.time(),
                 checksum=checksum,
-                file_path=file_path
+                file_path=file_path,
             )
 
             with self.cache_lock:
@@ -224,7 +230,7 @@ class ConfigFactory:
     def _load_config_file(self, config_path: Path) -> Dict[str, Any]:
         """Load configuration from a JSON file."""
         try:
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
 
             logger.debug(f"Loaded configuration from {config_path}")
@@ -240,59 +246,50 @@ class ConfigFactory:
             "main": {
                 "environment": self.environment,
                 "debug": self.environment == "development",
-                "version": "1.0.0"
+                "version": "1.0.0",
             },
             "trading": {
                 "symbols": ["BTC/USDT", "ETH/USDT"],
                 "timeframes": ["1m", "5m", "15m", "1h", "4h", "1d"],
-                "risk_management": {
-                    "max_position_size": 0.1,
-                    "max_drawdown": 0.05
-                },
+                "risk_management": {"max_position_size": 0.1, "max_drawdown": 0.05},
                 "execution": {
                     "default_order_type": "limit",
-                    "slippage_tolerance": 0.001
-                }
+                    "slippage_tolerance": 0.001,
+                },
             },
             "risk": {
                 "max_position_size": 0.1,
                 "max_drawdown": 0.05,
                 "stop_loss_percentage": 0.02,
-                "take_profit_percentage": 0.05
+                "take_profit_percentage": 0.05,
             },
             "logging": {
                 "level": "INFO",
                 "file_logging": True,
                 "console": True,
                 "max_size": 10485760,  # 10MB
-                "backup_count": 5
+                "backup_count": 5,
             },
             "api": {
                 "host": "localhost",
                 "port": 8000,
-                "debug": self.environment == "development"
+                "debug": self.environment == "development",
             },
             "database": {
                 "type": "sqlite",
-                "path": str(PROJECT_ROOT / "data" / "trading.db")
+                "path": str(PROJECT_ROOT / "data" / "trading.db"),
             },
             "notifications": {
-                "discord": {
-                    "enabled": False,
-                    "webhook_url": ""
-                },
-                "email": {
-                    "enabled": False,
-                    "smtp_server": "",
-                    "smtp_port": 587
-                }
-            }
+                "discord": {"enabled": False, "webhook_url": ""},
+                "email": {"enabled": False, "smtp_server": "", "smtp_port": 587},
+            },
         }
 
         return defaults.get(config_type, {})
 
-    def set_config_value(self, config_type: str, key: str, value: Any,
-                        persist: bool = False) -> None:
+    def set_config_value(
+        self, config_type: str, key: str, value: Any, persist: bool = False
+    ) -> None:
         """
         Set a configuration value.
 
@@ -305,7 +302,7 @@ class ConfigFactory:
         config = self.get_config(config_type, use_cache=False)
 
         # Set nested values using dot notation
-        keys = key.split('.')
+        keys = key.split(".")
         target = config
 
         for k in keys[:-1]:
@@ -338,7 +335,7 @@ class ConfigFactory:
             # Create directory if it doesn't exist
             config_path.parent.mkdir(parents=True, exist_ok=True)
 
-            with open(config_path, 'w', encoding='utf-8') as f:
+            with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=2, default=str)
 
             logger.info(f"Persisted configuration to {config_path}")
@@ -366,8 +363,7 @@ class ConfigFactory:
         # Reload
         return self.get_config(config_type, use_cache=False)
 
-    def get_config_value(self, config_type: str, key: str,
-                        default: Any = None) -> Any:
+    def get_config_value(self, config_type: str, key: str, default: Any = None) -> Any:
         """
         Get a specific configuration value.
 
@@ -382,7 +378,7 @@ class ConfigFactory:
         config = self.get_config(config_type)
 
         # Support dot notation
-        keys = key.split('.')
+        keys = key.split(".")
         value = config
 
         try:
@@ -395,7 +391,7 @@ class ConfigFactory:
     def _calculate_file_checksum(self, file_path: Path) -> str:
         """Calculate MD5 checksum of a file."""
         try:
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 return hashlib.md5(f.read()).hexdigest()
         except IOError:
             return ""
@@ -408,7 +404,7 @@ class ConfigFactory:
                 "cache_entries": list(self.cache.keys()),
                 "total_cache_size": sum(
                     len(json.dumps(entry.data)) for entry in self.cache.values()
-                )
+                ),
             }
 
     def clear_cache(self, config_type: Optional[str] = None) -> None:
@@ -454,6 +450,7 @@ class ConfigFactory:
 # Global configuration factory instance
 _config_factory = ConfigFactory()
 
+
 def get_config_factory() -> ConfigFactory:
     """Get the global configuration factory instance."""
     return _config_factory
@@ -465,7 +462,9 @@ def get_config(config_type: str = "main", use_cache: bool = True) -> Dict[str, A
     return _config_factory.get_config(config_type, use_cache)
 
 
-def set_config_value(config_type: str, key: str, value: Any, persist: bool = False) -> None:
+def set_config_value(
+    config_type: str, key: str, value: Any, persist: bool = False
+) -> None:
     """Set configuration value (backward compatibility)."""
     _config_factory.set_config_value(config_type, key, value, persist)
 

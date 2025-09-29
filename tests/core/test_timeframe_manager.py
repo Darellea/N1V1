@@ -11,15 +11,15 @@ Tests cover:
 - Edge cases and error handling
 """
 
-import pytest
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-from unittest.mock import Mock, AsyncMock, patch
 import asyncio
+from datetime import datetime
+from unittest.mock import AsyncMock, Mock
 
-from core.timeframe_manager import TimeframeManager, SyncedData
-from core.diagnostics import HealthStatus, HealthCheckResult
+import pandas as pd
+import pytest
+
+from core.diagnostics import HealthCheckResult, HealthStatus
+from core.timeframe_manager import SyncedData, TimeframeManager
 
 
 class TestTimeframeManagerCore:
@@ -100,18 +100,22 @@ class TestDataSynchronization:
     """Test data synchronization across timeframes."""
 
     @pytest.mark.asyncio
-    async def test_fetch_multi_timeframe_data_success(self, mock_data_fetcher, multi_timeframe_data):
+    async def test_fetch_multi_timeframe_data_success(
+        self, mock_data_fetcher, multi_timeframe_data
+    ):
         """Test successful multi-timeframe data fetching."""
         manager = TimeframeManager(mock_data_fetcher, {})
         await manager.initialize()
 
         # Mock the data fetcher to return multi-timeframe data
-        mock_data_fetcher.get_historical_data = AsyncMock(side_effect=[
-            multi_timeframe_data['5m'],  # 5m data
-            multi_timeframe_data['15m'], # 15m data
-            multi_timeframe_data['1h'],  # 1h data
-            multi_timeframe_data['4h']   # 4h data
-        ])
+        mock_data_fetcher.get_historical_data = AsyncMock(
+            side_effect=[
+                multi_timeframe_data["5m"],  # 5m data
+                multi_timeframe_data["15m"],  # 15m data
+                multi_timeframe_data["1h"],  # 1h data
+                multi_timeframe_data["4h"],  # 4h data
+            ]
+        )
 
         manager.add_symbol("BTC/USDT", ["5m", "15m", "1h", "4h"])
 
@@ -121,10 +125,10 @@ class TestDataSynchronization:
         assert isinstance(result, SyncedData)
         assert result.symbol == "BTC/USDT"
         assert len(result.data) == 4  # 4 timeframes
-        assert '5m' in result.data
-        assert '15m' in result.data
-        assert '1h' in result.data
-        assert '4h' in result.data
+        assert "5m" in result.data
+        assert "15m" in result.data
+        assert "1h" in result.data
+        assert "4h" in result.data
 
     @pytest.mark.asyncio
     async def test_timestamp_alignment(self, mock_data_fetcher, multi_timeframe_data):
@@ -133,10 +137,9 @@ class TestDataSynchronization:
         await manager.initialize()
 
         # Mock data fetcher
-        mock_data_fetcher.get_historical_data = AsyncMock(side_effect=[
-            multi_timeframe_data['1h'],
-            multi_timeframe_data['4h']
-        ])
+        mock_data_fetcher.get_historical_data = AsyncMock(
+            side_effect=[multi_timeframe_data["1h"], multi_timeframe_data["4h"]]
+        )
 
         manager.add_symbol("BTC/USDT", ["1h", "4h"])
 
@@ -145,8 +148,8 @@ class TestDataSynchronization:
         assert result is not None
 
         # Check that timestamps are aligned
-        h1_timestamps = result.data['1h'].index
-        h4_timestamps = result.data['4h'].index
+        h1_timestamps = result.data["1h"].index
+        h4_timestamps = result.data["4h"].index
 
         # 4h data should have fewer points than 1h data
         assert len(h4_timestamps) <= len(h1_timestamps)
@@ -163,10 +166,12 @@ class TestDataSynchronization:
         await manager.initialize()
 
         # Mock data fetcher to return None for one timeframe
-        mock_data_fetcher.get_historical_data = AsyncMock(side_effect=[
-            pd.DataFrame(),  # Empty 1h data
-            pd.DataFrame()   # Empty 4h data
-        ])
+        mock_data_fetcher.get_historical_data = AsyncMock(
+            side_effect=[
+                pd.DataFrame(),  # Empty 1h data
+                pd.DataFrame(),  # Empty 4h data
+            ]
+        )
 
         manager.add_symbol("BTC/USDT", ["1h", "4h"])
 
@@ -183,7 +188,9 @@ class TestDataSynchronization:
         await manager.initialize()
 
         # Mock data fetcher
-        mock_data_fetcher.get_historical_data = AsyncMock(return_value=multi_timeframe_data['1h'])
+        mock_data_fetcher.get_historical_data = AsyncMock(
+            return_value=multi_timeframe_data["1h"]
+        )
 
         manager.add_symbol("BTC/USDT", ["1h"])
 
@@ -201,18 +208,23 @@ class TestDataSynchronization:
     @pytest.mark.asyncio
     async def test_cache_expiration(self, mock_data_fetcher):
         """Test cache expiration."""
-        manager = TimeframeManager(mock_data_fetcher, {"cache_ttl_seconds": 0})  # 0 second TTL (immediate expiration)
+        manager = TimeframeManager(
+            mock_data_fetcher, {"cache_ttl_seconds": 0}
+        )  # 0 second TTL (immediate expiration)
         await manager.initialize()
 
         # Create fresh data with current timestamp
         current_time = pd.Timestamp.now()
-        fresh_data = pd.DataFrame({
-            'open': [50000.0],
-            'high': [50100.0],
-            'low': [49900.0],
-            'close': [50050.0],
-            'volume': [100.0]
-        }, index=[current_time])
+        fresh_data = pd.DataFrame(
+            {
+                "open": [50000.0],
+                "high": [50100.0],
+                "low": [49900.0],
+                "close": [50050.0],
+                "volume": [100.0],
+            },
+            index=[current_time],
+        )
 
         # Mock the data fetcher to return fresh data
         mock_data_fetcher.get_historical_data = AsyncMock(return_value=fresh_data)
@@ -243,12 +255,13 @@ class TestSyncedData:
     def test_synced_data_creation(self, multi_timeframe_data):
         """Test SyncedData object creation."""
         from utils.time import now_ms
+
         synced = SyncedData(
             symbol="BTC/USDT",
             data=multi_timeframe_data,
             timestamp=int(datetime.now().timestamp() * 1000),
             last_updated=now_ms(),
-            confidence_score=1.0
+            confidence_score=1.0,
         )
 
         assert synced.symbol == "BTC/USDT"
@@ -258,31 +271,33 @@ class TestSyncedData:
     def test_synced_data_get_timeframe(self, multi_timeframe_data):
         """Test getting specific timeframe data."""
         from utils.time import now_ms
+
         synced = SyncedData(
             symbol="BTC/USDT",
             data=multi_timeframe_data,
             timestamp=int(datetime.now().timestamp() * 1000),
             last_updated=now_ms(),
-            confidence_score=1.0
+            confidence_score=1.0,
         )
 
-        h1_data = synced.get_timeframe('1h')
+        h1_data = synced.get_timeframe("1h")
         assert h1_data is not None
         assert len(h1_data) > 0
 
         # Test non-existent timeframe
-        nonexistent = synced.get_timeframe('1d')
+        nonexistent = synced.get_timeframe("1d")
         assert nonexistent is None
 
     def test_synced_data_get_latest_timestamp(self, multi_timeframe_data):
         """Test getting latest timestamp across timeframes."""
         from utils.time import now_ms
+
         synced = SyncedData(
             symbol="BTC/USDT",
             data=multi_timeframe_data,
             timestamp=int(datetime.now().timestamp() * 1000),
             last_updated=now_ms(),
-            confidence_score=1.0
+            confidence_score=1.0,
         )
 
         latest_ts = synced.get_latest_timestamp()
@@ -292,12 +307,13 @@ class TestSyncedData:
     def test_synced_data_is_aligned(self, multi_timeframe_data):
         """Test timestamp alignment checking."""
         from utils.time import now_ms
+
         synced = SyncedData(
             symbol="BTC/USDT",
             data=multi_timeframe_data,
             timestamp=int(datetime.now().timestamp() * 1000),
             last_updated=now_ms(),
-            confidence_score=1.0
+            confidence_score=1.0,
         )
 
         # Should be aligned by construction
@@ -308,30 +324,33 @@ class TestIntegrationWithStrategies:
     """Test integration with trading strategies."""
 
     @pytest.mark.asyncio
-    async def test_strategy_multi_timeframe_signal_generation(self, mock_data_fetcher, multi_timeframe_data):
+    async def test_strategy_multi_timeframe_signal_generation(
+        self, mock_data_fetcher, multi_timeframe_data
+    ):
         """Test strategy signal generation with multi-timeframe data."""
         from strategies.base_strategy import BaseStrategy
 
         # Mock strategy that uses multi-timeframe data
         strategy = Mock(spec=BaseStrategy)
-        strategy.generate_signals = AsyncMock(return_value=[
-            {
-                'symbol': 'BTC/USDT',
-                'signal_type': 'BUY',
-                'price': 50000.0,
-                'timestamp': datetime.now(),
-                'confidence': 0.8
-            }
-        ])
+        strategy.generate_signals = AsyncMock(
+            return_value=[
+                {
+                    "symbol": "BTC/USDT",
+                    "signal_type": "BUY",
+                    "price": 50000.0,
+                    "timestamp": datetime.now(),
+                    "confidence": 0.8,
+                }
+            ]
+        )
 
         # Setup timeframe manager
         manager = TimeframeManager(mock_data_fetcher, {})
         await manager.initialize()
 
-        mock_data_fetcher.get_historical_data = AsyncMock(side_effect=[
-            multi_timeframe_data['1h'],
-            multi_timeframe_data['4h']
-        ])
+        mock_data_fetcher.get_historical_data = AsyncMock(
+            side_effect=[multi_timeframe_data["1h"], multi_timeframe_data["4h"]]
+        )
 
         manager.add_symbol("BTC/USDT", ["1h", "4h"])
 
@@ -339,17 +358,19 @@ class TestIntegrationWithStrategies:
         mtf_data = await manager.fetch_multi_timeframe_data("BTC/USDT")
 
         # Generate signals with multi-timeframe data
-        signals = await strategy.generate_signals({'BTC/USDT': mtf_data})
+        signals = await strategy.generate_signals({"BTC/USDT": mtf_data})
 
         # Verify strategy was called with multi-timeframe data
         strategy.generate_signals.assert_called_once()
         call_args = strategy.generate_signals.call_args[0][0]
 
-        assert 'BTC/USDT' in call_args
-        assert isinstance(call_args['BTC/USDT'], SyncedData)
+        assert "BTC/USDT" in call_args
+        assert isinstance(call_args["BTC/USDT"], SyncedData)
 
     @pytest.mark.asyncio
-    async def test_backward_compatibility_single_timeframe(self, mock_data_fetcher, synthetic_market_data):
+    async def test_backward_compatibility_single_timeframe(
+        self, mock_data_fetcher, synthetic_market_data
+    ):
         """Test backward compatibility with single timeframe operation."""
         from strategies.base_strategy import BaseStrategy
 
@@ -360,7 +381,9 @@ class TestIntegrationWithStrategies:
         manager = TimeframeManager(mock_data_fetcher, {"enabled": False})
         await manager.initialize()
 
-        mock_data_fetcher.get_historical_data = AsyncMock(return_value=synthetic_market_data)
+        mock_data_fetcher.get_historical_data = AsyncMock(
+            return_value=synthetic_market_data
+        )
 
         # Single timeframe operation should still work
         manager.add_symbol("BTC/USDT", ["1h"])
@@ -377,12 +400,16 @@ class TestPerformance:
     """Test performance characteristics of TimeframeManager."""
 
     @pytest.mark.asyncio
-    async def test_data_fetching_performance(self, mock_data_fetcher, multi_timeframe_data, performance_timer):
+    async def test_data_fetching_performance(
+        self, mock_data_fetcher, multi_timeframe_data, performance_timer
+    ):
         """Test data fetching performance."""
         manager = TimeframeManager(mock_data_fetcher, {})
         await manager.initialize()
 
-        mock_data_fetcher.get_historical_data = AsyncMock(return_value=multi_timeframe_data['1h'])
+        mock_data_fetcher.get_historical_data = AsyncMock(
+            return_value=multi_timeframe_data["1h"]
+        )
 
         manager.add_symbol("BTC/USDT", ["1h"])
 
@@ -397,17 +424,21 @@ class TestPerformance:
         assert result is not None
 
     @pytest.mark.asyncio
-    async def test_memory_usage_multi_timeframe(self, mock_data_fetcher, multi_timeframe_data, memory_monitor):
+    async def test_memory_usage_multi_timeframe(
+        self, mock_data_fetcher, multi_timeframe_data, memory_monitor
+    ):
         """Test memory usage with multi-timeframe data."""
         manager = TimeframeManager(mock_data_fetcher, {})
         await manager.initialize()
 
-        mock_data_fetcher.get_historical_data = AsyncMock(side_effect=[
-            multi_timeframe_data['5m'],
-            multi_timeframe_data['15m'],
-            multi_timeframe_data['1h'],
-            multi_timeframe_data['4h']
-        ])
+        mock_data_fetcher.get_historical_data = AsyncMock(
+            side_effect=[
+                multi_timeframe_data["5m"],
+                multi_timeframe_data["15m"],
+                multi_timeframe_data["1h"],
+                multi_timeframe_data["4h"],
+            ]
+        )
 
         manager.add_symbol("BTC/USDT", ["5m", "15m", "1h", "4h"])
 
@@ -423,7 +454,9 @@ class TestPerformance:
         assert result is not None
 
     @pytest.mark.asyncio
-    async def test_concurrent_symbol_fetching(self, mock_data_fetcher, multi_timeframe_data):
+    async def test_concurrent_symbol_fetching(
+        self, mock_data_fetcher, multi_timeframe_data
+    ):
         """Test concurrent fetching for multiple symbols."""
         manager = TimeframeManager(mock_data_fetcher, {})
         await manager.initialize()
@@ -431,7 +464,7 @@ class TestPerformance:
         # Mock concurrent data fetching
         async def mock_get_data(*args, **kwargs):
             await asyncio.sleep(0.01)  # Simulate network delay
-            return multi_timeframe_data['1h']
+            return multi_timeframe_data["1h"]
 
         mock_data_fetcher.get_historical_data = AsyncMock(side_effect=mock_get_data)
 
@@ -441,10 +474,7 @@ class TestPerformance:
             manager.add_symbol(symbol, ["1h"])
 
         # Fetch data concurrently
-        tasks = [
-            manager.fetch_multi_timeframe_data(symbol)
-            for symbol in symbols
-        ]
+        tasks = [manager.fetch_multi_timeframe_data(symbol) for symbol in symbols]
 
         results = await asyncio.gather(*tasks)
 
@@ -463,7 +493,9 @@ class TestErrorHandling:
         await manager.initialize()
 
         # Mock connection failure
-        mock_data_fetcher.get_historical_data = AsyncMock(side_effect=ConnectionError("Exchange unreachable"))
+        mock_data_fetcher.get_historical_data = AsyncMock(
+            side_effect=ConnectionError("Exchange unreachable")
+        )
 
         manager.add_symbol("BTC/USDT", ["1h"])
 
@@ -481,10 +513,12 @@ class TestErrorHandling:
         await manager.initialize()
 
         # Mock partial failure - some timeframes succeed, others fail
-        mock_data_fetcher.get_historical_data = AsyncMock(side_effect=[
-            multi_timeframe_data['1h'],  # Success
-            ConnectionError("Failed to fetch 4h data")  # Failure
-        ])
+        mock_data_fetcher.get_historical_data = AsyncMock(
+            side_effect=[
+                multi_timeframe_data["1h"],  # Success
+                ConnectionError("Failed to fetch 4h data"),  # Failure
+            ]
+        )
 
         manager.add_symbol("BTC/USDT", ["1h", "4h"])
 
@@ -493,7 +527,7 @@ class TestErrorHandling:
         # Should handle partial failure gracefully
         assert result is not None
         # Should have data for successful timeframe
-        assert '1h' in result.data
+        assert "1h" in result.data
 
     @pytest.mark.asyncio
     async def test_empty_data_handling(self, mock_data_fetcher):
@@ -512,7 +546,7 @@ class TestErrorHandling:
         # Should handle empty data gracefully
         assert result is not None
         # Should have empty dataframe for the timeframe
-        assert len(result.data['1h']) == 0
+        assert len(result.data["1h"]) == 0
 
     @pytest.mark.asyncio
     async def test_invalid_symbol_handling(self, mock_data_fetcher):
@@ -565,31 +599,31 @@ class TestHealthMonitoring:
                 cache_size = len(manager.cache)
 
                 return HealthCheckResult(
-                    component='timeframe_manager',
+                    component="timeframe_manager",
                     status=HealthStatus.HEALTHY,
                     latency_ms=10.0,
-                    message=f'Healthy: {symbol_count} symbols, {cache_size} cached',
+                    message=f"Healthy: {symbol_count} symbols, {cache_size} cached",
                     details={
-                        'registered_symbols': symbol_count,
-                        'cache_entries': cache_size
-                    }
+                        "registered_symbols": symbol_count,
+                        "cache_entries": cache_size,
+                    },
                 )
             except Exception as e:
                 return HealthCheckResult(
-                    component='timeframe_manager',
+                    component="timeframe_manager",
                     status=HealthStatus.CRITICAL,
-                    message=f'Health check failed: {str(e)}',
-                    details={'error': str(e)}
+                    message=f"Health check failed: {str(e)}",
+                    details={"error": str(e)},
                 )
 
-        diagnostics.register_health_check('timeframe_manager', check_timeframe_manager)
+        diagnostics.register_health_check("timeframe_manager", check_timeframe_manager)
 
         # Run health check
         state = await diagnostics.run_health_check()
 
         # Should have timeframe manager health data
-        assert 'timeframe_manager' in state.component_statuses
-        tf_status = state.component_statuses['timeframe_manager']
+        assert "timeframe_manager" in state.component_statuses
+        tf_status = state.component_statuses["timeframe_manager"]
 
         assert tf_status.status == HealthStatus.HEALTHY
-        assert 'Healthy:' in tf_status.message
+        assert "Healthy:" in tf_status.message

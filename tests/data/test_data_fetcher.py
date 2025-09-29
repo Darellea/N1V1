@@ -29,28 +29,30 @@ class TestDataFetcherInitialization:
     def test_init_with_config(self):
         """Test DataFetcher initialization with configuration (lines 68, 82-83, 87-97)."""
         config = {
-            'name': 'binance',
-            'api_key': 'test_key',
-            'api_secret': 'test_secret',
-            'cache_enabled': True,
-            'cache_dir': '.test_cache',
-            'timeout': 30000
+            "name": "binance",
+            "api_key": "test_key",
+            "api_secret": "test_secret",
+            "cache_enabled": True,
+            "cache_dir": ".test_cache",
+            "timeout": 30000,
         }
 
         fetcher = DataFetcher(config)
 
         assert fetcher.config == config
         assert fetcher.cache_enabled == True
-        assert fetcher.config['cache_dir'] == '.test_cache'  # Raw config value
-        assert fetcher.cache_dir == os.path.join(os.getcwd(), 'data', 'cache', '.test_cache')  # Sanitized path
-        assert hasattr(fetcher, 'exchange')
-        assert hasattr(fetcher, '_exchange')
+        assert fetcher.config["cache_dir"] == ".test_cache"  # Raw config value
+        assert fetcher.cache_dir == os.path.join(
+            os.getcwd(), "data", "cache", ".test_cache"
+        )  # Sanitized path
+        assert hasattr(fetcher, "exchange")
+        assert hasattr(fetcher, "_exchange")
 
     def test_init_exchange_wrapper(self):
         """Test exchange wrapper initialization and property access."""
-        config = {'name': 'binance'}
+        config = {"name": "binance"}
 
-        with patch('ccxt.binance') as mock_exchange_class:
+        with patch("ccxt.binance") as mock_exchange_class:
             mock_exchange = MagicMock()
             mock_exchange_class.return_value = mock_exchange
 
@@ -61,12 +63,12 @@ class TestDataFetcherInitialization:
             assert wrapped_exchange is not None
 
             # Test proxy property access
-            config['proxy'] = 'http://proxy.example.com'
-            assert wrapped_exchange.proxies == 'http://proxy.example.com'
+            config["proxy"] = "http://proxy.example.com"
+            assert wrapped_exchange.proxies == "http://proxy.example.com"
 
     def test_exchange_setter_with_mock(self):
         """Test exchange setter with mock exchange."""
-        config = {'name': 'binance'}
+        config = {"name": "binance"}
         fetcher = DataFetcher(config)
 
         mock_exchange = MagicMock()
@@ -74,16 +76,12 @@ class TestDataFetcherInitialization:
 
         # Verify the exchange is wrapped
         assert fetcher.exchange is not mock_exchange
-        assert hasattr(fetcher.exchange, '_exchange')
+        assert hasattr(fetcher.exchange, "_exchange")
 
     def test_init_cache_directory_creation(self):
         """Test cache directory creation during initialization."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            config = {
-                'name': 'binance',
-                'cache_enabled': True,
-                'cache_dir': temp_dir
-            }
+            config = {"name": "binance", "cache_enabled": True, "cache_dir": temp_dir}
 
             fetcher = DataFetcher(config)
 
@@ -98,11 +96,11 @@ class TestDataFetcherAsyncMethods:
     def setup_method(self):
         """Set up test fixtures."""
         self.config = {
-            'name': 'binance',
-            'api_key': 'test_key',
-            'api_secret': 'test_secret',
-            'rate_limit': 10,
-            'cache_enabled': False  # Disable for most tests
+            "name": "binance",
+            "api_key": "test_key",
+            "api_secret": "test_secret",
+            "rate_limit": 10,
+            "cache_enabled": False,  # Disable for most tests
         }
         self.fetcher = DataFetcher(self.config)
 
@@ -139,18 +137,15 @@ class TestDataFetcherAsyncMethods:
         mock_exchange.fetch_ohlcv = Mock(return_value=mock_candles)
         self.fetcher.exchange = mock_exchange
 
-        result = await self.fetcher.get_historical_data('BTC/USDT', '1h', 100)
+        result = await self.fetcher.get_historical_data("BTC/USDT", "1h", 100)
 
         assert isinstance(result, pd.DataFrame)
         assert len(result) == 2
-        assert list(result.columns) == ['open', 'high', 'low', 'close', 'volume']
-        assert result.index.name == 'timestamp'
+        assert list(result.columns) == ["open", "high", "low", "close", "volume"]
+        assert result.index.name == "timestamp"
 
         mock_exchange.fetch_ohlcv.assert_called_once_with(
-            symbol='BTC/USDT',
-            timeframe='1h',
-            limit=100,
-            since=None
+            symbol="BTC/USDT", timeframe="1h", limit=100, since=None
         )
 
     @pytest.mark.asyncio
@@ -166,7 +161,7 @@ class TestDataFetcherAsyncMethods:
         mock_exchange.fetch_ohlcv = Mock(return_value=mock_candles)
         self.fetcher.exchange = mock_exchange
 
-        result = await self.fetcher.get_historical_data('BTC/USDT', '1h', 100)
+        result = await self.fetcher.get_historical_data("BTC/USDT", "1h", 100)
 
         # Should return empty DataFrame for malformed data
         assert isinstance(result, pd.DataFrame)
@@ -181,7 +176,7 @@ class TestDataFetcherAsyncMethods:
         mock_exchange.fetch_ohlcv.side_effect = ccxt.ExchangeError("Exchange error")
         self.fetcher.exchange = mock_exchange
 
-        result = await self.fetcher.get_historical_data('BTC/USDT', '1h', 100)
+        result = await self.fetcher.get_historical_data("BTC/USDT", "1h", 100)
 
         # Should return empty DataFrame on exchange error
         assert isinstance(result, pd.DataFrame)
@@ -196,7 +191,7 @@ class TestDataFetcherAsyncMethods:
         mock_exchange.fetch_ohlcv.side_effect = ccxt.NetworkError("Network error")
         self.fetcher.exchange = mock_exchange
 
-        result = await self.fetcher.get_historical_data('BTC/USDT', '1h', 100)
+        result = await self.fetcher.get_historical_data("BTC/USDT", "1h", 100)
 
         # Should return empty DataFrame on network error
         assert isinstance(result, pd.DataFrame)
@@ -206,8 +201,8 @@ class TestDataFetcherAsyncMethods:
     async def test_get_historical_data_with_caching(self):
         """Test historical data fetching with caching enabled."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            self.config['cache_enabled'] = True
-            self.config['cache_dir'] = temp_dir
+            self.config["cache_enabled"] = True
+            self.config["cache_dir"] = temp_dir
             fetcher = DataFetcher(self.config)
 
             # Mock exchange response
@@ -217,7 +212,7 @@ class TestDataFetcherAsyncMethods:
             mock_exchange.fetch_ohlcv = Mock(return_value=mock_candles)
             fetcher.exchange = mock_exchange
 
-            result = await fetcher.get_historical_data('BTC/USDT', '1h', 100)
+            result = await fetcher.get_historical_data("BTC/USDT", "1h", 100)
 
             assert isinstance(result, pd.DataFrame)
             assert len(result) == 1
@@ -231,22 +226,24 @@ class TestDataFetcherAsyncMethods:
         """Test real-time data fetching for tickers only (lines 153-155)."""
         mock_exchange = AsyncMock()
         mock_exchange.fetch_ticker.return_value = {
-            'timestamp': 1640995200000,
-            'last': 50000,
-            'bid': 49900,
-            'ask': 50100,
-            'high': 51000,
-            'low': 49000,
-            'baseVolume': 100,
-            'percentage': 2.5
+            "timestamp": 1640995200000,
+            "last": 50000,
+            "bid": 49900,
+            "ask": 50100,
+            "high": 51000,
+            "low": 49000,
+            "baseVolume": 100,
+            "percentage": 2.5,
         }
         self.fetcher.exchange = mock_exchange
 
-        result = await self.fetcher.get_realtime_data(['BTC/USDT'], tickers=True, orderbooks=False)
+        result = await self.fetcher.get_realtime_data(
+            ["BTC/USDT"], tickers=True, orderbooks=False
+        )
 
-        assert 'BTC/USDT' in result
-        assert 'ticker' in result['BTC/USDT']
-        assert result['BTC/USDT']['ticker']['last'] == 50000
+        assert "BTC/USDT" in result
+        assert "ticker" in result["BTC/USDT"]
+        assert result["BTC/USDT"]["ticker"]["last"] == 50000
 
     @pytest.mark.asyncio
     async def test_get_realtime_data_with_orderbooks(self):
@@ -255,32 +252,34 @@ class TestDataFetcherAsyncMethods:
 
         # Mock ticker response
         mock_exchange.fetch_ticker.return_value = {
-            'timestamp': 1640995200000,
-            'last': 50000,
-            'bid': 49900,
-            'ask': 50100,
-            'high': 51000,
-            'low': 49000,
-            'baseVolume': 100,
-            'percentage': 2.5
+            "timestamp": 1640995200000,
+            "last": 50000,
+            "bid": 49900,
+            "ask": 50100,
+            "high": 51000,
+            "low": 49000,
+            "baseVolume": 100,
+            "percentage": 2.5,
         }
 
         # Mock orderbook response
         mock_exchange.fetch_order_book.return_value = {
-            'timestamp': 1640995200000,
-            'bids': [[49900, 1.0], [49800, 2.0]],
-            'asks': [[50100, 1.5], [50200, 1.0]]
+            "timestamp": 1640995200000,
+            "bids": [[49900, 1.0], [49800, 2.0]],
+            "asks": [[50100, 1.5], [50200, 1.0]],
         }
 
         self.fetcher.exchange = mock_exchange
 
-        result = await self.fetcher.get_realtime_data(['BTC/USDT'], tickers=True, orderbooks=True, depth=2)
+        result = await self.fetcher.get_realtime_data(
+            ["BTC/USDT"], tickers=True, orderbooks=True, depth=2
+        )
 
-        assert 'BTC/USDT' in result
-        assert 'ticker' in result['BTC/USDT']
-        assert 'orderbook' in result['BTC/USDT']
-        assert len(result['BTC/USDT']['orderbook']['bids']) == 2
-        assert len(result['BTC/USDT']['orderbook']['asks']) == 2
+        assert "BTC/USDT" in result
+        assert "ticker" in result["BTC/USDT"]
+        assert "orderbook" in result["BTC/USDT"]
+        assert len(result["BTC/USDT"]["orderbook"]["bids"]) == 2
+        assert len(result["BTC/USDT"]["orderbook"]["asks"]) == 2
 
     @pytest.mark.asyncio
     async def test_get_realtime_data_error_handling(self):
@@ -289,7 +288,9 @@ class TestDataFetcherAsyncMethods:
         mock_exchange.fetch_ticker.side_effect = Exception("Ticker error")
         self.fetcher.exchange = mock_exchange
 
-        result = await self.fetcher.get_realtime_data(['BTC/USDT'], tickers=True, orderbooks=False)
+        result = await self.fetcher.get_realtime_data(
+            ["BTC/USDT"], tickers=True, orderbooks=False
+        )
 
         # Should return empty dict on error
         assert result == {}
@@ -299,42 +300,42 @@ class TestDataFetcherAsyncMethods:
         """Test successful ticker fetching (lines 205-208)."""
         mock_exchange = AsyncMock()
         mock_exchange.fetch_ticker.return_value = {
-            'timestamp': 1640995200000,
-            'last': 50000,
-            'bid': 49900,
-            'ask': 50100,
-            'high': 51000,
-            'low': 49000,
-            'baseVolume': 100,
-            'percentage': 2.5
+            "timestamp": 1640995200000,
+            "last": 50000,
+            "bid": 49900,
+            "ask": 50100,
+            "high": 51000,
+            "low": 49000,
+            "baseVolume": 100,
+            "percentage": 2.5,
         }
         self.fetcher.exchange = mock_exchange
 
-        result = await self.fetcher._fetch_ticker('BTC/USDT')
+        result = await self.fetcher._fetch_ticker("BTC/USDT")
 
-        assert result['symbol'] == 'BTC/USDT'
-        assert result['last'] == 50000
-        assert result['bid'] == 49900
-        assert result['ask'] == 50100
+        assert result["symbol"] == "BTC/USDT"
+        assert result["last"] == 50000
+        assert result["bid"] == 49900
+        assert result["ask"] == 50100
 
     @pytest.mark.asyncio
     async def test_fetch_orderbook_success(self):
         """Test successful orderbook fetching (lines 216-219)."""
         mock_exchange = AsyncMock()
         mock_exchange.fetch_order_book.return_value = {
-            'timestamp': 1640995200000,
-            'bids': [[49900, 1.0], [49800, 2.0], [49700, 1.5]],
-            'asks': [[50100, 1.5], [50200, 1.0], [50300, 2.0]]
+            "timestamp": 1640995200000,
+            "bids": [[49900, 1.0], [49800, 2.0], [49700, 1.5]],
+            "asks": [[50100, 1.5], [50200, 1.0], [50300, 2.0]],
         }
         self.fetcher.exchange = mock_exchange
 
-        result = await self.fetcher._fetch_orderbook('BTC/USDT', depth=2)
+        result = await self.fetcher._fetch_orderbook("BTC/USDT", depth=2)
 
-        assert result['symbol'] == 'BTC/USDT'
-        assert len(result['bids']) == 2
-        assert len(result['asks']) == 2
-        assert result['bid_volume'] == 3.0  # 1.0 + 2.0
-        assert result['ask_volume'] == 2.5  # 1.5 + 1.0
+        assert result["symbol"] == "BTC/USDT"
+        assert len(result["bids"]) == 2
+        assert len(result["asks"]) == 2
+        assert result["bid_volume"] == 3.0  # 1.0 + 2.0
+        assert result["ask_volume"] == 2.5  # 1.5 + 1.0
 
     @pytest.mark.asyncio
     async def test_throttle_requests_basic(self):
@@ -355,7 +356,7 @@ class TestDataFetcherAsyncMethods:
     async def test_throttle_requests_rate_limiting(self):
         """Test rate limiting behavior."""
         # Set high rate limit to test throttling
-        self.config['rate_limit'] = 1000  # Very high rate limit
+        self.config["rate_limit"] = 1000  # Very high rate limit
         fetcher = DataFetcher(self.config)
 
         # Make multiple rapid requests
@@ -368,7 +369,7 @@ class TestDataFetcherAsyncMethods:
     async def test_throttle_requests_invalid_rate_limit(self):
         """Test handling of invalid rate limit values."""
         # Test with invalid rate limit
-        self.config['rate_limit'] = 'invalid'
+        self.config["rate_limit"] = "invalid"
         fetcher = DataFetcher(self.config)
 
         # Should not raise exception
@@ -380,7 +381,7 @@ class TestDataFetcherAsyncMethods:
     @pytest.mark.asyncio
     async def test_throttle_requests_zero_rate_limit(self):
         """Test handling of zero rate limit."""
-        self.config['rate_limit'] = 0
+        self.config["rate_limit"] = 0
         fetcher = DataFetcher(self.config)
 
         # Should not raise exception and should use fallback
@@ -397,17 +398,17 @@ class TestDataFetcherCaching:
         with tempfile.TemporaryDirectory() as temp_dir:
             self.temp_dir = temp_dir
             self.config = {
-                'name': 'binance',
-                'cache_enabled': True,
-                'cache_dir': temp_dir
+                "name": "binance",
+                "cache_enabled": True,
+                "cache_dir": temp_dir,
             }
             self.fetcher = DataFetcher(self.config)
 
     def test_get_cache_key(self):
         """Test cache key generation (lines 260-297)."""
-        key1 = self.fetcher._get_cache_key('BTC/USDT', '1h', 100, None)
-        key2 = self.fetcher._get_cache_key('BTC/USDT', '1h', 100, None)
-        key3 = self.fetcher._get_cache_key('ETH/USDT', '1h', 100, None)
+        key1 = self.fetcher._get_cache_key("BTC/USDT", "1h", 100, None)
+        key2 = self.fetcher._get_cache_key("BTC/USDT", "1h", 100, None)
+        key3 = self.fetcher._get_cache_key("ETH/USDT", "1h", 100, None)
 
         assert key1 == key2  # Same parameters should give same key
         assert key1 != key3  # Different symbol should give different key
@@ -428,14 +429,17 @@ class TestDataFetcherCaching:
         os.makedirs(self.temp_dir, exist_ok=True)
 
         # Create test DataFrame
-        dates = pd.date_range('2023-01-01', periods=3, freq='h')
-        df = pd.DataFrame({
-            'open': [50000, 50500, 51000],
-            'high': [51000, 51500, 52000],
-            'low': [49000, 49500, 50000],
-            'close': [50500, 51000, 51500],
-            'volume': [100, 150, 200]
-        }, index=dates)
+        dates = pd.date_range("2023-01-01", periods=3, freq="h")
+        df = pd.DataFrame(
+            {
+                "open": [50000, 50500, 51000],
+                "high": [51000, 51500, 52000],
+                "low": [49000, 49500, 50000],
+                "close": [50500, 51000, 51500],
+                "volume": [100, 150, 200],
+            },
+            index=dates,
+        )
 
         # Save to cache
         self.fetcher._save_to_cache(cache_key, df)
@@ -446,7 +450,7 @@ class TestDataFetcherCaching:
         assert loaded_df is not None
         assert len(loaded_df) == 3
         # Check that all expected columns are present (order may vary due to JSON serialization)
-        expected_columns = {'open', 'high', 'low', 'close', 'volume'}
+        expected_columns = {"open", "high", "low", "close", "volume"}
         assert set(loaded_df.columns) == expected_columns
 
     def test_save_to_cache_empty_dataframe(self):
@@ -469,8 +473,8 @@ class TestDataFetcherCaching:
         os.makedirs(self.temp_dir, exist_ok=True)
 
         # Create test DataFrame
-        dates = pd.date_range('2023-01-01', periods=1, freq='h')
-        df = pd.DataFrame({'close': [50000]}, index=dates)
+        dates = pd.date_range("2023-01-01", periods=1, freq="h")
+        df = pd.DataFrame({"close": [50000]}, index=dates)
 
         # Save to cache
         self.fetcher._save_to_cache(cache_key, df)
@@ -478,14 +482,16 @@ class TestDataFetcherCaching:
         # Manually modify the cache file to have an old timestamp (3 hours ago)
         cache_path = os.path.join(self.temp_dir, f"{cache_key}.json")
         if os.path.exists(cache_path):
-            with open(cache_path, 'r') as f:
+            with open(cache_path, "r") as f:
                 cache_data = json.load(f)
 
             # Set timestamp to 1 year ago (way beyond default 24 hour TTL)
-            old_timestamp = int((pd.Timestamp.now() - pd.Timedelta(days=365)).timestamp() * 1000)
+            old_timestamp = int(
+                (pd.Timestamp.now() - pd.Timedelta(days=365)).timestamp() * 1000
+            )
             cache_data["timestamp"] = old_timestamp
 
-            with open(cache_path, 'w') as f:
+            with open(cache_path, "w") as f:
                 json.dump(cache_data, f)
 
             # Try to load (should return None due to expiration)
@@ -502,10 +508,7 @@ class TestDataFetcherMultipleData:
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.config = {
-            'name': 'binance',
-            'rate_limit': 100
-        }
+        self.config = {"name": "binance", "rate_limit": 100}
         self.fetcher = DataFetcher(self.config)
 
     @pytest.mark.asyncio
@@ -520,15 +523,15 @@ class TestDataFetcherMultipleData:
         self.fetcher.exchange = mock_exchange
 
         result = await self.fetcher.get_multiple_historical_data(
-            ['BTC/USDT', 'ETH/USDT'], '1h', 100
+            ["BTC/USDT", "ETH/USDT"], "1h", 100
         )
 
-        assert 'BTC/USDT' in result
-        assert 'ETH/USDT' in result
-        assert isinstance(result['BTC/USDT'], pd.DataFrame)
-        assert isinstance(result['ETH/USDT'], pd.DataFrame)
-        assert len(result['BTC/USDT']) == 1
-        assert len(result['ETH/USDT']) == 1
+        assert "BTC/USDT" in result
+        assert "ETH/USDT" in result
+        assert isinstance(result["BTC/USDT"], pd.DataFrame)
+        assert isinstance(result["ETH/USDT"], pd.DataFrame)
+        assert len(result["BTC/USDT"]) == 1
+        assert len(result["ETH/USDT"]) == 1
 
     @pytest.mark.asyncio
     async def test_get_multiple_historical_data_partial_failure(self):
@@ -539,17 +542,17 @@ class TestDataFetcherMultipleData:
         mock_exchange = AsyncMock()
         mock_exchange.fetch_ohlcv.side_effect = [
             mock_candles_btc,  # BTC succeeds
-            Exception("ETH fetch failed")  # ETH fails
+            Exception("ETH fetch failed"),  # ETH fails
         ]
         self.fetcher.exchange = mock_exchange
 
         result = await self.fetcher.get_multiple_historical_data(
-            ['BTC/USDT', 'ETH/USDT'], '1h', 100
+            ["BTC/USDT", "ETH/USDT"], "1h", 100
         )
 
         # Only BTC should be in results
-        assert 'BTC/USDT' in result
-        assert 'ETH/USDT' not in result
+        assert "BTC/USDT" in result
+        assert "ETH/USDT" not in result
         assert len(result) == 1
 
 
@@ -558,7 +561,7 @@ class TestDataFetcherCleanup:
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.config = {'name': 'binance'}
+        self.config = {"name": "binance"}
         self.fetcher = DataFetcher(self.config)
 
     @pytest.mark.asyncio
@@ -618,10 +621,7 @@ class TestDataFetcherErrorScenarios:
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.config = {
-            'name': 'binance',
-            'rate_limit': 10
-        }
+        self.config = {"name": "binance", "rate_limit": 10}
         self.fetcher = DataFetcher(self.config)
 
     @pytest.mark.asyncio
@@ -631,7 +631,7 @@ class TestDataFetcherErrorScenarios:
         mock_exchange.fetch_ohlcv.side_effect = Exception("Unexpected error")
         self.fetcher.exchange = mock_exchange
 
-        result = await self.fetcher.get_historical_data('BTC/USDT', '1h', 100)
+        result = await self.fetcher.get_historical_data("BTC/USDT", "1h", 100)
 
         # Should return empty DataFrame on unexpected error
         assert isinstance(result, pd.DataFrame)
@@ -644,7 +644,7 @@ class TestDataFetcherErrorScenarios:
         mock_exchange.fetch_ticker.side_effect = Exception("Ticker failed")
         self.fetcher.exchange = mock_exchange
 
-        result = await self.fetcher.get_realtime_data(['BTC/USDT'], tickers=True)
+        result = await self.fetcher.get_realtime_data(["BTC/USDT"], tickers=True)
 
         # Should handle errors gracefully and return empty dict
         assert result == {}
@@ -659,7 +659,7 @@ class TestDataFetcherErrorScenarios:
         self.fetcher.exchange = mock_exchange
 
         with pytest.raises(ccxt.ExchangeError):
-            await self.fetcher._fetch_ticker('BTC/USDT')
+            await self.fetcher._fetch_ticker("BTC/USDT")
 
     @pytest.mark.asyncio
     async def test_fetch_orderbook_error(self):
@@ -667,19 +667,21 @@ class TestDataFetcherErrorScenarios:
         import ccxt
 
         mock_exchange = AsyncMock()
-        mock_exchange.fetch_order_book.side_effect = ccxt.ExchangeError("Orderbook error")
+        mock_exchange.fetch_order_book.side_effect = ccxt.ExchangeError(
+            "Orderbook error"
+        )
         self.fetcher.exchange = mock_exchange
 
         with pytest.raises(ccxt.ExchangeError):
-            await self.fetcher._fetch_orderbook('BTC/USDT', 5)
+            await self.fetcher._fetch_orderbook("BTC/USDT", 5)
 
     def test_cache_operations_error_handling(self):
         """Test cache operations error handling."""
         # Test with invalid cache directory - should raise PathTraversalError immediately
         config = {
-            'name': 'binance',
-            'cache_enabled': True,
-            'cache_dir': '/invalid/path'
+            "name": "binance",
+            "cache_enabled": True,
+            "cache_dir": "/invalid/path",
         }
 
         # Should raise PathTraversalError during initialization
@@ -692,7 +694,7 @@ class TestDataFetcherEdgeCases:
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.config = {'name': 'binance'}
+        self.config = {"name": "binance"}
         self.fetcher = DataFetcher(self.config)
 
     @pytest.mark.asyncio
@@ -702,7 +704,7 @@ class TestDataFetcherEdgeCases:
         mock_exchange.fetch_ohlcv = Mock(return_value=[])
         self.fetcher.exchange = mock_exchange
 
-        result = await self.fetcher.get_historical_data('BTC/USDT', '1h', 100)
+        result = await self.fetcher.get_historical_data("BTC/USDT", "1h", 100)
 
         assert isinstance(result, pd.DataFrame)
         assert result.empty
@@ -714,7 +716,7 @@ class TestDataFetcherEdgeCases:
         mock_exchange.fetch_ohlcv = Mock(return_value=None)
         self.fetcher.exchange = mock_exchange
 
-        result = await self.fetcher.get_historical_data('BTC/USDT', '1h', 100)
+        result = await self.fetcher.get_historical_data("BTC/USDT", "1h", 100)
 
         assert isinstance(result, pd.DataFrame)
         assert result.empty
@@ -731,7 +733,7 @@ class TestDataFetcherEdgeCases:
 
     def test_exchange_wrapper_attribute_access(self):
         """Test exchange wrapper attribute access."""
-        config = {'name': 'binance', 'proxy': 'http://test.com'}
+        config = {"name": "binance", "proxy": "http://test.com"}
         fetcher = DataFetcher(config)
 
         # Test accessing exchange attributes through wrapper
@@ -745,7 +747,7 @@ class TestDataFetcherEdgeCases:
 
     def test_exchange_wrapper_attribute_setting(self):
         """Test exchange wrapper attribute setting."""
-        config = {'name': 'binance'}
+        config = {"name": "binance"}
         fetcher = DataFetcher(config)
 
         mock_exchange = MagicMock()
@@ -759,17 +761,17 @@ class TestDataFetcherEdgeCases:
 
     def test_cache_key_deterministic(self):
         """Test that cache keys are deterministic for same inputs."""
-        key1 = self.fetcher._get_cache_key('BTC/USDT', '1h', 100, 1640995200000)
-        key2 = self.fetcher._get_cache_key('BTC/USDT', '1h', 100, 1640995200000)
+        key1 = self.fetcher._get_cache_key("BTC/USDT", "1h", 100, 1640995200000)
+        key2 = self.fetcher._get_cache_key("BTC/USDT", "1h", 100, 1640995200000)
 
         assert key1 == key2
 
     def test_cache_key_unique(self):
         """Test that cache keys are unique for different inputs."""
-        key1 = self.fetcher._get_cache_key('BTC/USDT', '1h', 100, None)
-        key2 = self.fetcher._get_cache_key('ETH/USDT', '1h', 100, None)
-        key3 = self.fetcher._get_cache_key('BTC/USDT', '4h', 100, None)
-        key4 = self.fetcher._get_cache_key('BTC/USDT', '1h', 200, None)
+        key1 = self.fetcher._get_cache_key("BTC/USDT", "1h", 100, None)
+        key2 = self.fetcher._get_cache_key("ETH/USDT", "1h", 100, None)
+        key3 = self.fetcher._get_cache_key("BTC/USDT", "4h", 100, None)
+        key4 = self.fetcher._get_cache_key("BTC/USDT", "1h", 200, None)
 
         keys = {key1, key2, key3, key4}
         assert len(keys) == 4  # All should be unique
@@ -783,10 +785,10 @@ class TestDataFetcherIntegration:
         with tempfile.TemporaryDirectory() as temp_dir:
             self.temp_dir = temp_dir
             self.config = {
-                'name': 'binance',
-                'cache_enabled': True,
-                'cache_dir': temp_dir,
-                'rate_limit': 100
+                "name": "binance",
+                "cache_enabled": True,
+                "cache_dir": temp_dir,
+                "rate_limit": 100,
             }
             self.fetcher = DataFetcher(self.config)
 
@@ -801,16 +803,20 @@ class TestDataFetcherIntegration:
         self.fetcher.exchange = mock_exchange
 
         # First request - should fetch from exchange and cache
-        result1 = await self.fetcher.get_historical_data('BTC/USDT', '1h', 100)
+        result1 = await self.fetcher.get_historical_data("BTC/USDT", "1h", 100)
         assert len(result1) == 1
 
         # Second request with force_fresh=False - should use cache if available
         # (but since we disabled cache loading in this test, it will fetch again)
-        result2 = await self.fetcher.get_historical_data('BTC/USDT', '1h', 100, force_fresh=False)
+        result2 = await self.fetcher.get_historical_data(
+            "BTC/USDT", "1h", 100, force_fresh=False
+        )
         assert len(result2) == 1
 
         # Third request with force_fresh=True - should bypass cache
-        result3 = await self.fetcher.get_historical_data('BTC/USDT', '1h', 100, force_fresh=True)
+        result3 = await self.fetcher.get_historical_data(
+            "BTC/USDT", "1h", 100, force_fresh=True
+        )
         assert len(result3) == 1
 
         # Verify exchange was called only for first and third requests (second should use cache)
@@ -826,9 +832,9 @@ class TestDataFetcherIntegration:
         mock_exchange.fetch_ohlcv = Mock(return_value=mock_candles)
         self.fetcher.exchange = mock_exchange
 
-        symbols = ['BTC/USDT', 'ETH/USDT', 'ADA/USDT']
+        symbols = ["BTC/USDT", "ETH/USDT", "ADA/USDT"]
 
-        result = await self.fetcher.get_multiple_historical_data(symbols, '1h', 100)
+        result = await self.fetcher.get_multiple_historical_data(symbols, "1h", 100)
 
         assert len(result) == 3
         assert all(symbol in result for symbol in symbols)
@@ -846,40 +852,38 @@ class TestDataFetcherIntegration:
         # Mock ticker responses
         mock_exchange.fetch_ticker.side_effect = [
             {
-                'timestamp': 1640995200000,
-                'last': 50000,
-                'bid': 49900,
-                'ask': 50100,
-                'high': 51000,
-                'low': 49000,
-                'baseVolume': 100,
-                'percentage': 2.5
+                "timestamp": 1640995200000,
+                "last": 50000,
+                "bid": 49900,
+                "ask": 50100,
+                "high": 51000,
+                "low": 49000,
+                "baseVolume": 100,
+                "percentage": 2.5,
             },
             {
-                'timestamp': 1640995200000,
-                'last': 3000,
-                'bid': 2990,
-                'ask': 3010,
-                'high': 3100,
-                'low': 2900,
-                'baseVolume': 500,
-                'percentage': 1.8
-            }
+                "timestamp": 1640995200000,
+                "last": 3000,
+                "bid": 2990,
+                "ask": 3010,
+                "high": 3100,
+                "low": 2900,
+                "baseVolume": 500,
+                "percentage": 1.8,
+            },
         ]
 
         self.fetcher.exchange = mock_exchange
 
         result = await self.fetcher.get_realtime_data(
-            ['BTC/USDT', 'ETH/USDT'],
-            tickers=True,
-            orderbooks=False
+            ["BTC/USDT", "ETH/USDT"], tickers=True, orderbooks=False
         )
 
         assert len(result) == 2
-        assert 'BTC/USDT' in result
-        assert 'ETH/USDT' in result
-        assert result['BTC/USDT']['ticker']['last'] == 50000
-        assert result['ETH/USDT']['ticker']['last'] == 3000
+        assert "BTC/USDT" in result
+        assert "ETH/USDT" in result
+        assert result["BTC/USDT"]["ticker"]["last"] == 50000
+        assert result["ETH/USDT"]["ticker"]["last"] == 3000
 
         # Verify exchange was called for each symbol
         assert mock_exchange.fetch_ticker.call_count == 2

@@ -22,10 +22,10 @@ class IDataFetcher(ABC):
     async def get_historical_data(
         self,
         symbol: str,
-        timeframe: str = '1h',
+        timeframe: str = "1h",
         limit: int = 1000,
         since: Optional[int] = None,
-        force_fresh: bool = False
+        force_fresh: bool = False,
     ) -> pd.DataFrame:
         """
         Get historical OHLCV data for a symbol.
@@ -48,7 +48,7 @@ class IDataFetcher(ABC):
         symbols: List[str],
         tickers: bool = True,
         orderbooks: bool = False,
-        depth: int = 5
+        depth: int = 5,
     ) -> Dict:
         """
         Get real-time market data for multiple symbols.
@@ -68,9 +68,9 @@ class IDataFetcher(ABC):
     async def get_multiple_historical_data(
         self,
         symbols: List[str],
-        timeframe: str = '1h',
+        timeframe: str = "1h",
         limit: int = 1000,
-        since: Optional[int] = None
+        since: Optional[int] = None,
     ) -> Dict[str, pd.DataFrame]:
         """
         Get historical data for multiple symbols concurrently.

@@ -15,24 +15,21 @@ Key Features:
 """
 
 import asyncio
-import time
-import threading
-import statistics
-from typing import Dict, List, Optional, Callable, Any, Tuple
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from collections import defaultdict, deque
 import json
-import logging
+import statistics
+import time
+from collections import defaultdict, deque
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
+
 import numpy as np
 from scipy import stats
 
-from core.performance_profiler import get_profiler, PerformanceProfiler
-from core.metrics_collector import get_metrics_collector, MetricsCollector
-from utils.logger import get_logger
+from core.metrics_collector import get_metrics_collector
+from core.performance_profiler import get_profiler
 
-from .logging_utils import get_structured_logger, LogSensitivity
+from .logging_utils import LogSensitivity, get_structured_logger
 
 logger = get_structured_logger("core.performance_monitor", LogSensitivity.SECURE)
 
@@ -40,6 +37,7 @@ logger = get_structured_logger("core.performance_monitor", LogSensitivity.SECURE
 @dataclass
 class PerformanceBaseline:
     """Statistical baseline for performance metrics."""
+
     metric_name: str
     mean: float
     std: float
@@ -56,6 +54,7 @@ class PerformanceBaseline:
 @dataclass
 class PerformanceAlert:
     """Performance alert configuration and state."""
+
     alert_id: str
     metric_name: str
     condition: str  # 'above', 'below', 'anomaly'
@@ -70,6 +69,7 @@ class PerformanceAlert:
 @dataclass
 class AnomalyDetectionResult:
     """Result of anomaly detection analysis."""
+
     metric_name: str
     is_anomaly: bool
     score: float
@@ -91,10 +91,10 @@ class RealTimePerformanceMonitor:
         self.config = config
 
         # Monitoring configuration
-        self.monitoring_interval = config.get('monitoring_interval', 5.0)  # seconds
-        self.baseline_window = config.get('baseline_window', 3600.0)  # 1 hour
-        self.anomaly_detection_enabled = config.get('anomaly_detection', True)
-        self.alerting_enabled = config.get('alerting', True)
+        self.monitoring_interval = config.get("monitoring_interval", 5.0)  # seconds
+        self.baseline_window = config.get("baseline_window", 3600.0)  # 1 hour
+        self.anomaly_detection_enabled = config.get("anomaly_detection", True)
+        self.alerting_enabled = config.get("alerting", True)
 
         # Performance profiler integration
         self.profiler = get_profiler()
@@ -102,7 +102,9 @@ class RealTimePerformanceMonitor:
 
         # Baseline management
         self.baselines: Dict[str, PerformanceBaseline] = {}
-        self.baseline_history: Dict[str, deque] = defaultdict(lambda: deque(maxlen=1000))
+        self.baseline_history: Dict[str, deque] = defaultdict(
+            lambda: deque(maxlen=1000)
+        )
 
         # Alert management
         self.alerts: Dict[str, PerformanceAlert] = {}
@@ -118,7 +120,9 @@ class RealTimePerformanceMonitor:
         self.baseline_task: Optional[asyncio.Task] = None
 
         # Performance metrics storage
-        self.performance_metrics: Dict[str, deque] = defaultdict(lambda: deque(maxlen=10000))
+        self.performance_metrics: Dict[str, deque] = defaultdict(
+            lambda: deque(maxlen=10000)
+        )
 
         # Callbacks
         self.alert_callbacks: List[Callable] = []
@@ -202,12 +206,15 @@ class RealTimePerformanceMonitor:
             "is_monitoring": self.is_monitoring,
             "active_alerts": len(self.active_alerts),
             "total_baselines": len(self.baselines),
-            "recent_anomalies": len([
-                a for a in self.anomaly_history
-                if current_time - a.timestamp < 3600  # Last hour
-            ]),
+            "recent_anomalies": len(
+                [
+                    a
+                    for a in self.anomaly_history
+                    if current_time - a.timestamp < 3600  # Last hour
+                ]
+            ),
             "system_health": self._calculate_system_health_score(),
-            "performance_summary": {}
+            "performance_summary": {},
         }
 
         # Add performance summaries for key metrics
@@ -215,7 +222,7 @@ class RealTimePerformanceMonitor:
             "function_execution_time",
             "memory_usage",
             "cpu_usage",
-            "io_operations"
+            "io_operations",
         ]
 
         for metric in key_metrics:
@@ -225,7 +232,7 @@ class RealTimePerformanceMonitor:
                     "mean": baseline.mean,
                     "std": baseline.std,
                     "is_stable": baseline.is_stable,
-                    "trend": "improving" if baseline.trend_slope < 0 else "degrading"
+                    "trend": "improving" if baseline.trend_slope < 0 else "degrading",
                 }
 
         return status
@@ -255,8 +262,7 @@ class RealTimePerformanceMonitor:
                 # Record monitoring performance
                 monitoring_time = time.time() - start_time
                 await self.metrics_collector.record_metric(
-                    "performance_monitoring_duration_seconds",
-                    monitoring_time
+                    "performance_monitoring_duration_seconds", monitoring_time
                 )
 
                 # Wait for next monitoring interval
@@ -290,15 +296,19 @@ class RealTimePerformanceMonitor:
             profiler_report = self.profiler.generate_report()
             if "functions" in profiler_report:
                 for func_name, func_data in profiler_report["functions"].items():
-                    metrics[f"function_{func_name}_execution_time"] = func_data["execution_time"]["mean"]
-                    metrics[f"function_{func_name}_memory_usage"] = func_data["memory_usage"]["mean"]
+                    metrics[f"function_{func_name}_execution_time"] = func_data[
+                        "execution_time"
+                    ]["mean"]
+                    metrics[f"function_{func_name}_memory_usage"] = func_data[
+                        "memory_usage"
+                    ]["mean"]
 
             # Get system metrics from collector
             system_metrics = [
                 "system_cpu_usage_percent",
                 "system_memory_usage_bytes",
                 "process_cpu_usage_percent",
-                "process_memory_usage_bytes"
+                "process_memory_usage_bytes",
             ]
 
             for metric_name in system_metrics:
@@ -326,10 +336,9 @@ class RealTimePerformanceMonitor:
             self.baseline_history[metric_name].append((timestamp, value))
 
             # Store in performance metrics
-            self.performance_metrics[metric_name].append({
-                "timestamp": timestamp,
-                "value": value
-            })
+            self.performance_metrics[metric_name].append(
+                {"timestamp": timestamp, "value": value}
+            )
 
     async def _update_baselines(self) -> None:
         """Update statistical baselines for all metrics."""
@@ -339,8 +348,7 @@ class RealTimePerformanceMonitor:
         for metric_name, history in self.baseline_history.items():
             # Filter data within baseline window
             recent_data = [
-                value for timestamp, value in history
-                if timestamp >= window_start
+                value for timestamp, value in history if timestamp >= window_start
             ]
 
             if len(recent_data) < 10:  # Need minimum samples
@@ -386,7 +394,7 @@ class RealTimePerformanceMonitor:
                     sample_count=len(recent_data),
                     last_updated=current_time,
                     trend_slope=slope,
-                    is_stable=is_stable
+                    is_stable=is_stable,
                 )
 
                 self.baselines[metric_name] = baseline
@@ -394,7 +402,9 @@ class RealTimePerformanceMonitor:
             except Exception as e:
                 logger.exception(f"Error updating baseline for {metric_name}: {e}")
 
-    def _detect_anomalies(self, metrics: Dict[str, float]) -> List[AnomalyDetectionResult]:
+    def _detect_anomalies(
+        self, metrics: Dict[str, float]
+    ) -> List[AnomalyDetectionResult]:
         """Detect anomalies in performance metrics."""
         anomalies = []
         current_time = time.time()
@@ -425,8 +435,8 @@ class RealTimePerformanceMonitor:
                             "value": value,
                             "mean": baseline.mean,
                             "std": baseline.std,
-                            "threshold": threshold
-                        }
+                            "threshold": threshold,
+                        },
                     )
                     anomalies.append(anomaly)
 
@@ -450,8 +460,8 @@ class RealTimePerformanceMonitor:
                     details={
                         "value": value,
                         "percentile_99": baseline.percentile_99,
-                        "max_value": baseline.max_value
-                    }
+                        "max_value": baseline.max_value,
+                    },
                 )
                 anomalies.append(anomaly)
 
@@ -479,7 +489,7 @@ class RealTimePerformanceMonitor:
         await self.metrics_collector.record_metric(
             "performance_anomalies_total",
             1,
-            {"metric": anomaly.metric_name, "method": anomaly.detection_method}
+            {"metric": anomaly.metric_name, "method": anomaly.detection_method},
         )
 
     async def _check_alerts(self, metrics: Dict[str, float]) -> None:
@@ -491,7 +501,10 @@ class RealTimePerformanceMonitor:
                 continue
 
             # Check cooldown period
-            if alert.last_triggered and (current_time - alert.last_triggered) < alert.cooldown_period:
+            if (
+                alert.last_triggered
+                and (current_time - alert.last_triggered) < alert.cooldown_period
+            ):
                 continue
 
             if alert.metric_name not in metrics:
@@ -507,9 +520,10 @@ class RealTimePerformanceMonitor:
             elif alert.condition == "anomaly":
                 # Check if there are recent anomalies for this metric
                 recent_anomalies = [
-                    a for a in self.anomaly_history
-                    if a.metric_name == alert.metric_name and
-                    (current_time - a.timestamp) < 300  # Last 5 minutes
+                    a
+                    for a in self.anomaly_history
+                    if a.metric_name == alert.metric_name
+                    and (current_time - a.timestamp) < 300  # Last 5 minutes
                 ]
                 if recent_anomalies:
                     should_trigger = True
@@ -536,7 +550,7 @@ class RealTimePerformanceMonitor:
                 await self.metrics_collector.record_metric(
                     "performance_alerts_total",
                     1,
-                    {"alert_id": alert.alert_id, "severity": alert.severity}
+                    {"alert_id": alert.alert_id, "severity": alert.severity},
                 )
 
     def _calculate_system_health_score(self) -> float:
@@ -566,7 +580,8 @@ class RealTimePerformanceMonitor:
 
         # Function execution time score (consistency is good)
         execution_times = [
-            b.mean for b in self.baselines.values()
+            b.mean
+            for b in self.baselines.values()
             if b.metric_name.endswith("_execution_time")
         ]
         if execution_times:
@@ -576,10 +591,13 @@ class RealTimePerformanceMonitor:
             scores.append(time_score)
 
         # Anomaly rate score (fewer anomalies is better)
-        recent_anomalies = len([
-            a for a in self.anomaly_history
-            if time.time() - a.timestamp < 3600  # Last hour
-        ])
+        recent_anomalies = len(
+            [
+                a
+                for a in self.anomaly_history
+                if time.time() - a.timestamp < 3600  # Last hour
+            ]
+        )
         anomaly_score = max(0, 100 - recent_anomalies * 5)  # 5 points per anomaly
         scores.append(anomaly_score)
 
@@ -596,9 +614,18 @@ class RealTimePerformanceMonitor:
     async def _register_performance_metrics(self) -> None:
         """Register performance monitoring metrics with the collector."""
         performance_metrics = [
-            ("performance_monitoring_duration_seconds", "Time spent in monitoring loop"),
-            ("performance_anomalies_total", "Total number of performance anomalies detected"),
-            ("performance_alerts_total", "Total number of performance alerts triggered"),
+            (
+                "performance_monitoring_duration_seconds",
+                "Time spent in monitoring loop",
+            ),
+            (
+                "performance_anomalies_total",
+                "Total number of performance anomalies detected",
+            ),
+            (
+                "performance_alerts_total",
+                "Total number of performance alerts triggered",
+            ),
             ("performance_system_health_score", "Overall system health score (0-100)"),
             ("performance_baseline_count", "Number of active performance baselines"),
         ]
@@ -614,7 +641,7 @@ class RealTimePerformanceMonitor:
         try:
             baseline_file = Path("data/performance_baselines.json")
             if baseline_file.exists():
-                with open(baseline_file, 'r') as f:
+                with open(baseline_file, "r") as f:
                     data = json.load(f)
 
                 for metric_name, baseline_data in data.items():
@@ -645,10 +672,10 @@ class RealTimePerformanceMonitor:
                     "sample_count": baseline.sample_count,
                     "last_updated": baseline.last_updated,
                     "trend_slope": baseline.trend_slope,
-                    "is_stable": baseline.is_stable
+                    "is_stable": baseline.is_stable,
                 }
 
-            with open(baseline_file, 'w') as f:
+            with open(baseline_file, "w") as f:
                 json.dump(data, f, indent=2)
 
         except Exception as e:
@@ -670,7 +697,9 @@ class RealTimePerformanceMonitor:
             # Add some historical data points
             for i in range(10):
                 timestamp = current_time - (10 - i) * 60  # 10 minutes ago to now
-                self.baseline_history[metric_name].append((timestamp, value + np.random.normal(0, value * 0.1)))
+                self.baseline_history[metric_name].append(
+                    (timestamp, value + np.random.normal(0, value * 0.1))
+                )
 
         # Force baseline calculation
         await self._update_baselines()
@@ -690,6 +719,8 @@ def get_performance_monitor() -> RealTimePerformanceMonitor:
     return _performance_monitor
 
 
-def create_performance_monitor(config: Optional[Dict[str, Any]] = None) -> RealTimePerformanceMonitor:
+def create_performance_monitor(
+    config: Optional[Dict[str, Any]] = None
+) -> RealTimePerformanceMonitor:
     """Create a new performance monitor instance."""
     return RealTimePerformanceMonitor(config or {})

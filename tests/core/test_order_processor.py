@@ -1,10 +1,9 @@
-import asyncio
-import pytest
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from core.execution.order_processor import OrderProcessor
-from core.types.order_types import Order, OrderType, OrderStatus
+from core.types.order_types import Order, OrderStatus, OrderType
 
 
 @pytest.fixture
@@ -29,7 +28,7 @@ def sample_order():
         cost=Decimal("50000"),
         fee={"cost": "5.0", "currency": "USDT"},
         timestamp=1234567890000,
-        params={"test_param": "value"}
+        params={"test_param": "value"},
     )
 
 
@@ -97,7 +96,7 @@ class TestOrderProcessor:
             "cost": "75000",
             "fee": {"cost": "7.5", "currency": "USDT"},
             "timestamp": 1234567890000,
-            "params": {"test": "value"}
+            "params": {"test": "value"},
         }
 
         order = order_processor.parse_order_response(response)
@@ -127,7 +126,7 @@ class TestOrderProcessor:
             "executed": "0.5",  # alias for filled
             "remaining_amount": "1.5",  # alias for remaining
             "datetime": 1234567890000,  # alias for timestamp
-            "info": {"exchange_specific": "data"}  # alias for params
+            "info": {"exchange_specific": "data"},  # alias for params
         }
 
         order = order_processor.parse_order_response(response)
@@ -145,10 +144,7 @@ class TestOrderProcessor:
 
     def test_parse_order_response_missing_fields(self, order_processor):
         """Test parsing order response with missing fields uses defaults."""
-        response = {
-            "id": "minimal",
-            "symbol": "BTC/USDT"
-        }
+        response = {"id": "minimal", "symbol": "BTC/USDT"}
 
         order = order_processor.parse_order_response(response)
 
@@ -169,22 +165,14 @@ class TestOrderProcessor:
 
     def test_parse_order_response_invalid_type(self, order_processor):
         """Test parsing order response with invalid type falls back to MARKET."""
-        response = {
-            "id": "test",
-            "symbol": "BTC/USDT",
-            "type": "invalid_type"
-        }
+        response = {"id": "test", "symbol": "BTC/USDT", "type": "invalid_type"}
 
         order = order_processor.parse_order_response(response)
         assert order.type == OrderType.MARKET
 
     def test_parse_order_response_invalid_status(self, order_processor):
         """Test parsing order response with invalid status falls back to OPEN."""
-        response = {
-            "id": "test",
-            "symbol": "BTC/USDT",
-            "status": "invalid_status"
-        }
+        response = {"id": "test", "symbol": "BTC/USDT", "status": "invalid_status"}
 
         order = order_processor.parse_order_response(response)
         assert order.status == OrderStatus.OPEN
@@ -197,7 +185,7 @@ class TestOrderProcessor:
             "amount": "invalid",
             "price": "not_a_number",
             "filled": None,
-            "cost": ""
+            "cost": "",
         }
 
         order = order_processor.parse_order_response(response)
@@ -220,14 +208,12 @@ class TestOrderProcessor:
 
     def test_parse_order_response_timestamp_conversion(self, order_processor):
         """Test timestamp conversion in parse_order_response."""
-        import time
-        from datetime import datetime
 
         # Test with milliseconds timestamp
         response = {
             "id": "test1",
             "symbol": "BTC/USDT",
-            "timestamp": 1234567890000  # milliseconds
+            "timestamp": 1234567890000,  # milliseconds
         }
         order = order_processor.parse_order_response(response)
         assert order.timestamp == 1234567890000
@@ -236,17 +222,13 @@ class TestOrderProcessor:
         response = {
             "id": "test2",
             "symbol": "BTC/USDT",
-            "timestamp": 1234567890  # seconds
+            "timestamp": 1234567890,  # seconds
         }
         order = order_processor.parse_order_response(response)
         assert order.timestamp == 1234567890000  # converted to milliseconds
 
         # Test with None timestamp (should use current time or fallback to 0)
-        response = {
-            "id": "test3",
-            "symbol": "BTC/USDT",
-            "timestamp": None
-        }
+        response = {"id": "test3", "symbol": "BTC/USDT", "timestamp": None}
         order = order_processor.parse_order_response(response)
         # Either uses current time or falls back to 0
         assert order.timestamp >= 0
@@ -282,7 +264,9 @@ class TestOrderProcessor:
         assert position["entry_cost"] == Decimal("50000")
 
     @pytest.mark.asyncio
-    async def test_process_order_filled_sell_with_pnl(self, order_processor, sample_buy_order, sample_sell_order):
+    async def test_process_order_filled_sell_with_pnl(
+        self, order_processor, sample_buy_order, sample_sell_order
+    ):
         """Test processing a filled sell order with PnL calculation."""
         # First process the buy order to establish position
         await order_processor.process_order(sample_buy_order)
@@ -293,7 +277,9 @@ class TestOrderProcessor:
         assert result["id"] == "sell_order_456"
         assert result["symbol"] == "BTC/USDT"
         assert result["side"] == "sell"
-        assert result["pnl"] == 4994.5  # (55000 - 50000) * 1.0 - 5.5 = 5000 - 5.5 = 4994.5
+        assert (
+            result["pnl"] == 4994.5
+        )  # (55000 - 50000) * 1.0 - 5.5 = 5000 - 5.5 = 4994.5
 
         # Check that position was closed
         assert "BTC/USDT" not in order_processor.positions
@@ -321,7 +307,9 @@ class TestOrderProcessor:
         assert result["status"] == "open"
         assert "open_order_789" in order_processor.open_orders
         assert "open_order_789" not in order_processor.closed_orders
-        assert "ETH/USDT" not in order_processor.positions  # No position for open orders
+        assert (
+            "ETH/USDT" not in order_processor.positions
+        )  # No position for open orders
 
     @pytest.mark.asyncio
     async def test_process_order_dynamic_take_profit(self, order_processor):
@@ -341,8 +329,8 @@ class TestOrderProcessor:
                 "dynamic_tp": True,
                 "stop_loss": "49000",
                 "risk_reward_ratio": 2.0,
-                "trend_strength": 0.5
-            }
+                "trend_strength": 0.5,
+            },
         )
 
         result = await order_processor.process_order(order_with_tp)
@@ -364,7 +352,7 @@ class TestOrderProcessor:
             price=Decimal("50000"),
             status=OrderStatus.FILLED,
             filled=Decimal("1.0"),
-            params={"dynamic_tp": True}  # Missing stop_loss
+            params={"dynamic_tp": True},  # Missing stop_loss
         )
 
         result = await order_processor.process_order(order_missing_params)
@@ -383,9 +371,7 @@ class TestOrderProcessor:
             price=Decimal("50000"),
             status=OrderStatus.FILLED,
             filled=Decimal("1.0"),
-            params={
-                "trailing_stop": {"price": "49500"}
-            }
+            params={"trailing_stop": {"price": "49500"}},
         )
 
         await order_processor.process_order(order_with_trailing)
@@ -404,7 +390,9 @@ class TestOrderProcessor:
         assert position["entry_price"] == Decimal("50000")
         assert position["entry_cost"] == Decimal("50000")
 
-    def test_update_positions_sell_order_full_close(self, order_processor, sample_buy_order, sample_sell_order):
+    def test_update_positions_sell_order_full_close(
+        self, order_processor, sample_buy_order, sample_sell_order
+    ):
         """Test position update for sell orders that fully close position."""
         # Establish position first
         order_processor._update_positions(sample_buy_order)
@@ -449,7 +437,9 @@ class TestOrderProcessor:
         position = order_processor.positions["BTC/USDT"]
         assert position["amount"] == Decimal("1.0")  # 2.0 - 1.0
         assert position["entry_price"] == Decimal("50000")  # Should remain the same
-        assert position["entry_cost"] == Decimal("50000")  # 100000 - (50000 * 1.0) = 50000
+        assert position["entry_cost"] == Decimal(
+            "50000"
+        )  # 100000 - (50000 * 1.0) = 50000
 
     def test_update_positions_multiple_buys(self, order_processor):
         """Test position update with multiple buy orders (average pricing)."""
@@ -487,7 +477,9 @@ class TestOrderProcessor:
         assert position["entry_cost"] == Decimal("105000")  # 50000 + 55000
 
     # Tests for _calculate_pnl method (lines 278-288)
-    def test_calculate_pnl_sell_order(self, order_processor, sample_buy_order, sample_sell_order):
+    def test_calculate_pnl_sell_order(
+        self, order_processor, sample_buy_order, sample_sell_order
+    ):
         """Test PnL calculation for sell orders."""
         # Establish position
         order_processor._update_positions(sample_buy_order)
@@ -521,7 +513,7 @@ class TestOrderProcessor:
             status=OrderStatus.FILLED,
             filled=Decimal("1.0"),
             cost=Decimal("50000"),
-            fee=None  # No fee
+            fee=None,  # No fee
         )
 
         sell_order = Order(
@@ -534,7 +526,7 @@ class TestOrderProcessor:
             status=OrderStatus.FILLED,
             filled=Decimal("1.0"),
             cost=Decimal("55000"),
-            fee=None
+            fee=None,
         )
 
         order_processor._update_positions(buy_order)
@@ -567,7 +559,7 @@ class TestOrderProcessor:
             type=OrderType.LIMIT,
             side="buy",
             amount=Decimal("1.0"),
-            status=OrderStatus.OPEN
+            status=OrderStatus.OPEN,
         )
 
         open_order2 = Order(
@@ -576,13 +568,10 @@ class TestOrderProcessor:
             type=OrderType.LIMIT,
             side="sell",
             amount=Decimal("0.5"),
-            status=OrderStatus.OPEN
+            status=OrderStatus.OPEN,
         )
 
-        order_processor.open_orders = {
-            "open1": open_order1,
-            "open2": open_order2
-        }
+        order_processor.open_orders = {"open1": open_order1, "open2": open_order2}
 
         assert order_processor.get_active_order_count() == 2
 
@@ -660,7 +649,7 @@ class TestOrderProcessor:
             price=Decimal("50000"),
             status=OrderStatus.FILLED,
             filled=Decimal("1.0"),
-            trailing_stop=Decimal("49500")  # Set via attribute
+            trailing_stop=Decimal("49500"),  # Set via attribute
         )
 
         order_processor._update_positions(order_with_trailing)
@@ -694,7 +683,7 @@ class TestOrderProcessor:
             status=OrderStatus.FILLED,
             filled=Decimal("1.0"),
             cost=Decimal("55000"),
-            fee={"cost": "5.5", "currency": "USDT", "rate": "0.001"}  # Complex fee
+            fee={"cost": "5.5", "currency": "USDT", "rate": "0.001"},  # Complex fee
         )
 
         order_processor._update_positions(buy_order)

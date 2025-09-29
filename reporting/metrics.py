@@ -6,14 +6,14 @@ Computes comprehensive risk-adjusted performance metrics and persists them
 for monitoring and analysis.
 """
 
-import logging
-import json
 import csv
+import json
+import logging
 import os
-from typing import Dict, Any, List, Optional, Union
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
-from decimal import Decimal, ROUND_DOWN
+from typing import Any, Dict, List, Optional, Union
+
 import numpy as np
 import pandas as pd
 
@@ -26,6 +26,7 @@ trade_logger = get_trade_logger()
 @dataclass
 class MetricsResult:
     """Comprehensive metrics result container."""
+
     timestamp: datetime
     strategy_id: str
     portfolio_id: str
@@ -73,21 +74,22 @@ class MetricsResult:
         """Convert to dictionary for serialization."""
         data = asdict(self)
         # Convert datetime objects to ISO format strings
-        data['timestamp'] = self.timestamp.isoformat()
-        data['period_start'] = self.period_start.isoformat()
-        data['period_end'] = self.period_end.isoformat()
+        data["timestamp"] = self.timestamp.isoformat()
+        data["period_start"] = self.period_start.isoformat()
+        data["period_end"] = self.period_end.isoformat()
         return data
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'MetricsResult':
+    def from_dict(cls, data: Dict[str, Any]) -> "MetricsResult":
         """Create instance from dictionary."""
         # Convert ISO strings back to datetime
-        data['timestamp'] = datetime.fromisoformat(data['timestamp'])
-        data['period_start'] = datetime.fromisoformat(data['period_start'])
-        data['period_end'] = datetime.fromisoformat(data['period_end'])
+        data["timestamp"] = datetime.fromisoformat(data["timestamp"])
+        data["period_start"] = datetime.fromisoformat(data["period_start"])
+        data["period_end"] = datetime.fromisoformat(data["period_end"])
 
         # Filter data to only include fields that exist in the dataclass
         import dataclasses
+
         fields = {f.name for f in dataclasses.fields(cls)}
         filtered_data = {k: v for k, v in data.items() if k in fields}
         return cls(**filtered_data)
@@ -112,13 +114,13 @@ class MetricsEngine:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
         # Configuration
-        self.risk_free_rate = self.config.get('risk_free_rate', 0.02)
-        self.confidence_level = self.config.get('confidence_level', 0.95)
-        self.annual_trading_days = self.config.get('annual_trading_days', 252)
-        self.min_periods = self.config.get('min_periods', 30)
+        self.risk_free_rate = self.config.get("risk_free_rate", 0.02)
+        self.confidence_level = self.config.get("confidence_level", 0.95)
+        self.annual_trading_days = self.config.get("annual_trading_days", 252)
+        self.min_periods = self.config.get("min_periods", 30)
 
         # Output directory
-        self.output_dir = self.config.get('output_dir', 'reports/metrics')
+        self.output_dir = self.config.get("output_dir", "reports/metrics")
         os.makedirs(self.output_dir, exist_ok=True)
 
         self.logger.info("MetricsEngine initialized")
@@ -126,11 +128,11 @@ class MetricsEngine:
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration."""
         return {
-            'risk_free_rate': 0.02,  # 2% annual risk-free rate
-            'confidence_level': 0.95,  # 95% confidence for VaR
-            'annual_trading_days': 252,  # Trading days per year
-            'min_periods': 30,  # Minimum periods for reliable calculations
-            'output_dir': 'reports/metrics'
+            "risk_free_rate": 0.02,  # 2% annual risk-free rate
+            "confidence_level": 0.95,  # 95% confidence for VaR
+            "annual_trading_days": 252,  # Trading days per year
+            "min_periods": 30,  # Minimum periods for reliable calculations
+            "output_dir": "reports/metrics",
         }
 
     def calculate_metrics(
@@ -141,7 +143,7 @@ class MetricsEngine:
         benchmark_returns: Optional[Union[List[float], np.ndarray, pd.Series]] = None,
         trade_log: Optional[List[Dict[str, Any]]] = None,
         period_start: Optional[datetime] = None,
-        period_end: Optional[datetime] = None
+        period_end: Optional[datetime] = None,
     ) -> MetricsResult:
         """
         Calculate comprehensive performance and risk metrics.
@@ -163,7 +165,11 @@ class MetricsEngine:
 
             # Convert inputs to numpy arrays
             returns = self._prepare_returns(returns)
-            benchmark_returns = self._prepare_returns(benchmark_returns) if benchmark_returns is not None else None
+            benchmark_returns = (
+                self._prepare_returns(benchmark_returns)
+                if benchmark_returns is not None
+                else None
+            )
 
             # Set period boundaries
             if period_start is None:
@@ -173,8 +179,12 @@ class MetricsEngine:
 
             # Validate minimum data requirements
             if len(returns) < self.min_periods:
-                self.logger.warning(f"Insufficient data: {len(returns)} < {self.min_periods} periods")
-                return self._create_empty_result(strategy_id, portfolio_id, period_start, period_end)
+                self.logger.warning(
+                    f"Insufficient data: {len(returns)} < {self.min_periods} periods"
+                )
+                return self._create_empty_result(
+                    strategy_id, portfolio_id, period_start, period_end
+                )
 
             # Calculate performance metrics
             perf_metrics = self._calculate_performance_metrics(returns)
@@ -183,10 +193,16 @@ class MetricsEngine:
             risk_metrics = self._calculate_risk_metrics(returns)
 
             # Calculate trade statistics if trade log provided
-            trade_stats = self._calculate_trade_statistics(trade_log) if trade_log else self._get_empty_trade_stats()
+            trade_stats = (
+                self._calculate_trade_statistics(trade_log)
+                if trade_log
+                else self._get_empty_trade_stats()
+            )
 
             # Calculate benchmark-relative metrics
-            benchmark_metrics = self._calculate_benchmark_metrics(returns, benchmark_returns)
+            benchmark_metrics = self._calculate_benchmark_metrics(
+                returns, benchmark_returns
+            )
 
             # Combine all metrics
             result = MetricsResult(
@@ -197,10 +213,10 @@ class MetricsEngine:
                 period_end=period_end,
                 risk_free_rate=self.risk_free_rate,
                 confidence_level=self.confidence_level,
-                benchmark_return=benchmark_metrics.get('benchmark_return'),
+                benchmark_return=benchmark_metrics.get("benchmark_return"),
                 **perf_metrics,
                 **risk_metrics,
-                **trade_stats
+                **trade_stats,
             )
 
             self.logger.info(f"Metrics calculated successfully for {strategy_id}")
@@ -208,9 +224,16 @@ class MetricsEngine:
 
         except Exception as e:
             self.logger.error(f"Error calculating metrics: {e}", exc_info=True)
-            return self._create_empty_result(strategy_id, portfolio_id, period_start or datetime.now(), period_end or datetime.now())
+            return self._create_empty_result(
+                strategy_id,
+                portfolio_id,
+                period_start or datetime.now(),
+                period_end or datetime.now(),
+            )
 
-    def _prepare_returns(self, returns: Union[List[float], np.ndarray, pd.Series, None]) -> np.ndarray:
+    def _prepare_returns(
+        self, returns: Union[List[float], np.ndarray, pd.Series, None]
+    ) -> np.ndarray:
         """Prepare returns data for calculations."""
         if returns is None:
             return np.array([])
@@ -232,31 +255,51 @@ class MetricsEngine:
 
         # Annualized return
         periods_per_year = self.annual_trading_days
-        annualized_return = float((1 + total_return) ** (periods_per_year / len(returns)) - 1) if len(returns) > 0 else 0.0
+        annualized_return = (
+            float((1 + total_return) ** (periods_per_year / len(returns)) - 1)
+            if len(returns) > 0
+            else 0.0
+        )
 
         # Volatility (annualized)
-        volatility = float(np.std(returns) * np.sqrt(periods_per_year)) if len(returns) > 1 else 0.0
+        volatility = (
+            float(np.std(returns) * np.sqrt(periods_per_year))
+            if len(returns) > 1
+            else 0.0
+        )
 
         # Sharpe Ratio
         excess_returns = returns - self.risk_free_rate / periods_per_year
-        sharpe_ratio = float(np.mean(excess_returns) / np.std(excess_returns)) if len(excess_returns) > 1 and np.std(excess_returns) > 0 else 0.0
+        sharpe_ratio = (
+            float(np.mean(excess_returns) / np.std(excess_returns))
+            if len(excess_returns) > 1 and np.std(excess_returns) > 0
+            else 0.0
+        )
 
         # Sortino Ratio (downside deviation)
         downside_returns = returns[returns < 0]
-        downside_deviation = float(np.std(downside_returns) * np.sqrt(periods_per_year)) if len(downside_returns) > 0 else 0.0
-        sortino_ratio = float(np.mean(excess_returns) / downside_deviation) if downside_deviation > 0 else 0.0
+        downside_deviation = (
+            float(np.std(downside_returns) * np.sqrt(periods_per_year))
+            if len(downside_returns) > 0
+            else 0.0
+        )
+        sortino_ratio = (
+            float(np.mean(excess_returns) / downside_deviation)
+            if downside_deviation > 0
+            else 0.0
+        )
 
         # Ulcer Index
         ulcer_index = self._calculate_ulcer_index(returns)
 
         return {
-            'total_return': total_return,
-            'annualized_return': annualized_return,
-            'volatility': volatility,
-            'sharpe_ratio': sharpe_ratio,
-            'sortino_ratio': sortino_ratio,
-            'ulcer_index': ulcer_index,
-            'downside_deviation': downside_deviation
+            "total_return": total_return,
+            "annualized_return": annualized_return,
+            "volatility": volatility,
+            "sharpe_ratio": sharpe_ratio,
+            "sortino_ratio": sortino_ratio,
+            "ulcer_index": ulcer_index,
+            "downside_deviation": downside_deviation,
         }
 
     def _calculate_risk_metrics(self, returns: np.ndarray) -> Dict[str, float]:
@@ -286,28 +329,41 @@ class MetricsEngine:
             max_drawdown_duration = 0
 
         # Calmar Ratio
-        calmar_ratio = float(self._calculate_performance_metrics(returns)['annualized_return'] / max_drawdown) if max_drawdown > 0 else 0.0
+        calmar_ratio = (
+            float(
+                self._calculate_performance_metrics(returns)["annualized_return"]
+                / max_drawdown
+            )
+            if max_drawdown > 0
+            else 0.0
+        )
 
         # Value at Risk (95%)
-        value_at_risk_95 = float(np.percentile(returns, (1 - self.confidence_level) * 100))
+        value_at_risk_95 = float(
+            np.percentile(returns, (1 - self.confidence_level) * 100)
+        )
 
         # Expected Shortfall (95%)
         tail_returns = returns[returns <= value_at_risk_95]
-        expected_shortfall_95 = float(np.mean(tail_returns)) if len(tail_returns) > 0 else value_at_risk_95
+        expected_shortfall_95 = (
+            float(np.mean(tail_returns)) if len(tail_returns) > 0 else value_at_risk_95
+        )
 
         # Kelly Criterion
         kelly_criterion = self._calculate_kelly_criterion(returns)
 
         return {
-            'max_drawdown': max_drawdown,
-            'max_drawdown_duration': max_drawdown_duration,
-            'calmar_ratio': calmar_ratio,
-            'value_at_risk_95': value_at_risk_95,
-            'expected_shortfall_95': expected_shortfall_95,
-            'kelly_criterion': kelly_criterion
+            "max_drawdown": max_drawdown,
+            "max_drawdown_duration": max_drawdown_duration,
+            "calmar_ratio": calmar_ratio,
+            "value_at_risk_95": value_at_risk_95,
+            "expected_shortfall_95": expected_shortfall_95,
+            "kelly_criterion": kelly_criterion,
         }
 
-    def _calculate_trade_statistics(self, trade_log: List[Dict[str, Any]]) -> Dict[str, float]:
+    def _calculate_trade_statistics(
+        self, trade_log: List[Dict[str, Any]]
+    ) -> Dict[str, float]:
         """Calculate trade-level statistics."""
         if not trade_log or len(trade_log) == 0:
             return self._get_empty_trade_stats()
@@ -315,10 +371,10 @@ class MetricsEngine:
         # Extract PnL from trades
         pnl_values = []
         for trade in trade_log:
-            if 'pnl' in trade:
-                pnl_values.append(float(trade['pnl']))
-            elif 'profit' in trade:
-                pnl_values.append(float(trade['profit']))
+            if "pnl" in trade:
+                pnl_values.append(float(trade["pnl"]))
+            elif "profit" in trade:
+                pnl_values.append(float(trade["profit"]))
 
         if not pnl_values:
             return self._get_empty_trade_stats()
@@ -343,24 +399,26 @@ class MetricsEngine:
         # Profit factor
         total_wins = np.sum(winning_pnl) if len(winning_pnl) > 0 else 0
         total_losses = abs(np.sum(losing_pnl)) if len(losing_pnl) > 0 else 0
-        profit_factor = total_wins / total_losses if total_losses > 0 else float('inf')
+        profit_factor = total_wins / total_losses if total_losses > 0 else float("inf")
 
         return {
-            'total_trades': total_trades,
-            'winning_trades': winning_trades,
-            'losing_trades': losing_trades,
-            'win_rate': win_rate,
-            'profit_factor': profit_factor,
-            'avg_win': avg_win,
-            'avg_loss': avg_loss,
-            'largest_win': largest_win,
-            'largest_loss': largest_loss
+            "total_trades": total_trades,
+            "winning_trades": winning_trades,
+            "losing_trades": losing_trades,
+            "win_rate": win_rate,
+            "profit_factor": profit_factor,
+            "avg_win": avg_win,
+            "avg_loss": avg_loss,
+            "largest_win": largest_win,
+            "largest_loss": largest_loss,
         }
 
-    def _calculate_benchmark_metrics(self, returns: np.ndarray, benchmark_returns: Optional[np.ndarray]) -> Dict[str, float]:
+    def _calculate_benchmark_metrics(
+        self, returns: np.ndarray, benchmark_returns: Optional[np.ndarray]
+    ) -> Dict[str, float]:
         """Calculate benchmark-relative metrics."""
         if benchmark_returns is None or len(benchmark_returns) != len(returns):
-            return {'benchmark_return': None, 'beta': None, 'alpha': None}
+            return {"benchmark_return": None, "beta": None, "alpha": None}
 
         # Benchmark return
         benchmark_return = float(np.prod(1 + benchmark_returns) - 1)
@@ -373,9 +431,16 @@ class MetricsEngine:
             if benchmark_variance > 0:
                 beta = covariance / benchmark_variance
                 # Alpha (annualized excess return)
-                strategy_return = self._calculate_performance_metrics(returns)['annualized_return']
-                benchmark_annualized = (1 + benchmark_return) ** (self.annual_trading_days / len(benchmark_returns)) - 1
-                alpha = strategy_return - (self.risk_free_rate + beta * (benchmark_annualized - self.risk_free_rate))
+                strategy_return = self._calculate_performance_metrics(returns)[
+                    "annualized_return"
+                ]
+                benchmark_annualized = (1 + benchmark_return) ** (
+                    self.annual_trading_days / len(benchmark_returns)
+                ) - 1
+                alpha = strategy_return - (
+                    self.risk_free_rate
+                    + beta * (benchmark_annualized - self.risk_free_rate)
+                )
             else:
                 beta = 0.0
                 alpha = 0.0
@@ -383,11 +448,7 @@ class MetricsEngine:
             beta = 0.0
             alpha = 0.0
 
-        return {
-            'benchmark_return': benchmark_return,
-            'beta': beta,
-            'alpha': alpha
-        }
+        return {"benchmark_return": benchmark_return, "beta": beta, "alpha": alpha}
 
     def _calculate_ulcer_index(self, returns: np.ndarray) -> float:
         """Calculate Ulcer Index."""
@@ -400,7 +461,7 @@ class MetricsEngine:
         drawdowns = (cumulative - running_max) / running_max
 
         # Ulcer Index is square root of mean of squared drawdowns
-        ulcer_index = np.sqrt(np.mean(drawdowns ** 2))
+        ulcer_index = np.sqrt(np.mean(drawdowns**2))
         return float(ulcer_index)
 
     def _calculate_kelly_criterion(self, returns: np.ndarray) -> float:
@@ -422,18 +483,24 @@ class MetricsEngine:
     def _get_empty_trade_stats(self) -> Dict[str, float]:
         """Get empty trade statistics."""
         return {
-            'total_trades': 0,
-            'winning_trades': 0,
-            'losing_trades': 0,
-            'win_rate': 0.0,
-            'profit_factor': 0.0,
-            'avg_win': 0.0,
-            'avg_loss': 0.0,
-            'largest_win': 0.0,
-            'largest_loss': 0.0
+            "total_trades": 0,
+            "winning_trades": 0,
+            "losing_trades": 0,
+            "win_rate": 0.0,
+            "profit_factor": 0.0,
+            "avg_win": 0.0,
+            "avg_loss": 0.0,
+            "largest_win": 0.0,
+            "largest_loss": 0.0,
         }
 
-    def _create_empty_result(self, strategy_id: str, portfolio_id: str, period_start: datetime, period_end: datetime) -> MetricsResult:
+    def _create_empty_result(
+        self,
+        strategy_id: str,
+        portfolio_id: str,
+        period_start: datetime,
+        period_end: datetime,
+    ) -> MetricsResult:
         """Create empty metrics result for error cases."""
         return MetricsResult(
             timestamp=datetime.now(),
@@ -464,10 +531,12 @@ class MetricsEngine:
             largest_loss=0.0,
             kelly_criterion=0.0,
             ulcer_index=0.0,
-            downside_deviation=0.0
+            downside_deviation=0.0,
         )
 
-    def save_to_json(self, result: MetricsResult, filename: Optional[str] = None) -> str:
+    def save_to_json(
+        self, result: MetricsResult, filename: Optional[str] = None
+    ) -> str:
         """
         Save metrics result to JSON file.
 
@@ -485,7 +554,7 @@ class MetricsEngine:
         filepath = os.path.join(self.output_dir, filename)
 
         try:
-            with open(filepath, 'w') as f:
+            with open(filepath, "w") as f:
                 json.dump(result.to_dict(), f, indent=2, default=str)
 
             self.logger.info(f"Metrics saved to JSON: {filepath}")
@@ -525,7 +594,7 @@ class MetricsEngine:
                 else:
                     flat_data[key] = value
 
-            with open(filepath, 'w', newline='') as f:
+            with open(filepath, "w", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=flat_data.keys())
                 writer.writeheader()
                 writer.writerow(flat_data)
@@ -548,7 +617,7 @@ class MetricsEngine:
             Loaded MetricsResult
         """
         try:
-            with open(filepath, 'r') as f:
+            with open(filepath, "r") as f:
                 data = json.load(f)
 
             result = MetricsResult.from_dict(data)
@@ -559,8 +628,12 @@ class MetricsEngine:
             self.logger.error(f"Failed to load metrics from JSON: {e}")
             raise
 
-    def generate_session_report(self, returns: Union[List[float], np.ndarray, pd.Series],
-                              strategy_id: str, trade_log: Optional[List[Dict[str, Any]]] = None) -> MetricsResult:
+    def generate_session_report(
+        self,
+        returns: Union[List[float], np.ndarray, pd.Series],
+        strategy_id: str,
+        trade_log: Optional[List[Dict[str, Any]]] = None,
+    ) -> MetricsResult:
         """
         Generate metrics report for a trading session.
 
@@ -579,7 +652,7 @@ class MetricsEngine:
             strategy_id=strategy_id,
             trade_log=trade_log,
             period_start=datetime.now() - timedelta(hours=24),  # Assume daily session
-            period_end=datetime.now()
+            period_end=datetime.now(),
         )
 
         # Save results
@@ -598,9 +671,13 @@ class MetricsEngine:
 
         return result
 
-    def generate_periodic_report(self, returns: Union[List[float], np.ndarray, pd.Series],
-                               strategy_id: str, period_days: int = 30,
-                               trade_log: Optional[List[Dict[str, Any]]] = None) -> MetricsResult:
+    def generate_periodic_report(
+        self,
+        returns: Union[List[float], np.ndarray, pd.Series],
+        strategy_id: str,
+        period_days: int = 30,
+        trade_log: Optional[List[Dict[str, Any]]] = None,
+    ) -> MetricsResult:
         """
         Generate metrics report for a periodic interval.
 
@@ -620,13 +697,19 @@ class MetricsEngine:
             strategy_id=strategy_id,
             trade_log=trade_log,
             period_start=datetime.now() - timedelta(days=period_days),
-            period_end=datetime.now()
+            period_end=datetime.now(),
         )
 
         # Save results
         try:
-            json_path = self.save_to_json(result, f"periodic_{period_days}d_{strategy_id}_{datetime.now().strftime('%Y%m%d')}.json")
-            csv_path = self.save_to_csv(result, f"periodic_{period_days}d_{strategy_id}_{datetime.now().strftime('%Y%m%d')}.csv")
+            json_path = self.save_to_json(
+                result,
+                f"periodic_{period_days}d_{strategy_id}_{datetime.now().strftime('%Y%m%d')}.json",
+            )
+            csv_path = self.save_to_csv(
+                result,
+                f"periodic_{period_days}d_{strategy_id}_{datetime.now().strftime('%Y%m%d')}.csv",
+            )
 
             # Log summary
             self._log_metrics_summary(result)
@@ -646,28 +729,33 @@ class MetricsEngine:
         self.logger.info(f"  Total Trades: {result.total_trades}")
 
         # Log to trade logger
-        trade_logger.performance("Metrics Calculated", {
-            'strategy_id': result.strategy_id,
-            'total_return': result.total_return,
-            'sharpe_ratio': result.sharpe_ratio,
-            'max_drawdown': result.max_drawdown,
-            'win_rate': result.win_rate,
-            'total_trades': result.total_trades
-        })
+        trade_logger.performance(
+            "Metrics Calculated",
+            {
+                "strategy_id": result.strategy_id,
+                "total_return": result.total_return,
+                "sharpe_ratio": result.sharpe_ratio,
+                "max_drawdown": result.max_drawdown,
+                "win_rate": result.win_rate,
+                "total_trades": result.total_trades,
+            },
+        )
 
     def _publish_metrics_event(self, result: MetricsResult) -> None:
         """Publish metrics event to event bus."""
         # This would integrate with the event bus system
         event_data = {
-            'event_type': 'METRICS_REPORTED',
-            'strategy_id': result.strategy_id,
-            'timestamp': result.timestamp.isoformat(),
-            'metrics': result.to_dict()
+            "event_type": "METRICS_REPORTED",
+            "strategy_id": result.strategy_id,
+            "timestamp": result.timestamp.isoformat(),
+            "metrics": result.to_dict(),
         }
 
         self.logger.debug(f"Published metrics event: {event_data}")
 
-    def get_metrics_history(self, strategy_id: str, limit: int = 10) -> List[MetricsResult]:
+    def get_metrics_history(
+        self, strategy_id: str, limit: int = 10
+    ) -> List[MetricsResult]:
         """
         Get historical metrics for a strategy.
 
@@ -681,7 +769,11 @@ class MetricsEngine:
         try:
             # Find all JSON files for this strategy
             pattern = f"metrics_{strategy_id}_*.json"
-            files = [f for f in os.listdir(self.output_dir) if f.startswith(f"metrics_{strategy_id}_") and f.endswith('.json')]
+            files = [
+                f
+                for f in os.listdir(self.output_dir)
+                if f.startswith(f"metrics_{strategy_id}_") and f.endswith(".json")
+            ]
 
             # Sort by timestamp (newest first)
             files.sort(reverse=True)
@@ -711,13 +803,17 @@ def get_metrics_engine() -> MetricsEngine:
     global _metrics_engine
     if _metrics_engine is None:
         from utils.config_loader import get_config
-        config = get_config('metrics', {})
+
+        config = get_config("metrics", {})
         _metrics_engine = MetricsEngine(config)
     return _metrics_engine
 
 
-def calculate_session_metrics(returns: Union[List[float], np.ndarray, pd.Series],
-                            strategy_id: str, trade_log: Optional[List[Dict[str, Any]]] = None) -> MetricsResult:
+def calculate_session_metrics(
+    returns: Union[List[float], np.ndarray, pd.Series],
+    strategy_id: str,
+    trade_log: Optional[List[Dict[str, Any]]] = None,
+) -> MetricsResult:
     """
     Convenience function to calculate session metrics.
 

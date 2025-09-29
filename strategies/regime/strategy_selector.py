@@ -15,41 +15,48 @@ Selection Modes:
 - ML-based: Uses reinforcement learning or classifier to adapt strategy weights
 """
 
+import json
+import logging
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Union, Tuple, Any, Callable
-from abc import ABC, abstractmethod
-import logging
-import json
-from pathlib import Path
-from datetime import datetime, timedelta
-from enum import Enum
-import asyncio
 
-from ml.indicators import calculate_adx, calculate_atr, calculate_bollinger_bands
-from strategies.base_strategy import BaseStrategy, StrategyConfig
-from strategies.ema_cross_strategy import EMACrossStrategy
-from strategies.rsi_strategy import RSIStrategy
-from strategies.macd_strategy import MACDStrategy
-from strategies.donchian_breakout_strategy import DonchianBreakoutStrategy
-from strategies.bollinger_reversion_strategy import BollingerReversionStrategy
-from strategies.stochastic_strategy import StochasticStrategy
-from strategies.atr_breakout_strategy import ATRBreakoutStrategy
-from strategies.keltner_channel_strategy import KeltnerChannelStrategy
-from strategies.obv_strategy import OBVStrategy
-from strategies.vwap_pullback_strategy import VWAPPullbackStrategy
-from core.contracts import TradingSignal, SignalType, SignalStrength
-from utils.config_loader import get_config
-from strategies.regime.market_regime import get_market_regime_detector, MarketRegime, get_recommended_strategies, detect_enhanced_market_regime, EnhancedRegimeResult
 from backtest.backtester import compute_regime_aware_metrics, export_regime_aware_report
-from strategies.regime.regime_forecaster import get_regime_forecaster, ForecastingResult
+from ml.indicators import calculate_adx, calculate_atr
+from strategies.atr_breakout_strategy import ATRBreakoutStrategy
+from strategies.base_strategy import BaseStrategy
+from strategies.bollinger_reversion_strategy import BollingerReversionStrategy
+from strategies.donchian_breakout_strategy import DonchianBreakoutStrategy
+from strategies.ema_cross_strategy import EMACrossStrategy
+from strategies.keltner_channel_strategy import KeltnerChannelStrategy
+from strategies.macd_strategy import MACDStrategy
+from strategies.obv_strategy import OBVStrategy
+from strategies.regime.market_regime import (
+    MarketRegime,
+    get_recommended_strategies,
+)
+from strategies.regime.regime_forecaster import ForecastingResult
+from strategies.rsi_strategy import RSIStrategy
+from strategies.stochastic_strategy import StochasticStrategy
+from strategies.vwap_pullback_strategy import VWAPPullbackStrategy
+from utils.config_loader import get_config
 
 # Knowledge base imports
 try:
     from knowledge_base import (
-        get_knowledge_manager, MarketCondition, StrategyMetadata,
-        StrategyCategory, MarketRegime as KBMarketRegime
+        MarketCondition,
+        StrategyCategory,
+        StrategyMetadata,
+        get_knowledge_manager,
     )
+    from knowledge_base import (
+        MarketRegime as KBMarketRegime,
+    )
+
     KNOWLEDGE_BASE_AVAILABLE = True
 except ImportError:
     KNOWLEDGE_BASE_AVAILABLE = False
@@ -60,11 +67,9 @@ if not KNOWLEDGE_BASE_AVAILABLE:
     logger.warning("Knowledge base not available, running without adaptive learning")
 
 
-
-
-
 class StrategyCategory(Enum):
     """Strategy category classifications."""
+
     TREND_FOLLOWING = "trend_following"
     MEAN_REVERSION = "mean_reversion"
     BREAKOUT = "breakout"
@@ -100,10 +105,14 @@ class StrategyPerformance:
 
         if is_win:
             self.winning_trades += 1
-            self.avg_win = ((self.avg_win * (self.winning_trades - 1)) + pnl) / self.winning_trades
+            self.avg_win = (
+                (self.avg_win * (self.winning_trades - 1)) + pnl
+            ) / self.winning_trades
         else:
             self.losing_trades += 1
-            self.avg_loss = ((self.avg_loss * (self.losing_trades - 1)) + abs(pnl)) / self.losing_trades
+            self.avg_loss = (
+                (self.avg_loss * (self.losing_trades - 1)) + abs(pnl)
+            ) / self.losing_trades
 
         # Update win rate
         if self.total_trades > 0:
@@ -111,36 +120,40 @@ class StrategyPerformance:
 
         # Update profit factor
         if self.losing_trades > 0 and self.avg_loss > 0:
-            self.profit_factor = (self.avg_win * self.winning_trades) / (self.avg_loss * self.losing_trades)
+            self.profit_factor = (self.avg_win * self.winning_trades) / (
+                self.avg_loss * self.losing_trades
+            )
 
         # Store recent trade
-        self.recent_trades.append({
-            'pnl': pnl,
-            'returns': returns,
-            'is_win': is_win,
-            'timestamp': datetime.now()
-        })
+        self.recent_trades.append(
+            {
+                "pnl": pnl,
+                "returns": returns,
+                "is_win": is_win,
+                "timestamp": datetime.now(),
+            }
+        )
 
         # Keep only recent trades
         if len(self.recent_trades) > self.max_recent_trades:
-            self.recent_trades = self.recent_trades[-self.max_recent_trades:]
+            self.recent_trades = self.recent_trades[-self.max_recent_trades :]
 
         self.last_updated = datetime.now()
 
     def get_metrics(self) -> Dict[str, Any]:
         """Get current performance metrics."""
         return {
-            'strategy_name': self.strategy_name,
-            'total_trades': self.total_trades,
-            'win_rate': self.win_rate,
-            'total_pnl': self.total_pnl,
-            'total_returns': self.total_returns,
-            'sharpe_ratio': self.sharpe_ratio,
-            'max_drawdown': self.max_drawdown,
-            'profit_factor': self.profit_factor,
-            'avg_win': self.avg_win,
-            'avg_loss': self.avg_loss,
-            'last_updated': self.last_updated.isoformat()
+            "strategy_name": self.strategy_name,
+            "total_trades": self.total_trades,
+            "win_rate": self.win_rate,
+            "total_pnl": self.total_pnl,
+            "total_returns": self.total_returns,
+            "sharpe_ratio": self.sharpe_ratio,
+            "max_drawdown": self.max_drawdown,
+            "profit_factor": self.profit_factor,
+            "avg_win": self.avg_win,
+            "avg_loss": self.avg_loss,
+            "last_updated": self.last_updated.isoformat(),
         }
 
     def calculate_sharpe_ratio(self, risk_free_rate: float = 0.02):
@@ -148,7 +161,7 @@ class StrategyPerformance:
         if len(self.recent_trades) < 2:
             return 0.0
 
-        returns = [trade['returns'] for trade in self.recent_trades]
+        returns = [trade["returns"] for trade in self.recent_trades]
         if len(returns) > 1:
             avg_return = np.mean(returns)
             std_return = np.std(returns)
@@ -188,17 +201,19 @@ class MarketStateAnalyzer:
             current_atr = atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else 0
 
             # Calculate recent volatility percentile
-            returns = data['close'].pct_change().dropna()
+            returns = data["close"].pct_change().dropna()
             if len(returns) > 20:
                 recent_volatility = returns.tail(20).std()
-                volatility_threshold = np.percentile(returns.abs(), self.volatility_percentile)
+                volatility_threshold = np.percentile(
+                    returns.abs(), self.volatility_percentile
+                )
                 is_high_volatility = recent_volatility > volatility_threshold
             else:
                 is_high_volatility = False
 
             # Determine trend direction by checking if closes are consistently increasing/decreasing
             if len(data) >= 20:
-                recent_closes = data['close'].tail(20)
+                recent_closes = data["close"].tail(20)
                 # Check if price is trending up (more closes above their moving average)
                 sma_10 = recent_closes.rolling(10).mean()
                 closes_above_ma = (recent_closes > sma_10).sum()
@@ -207,10 +222,14 @@ class MarketStateAnalyzer:
                 # Trend strength based on consistency
                 trend_ratio = closes_above_ma / len(recent_closes)
                 trending_up = trend_ratio > 0.7  # 70% of closes above MA
-                trending_down = (closes_below_ma / len(recent_closes)) > 0.7  # 70% below MA
+                trending_down = (
+                    closes_below_ma / len(recent_closes)
+                ) > 0.7  # 70% below MA
 
                 # Additional check: overall price movement
-                price_change = (recent_closes.iloc[-1] - recent_closes.iloc[0]) / recent_closes.iloc[0]
+                price_change = (
+                    recent_closes.iloc[-1] - recent_closes.iloc[0]
+                ) / recent_closes.iloc[0]
                 if price_change > 0.05:  # 5% up
                     trending_up = True
                 elif price_change < -0.05:  # 5% down
@@ -229,10 +248,14 @@ class MarketStateAnalyzer:
             elif current_adx < self.adx_sideways_threshold:
                 # Check for very flat price action (true sideways)
                 if len(data) >= 20:
-                    recent_range = (data['high'].tail(20).max() - data['low'].tail(20).min()) / data['close'].tail(20).mean()
+                    recent_range = (
+                        data["high"].tail(20).max() - data["low"].tail(20).min()
+                    ) / data["close"].tail(20).mean()
                     is_very_flat = recent_range < 0.02  # Less than 2% range
 
-                    if is_very_flat and current_atr < (data['close'].tail(20).mean() * 0.005):  # ATR < 0.5%
+                    if is_very_flat and current_atr < (
+                        data["close"].tail(20).mean() * 0.005
+                    ):  # ATR < 0.5%
                         return MarketRegime.LOW_VOLATILITY
                     elif is_high_volatility:
                         return MarketRegime.HIGH_VOLATILITY
@@ -265,14 +288,15 @@ class RuleBasedSelector:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
         # Keep old attributes for backward compatibility
-        self.adx_trend_threshold = self.config.get('adx_trend_threshold', 25)
-        self.adx_sideways_threshold = self.config.get('adx_sideways_threshold', 20)
+        self.adx_trend_threshold = self.config.get("adx_trend_threshold", 25)
+        self.adx_sideways_threshold = self.config.get("adx_sideways_threshold", 20)
         # New attributes for simple trending detection
-        self.trend_slope_threshold = self.config.get('trend_slope_threshold', 0.05)
-        self.lookback_period = self.config.get('lookback_period', 20)
+        self.trend_slope_threshold = self.config.get("trend_slope_threshold", 0.05)
+        self.lookback_period = self.config.get("lookback_period", 20)
 
-    def select_strategy(self, market_data: pd.DataFrame,
-                       available_strategies: List[type]) -> Optional[type]:
+    def select_strategy(
+        self, market_data: pd.DataFrame, available_strategies: List[type]
+    ) -> Optional[type]:
         """
         Select the best strategy based on current market conditions.
 
@@ -291,7 +315,7 @@ class RuleBasedSelector:
             return available_strategies[0] if available_strategies else None
 
         # Simple trending detection - use full data for slope calculation
-        prices = market_data['close']
+        prices = market_data["close"]
         if len(prices) < 2:
             return available_strategies[0] if available_strategies else None
 
@@ -301,24 +325,34 @@ class RuleBasedSelector:
         if slope_normalized > self.trend_slope_threshold:
             # Trending market - prefer EMACrossStrategy
             for strat in available_strategies:
-                if strat.__name__ == 'EMACrossStrategy':
-                    logger.info(f"Selected EMACrossStrategy for trending market (slope: {slope_normalized:.3f})")
+                if strat.__name__ == "EMACrossStrategy":
+                    logger.info(
+                        f"Selected EMACrossStrategy for trending market (slope: {slope_normalized:.3f})"
+                    )
                     return strat
             # If EMACrossStrategy not found, fallback
-            logger.warning("EMACrossStrategy not found in available strategies, using fallback")
+            logger.warning(
+                "EMACrossStrategy not found in available strategies, using fallback"
+            )
         else:
             # Ranging market - prefer RSIStrategy
             for strat in available_strategies:
-                if strat.__name__ == 'RSIStrategy':
-                    logger.info(f"Selected RSIStrategy for ranging market (slope: {slope_normalized:.3f})")
+                if strat.__name__ == "RSIStrategy":
+                    logger.info(
+                        f"Selected RSIStrategy for ranging market (slope: {slope_normalized:.3f})"
+                    )
                     return strat
             # If RSIStrategy not found, fallback
-            logger.warning("RSIStrategy not found in available strategies, using fallback")
+            logger.warning(
+                "RSIStrategy not found in available strategies, using fallback"
+            )
 
         # Fallback to first available strategy
         if available_strategies:
             fallback = available_strategies[0]
-            logger.warning(f"Preferred strategy not found, using fallback {fallback.__name__}")
+            logger.warning(
+                f"Preferred strategy not found, using fallback {fallback.__name__}"
+            )
             return fallback
 
         return None
@@ -329,14 +363,17 @@ class MLBasedSelector:
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
-        self.learning_rate = self.config.get('learning_rate', 0.1)
+        self.learning_rate = self.config.get("learning_rate", 0.1)
         self.strategy_weights: Dict[str, float] = {}
         self.performance_history: Dict[str, List[float]] = {}
-        self.min_trades_for_learning = self.config.get('min_trades_for_learning', 10)
+        self.min_trades_for_learning = self.config.get("min_trades_for_learning", 10)
 
-    def select_strategy(self, market_data: pd.DataFrame,
-                       available_strategies: List[type],
-                       strategy_performances: Dict[str, StrategyPerformance]) -> Optional[type]:
+    def select_strategy(
+        self,
+        market_data: pd.DataFrame,
+        available_strategies: List[type],
+        strategy_performances: Dict[str, StrategyPerformance],
+    ) -> Optional[type]:
         """
         Select strategy using ML-based approach with performance weighting.
 
@@ -374,7 +411,9 @@ class MLBasedSelector:
         selected_idx = np.random.choice(len(available_strategies), p=weights)
         selected_strategy = available_strategies[selected_idx]
 
-        logger.info(f"ML-based selection: {selected_strategy.__name__} (weight: {weights[selected_idx]:.3f})")
+        logger.info(
+            f"ML-based selection: {selected_strategy.__name__} (weight: {weights[selected_idx]:.3f})"
+        )
         return selected_strategy
 
     def _update_weights(self, strategy_performances: Dict[str, StrategyPerformance]):
@@ -390,8 +429,12 @@ class MLBasedSelector:
 
                 # Update weight using exponential moving average
                 current_weight = self.strategy_weights[strategy_name]
-                new_weight = current_weight + self.learning_rate * (recent_win_rate - 0.5)
-                self.strategy_weights[strategy_name] = max(0.1, min(2.0, new_weight))  # Clamp weights
+                new_weight = current_weight + self.learning_rate * (
+                    recent_win_rate - 0.5
+                )
+                self.strategy_weights[strategy_name] = max(
+                    0.1, min(2.0, new_weight)
+                )  # Clamp weights
 
 
 class StrategySelector:
@@ -400,7 +443,11 @@ class StrategySelector:
     based on market conditions and performance history.
     """
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None, available_strategies: Optional[List[type]] = None):
+    def __init__(
+        self,
+        config: Optional[Dict[str, Any]] = None,
+        available_strategies: Optional[List[type]] = None,
+    ):
         """
         Initialize the strategy selector.
 
@@ -410,43 +457,43 @@ class StrategySelector:
         """
         self.config = config or self._get_default_config()
         cfg = get_config("strategy_selector", {})
-        self.enabled = cfg.get('enabled', self.config.get('enabled', False))
-        self.mode = cfg.get('mode', self.config.get('mode', 'rule_based'))
-        self.ensemble = cfg.get('ensemble', self.config.get('ensemble', False))
+        self.enabled = cfg.get("enabled", self.config.get("enabled", False))
+        self.mode = cfg.get("mode", self.config.get("mode", "rule_based"))
+        self.ensemble = cfg.get("ensemble", self.config.get("ensemble", False))
 
         # Initialize selectors
-        self.rule_selector = RuleBasedSelector(self.config.get('rules', {}))
-        self.ml_selector = MLBasedSelector(self.config.get('ml_config', {}))
+        self.rule_selector = RuleBasedSelector(self.config.get("rules", {}))
+        self.ml_selector = MLBasedSelector(self.config.get("ml_config", {}))
 
         # Strategy registry - use provided strategies or load from file system
-        self.available_strategies = available_strategies or self._load_available_strategies()
+        self.available_strategies = (
+            available_strategies or self._load_available_strategies()
+        )
         self.strategy_performances: Dict[str, StrategyPerformance] = {}
 
         # Initialize performance tracking
         for strategy_class in self.available_strategies:
             strategy_name = strategy_class.__name__
-            self.strategy_performances[strategy_name] = StrategyPerformance(strategy_name)
+            self.strategy_performances[strategy_name] = StrategyPerformance(
+                strategy_name
+            )
 
         # Current active strategy
         self.current_strategy: Optional[type] = None
         self.current_strategy_instance: Optional[BaseStrategy] = None
 
-        logger.info(f"StrategySelector initialized: mode={self.mode}, ensemble={self.ensemble}")
+        logger.info(
+            f"StrategySelector initialized: mode={self.mode}, ensemble={self.ensemble}"
+        )
 
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration."""
         return {
-            'enabled': False,
-            'mode': 'rule_based',
-            'ensemble': False,
-            'rules': {
-                'adx_trend_threshold': 25,
-                'adx_sideways_threshold': 20
-            },
-            'ml_config': {
-                'learning_rate': 0.1,
-                'min_trades_for_learning': 10
-            }
+            "enabled": False,
+            "mode": "rule_based",
+            "ensemble": False,
+            "rules": {"adx_trend_threshold": 25, "adx_sideways_threshold": 20},
+            "ml_config": {"learning_rate": 0.1, "min_trades_for_learning": 10},
         }
 
     def _load_available_strategies(self) -> List[type]:
@@ -458,16 +505,13 @@ class StrategySelector:
             (EMACrossStrategy, "EMACrossStrategy"),
             (MACDStrategy, "MACDStrategy"),
             (DonchianBreakoutStrategy, "DonchianBreakoutStrategy"),
-
             # Mean reversion strategies
             (RSIStrategy, "RSIStrategy"),
             (BollingerReversionStrategy, "BollingerReversionStrategy"),
             (StochasticStrategy, "StochasticStrategy"),
-
             # Volatility-based strategies
             (ATRBreakoutStrategy, "ATRBreakoutStrategy"),
             (KeltnerChannelStrategy, "KeltnerChannelStrategy"),
-
             # Volume-based strategies
             (OBVStrategy, "OBVStrategy"),
             (VWAPPullbackStrategy, "VWAPPullbackStrategy"),
@@ -476,8 +520,11 @@ class StrategySelector:
         for strategy_class, strategy_name in strategy_classes:
             try:
                 from unittest.mock import MagicMock
+
                 # Check if strategy is a mock (patched by tests)
-                if isinstance(strategy_class, MagicMock) or (hasattr(strategy_class, '_mock_name') and strategy_class._mock_name):
+                if isinstance(strategy_class, MagicMock) or (
+                    hasattr(strategy_class, "_mock_name") and strategy_class._mock_name
+                ):
                     strategies.append(strategy_class)
                     logger.debug(f"Loaded mock strategy: {strategy_name}")
                 else:
@@ -486,10 +533,16 @@ class StrategySelector:
             except (ImportError, AttributeError) as e:
                 logger.warning(f"{strategy_name} not available: {e}")
 
-        logger.info(f"Loaded {len(strategies)} strategies: {[s.__name__ for s in strategies]}")
+        logger.info(
+            f"Loaded {len(strategies)} strategies: {[s.__name__ for s in strategies]}"
+        )
         return strategies
 
-    def select_strategy(self, market_data: pd.DataFrame, available_strategies: Optional[List[type]] = None) -> Optional[type]:
+    def select_strategy(
+        self,
+        market_data: pd.DataFrame,
+        available_strategies: Optional[List[type]] = None,
+    ) -> Optional[type]:
         """
         Select the most suitable strategy for current market conditions.
 
@@ -506,13 +559,11 @@ class StrategySelector:
             return strategies[0] if strategies else None
 
         # Get initial selection from rule-based or ML-based selector
-        if self.mode == 'rule_based':
+        if self.mode == "rule_based":
             selected = self.rule_selector.select_strategy(market_data, strategies)
-        elif self.mode == 'ml_based':
+        elif self.mode == "ml_based":
             selected = self.ml_selector.select_strategy(
-                market_data,
-                strategies,
-                self.strategy_performances
+                market_data, strategies, self.strategy_performances
             )
         else:
             logger.warning(f"Unknown selection mode: {self.mode}, using rule_based")
@@ -520,7 +571,9 @@ class StrategySelector:
 
         # Apply knowledge base adaptive weighting if available
         if KNOWLEDGE_BASE_AVAILABLE and selected:
-            selected = self._apply_knowledge_base_weighting(market_data, strategies, selected)
+            selected = self._apply_knowledge_base_weighting(
+                market_data, strategies, selected
+            )
 
         if selected:
             self.current_strategy = selected
@@ -528,8 +581,9 @@ class StrategySelector:
 
         return selected
 
-    def select_strategies_ensemble(self, market_data: pd.DataFrame,
-                                 max_strategies: int = 2) -> List[type]:
+    def select_strategies_ensemble(
+        self, market_data: pd.DataFrame, max_strategies: int = 2
+    ) -> List[type]:
         """
         Select multiple strategies for ensemble trading.
 
@@ -544,7 +598,7 @@ class StrategySelector:
             return [self.available_strategies[0]] if self.available_strategies else []
 
         # For ensemble mode, select top strategies
-        if self.mode == 'ml_based':
+        if self.mode == "ml_based":
             # Sort strategies by performance weights
             strategy_weights = []
             for strategy_class in self.available_strategies:
@@ -556,9 +610,15 @@ class StrategySelector:
             selected = [s[0] for s in strategy_weights[:max_strategies]]
         else:
             # For rule-based ensemble, select primary + secondary
-            primary = self.rule_selector.select_strategy(market_data, self.available_strategies)
+            primary = self.rule_selector.select_strategy(
+                market_data, self.available_strategies
+            )
             remaining = [s for s in self.available_strategies if s != primary]
-            secondary = self.rule_selector.select_strategy(market_data, remaining) if remaining else None
+            secondary = (
+                self.rule_selector.select_strategy(market_data, remaining)
+                if remaining
+                else None
+            )
 
             selected = [s for s in [primary, secondary] if s is not None]
 
@@ -569,7 +629,7 @@ class StrategySelector:
         self,
         market_data: pd.DataFrame,
         available_strategies: List[type],
-        initial_selection: type
+        initial_selection: type,
     ) -> type:
         """
         Apply knowledge base adaptive weighting to potentially override initial selection.
@@ -601,9 +661,13 @@ class StrategySelector:
             )
 
             # Log knowledge base influence
-            logger.info("KNOWLEDGE_QUERY: Retrieved adaptive weights from knowledge base")
+            logger.info(
+                "KNOWLEDGE_QUERY: Retrieved adaptive weights from knowledge base"
+            )
             for strategy_name, weight in adaptive_weights.items():
-                logger.info(f"KNOWLEDGE_APPLY: Strategy {strategy_name} weight: {weight:.3f}")
+                logger.info(
+                    f"KNOWLEDGE_APPLY: Strategy {strategy_name} weight: {weight:.3f}"
+                )
 
             # Check if any strategy has significantly better weight
             initial_strategy_name = initial_selection.__name__
@@ -632,7 +696,9 @@ class StrategySelector:
             return initial_selection
 
         except Exception as e:
-            logger.warning(f"KNOWLEDGE_ERROR: Failed to apply knowledge base weighting: {e}")
+            logger.warning(
+                f"KNOWLEDGE_ERROR: Failed to apply knowledge base weighting: {e}"
+            )
             return initial_selection
 
     def _extract_market_condition(self, market_data: pd.DataFrame) -> Any:
@@ -640,22 +706,20 @@ class StrategySelector:
         if not KNOWLEDGE_BASE_AVAILABLE:
             # Return a simple dict when knowledge base is not available
             return {
-                'regime': 'unknown',
-                'volatility': 0.0,
-                'trend_strength': 0.0,
-                'timestamp': datetime.now()
+                "regime": "unknown",
+                "volatility": 0.0,
+                "trend_strength": 0.0,
+                "timestamp": datetime.now(),
             }
 
         if market_data.empty:
             return MarketCondition(
-                regime=KBMarketRegime.UNKNOWN,
-                volatility=0.0,
-                trend_strength=0.0
+                regime=KBMarketRegime.UNKNOWN, volatility=0.0, trend_strength=0.0
             )
 
         try:
             # Calculate basic market metrics
-            returns = market_data['close'].pct_change().dropna()
+            returns = market_data["close"].pct_change().dropna()
             volatility = returns.std() if len(returns) > 0 else 0.0
 
             # Calculate trend strength using ADX-like calculation
@@ -677,15 +741,13 @@ class StrategySelector:
                 regime=regime,
                 volatility=float(volatility),
                 trend_strength=float(trend_strength),
-                timestamp=datetime.now()
+                timestamp=datetime.now(),
             )
 
         except Exception as e:
             logger.warning(f"Failed to extract market condition: {e}")
             return MarketCondition(
-                regime=KBMarketRegime.UNKNOWN,
-                volatility=0.0,
-                trend_strength=0.0
+                regime=KBMarketRegime.UNKNOWN, volatility=0.0, trend_strength=0.0
             )
 
     def _create_strategy_metadata(self, strategy_class: type) -> Any:
@@ -693,47 +755,47 @@ class StrategySelector:
         if not KNOWLEDGE_BASE_AVAILABLE:
             # Return a simple dict when knowledge base is not available
             return {
-                'name': strategy_class.__name__,
-                'category': 'unknown',
-                'parameters': {},
-                'timeframe': '1h',
-                'indicators_used': ['price'],
-                'risk_profile': 'medium'
+                "name": strategy_class.__name__,
+                "category": "unknown",
+                "parameters": {},
+                "timeframe": "1h",
+                "indicators_used": ["price"],
+                "risk_profile": "medium",
             }
 
         strategy_name = strategy_class.__name__
 
         # Map strategy names to categories (simplified mapping)
         category_mapping = {
-            'EMACrossStrategy': StrategyCategory.TREND_FOLLOWING,
-            'MACDStrategy': StrategyCategory.TREND_FOLLOWING,
-            'DonchianBreakoutStrategy': StrategyCategory.BREAKOUT,
-            'RSIStrategy': StrategyCategory.MEAN_REVERSION,
-            'BollingerReversionStrategy': StrategyCategory.MEAN_REVERSION,
-            'StochasticStrategy': StrategyCategory.MEAN_REVERSION,
-            'ATRBreakoutStrategy': StrategyCategory.BREAKOUT,
-            'KeltnerChannelStrategy': StrategyCategory.TREND_FOLLOWING,
-            'OBVStrategy': StrategyCategory.VOLUME_BASED,
-            'VWAPPullbackStrategy': StrategyCategory.MEAN_REVERSION
+            "EMACrossStrategy": StrategyCategory.TREND_FOLLOWING,
+            "MACDStrategy": StrategyCategory.TREND_FOLLOWING,
+            "DonchianBreakoutStrategy": StrategyCategory.BREAKOUT,
+            "RSIStrategy": StrategyCategory.MEAN_REVERSION,
+            "BollingerReversionStrategy": StrategyCategory.MEAN_REVERSION,
+            "StochasticStrategy": StrategyCategory.MEAN_REVERSION,
+            "ATRBreakoutStrategy": StrategyCategory.BREAKOUT,
+            "KeltnerChannelStrategy": StrategyCategory.TREND_FOLLOWING,
+            "OBVStrategy": StrategyCategory.VOLUME_BASED,
+            "VWAPPullbackStrategy": StrategyCategory.MEAN_REVERSION,
         }
 
         category = category_mapping.get(strategy_name, StrategyCategory.TREND_FOLLOWING)
 
         # Get indicators used (simplified)
         indicators_mapping = {
-            'EMACrossStrategy': ['ema'],
-            'MACDStrategy': ['macd'],
-            'DonchianBreakoutStrategy': ['donchian'],
-            'RSIStrategy': ['rsi'],
-            'BollingerReversionStrategy': ['bollinger_bands'],
-            'StochasticStrategy': ['stochastic'],
-            'ATRBreakoutStrategy': ['atr'],
-            'KeltnerChannelStrategy': ['keltner'],
-            'OBVStrategy': ['obv'],
-            'VWAPPullbackStrategy': ['vwap']
+            "EMACrossStrategy": ["ema"],
+            "MACDStrategy": ["macd"],
+            "DonchianBreakoutStrategy": ["donchian"],
+            "RSIStrategy": ["rsi"],
+            "BollingerReversionStrategy": ["bollinger_bands"],
+            "StochasticStrategy": ["stochastic"],
+            "ATRBreakoutStrategy": ["atr"],
+            "KeltnerChannelStrategy": ["keltner"],
+            "OBVStrategy": ["obv"],
+            "VWAPPullbackStrategy": ["vwap"],
         }
 
-        indicators = indicators_mapping.get(strategy_name, ['price'])
+        indicators = indicators_mapping.get(strategy_name, ["price"])
 
         return StrategyMetadata(
             name=strategy_name,
@@ -741,11 +803,12 @@ class StrategySelector:
             parameters={},  # Could be populated from strategy config
             timeframe="1h",
             indicators_used=indicators,
-            risk_profile="medium"
+            risk_profile="medium",
         )
 
-    def update_performance(self, strategy_name: str, pnl: float,
-                          returns: float, is_win: bool):
+    def update_performance(
+        self, strategy_name: str, pnl: float, returns: float, is_win: bool
+    ):
         """
         Update performance metrics for a strategy.
 
@@ -756,13 +819,19 @@ class StrategySelector:
             is_win: Whether the trade was profitable
         """
         if strategy_name not in self.strategy_performances:
-            self.strategy_performances[strategy_name] = StrategyPerformance(strategy_name)
+            self.strategy_performances[strategy_name] = StrategyPerformance(
+                strategy_name
+            )
 
         perf = self.strategy_performances[strategy_name]
         perf.update_trade(pnl, returns, is_win)
-        logger.debug(f"Updated performance for {strategy_name}: win_rate={perf.win_rate:.3f}")
+        logger.debug(
+            f"Updated performance for {strategy_name}: win_rate={perf.win_rate:.3f}"
+        )
 
-    def get_strategy_performance(self, strategy_name: Optional[str] = None) -> Union[Dict[str, Any], Dict[str, Dict[str, Any]]]:
+    def get_strategy_performance(
+        self, strategy_name: Optional[str] = None
+    ) -> Union[Dict[str, Any], Dict[str, Dict[str, Any]]]:
         """
         Get performance metrics for strategies.
 
@@ -778,18 +847,23 @@ class StrategySelector:
             else:
                 return {}
         else:
-            return {name: perf.get_metrics() for name, perf in self.strategy_performances.items()}
+            return {
+                name: perf.get_metrics()
+                for name, perf in self.strategy_performances.items()
+            }
 
     def save_performance_history(self, path: str):
         """Save performance history to disk."""
         performance_data = {
-            'timestamp': datetime.now().isoformat(),
-            'strategy_performances': self.get_strategy_performance(),
-            'ml_weights': self.ml_selector.strategy_weights if hasattr(self.ml_selector, 'strategy_weights') else {}
+            "timestamp": datetime.now().isoformat(),
+            "strategy_performances": self.get_strategy_performance(),
+            "ml_weights": self.ml_selector.strategy_weights
+            if hasattr(self.ml_selector, "strategy_weights")
+            else {},
         }
 
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             json.dump(performance_data, f, indent=2, default=str)
 
         logger.info(f"Performance history saved to {path}")
@@ -800,23 +874,23 @@ class StrategySelector:
             logger.warning(f"Performance history file not found: {path}")
             return
 
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             data = json.load(f)
 
         # Restore performance data
-        if 'strategy_performances' in data:
-            for strategy_name, perf_data in data['strategy_performances'].items():
+        if "strategy_performances" in data:
+            for strategy_name, perf_data in data["strategy_performances"].items():
                 if strategy_name in self.strategy_performances:
                     perf = self.strategy_performances[strategy_name]
-                    perf.total_trades = perf_data.get('total_trades', 0)
-                    perf.winning_trades = perf_data.get('winning_trades', 0)
-                    perf.losing_trades = perf_data.get('losing_trades', 0)
-                    perf.total_pnl = perf_data.get('total_pnl', 0.0)
-                    perf.win_rate = perf_data.get('win_rate', 0.0)
+                    perf.total_trades = perf_data.get("total_trades", 0)
+                    perf.winning_trades = perf_data.get("winning_trades", 0)
+                    perf.losing_trades = perf_data.get("losing_trades", 0)
+                    perf.total_pnl = perf_data.get("total_pnl", 0.0)
+                    perf.win_rate = perf_data.get("win_rate", 0.0)
 
         # Restore ML weights
-        if 'ml_weights' in data and hasattr(self.ml_selector, 'strategy_weights'):
-            self.ml_selector.strategy_weights.update(data['ml_weights'])
+        if "ml_weights" in data and hasattr(self.ml_selector, "strategy_weights"):
+            self.ml_selector.strategy_weights.update(data["ml_weights"])
 
         logger.info(f"Performance history loaded from {path}")
 
@@ -830,7 +904,9 @@ class StrategySelector:
         self.current_strategy_instance = None
         logger.info("Strategy selector reset")
 
-    def validate_multi_timeframe(self, signal: Any, multi_tf_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def validate_multi_timeframe(
+        self, signal: Any, multi_tf_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
         Validate a trading signal across multiple timeframes.
 
@@ -843,46 +919,56 @@ class StrategySelector:
         """
         try:
             validation_result = {
-                'is_valid': False,
-                'confidence_score': 0.0,
-                'signal_origin_timeframe': None,
-                'confirming_timeframes': [],
-                'conflicting_timeframes': [],
-                'validation_details': {},
-                'recommendation': 'REJECT'
+                "is_valid": False,
+                "confidence_score": 0.0,
+                "signal_origin_timeframe": None,
+                "confirming_timeframes": [],
+                "conflicting_timeframes": [],
+                "validation_details": {},
+                "recommendation": "REJECT",
             }
 
             if not signal or not multi_tf_data:
-                validation_result['validation_details']['reason'] = 'Missing signal or multi-timeframe data'
+                validation_result["validation_details"][
+                    "reason"
+                ] = "Missing signal or multi-timeframe data"
                 return validation_result
 
             # Extract signal information
-            signal_type = getattr(signal, 'signal_type', None)
+            signal_type = getattr(signal, "signal_type", None)
             if signal_type:
-                signal_type = signal_type.value if hasattr(signal_type, 'value') else str(signal_type)
+                signal_type = (
+                    signal_type.value
+                    if hasattr(signal_type, "value")
+                    else str(signal_type)
+                )
             else:
-                signal_type = getattr(signal, 'type', 'UNKNOWN')
+                signal_type = getattr(signal, "type", "UNKNOWN")
 
-            symbol = getattr(signal, 'symbol', 'UNKNOWN')
-            signal_timeframe = getattr(signal, 'metadata', {}).get('timeframe', '15m')
+            symbol = getattr(signal, "symbol", "UNKNOWN")
+            signal_timeframe = getattr(signal, "metadata", {}).get("timeframe", "15m")
 
-            validation_result['signal_origin_timeframe'] = signal_timeframe
+            validation_result["signal_origin_timeframe"] = signal_timeframe
 
             # Define timeframe hierarchy for validation
             timeframe_hierarchy = {
-                '15m': ['1h', '4h'],
-                '1h': ['4h', '1d'],
-                '4h': ['1d'],
-                '1d': []
+                "15m": ["1h", "4h"],
+                "1h": ["4h", "1d"],
+                "4h": ["1d"],
+                "1d": [],
             }
 
             # Get timeframes to validate against
             timeframes_to_check = timeframe_hierarchy.get(signal_timeframe, [])
 
             if not timeframes_to_check:
-                validation_result['validation_details']['reason'] = f'No higher timeframes configured for {signal_timeframe}'
-                validation_result['is_valid'] = True  # Accept if no higher timeframes to check
-                validation_result['recommendation'] = 'ACCEPT'
+                validation_result["validation_details"][
+                    "reason"
+                ] = f"No higher timeframes configured for {signal_timeframe}"
+                validation_result[
+                    "is_valid"
+                ] = True  # Accept if no higher timeframes to check
+                validation_result["recommendation"] = "ACCEPT"
                 return validation_result
 
             # Perform multi-timeframe validation
@@ -890,13 +976,17 @@ class StrategySelector:
             total_checked = 0
 
             for tf in timeframes_to_check:
-                if tf not in multi_tf_data.get('data', {}):
-                    validation_result['conflicting_timeframes'].append(f'{tf} (missing data)')
+                if tf not in multi_tf_data.get("data", {}):
+                    validation_result["conflicting_timeframes"].append(
+                        f"{tf} (missing data)"
+                    )
                     continue
 
-                tf_data = multi_tf_data['data'][tf]
+                tf_data = multi_tf_data["data"][tf]
                 if tf_data.empty:
-                    validation_result['conflicting_timeframes'].append(f'{tf} (empty data)')
+                    validation_result["conflicting_timeframes"].append(
+                        f"{tf} (empty data)"
+                    )
                     continue
 
                 total_checked += 1
@@ -907,24 +997,26 @@ class StrategySelector:
                 # Check if trend aligns with signal
                 if self._does_trend_confirm_signal(trend, signal_type):
                     confirming_count += 1
-                    validation_result['confirming_timeframes'].append(tf)
-                    validation_result['validation_details'][tf] = f'CONFIRMS ({trend})'
+                    validation_result["confirming_timeframes"].append(tf)
+                    validation_result["validation_details"][tf] = f"CONFIRMS ({trend})"
                 else:
-                    validation_result['conflicting_timeframes'].append(tf)
-                    validation_result['validation_details'][tf] = f'CONFLICTS ({trend})'
+                    validation_result["conflicting_timeframes"].append(tf)
+                    validation_result["validation_details"][tf] = f"CONFLICTS ({trend})"
 
             # Calculate confidence score
             if total_checked > 0:
-                validation_result['confidence_score'] = confirming_count / total_checked
+                validation_result["confidence_score"] = confirming_count / total_checked
 
                 # Determine if signal is valid based on confidence threshold
                 min_confidence = 0.6  # 60% of higher timeframes must confirm
-                validation_result['is_valid'] = validation_result['confidence_score'] >= min_confidence
+                validation_result["is_valid"] = (
+                    validation_result["confidence_score"] >= min_confidence
+                )
 
-                if validation_result['is_valid']:
-                    validation_result['recommendation'] = 'ACCEPT'
+                if validation_result["is_valid"]:
+                    validation_result["recommendation"] = "ACCEPT"
                 else:
-                    validation_result['recommendation'] = 'REJECT'
+                    validation_result["recommendation"] = "REJECT"
 
             # Log validation outcome
             logger.info(
@@ -939,7 +1031,7 @@ class StrategySelector:
 
         except Exception as e:
             logger.error(f"Failed to validate signal across timeframes: {e}")
-            validation_result['validation_details']['error'] = str(e)
+            validation_result["validation_details"]["error"] = str(e)
             return validation_result
 
     def _analyze_timeframe_trend(self, tf_data: pd.DataFrame, timeframe: str) -> str:
@@ -955,20 +1047,20 @@ class StrategySelector:
         """
         try:
             if tf_data.empty or len(tf_data) < 20:
-                return 'unknown'
+                return "unknown"
 
             # Use simple moving average crossover for trend determination
             sma_short_period = 10
             sma_long_period = 20
 
             if len(tf_data) < sma_long_period:
-                return 'unknown'
+                return "unknown"
 
-            sma_short = tf_data['close'].rolling(sma_short_period).mean()
-            sma_long = tf_data['close'].rolling(sma_long_period).mean()
+            sma_short = tf_data["close"].rolling(sma_short_period).mean()
+            sma_long = tf_data["close"].rolling(sma_long_period).mean()
 
             if len(sma_short) < 2 or len(sma_long) < 2:
-                return 'unknown'
+                return "unknown"
 
             # Check recent trend
             recent_short = sma_short.iloc[-1]
@@ -977,15 +1069,15 @@ class StrategySelector:
             prev_long = sma_long.iloc[-2]
 
             if recent_short > recent_long and prev_short > prev_long:
-                return 'bullish'
+                return "bullish"
             elif recent_short < recent_long and prev_short < prev_long:
-                return 'bearish'
+                return "bearish"
             else:
-                return 'sideways'
+                return "sideways"
 
         except Exception as e:
             logger.warning(f"Failed to analyze trend for {timeframe}: {e}")
-            return 'unknown'
+            return "unknown"
 
     def _does_trend_confirm_signal(self, trend: str, signal_type: str) -> bool:
         """
@@ -998,21 +1090,22 @@ class StrategySelector:
         Returns:
             True if trend confirms signal, False otherwise
         """
-        if trend == 'unknown':
+        if trend == "unknown":
             return False
 
-        buy_signals = ['BUY', 'LONG']
-        sell_signals = ['SELL', 'SHORT']
+        buy_signals = ["BUY", "LONG"]
+        sell_signals = ["SELL", "SHORT"]
 
         if signal_type in buy_signals:
-            return trend == 'bullish'
+            return trend == "bullish"
         elif signal_type in sell_signals:
-            return trend == 'bearish'
+            return trend == "bearish"
         else:
             return False
 
-    def incorporate_regime_forecast(self, strategy_weights: Dict[str, float],
-                                  forecast_result: ForecastingResult) -> Dict[str, float]:
+    def incorporate_regime_forecast(
+        self, strategy_weights: Dict[str, float], forecast_result: ForecastingResult
+    ) -> Dict[str, float]:
         """
         Incorporate regime forecast into strategy weighting.
 
@@ -1036,7 +1129,9 @@ class StrategySelector:
             best_predictions = None
 
             for horizon, confidence in forecast_result.confidence_scores.items():
-                if confidence > best_confidence and confidence > 0.6:  # Minimum confidence threshold
+                if (
+                    confidence > best_confidence and confidence > 0.6
+                ):  # Minimum confidence threshold
                     best_horizon = horizon
                     best_confidence = confidence
                     best_predictions = forecast_result.predictions.get(horizon, {})
@@ -1047,10 +1142,16 @@ class StrategySelector:
 
             # Map forecasted regime to recommended strategies
             forecasted_regime = max(best_predictions.items(), key=lambda x: x[1])[0]
-            recommended_strategies = get_recommended_strategies_from_forecast(forecasted_regime)
+            recommended_strategies = get_recommended_strategies_from_forecast(
+                forecasted_regime
+            )
 
-            logger.info(f"Incorporating forecast: {forecasted_regime} (confidence: {best_confidence:.2f})")
-            logger.info(f"Recommended strategies for forecast: {recommended_strategies}")
+            logger.info(
+                f"Incorporating forecast: {forecasted_regime} (confidence: {best_confidence:.2f})"
+            )
+            logger.info(
+                f"Recommended strategies for forecast: {recommended_strategies}"
+            )
 
             # Adjust weights based on forecast
             forecast_boost = min(best_confidence * 0.5, 0.3)  # Max 30% boost
@@ -1058,7 +1159,7 @@ class StrategySelector:
             for strategy_name in recommended_strategies:
                 if strategy_name in updated_weights:
                     # Boost recommended strategies
-                    updated_weights[strategy_name] *= (1 + forecast_boost)
+                    updated_weights[strategy_name] *= 1 + forecast_boost
                 else:
                     # Add new strategies with base weight
                     updated_weights[strategy_name] = 0.1
@@ -1066,7 +1167,9 @@ class StrategySelector:
             # Normalize weights
             total_weight = sum(updated_weights.values())
             if total_weight > 0:
-                updated_weights = {k: v/total_weight for k, v in updated_weights.items()}
+                updated_weights = {
+                    k: v / total_weight for k, v in updated_weights.items()
+                }
 
             logger.info(f"Updated strategy weights with forecast: {updated_weights}")
             return updated_weights
@@ -1075,9 +1178,12 @@ class StrategySelector:
             logger.error(f"Failed to incorporate regime forecast: {e}")
             return strategy_weights
 
-    def select_strategy_with_forecast(self, market_data: pd.DataFrame,
-                                    forecast_result: Optional[ForecastingResult] = None,
-                                    available_strategies: Optional[List[type]] = None) -> Optional[type]:
+    def select_strategy_with_forecast(
+        self,
+        market_data: pd.DataFrame,
+        forecast_result: Optional[ForecastingResult] = None,
+        available_strategies: Optional[List[type]] = None,
+    ) -> Optional[type]:
         """
         Select strategy incorporating regime forecast information.
 
@@ -1106,7 +1212,9 @@ class StrategySelector:
             strategy_weights = {s.__name__: 1.0 for s in strategies}
 
             # Incorporate forecast
-            updated_weights = self.incorporate_regime_forecast(strategy_weights, forecast_result)
+            updated_weights = self.incorporate_regime_forecast(
+                strategy_weights, forecast_result
+            )
 
             # Select strategy based on updated weights
             strategy_names = list(updated_weights.keys())
@@ -1125,8 +1233,10 @@ class StrategySelector:
             for strategy_class in strategies:
                 if strategy_class.__name__ == selected_name:
                     if strategy_class != base_selection:
-                        logger.info(f"Forecast-influenced selection: {strategy_class.__name__} "
-                                  f"(base: {base_selection.__name__ if base_selection else 'None'})")
+                        logger.info(
+                            f"Forecast-influenced selection: {strategy_class.__name__} "
+                            f"(base: {base_selection.__name__ if base_selection else 'None'})"
+                        )
                     return strategy_class
 
             # Fallback to base selection
@@ -1136,7 +1246,9 @@ class StrategySelector:
             logger.error(f"Error in forecast-influenced selection: {e}")
             return base_selection
 
-    def get_forecast_impact_analysis(self, forecast_result: ForecastingResult) -> Dict[str, Any]:
+    def get_forecast_impact_analysis(
+        self, forecast_result: ForecastingResult
+    ) -> Dict[str, Any]:
         """
         Analyze the potential impact of regime forecast on strategy selection.
 
@@ -1148,18 +1260,18 @@ class StrategySelector:
         """
         try:
             analysis = {
-                'forecast_available': False,
-                'recommended_regime': None,
-                'recommended_strategies': [],
-                'confidence_level': 0.0,
-                'strategy_changes': [],
-                'risk_implications': {}
+                "forecast_available": False,
+                "recommended_regime": None,
+                "recommended_strategies": [],
+                "confidence_level": 0.0,
+                "strategy_changes": [],
+                "risk_implications": {},
             }
 
             if not forecast_result or not forecast_result.predictions:
                 return analysis
 
-            analysis['forecast_available'] = True
+            analysis["forecast_available"] = True
 
             # Find best forecast
             best_horizon = None
@@ -1176,53 +1288,74 @@ class StrategySelector:
                 return analysis
 
             # Get recommended regime and strategies
-            forecasted_regime_name = max(best_predictions.items(), key=lambda x: x[1])[0]
-            analysis['recommended_regime'] = forecasted_regime_name
-            analysis['confidence_level'] = best_confidence
+            forecasted_regime_name = max(best_predictions.items(), key=lambda x: x[1])[
+                0
+            ]
+            analysis["recommended_regime"] = forecasted_regime_name
+            analysis["confidence_level"] = best_confidence
 
             # Map regime name to enum for strategy recommendations
             regime_mapping = {
-                'trend_up': MarketRegime.TREND_UP,
-                'trend_down': MarketRegime.TREND_DOWN,
-                'range_tight': MarketRegime.RANGE_TIGHT,
-                'range_wide': MarketRegime.RANGE_WIDE,
-                'volatile_spike': MarketRegime.VOLATILE_SPIKE,
-                'trending': MarketRegime.TRENDING,
-                'sideways': MarketRegime.SIDEWAYS,
-                'volatile': MarketRegime.VOLATILE
+                "trend_up": MarketRegime.TREND_UP,
+                "trend_down": MarketRegime.TREND_DOWN,
+                "range_tight": MarketRegime.RANGE_TIGHT,
+                "range_wide": MarketRegime.RANGE_WIDE,
+                "volatile_spike": MarketRegime.VOLATILE_SPIKE,
+                "trending": MarketRegime.TRENDING,
+                "sideways": MarketRegime.SIDEWAYS,
+                "volatile": MarketRegime.VOLATILE,
             }
 
-            forecasted_regime = regime_mapping.get(forecasted_regime_name, MarketRegime.UNKNOWN)
-            analysis['recommended_strategies'] = get_recommended_strategies(forecasted_regime)
+            forecasted_regime = regime_mapping.get(
+                forecasted_regime_name, MarketRegime.UNKNOWN
+            )
+            analysis["recommended_strategies"] = get_recommended_strategies(
+                forecasted_regime
+            )
 
             # Analyze potential strategy changes
             current_regime = forecast_result.current_regime
             if current_regime and current_regime != forecasted_regime_name:
-                analysis['strategy_changes'] = [
+                analysis["strategy_changes"] = [
                     f"Potential shift from {current_regime} to {forecasted_regime_name}",
-                    f"Strategy adaptation may be beneficial"
+                    "Strategy adaptation may be beneficial",
                 ]
 
             # Risk implications
             if best_confidence > 0.8:
-                analysis['risk_implications']['confidence'] = "High confidence - strong signal"
-                analysis['risk_implications']['action'] = "Consider adjusting strategy weights"
+                analysis["risk_implications"][
+                    "confidence"
+                ] = "High confidence - strong signal"
+                analysis["risk_implications"][
+                    "action"
+                ] = "Consider adjusting strategy weights"
             elif best_confidence > 0.6:
-                analysis['risk_implications']['confidence'] = "Medium confidence - moderate signal"
-                analysis['risk_implications']['action'] = "Monitor and consider gradual adjustment"
+                analysis["risk_implications"][
+                    "confidence"
+                ] = "Medium confidence - moderate signal"
+                analysis["risk_implications"][
+                    "action"
+                ] = "Monitor and consider gradual adjustment"
             else:
-                analysis['risk_implications']['confidence'] = "Low confidence - weak signal"
-                analysis['risk_implications']['action'] = "Maintain current strategy selection"
+                analysis["risk_implications"][
+                    "confidence"
+                ] = "Low confidence - weak signal"
+                analysis["risk_implications"][
+                    "action"
+                ] = "Maintain current strategy selection"
 
             return analysis
 
         except Exception as e:
             logger.error(f"Error analyzing forecast impact: {e}")
-            return {'error': str(e)}
+            return {"error": str(e)}
 
-    def generate_regime_aware_backtest_report(self, equity_progression: List[Dict[str, Any]],
-                                             regime_data: List[Dict[str, Any]],
-                                             output_path: str = "results/regime_aware_backtest_report.json"):
+    def generate_regime_aware_backtest_report(
+        self,
+        equity_progression: List[Dict[str, Any]],
+        regime_data: List[Dict[str, Any]],
+        output_path: str = "results/regime_aware_backtest_report.json",
+    ):
         """
         Generate a comprehensive regime-aware backtest report.
 
@@ -1236,7 +1369,9 @@ class StrategySelector:
         """
         try:
             # Compute regime-aware metrics
-            regime_metrics = compute_regime_aware_metrics(equity_progression, regime_data)
+            regime_metrics = compute_regime_aware_metrics(
+                equity_progression, regime_data
+            )
 
             # Export comprehensive report
             report_path = export_regime_aware_report(regime_metrics, output_path)
@@ -1249,6 +1384,11 @@ class StrategySelector:
             return None
 
 
+def get_market_regime_detector():
+    from .regime_detector import RegimeDetector
+    return RegimeDetector()
+
+
 # Global strategy selector instance
 _strategy_selector: Optional[StrategySelector] = None
 
@@ -1257,7 +1397,7 @@ def get_strategy_selector() -> StrategySelector:
     """Get the global strategy selector instance."""
     global _strategy_selector
     if _strategy_selector is None:
-        config = get_config('strategy_selector', {})
+        config = get_config("strategy_selector", {})
         _strategy_selector = StrategySelector(config)
     return _strategy_selector
 
@@ -1276,7 +1416,9 @@ def select_strategy(market_data: pd.DataFrame) -> Optional[type]:
     return selector.select_strategy(market_data)
 
 
-def update_strategy_performance(strategy_name: str, pnl: float, returns: float, is_win: bool):
+def update_strategy_performance(
+    strategy_name: str, pnl: float, returns: float, is_win: bool
+):
     """
     Convenience function to update strategy performance.
 
@@ -1302,14 +1444,14 @@ def get_recommended_strategies_from_forecast(forecasted_regime: str) -> List[str
     """
     # Map forecasted regime strings to MarketRegime enums
     regime_mapping = {
-        'trend_up': MarketRegime.TREND_UP,
-        'trend_down': MarketRegime.TREND_DOWN,
-        'range_tight': MarketRegime.RANGE_TIGHT,
-        'range_wide': MarketRegime.RANGE_WIDE,
-        'volatile_spike': MarketRegime.VOLATILE_SPIKE,
-        'trending': MarketRegime.TRENDING,
-        'sideways': MarketRegime.SIDEWAYS,
-        'volatile': MarketRegime.VOLATILE
+        "trend_up": MarketRegime.TREND_UP,
+        "trend_down": MarketRegime.TREND_DOWN,
+        "range_tight": MarketRegime.RANGE_TIGHT,
+        "range_wide": MarketRegime.RANGE_WIDE,
+        "volatile_spike": MarketRegime.VOLATILE_SPIKE,
+        "trending": MarketRegime.TRENDING,
+        "sideways": MarketRegime.SIDEWAYS,
+        "volatile": MarketRegime.VOLATILE,
     }
 
     regime = regime_mapping.get(forecasted_regime, MarketRegime.UNKNOWN)

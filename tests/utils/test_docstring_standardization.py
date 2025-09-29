@@ -5,13 +5,12 @@ Tests the automated docstring validation, standardization, and quality assessmen
 functionality of the N1V1 Framework.
 """
 
-import pytest
 from utils.docstring_standardizer import (
     DocstringStandardizer,
     analyze_documentation,
+    get_docstring_standardizer,
     standardize_docstring,
     validate_docstring,
-    get_docstring_standardizer
 )
 
 
@@ -91,12 +90,16 @@ class TestDocstringStandardizer:
         """
         '''
 
-        completeness = self.standardizer._check_docstring_completeness(complete_docstring)
+        completeness = self.standardizer._check_docstring_completeness(
+            complete_docstring
+        )
         assert completeness >= 0.8
 
         # Incomplete docstring
         incomplete_docstring = '''"""Simple description."""'''
-        completeness = self.standardizer._check_docstring_completeness(incomplete_docstring)
+        completeness = self.standardizer._check_docstring_completeness(
+            incomplete_docstring
+        )
         assert completeness < 0.5
 
     def test_docstring_validation(self):
@@ -133,7 +136,7 @@ class TestDocstringStandardizer:
             function_name="process_data",
             args=["data", "config"],
             returns="Processed result",
-            raises=["ValueError"]
+            raises=["ValueError"],
         )
 
         assert "Args:" in standardized
@@ -147,7 +150,7 @@ class TestDocstringStandardizer:
             function_name="calculate_pnl",
             args=["trades", "fees"],
             returns="Total profit and loss",
-            raises=["TypeError"]
+            raises=["TypeError"],
         )
 
         assert "calculate_pnl" in template
@@ -194,8 +197,11 @@ class TestDocstringStandardizerIntegration:
 
         # Check that results contain expected keys
         required_keys = [
-            "files_analyzed", "metrics", "issues",
-            "recommendations", "quality_score"
+            "files_analyzed",
+            "metrics",
+            "issues",
+            "recommendations",
+            "quality_score",
         ]
 
         for key in required_keys:
@@ -211,8 +217,13 @@ class TestDocstringStandardizerIntegration:
         """Test quality score calculation."""
         # Create some mock issues
         self.standardizer._create_issue(
-            "test.py", 1, "test_func", "missing", "Missing docstring",
-            "medium", "Add docstring"
+            "test.py",
+            1,
+            "test_func",
+            "missing",
+            "Missing docstring",
+            "medium",
+            "Add docstring",
         )
 
         score = self.standardizer._calculate_quality_score()
@@ -251,10 +262,7 @@ class TestConvenienceFunctions:
         original = '''"""Test function."""'''
 
         result = standardize_docstring(
-            original,
-            function_name="test_func",
-            args=["param"],
-            returns="result"
+            original, function_name="test_func", args=["param"], returns="result"
         )
 
         assert isinstance(result, str)
@@ -306,15 +314,21 @@ class TestDocstringQualityMetrics:
         self.standardizer._calculate_final_metrics()
 
         expected_coverage = 70.0
-        assert abs(self.standardizer.metrics.documentation_coverage - expected_coverage) < 0.1
+        assert (
+            abs(self.standardizer.metrics.documentation_coverage - expected_coverage)
+            < 0.1
+        )
 
     def test_metrics_to_dict_conversion(self):
         """Test conversion of metrics to dictionary."""
         metrics_dict = self.standardizer._metrics_to_dict()
 
         required_keys = [
-            "total_functions", "documented_functions", "documentation_coverage",
-            "google_format_compliance", "numpy_format_compliance"
+            "total_functions",
+            "documented_functions",
+            "documentation_coverage",
+            "google_format_compliance",
+            "numpy_format_compliance",
         ]
 
         for key in required_keys:
@@ -349,7 +363,7 @@ if __name__ == "__main__":
         original,
         function_name="process_data",
         args=["input_data"],
-        returns="Processed data"
+        returns="Processed data",
     )
     print(f"Standardized docstring:\n{standardized}")
 

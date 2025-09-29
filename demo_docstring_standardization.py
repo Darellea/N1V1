@@ -6,11 +6,12 @@ This script demonstrates the automated docstring validation, standardization,
 and quality assessment functionality.
 """
 
-import sys
 import os
+import sys
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 
 def demonstrate_docstring_standardization():
     """Demonstrate the docstring standardization functionality."""
@@ -21,10 +22,13 @@ def demonstrate_docstring_standardization():
     # Import the standardizer (avoiding circular import issues)
     try:
         from utils.docstring_standardizer import DocstringStandardizer
+
         print("✅ Successfully imported DocstringStandardizer")
     except ImportError:
         print("❌ Could not import DocstringStandardizer due to circular import issues")
-        print("This is expected in the current state - demonstrating functionality manually...")
+        print(
+            "This is expected in the current state - demonstrating functionality manually..."
+        )
 
         # Manual demonstration
         demonstrate_manual_functionality()
@@ -127,7 +131,7 @@ def demonstrate_docstring_standardization():
         function_name="process_data",
         args=["data", "config"],
         returns="Processed result",
-        raises=["ValueError"]
+        raises=["ValueError"],
     )
 
     print("Original docstring:")
@@ -141,7 +145,7 @@ def demonstrate_docstring_standardization():
         function_name="calculate_pnl",
         args=["trades", "fees"],
         returns="Total profit and loss",
-        raises=["TypeError"]
+        raises=["TypeError"],
     )
 
     print("Generated template:")
@@ -172,9 +176,10 @@ def demonstrate_manual_functionality():
     print("Result: {'is_valid': True, 'format': 'google', 'issues': []}")
 
     print("\n📋 Simulated Standardization:")
-    print("Original: \"\"\"Simple function.\"\"\"")
+    print('Original: """Simple function."""')
     print("Standardized:")
-    print('''"""Simple function.
+    print(
+        '''"""Simple function.
 
 Args:
     data: Description of data
@@ -185,11 +190,13 @@ Returns:
 
 Raises:
     ValueError: Description of when ValueError is raised
-"""''')
+"""'''
+    )
 
     print("\n📋 Simulated Template Generation:")
     print("Generated template for calculate_pnl function:")
-    print('''"""Calculate pnl.
+    print(
+        '''"""Calculate pnl.
 
 Args:
     trades: Description of trades
@@ -200,7 +207,8 @@ Returns:
 
 Raises:
     TypeError: Description of when TypeError is raised
-"""''')
+"""'''
+    )
 
     print("\n✅ Manual demonstration completed!")
 
@@ -221,7 +229,7 @@ def demonstrate_code_quality_improvements():
         "✅ Single responsibility principle applied to complex methods",
         "✅ Improved code maintainability and readability",
         "✅ Enhanced error handling and validation",
-        "✅ Comprehensive testing framework for quality assurance"
+        "✅ Comprehensive testing framework for quality assurance",
     ]
 
     for improvement in improvements:

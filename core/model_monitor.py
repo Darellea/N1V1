@@ -13,25 +13,20 @@ Key Features:
 - Integration with existing trading infrastructure
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Any, Optional, Tuple, Callable
-from datetime import datetime, timedelta
-import logging
 import json
+import logging
 import os
-from pathlib import Path
-import joblib
-from dataclasses import dataclass, asdict
-from collections import defaultdict
 import threading
 import time
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
+from collections import defaultdict
+from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from sklearn.metrics import roc_auc_score, f1_score, precision_score, recall_score
-from sklearn.preprocessing import StandardScaler
-import lightgbm as lgb
+import joblib
+import numpy as np
+import pandas as pd
+from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +34,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PerformanceMetrics:
     """Container for model performance metrics."""
+
     timestamp: datetime
     auc: float
     f1_score: float
@@ -56,6 +52,7 @@ class PerformanceMetrics:
 @dataclass
 class DriftMetrics:
     """Container for data drift detection metrics."""
+
     timestamp: datetime
     feature_drift_scores: Dict[str, float]
     prediction_drift_score: float
@@ -67,6 +64,7 @@ class DriftMetrics:
 @dataclass
 class ModelHealthReport:
     """Comprehensive model health assessment."""
+
     timestamp: datetime
     overall_health_score: float
     performance_score: float
@@ -99,10 +97,10 @@ class ModelMonitor:
                 - output_dir: Directory for saving monitoring data
         """
         self.config = config
-        self.model_path = config.get('model_path', 'models/binary_model.pkl')
-        self.config_path = config.get('config_path', 'models/binary_model_config.json')
-        self.monitoring_window_days = config.get('monitoring_window_days', 30)
-        self.output_dir = config.get('output_dir', 'monitoring')
+        self.model_path = config.get("model_path", "models/binary_model.pkl")
+        self.config_path = config.get("config_path", "models/binary_model_config.json")
+        self.monitoring_window_days = config.get("monitoring_window_days", 30)
+        self.output_dir = config.get("output_dir", "monitoring")
 
         # Load model and configuration
         self.model = None
@@ -128,7 +126,7 @@ class ModelMonitor:
         # Background monitoring
         self.monitoring_active = False
         self.monitor_thread = None
-        self.monitor_interval_minutes = config.get('monitor_interval_minutes', 60)
+        self.monitor_interval_minutes = config.get("monitor_interval_minutes", 60)
 
         # Ensure output directory exists
         os.makedirs(self.output_dir, exist_ok=True)
@@ -148,21 +146,23 @@ class ModelMonitor:
 
             # Load configuration
             if os.path.exists(self.config_path):
-                with open(self.config_path, 'r') as f:
+                with open(self.config_path, "r") as f:
                     self.model_config = json.load(f)
 
-                self.optimal_threshold = self.model_config.get('optimal_threshold', 0.5)
+                self.optimal_threshold = self.model_config.get("optimal_threshold", 0.5)
                 logger.info(f"Model configuration loaded from {self.config_path}")
             else:
                 logger.warning(f"Model configuration not found: {self.config_path}")
 
             # Extract feature columns from model card if available
-            model_card_path = self.model_path.replace('.pkl', '.model_card.json')
+            model_card_path = self.model_path.replace(".pkl", ".model_card.json")
             if os.path.exists(model_card_path):
-                with open(model_card_path, 'r') as f:
+                with open(model_card_path, "r") as f:
                     model_card = json.load(f)
-                self.feature_columns = model_card.get('feature_list', [])
-                logger.info(f"Feature columns loaded from model card: {len(self.feature_columns)} features")
+                self.feature_columns = model_card.get("feature_list", [])
+                logger.info(
+                    f"Feature columns loaded from model card: {len(self.feature_columns)} features"
+                )
 
         except Exception as e:
             logger.error(f"Error loading model: {e}")
@@ -174,7 +174,9 @@ class ModelMonitor:
             return
 
         self.monitoring_active = True
-        self.monitor_thread = threading.Thread(target=self._monitoring_loop, daemon=True)
+        self.monitor_thread = threading.Thread(
+            target=self._monitoring_loop, daemon=True
+        )
         self.monitor_thread.start()
         logger.info("Model monitoring started")
 
@@ -205,9 +207,13 @@ class ModelMonitor:
                 logger.error(f"Error in monitoring loop: {e}")
                 time.sleep(300)  # Wait 5 minutes before retrying
 
-    def update_predictions(self, features: pd.DataFrame, predictions: np.ndarray,
-                          true_labels: Optional[np.ndarray] = None,
-                          timestamp: Optional[datetime] = None):
+    def update_predictions(
+        self,
+        features: pd.DataFrame,
+        predictions: np.ndarray,
+        true_labels: Optional[np.ndarray] = None,
+        timestamp: Optional[datetime] = None,
+    ):
         """
         Update monitoring with new predictions.
 
@@ -222,18 +228,19 @@ class ModelMonitor:
 
         # Store prediction data
         prediction_record = {
-            'timestamp': timestamp,
-            'features': features.copy(),
-            'predictions': predictions.copy(),
-            'true_labels': true_labels.copy() if true_labels is not None else None
+            "timestamp": timestamp,
+            "features": features.copy(),
+            "predictions": predictions.copy(),
+            "true_labels": true_labels.copy() if true_labels is not None else None,
         }
         self.prediction_history.append(prediction_record)
 
         # Keep only recent data
         cutoff_date = datetime.now() - timedelta(days=self.monitoring_window_days)
         self.prediction_history = [
-            record for record in self.prediction_history
-            if record['timestamp'] > cutoff_date
+            record
+            for record in self.prediction_history
+            if record["timestamp"] > cutoff_date
         ]
 
         # Update reference data for drift detection
@@ -242,9 +249,12 @@ class ModelMonitor:
 
         logger.debug(f"Updated predictions: {len(predictions)} samples at {timestamp}")
 
-    def calculate_performance_metrics(self, predictions: np.ndarray,
-                                    true_labels: np.ndarray,
-                                    threshold: Optional[float] = None) -> PerformanceMetrics:
+    def calculate_performance_metrics(
+        self,
+        predictions: np.ndarray,
+        true_labels: np.ndarray,
+        threshold: Optional[float] = None,
+    ) -> PerformanceMetrics:
         """
         Calculate comprehensive performance metrics.
 
@@ -269,9 +279,13 @@ class ModelMonitor:
         recall = recall_score(true_labels, binary_predictions, zero_division=0)
 
         # Economic metrics
-        pnl, sharpe_ratio, max_drawdown, total_trades, win_rate = self._calculate_economic_metrics(
-            true_labels, binary_predictions
-        )
+        (
+            pnl,
+            sharpe_ratio,
+            max_drawdown,
+            total_trades,
+            win_rate,
+        ) = self._calculate_economic_metrics(true_labels, binary_predictions)
 
         # Calibration error
         calibration_error = self._calculate_calibration_error(predictions, true_labels)
@@ -288,15 +302,18 @@ class ModelMonitor:
             total_trades=int(total_trades),
             win_rate=float(win_rate),
             calibration_error=float(calibration_error),
-            sample_size=len(predictions)
+            sample_size=len(predictions),
         )
 
-    def _calculate_economic_metrics(self, true_labels: np.ndarray,
-                                  predictions: np.ndarray) -> Tuple[float, float, float, int, float]:
+    def _calculate_economic_metrics(
+        self, true_labels: np.ndarray, predictions: np.ndarray
+    ) -> Tuple[float, float, float, int, float]:
         """Calculate economic performance metrics."""
         # Simple PnL calculation
         pnl = []
-        profit_threshold = self.model_config.get('expected_performance', {}).get('pnl', 0.005) / 100  # Convert to fraction
+        profit_threshold = (
+            self.model_config.get("expected_performance", {}).get("pnl", 0.005) / 100
+        )  # Convert to fraction
 
         for true, pred in zip(true_labels, predictions):
             if pred == 1:  # We took a trade
@@ -325,20 +342,26 @@ class ModelMonitor:
             max_drawdown = 0.0
 
         total_trades = int(np.sum(predictions))
-        win_rate = float(np.mean(predictions == true_labels)) if total_trades > 0 else 0.0
+        win_rate = (
+            float(np.mean(predictions == true_labels)) if total_trades > 0 else 0.0
+        )
 
         return np.sum(pnl), sharpe, max_drawdown, total_trades, win_rate
 
-    def _calculate_calibration_error(self, predictions: np.ndarray,
-                                   true_labels: np.ndarray) -> float:
+    def _calculate_calibration_error(
+        self, predictions: np.ndarray, true_labels: np.ndarray
+    ) -> float:
         """Calculate calibration error using Brier score."""
         # Brier score for binary classification
         brier_score = np.mean((predictions - true_labels) ** 2)
         return float(brier_score)
 
-    def detect_drift(self, current_features: pd.DataFrame,
-                    current_predictions: np.ndarray,
-                    current_labels: Optional[np.ndarray] = None) -> DriftMetrics:
+    def detect_drift(
+        self,
+        current_features: pd.DataFrame,
+        current_predictions: np.ndarray,
+        current_labels: Optional[np.ndarray] = None,
+    ) -> DriftMetrics:
         """
         Detect data drift using various statistical tests.
 
@@ -357,16 +380,18 @@ class ModelMonitor:
                 prediction_drift_score=0.0,
                 label_drift_score=0.0,
                 overall_drift_score=0.0,
-                is_drift_detected=False
+                is_drift_detected=False,
             )
 
         # Feature drift detection
         feature_drift_scores = {}
         for col in self.feature_columns:
-            if col in current_features.columns and col in self.reference_features.columns:
+            if (
+                col in current_features.columns
+                and col in self.reference_features.columns
+            ):
                 drift_score = self._calculate_feature_drift(
-                    self.reference_features[col].values,
-                    current_features[col].values
+                    self.reference_features[col].values, current_features[col].values
                 )
                 feature_drift_scores[col] = drift_score
 
@@ -383,15 +408,21 @@ class ModelMonitor:
             )
 
         # Overall drift score
-        feature_drift_avg = np.mean(list(feature_drift_scores.values())) if feature_drift_scores else 0.0
+        feature_drift_avg = (
+            np.mean(list(feature_drift_scores.values()))
+            if feature_drift_scores
+            else 0.0
+        )
         overall_drift_score = (
-            0.5 * feature_drift_avg +
-            0.3 * prediction_drift_score +
-            0.2 * label_drift_score
+            0.5 * feature_drift_avg
+            + 0.3 * prediction_drift_score
+            + 0.2 * label_drift_score
         )
 
         # Drift detection threshold
-        drift_threshold = self.config.get('drift_thresholds', {}).get('overall_threshold', 0.1)
+        drift_threshold = self.config.get("drift_thresholds", {}).get(
+            "overall_threshold", 0.1
+        )
         is_drift_detected = overall_drift_score > drift_threshold
 
         return DriftMetrics(
@@ -400,13 +431,16 @@ class ModelMonitor:
             prediction_drift_score=float(prediction_drift_score),
             label_drift_score=float(label_drift_score),
             overall_drift_score=float(overall_drift_score),
-            is_drift_detected=is_drift_detected
+            is_drift_detected=is_drift_detected,
         )
 
-    def _calculate_feature_drift(self, reference: np.ndarray, current: np.ndarray) -> float:
+    def _calculate_feature_drift(
+        self, reference: np.ndarray, current: np.ndarray
+    ) -> float:
         """Calculate drift score for a single feature using Kolmogorov-Smirnov test."""
         try:
             from scipy.stats import ks_2samp
+
             statistic, _ = ks_2samp(reference, current)
             return float(statistic)
         except ImportError:
@@ -415,7 +449,9 @@ class ModelMonitor:
             curr_mean = np.mean(current)
             return abs(ref_mean - curr_mean) / abs(ref_mean) if ref_mean != 0 else 0.0
 
-    def _calculate_distribution_drift(self, reference: np.ndarray, current: np.ndarray) -> float:
+    def _calculate_distribution_drift(
+        self, reference: np.ndarray, current: np.ndarray
+    ) -> float:
         """Calculate distribution drift using Population Stability Index."""
         try:
             # Create histograms
@@ -445,31 +481,37 @@ class ModelMonitor:
         all_labels = []
 
         for record in recent_records:
-            if record['features'] is not None:
-                all_features.append(record['features'])
-            if record['predictions'] is not None:
-                all_predictions.extend(record['predictions'])
-            if record['true_labels'] is not None:
-                all_labels.extend(record['true_labels'])
+            if record["features"] is not None:
+                all_features.append(record["features"])
+            if record["predictions"] is not None:
+                all_predictions.extend(record["predictions"])
+            if record["true_labels"] is not None:
+                all_labels.extend(record["true_labels"])
 
         if all_features:
             self.reference_features = pd.concat(all_features, ignore_index=True)
             # Sample to reasonable size
             if len(self.reference_features) > 5000:
-                self.reference_features = self.reference_features.sample(5000, random_state=42)
+                self.reference_features = self.reference_features.sample(
+                    5000, random_state=42
+                )
 
         if all_predictions:
             self.reference_predictions = np.array(all_predictions)
             # Sample to reasonable size
             if len(self.reference_predictions) > 5000:
-                indices = np.random.choice(len(self.reference_predictions), 5000, replace=False)
+                indices = np.random.choice(
+                    len(self.reference_predictions), 5000, replace=False
+                )
                 self.reference_predictions = self.reference_predictions[indices]
 
         if all_labels:
             self.reference_labels = np.array(all_labels)
             # Sample to reasonable size
             if len(self.reference_labels) > 5000:
-                indices = np.random.choice(len(self.reference_labels), 5000, replace=False)
+                indices = np.random.choice(
+                    len(self.reference_labels), 5000, replace=False
+                )
                 self.reference_labels = self.reference_labels[indices]
 
         logger.info("Reference data updated for drift detection")
@@ -502,7 +544,9 @@ class ModelMonitor:
             recommendations.append("Model calibration has deteriorated")
 
         # Overall health score
-        overall_health_score = (performance_score + (1 - drift_score) + calibration_score) / 3
+        overall_health_score = (
+            performance_score + (1 - drift_score) + calibration_score
+        ) / 3
 
         # Confidence level
         if overall_health_score > 0.8:
@@ -514,7 +558,9 @@ class ModelMonitor:
 
         # Additional recommendations
         if len(self.performance_history) < 10:
-            recommendations.append("Insufficient monitoring history for reliable assessment")
+            recommendations.append(
+                "Insufficient monitoring history for reliable assessment"
+            )
 
         if not recommendations:
             recommendations.append("Model health is good, continue monitoring")
@@ -527,7 +573,7 @@ class ModelMonitor:
             calibration_score=float(calibration_score),
             recommendations=recommendations,
             requires_retraining=requires_retraining,
-            confidence_level=confidence_level
+            confidence_level=confidence_level,
         )
 
     def _assess_performance_health(self) -> float:
@@ -572,30 +618,37 @@ class ModelMonitor:
 
     def _check_alerts(self, health_report: ModelHealthReport):
         """Check for alerts based on health report."""
-        alerts_config = self.config.get('alerts', {})
+        alerts_config = self.config.get("alerts", {})
 
         # Performance alert
-        if health_report.performance_score < alerts_config.get('performance_threshold', 0.6):
-            self._trigger_alert("PERFORMANCE_DEGRADED",
-                              f"Model performance score: {health_report.performance_score:.3f}")
+        if health_report.performance_score < alerts_config.get(
+            "performance_threshold", 0.6
+        ):
+            self._trigger_alert(
+                "PERFORMANCE_DEGRADED",
+                f"Model performance score: {health_report.performance_score:.3f}",
+            )
 
         # Drift alert
-        if health_report.drift_score > alerts_config.get('drift_threshold', 0.7):
-            self._trigger_alert("DRIFT_DETECTED",
-                              f"Data drift score: {health_report.drift_score:.3f}")
+        if health_report.drift_score > alerts_config.get("drift_threshold", 0.7):
+            self._trigger_alert(
+                "DRIFT_DETECTED", f"Data drift score: {health_report.drift_score:.3f}"
+            )
 
         # Retraining alert
         if health_report.requires_retraining:
-            self._trigger_alert("RETRAINING_REQUIRED",
-                              "Model requires recalibration based on health assessment")
+            self._trigger_alert(
+                "RETRAINING_REQUIRED",
+                "Model requires recalibration based on health assessment",
+            )
 
     def _trigger_alert(self, alert_type: str, message: str):
         """Trigger an alert."""
         alert = {
-            'timestamp': datetime.now(),
-            'type': alert_type,
-            'message': message,
-            'model_path': self.model_path
+            "timestamp": datetime.now(),
+            "type": alert_type,
+            "message": message,
+            "model_path": self.model_path,
         }
 
         self.alerts.append(alert)
@@ -617,23 +670,27 @@ class ModelMonitor:
         try:
             # Save performance history
             if self.performance_history:
-                perf_data = [asdict(m) for m in self.performance_history[-100:]]  # Last 100 records
-                perf_path = os.path.join(self.output_dir, 'performance_history.json')
-                with open(perf_path, 'w') as f:
+                perf_data = [
+                    asdict(m) for m in self.performance_history[-100:]
+                ]  # Last 100 records
+                perf_path = os.path.join(self.output_dir, "performance_history.json")
+                with open(perf_path, "w") as f:
                     json.dump(perf_data, f, indent=2, default=str)
 
             # Save drift history
             if self.drift_history:
-                drift_data = [asdict(d) for d in self.drift_history[-50:]]  # Last 50 records
-                drift_path = os.path.join(self.output_dir, 'drift_history.json')
-                with open(drift_path, 'w') as f:
+                drift_data = [
+                    asdict(d) for d in self.drift_history[-50:]
+                ]  # Last 50 records
+                drift_path = os.path.join(self.output_dir, "drift_history.json")
+                with open(drift_path, "w") as f:
                     json.dump(drift_data, f, indent=2, default=str)
 
             # Save alerts
             if self.alerts:
                 alerts_data = self.alerts[-50:]  # Last 50 alerts
-                alerts_path = os.path.join(self.output_dir, 'alerts.json')
-                with open(alerts_path, 'w') as f:
+                alerts_path = os.path.join(self.output_dir, "alerts.json")
+                with open(alerts_path, "w") as f:
                     json.dump(alerts_data, f, indent=2, default=str)
 
         except Exception as e:
@@ -644,14 +701,14 @@ class ModelMonitor:
         health_report = self.check_model_health()
 
         report = {
-            'timestamp': datetime.now().isoformat(),
-            'model_path': self.model_path,
-            'monitoring_period_days': self.monitoring_window_days,
-            'health_assessment': asdict(health_report),
-            'performance_summary': self._generate_performance_summary(),
-            'drift_summary': self._generate_drift_summary(),
-            'alerts_summary': self._generate_alerts_summary(),
-            'recommendations': health_report.recommendations
+            "timestamp": datetime.now().isoformat(),
+            "model_path": self.model_path,
+            "monitoring_period_days": self.monitoring_window_days,
+            "health_assessment": asdict(health_report),
+            "performance_summary": self._generate_performance_summary(),
+            "drift_summary": self._generate_drift_summary(),
+            "alerts_summary": self._generate_alerts_summary(),
+            "recommendations": health_report.recommendations,
         }
 
         return report
@@ -659,33 +716,37 @@ class ModelMonitor:
     def _generate_performance_summary(self) -> Dict[str, Any]:
         """Generate performance summary."""
         if not self.performance_history:
-            return {'status': 'No performance data available'}
+            return {"status": "No performance data available"}
 
         recent_metrics = self.performance_history[-10:]
 
         return {
-            'total_records': len(self.performance_history),
-            'recent_records': len(recent_metrics),
-            'avg_auc': float(np.mean([m.auc for m in recent_metrics])),
-            'avg_sharpe': float(np.mean([m.sharpe_ratio for m in recent_metrics])),
-            'avg_pnl': float(np.mean([m.pnl for m in recent_metrics])),
-            'avg_win_rate': float(np.mean([m.win_rate for m in recent_metrics])),
-            'avg_calibration_error': float(np.mean([m.calibration_error for m in recent_metrics]))
+            "total_records": len(self.performance_history),
+            "recent_records": len(recent_metrics),
+            "avg_auc": float(np.mean([m.auc for m in recent_metrics])),
+            "avg_sharpe": float(np.mean([m.sharpe_ratio for m in recent_metrics])),
+            "avg_pnl": float(np.mean([m.pnl for m in recent_metrics])),
+            "avg_win_rate": float(np.mean([m.win_rate for m in recent_metrics])),
+            "avg_calibration_error": float(
+                np.mean([m.calibration_error for m in recent_metrics])
+            ),
         }
 
     def _generate_drift_summary(self) -> Dict[str, Any]:
         """Generate drift summary."""
         if not self.drift_history:
-            return {'status': 'No drift data available'}
+            return {"status": "No drift data available"}
 
         recent_drift = self.drift_history[-5:]
 
         return {
-            'total_records': len(self.drift_history),
-            'recent_records': len(recent_drift),
-            'avg_overall_drift': float(np.mean([d.overall_drift_score for d in recent_drift])),
-            'drift_detected_count': sum(1 for d in recent_drift if d.is_drift_detected),
-            'most_drifting_features': self._get_most_drifting_features()
+            "total_records": len(self.drift_history),
+            "recent_records": len(recent_drift),
+            "avg_overall_drift": float(
+                np.mean([d.overall_drift_score for d in recent_drift])
+            ),
+            "drift_detected_count": sum(1 for d in recent_drift if d.is_drift_detected),
+            "most_drifting_features": self._get_most_drifting_features(),
         }
 
     def _get_most_drifting_features(self) -> List[Dict[str, Any]]:
@@ -709,31 +770,36 @@ class ModelMonitor:
         }
 
         # Sort by drift score
-        sorted_features = sorted(avg_drift_scores.items(), key=lambda x: x[1], reverse=True)
+        sorted_features = sorted(
+            avg_drift_scores.items(), key=lambda x: x[1], reverse=True
+        )
 
         return [
-            {'feature': feature, 'avg_drift_score': float(score)}
+            {"feature": feature, "avg_drift_score": float(score)}
             for feature, score in sorted_features[:10]  # Top 10
         ]
 
     def _generate_alerts_summary(self) -> Dict[str, Any]:
         """Generate alerts summary."""
         if not self.alerts:
-            return {'status': 'No alerts generated'}
+            return {"status": "No alerts generated"}
 
-        recent_alerts = [a for a in self.alerts if a['timestamp'] >
-                        datetime.now() - timedelta(days=7)]  # Last 7 days
+        recent_alerts = [
+            a
+            for a in self.alerts
+            if a["timestamp"] > datetime.now() - timedelta(days=7)
+        ]  # Last 7 days
 
         alert_types = {}
         for alert in recent_alerts:
-            alert_type = alert['type']
+            alert_type = alert["type"]
             alert_types[alert_type] = alert_types.get(alert_type, 0) + 1
 
         return {
-            'total_alerts': len(self.alerts),
-            'recent_alerts': len(recent_alerts),
-            'alert_types': alert_types,
-            'latest_alert': self.alerts[-1] if self.alerts else None
+            "total_alerts": len(self.alerts),
+            "recent_alerts": len(recent_alerts),
+            "alert_types": alert_types,
+            "latest_alert": self.alerts[-1] if self.alerts else None,
         }
 
 
@@ -755,7 +821,9 @@ class AutoRecalibrator:
         self.monitor = ModelMonitor(config)
         self.retraining_active = False
         self.last_retraining = None
-        self.min_retraining_interval_hours = config.get('min_retraining_interval_hours', 24)
+        self.min_retraining_interval_hours = config.get(
+            "min_retraining_interval_hours", 24
+        )
 
         # Setup alert callbacks
         self.monitor.add_alert_callback(self._handle_alert)
@@ -764,7 +832,7 @@ class AutoRecalibrator:
 
     def _handle_alert(self, alert: Dict[str, Any]):
         """Handle alerts from the monitor."""
-        alert_type = alert['type']
+        alert_type = alert["type"]
 
         if alert_type == "RETRAINING_REQUIRED":
             self._trigger_retraining(alert)
@@ -776,7 +844,10 @@ class AutoRecalibrator:
         # Check if enough time has passed since last retraining
         if self.last_retraining:
             time_since_last = datetime.now() - self.last_retraining
-            if time_since_last.total_seconds() < self.min_retraining_interval_hours * 3600:
+            if (
+                time_since_last.total_seconds()
+                < self.min_retraining_interval_hours * 3600
+            ):
                 logger.info("Retraining skipped - too soon since last retraining")
                 return
 
@@ -790,7 +861,9 @@ class AutoRecalibrator:
             self.retraining_active = True
 
             # Run retraining in background
-            retraining_thread = threading.Thread(target=self._run_retraining, daemon=True)
+            retraining_thread = threading.Thread(
+                target=self._run_retraining, daemon=True
+            )
             retraining_thread.start()
 
         except Exception as e:
@@ -803,10 +876,15 @@ class AutoRecalibrator:
             logger.info("Starting automatic model retraining")
 
             # Import here to avoid circular imports
-            from ml.trainer import train_model_binary, load_data, generate_enhanced_features, create_binary_labels
+            from ml.trainer import (
+                create_binary_labels,
+                generate_enhanced_features,
+                load_data,
+                train_model_binary,
+            )
 
             # Load recent data for retraining
-            data_path = self.config.get('retraining_data_path')
+            data_path = self.config.get("retraining_data_path")
             if not data_path or not os.path.exists(data_path):
                 logger.error("Retraining data path not found")
                 return
@@ -819,15 +897,18 @@ class AutoRecalibrator:
                 df,
                 include_multi_horizon=True,
                 include_regime_features=True,
-                include_interaction_features=True
+                include_interaction_features=True,
             )
 
             # Create labels
             df = create_binary_labels(df, horizon=5, profit_threshold=0.005)
 
             # Prepare for training
-            feature_columns = [col for col in df.columns
-                             if col not in ['Open', 'High', 'Low', 'Close', 'Volume', 'label_binary']]
+            feature_columns = [
+                col
+                for col in df.columns
+                if col not in ["Open", "High", "Low", "Close", "Volume", "label_binary"]
+            ]
 
             # Generate new model path
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -841,12 +922,12 @@ class AutoRecalibrator:
                 feature_columns=feature_columns,
                 tune=True,  # Use hyperparameter tuning
                 n_trials=15,  # Fewer trials for automatic retraining
-                eval_economic=True
+                eval_economic=True,
             )
 
             # Update monitor with new model
             self.monitor.model_path = new_model_path
-            self.monitor.config_path = new_model_path.replace('.pkl', '_config.json')
+            self.monitor.config_path = new_model_path.replace(".pkl", "_config.json")
             self.monitor._load_model()
 
             self.last_retraining = datetime.now()
@@ -879,13 +960,15 @@ def create_auto_recalibrator(config: Dict[str, Any]) -> AutoRecalibrator:
     return AutoRecalibrator(config)
 
 
-def generate_monitoring_report(monitor: ModelMonitor, output_path: str = None) -> Dict[str, Any]:
+def generate_monitoring_report(
+    monitor: ModelMonitor, output_path: str = None
+) -> Dict[str, Any]:
     """Generate and optionally save a monitoring report."""
     report = monitor.generate_report()
 
     if output_path:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        with open(output_path, 'w') as f:
+        with open(output_path, "w") as f:
             json.dump(report, f, indent=2, default=str)
         logger.info(f"Monitoring report saved to {output_path}")
 

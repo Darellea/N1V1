@@ -1,26 +1,30 @@
-import os
 import json
-import tempfile
-import pandas as pd
+import os
+
 import numpy as np
+import pandas as pd
 
 # Test adapted for binary trade/no-trade model.
 # Legacy multi-class path removed.
+from ml.trainer import create_binary_labels, generate_features, train_model_binary
 
-from ml.trainer import train_model_binary, generate_features, create_binary_labels
 
 def make_sample_df(rows=200):
     # Create synthetic OHLCV data with deterministic values
     idx = pd.date_range("2020-01-01", periods=rows, freq="h")
     price = np.linspace(100, 200, rows) + np.sin(np.linspace(0, 10, rows)) * 2
-    df = pd.DataFrame({
-        "Open": price,
-        "High": price + 1.0,
-        "Low": price - 1.0,
-        "Close": price,
-        "Volume": np.random.rand(rows) * 1000,
-    }, index=idx)
+    df = pd.DataFrame(
+        {
+            "Open": price,
+            "High": price + 1.0,
+            "Low": price - 1.0,
+            "Close": price,
+            "Volume": np.random.rand(rows) * 1000,
+        },
+        index=idx,
+    )
     return df
+
 
 def test_train_creates_model_card(tmp_path):
     print("Starting test_train_creates_model_card")
@@ -35,13 +39,16 @@ def test_train_creates_model_card(tmp_path):
     noise = rng.normal(0, 1, rows)
     close_prices = base_price + noise
 
-    df = pd.DataFrame({
-        "Open": close_prices + rng.normal(0, 0.5, rows),
-        "High": close_prices + abs(rng.normal(0, 1, rows)),
-        "Low": close_prices - abs(rng.normal(0, 1, rows)),
-        "Close": close_prices,
-        "Volume": rng.uniform(1000, 10000, rows),
-    }, index=idx)
+    df = pd.DataFrame(
+        {
+            "Open": close_prices + rng.normal(0, 0.5, rows),
+            "High": close_prices + abs(rng.normal(0, 1, rows)),
+            "Low": close_prices - abs(rng.normal(0, 1, rows)),
+            "Close": close_prices,
+            "Volume": rng.uniform(1000, 10000, rows),
+        },
+        index=idx,
+    )
 
     print(f"Created DataFrame with shape: {df.shape}")
 
@@ -53,13 +60,21 @@ def test_train_creates_model_card(tmp_path):
     # Create binary labels for trade/no-trade decisions
     print("Creating binary labels...")
     df = create_binary_labels(df, horizon=5, profit_threshold=0.005)
-    df['Label'] = df['label_binary']
+    df["Label"] = df["label_binary"]
     print(f"After label creation: {df.shape}")
 
     # Ensure we have enough samples for TimeSeriesSplit with 3 splits
     assert len(df) >= 10, "Insufficient data for CV splits in test"
 
-    feature_columns = ['RSI', 'MACD', 'EMA_20', 'ATR', 'StochRSI', 'TrendStrength', 'Volatility']
+    feature_columns = [
+        "RSI",
+        "MACD",
+        "EMA_20",
+        "ATR",
+        "StochRSI",
+        "TrendStrength",
+        "Volatility",
+    ]
 
     model_path = tmp_path / "model.pkl"
     results_path = tmp_path / "results.json"

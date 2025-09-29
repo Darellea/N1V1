@@ -5,18 +5,24 @@ Manages data fetching from exchanges, caching, multi-timeframe data,
 and provides a unified interface for market data access.
 """
 
-from typing import Any, Optional
-import time
 import asyncio
+import time
+from typing import Any, Optional
 
 try:
     import aiohttp
 except ImportError:
     aiohttp = None
 
-from .logging_utils import get_structured_logger, LogSensitivity
-from .utils.error_utils import ErrorHandler, ErrorContext, ErrorSeverity, ErrorCategory, CircuitBreaker
 from .interfaces import DataManagerInterface
+from .logging_utils import LogSensitivity, get_structured_logger
+from .utils.error_utils import (
+    CircuitBreaker,
+    ErrorCategory,
+    ErrorContext,
+    ErrorHandler,
+    ErrorSeverity,
+)
 
 logger = get_structured_logger("core.data_manager", LogSensitivity.SECURE)
 error_handler = ErrorHandler("data_manager")
@@ -42,7 +48,9 @@ class DataManager(DataManagerInterface):
         """
         self.config = config
         self.mode = config.get("environment", {}).get("mode", "paper")
-        self.portfolio_mode = bool(config.get("trading", {}).get("portfolio_mode", False))
+        self.portfolio_mode = bool(
+            config.get("trading", {}).get("portfolio_mode", False)
+        )
         self.pairs = []
 
         # Component references
@@ -51,6 +59,7 @@ class DataManager(DataManagerInterface):
 
         # Import configuration from centralized system
         from .config_manager import get_config_manager
+
         config_manager = get_config_manager()
         dm_config = config_manager.get_data_manager_config()
 
@@ -62,8 +71,12 @@ class DataManager(DataManagerInterface):
 
         # Circuit breaker for external service calls
         self.circuit_breaker = CircuitBreaker(
-            failure_threshold=config.get("circuit_breaker", {}).get("failure_threshold", 5),
-            recovery_timeout=config.get("circuit_breaker", {}).get("recovery_timeout", 60.0)
+            failure_threshold=config.get("circuit_breaker", {}).get(
+                "failure_threshold", 5
+            ),
+            recovery_timeout=config.get("circuit_breaker", {}).get(
+                "recovery_timeout", 60.0
+            ),
         )
 
     def set_components(self, data_fetcher, timeframe_manager=None):
@@ -92,7 +105,9 @@ class DataManager(DataManagerInterface):
             # Fetch multi-timeframe data if available
             if self.timeframe_manager and self.pairs:
                 multi_timeframe_data = await self._fetch_multi_timeframe_data()
-                market_data = self._combine_market_data(market_data, multi_timeframe_data)
+                market_data = self._combine_market_data(
+                    market_data, multi_timeframe_data
+                )
 
             # Cache the fetched data
             self._cache_market_data(market_data, current_time)
@@ -105,17 +120,17 @@ class DataManager(DataManagerInterface):
                 operation="fetch_market_data",
                 severity=ErrorSeverity.HIGH,
                 category=ErrorCategory.NETWORK,
-                metadata={"fetch_error": str(e)}
+                metadata={"fetch_error": str(e)},
             )
             await error_handler.handle_error(e, context)
-        except (aiohttp.ClientError,) as e:
+        except aiohttp.ClientError as e:
             if aiohttp:
                 context = ErrorContext(
                     component="data_manager",
                     operation="fetch_market_data",
                     severity=ErrorSeverity.HIGH,
                     category=ErrorCategory.NETWORK,
-                    metadata={"fetch_error": str(e)}
+                    metadata={"fetch_error": str(e)},
                 )
                 await error_handler.handle_error(e, context)
             else:
@@ -126,7 +141,7 @@ class DataManager(DataManagerInterface):
                 operation="fetch_market_data",
                 severity=ErrorSeverity.HIGH,
                 category=ErrorCategory.DATA,
-                metadata={"fetch_error": str(e)}
+                metadata={"fetch_error": str(e)},
             )
             await error_handler.handle_error(e, context)
         except Exception as e:
@@ -135,7 +150,7 @@ class DataManager(DataManagerInterface):
                 operation="fetch_market_data",
                 severity=ErrorSeverity.CRITICAL,
                 category=ErrorCategory.DATA,
-                metadata={"fetch_error": str(e)}
+                metadata={"fetch_error": str(e)},
             )
             await error_handler.handle_error(e, context)
 
@@ -165,7 +180,9 @@ class DataManager(DataManagerInterface):
         try:
             if self.portfolio_mode and hasattr(self.data_fetcher, "get_realtime_data"):
                 return await self._fetch_portfolio_realtime_data()
-            elif not self.portfolio_mode and hasattr(self.data_fetcher, "get_historical_data"):
+            elif not self.portfolio_mode and hasattr(
+                self.data_fetcher, "get_historical_data"
+            ):
                 return await self._fetch_single_historical_data()
             elif hasattr(self.data_fetcher, "get_multiple_historical_data"):
                 return await self._fetch_multiple_historical_data()
@@ -173,7 +190,7 @@ class DataManager(DataManagerInterface):
                 logger.warning("No suitable data fetching method available")
                 return {}
 
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to fetch fresh market data")
             raise
 
@@ -184,8 +201,10 @@ class DataManager(DataManagerInterface):
 
         try:
             # Use circuit breaker for external service calls
-            return await self.circuit_breaker.call(self.data_fetcher.get_realtime_data, self.pairs)
-        except Exception as e:
+            return await self.circuit_breaker.call(
+                self.data_fetcher.get_realtime_data, self.pairs
+            )
+        except Exception:
             logger.exception("Failed to fetch portfolio realtime data")
             raise
 
@@ -206,7 +225,7 @@ class DataManager(DataManagerInterface):
                 limit=100,
             )
             return {symbol: df}
-        except Exception as e:
+        except Exception:
             logger.exception(f"Failed to fetch historical data for {symbol}")
             raise
 
@@ -217,8 +236,10 @@ class DataManager(DataManagerInterface):
 
         try:
             # Use circuit breaker for external service calls
-            return await self.circuit_breaker.call(self.data_fetcher.get_multiple_historical_data, self.pairs)
-        except Exception as e:
+            return await self.circuit_breaker.call(
+                self.data_fetcher.get_multiple_historical_data, self.pairs
+            )
+        except Exception:
             logger.exception("Failed to fetch multiple historical data")
             raise
 
@@ -228,7 +249,9 @@ class DataManager(DataManagerInterface):
 
         for symbol in self.pairs:
             try:
-                synced_data = await self.timeframe_manager.fetch_multi_timeframe_data(symbol)
+                synced_data = await self.timeframe_manager.fetch_multi_timeframe_data(
+                    symbol
+                )
                 if synced_data:
                     multi_timeframe_data[symbol] = synced_data
                     logger.debug(f"Fetched multi-timeframe data for {symbol}")
@@ -240,8 +263,9 @@ class DataManager(DataManagerInterface):
 
         return multi_timeframe_data
 
-    def _combine_market_data(self, market_data: dict[str, Any],
-                           multi_timeframe_data: dict[str, Any]) -> dict[str, Any]:
+    def _combine_market_data(
+        self, market_data: dict[str, Any], multi_timeframe_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """Combine single-timeframe and multi-timeframe market data."""
         combined_data = market_data.copy()
 
@@ -249,24 +273,26 @@ class DataManager(DataManagerInterface):
             if symbol in combined_data:
                 # Add multi-timeframe data to existing symbol data
                 combined_data[symbol] = {
-                    'single_timeframe': combined_data[symbol],
-                    'multi_timeframe': synced_data
+                    "single_timeframe": combined_data[symbol],
+                    "multi_timeframe": synced_data,
                 }
             else:
                 # Only multi-timeframe data available
-                combined_data[symbol] = {
-                    'multi_timeframe': synced_data
-                }
+                combined_data[symbol] = {"multi_timeframe": synced_data}
 
         return combined_data
 
-    def _cache_market_data(self, combined_data: dict[str, Any], current_time: float) -> None:
+    def _cache_market_data(
+        self, combined_data: dict[str, Any], current_time: float
+    ) -> None:
         """Cache the fetched market data."""
         self.market_data_cache = combined_data
         self.cache_timestamp = current_time
         logger.debug("Fetched and cached market data")
 
-    async def get_symbol_data(self, symbol: str, timeframe: str = None) -> Optional[Any]:
+    async def get_symbol_data(
+        self, symbol: str, timeframe: str = None
+    ) -> Optional[Any]:
         """Get data for a specific symbol and timeframe."""
         try:
             if not self.market_data_cache:
@@ -280,17 +306,19 @@ class DataManager(DataManagerInterface):
 
             # If timeframe specified, try to get specific timeframe data
             if timeframe and isinstance(symbol_data, dict):
-                if 'multi_timeframe' in symbol_data:
-                    mt_data = symbol_data['multi_timeframe']
-                    if hasattr(mt_data, 'get_timeframe_data'):
+                if "multi_timeframe" in symbol_data:
+                    mt_data = symbol_data["multi_timeframe"]
+                    if hasattr(mt_data, "get_timeframe_data"):
                         return mt_data.get_timeframe_data(timeframe)
-                elif 'single_timeframe' in symbol_data:
-                    return symbol_data['single_timeframe']
+                elif "single_timeframe" in symbol_data:
+                    return symbol_data["single_timeframe"]
 
             return symbol_data
 
         except (KeyError, TypeError, AttributeError) as e:
-            logger.error(f"Failed to get symbol data for {symbol} - data structure error: {e}")
+            logger.error(
+                f"Failed to get symbol data for {symbol} - data structure error: {e}"
+            )
             return None
         except asyncio.TimeoutError as e:
             logger.error(f"Timeout getting symbol data for {symbol}: {e}")
@@ -311,17 +339,21 @@ class DataManager(DataManagerInterface):
             "cache_enabled": self.cache_enabled,
             "cache_ttl": self.cache_ttl,
             "cache_size": len(self.market_data_cache),
-            "cache_age": time.time() - self.cache_timestamp if self.cache_timestamp > 0 else None,
-            "cached_symbols": list(self.market_data_cache.keys()) if self.market_data_cache else []
+            "cache_age": time.time() - self.cache_timestamp
+            if self.cache_timestamp > 0
+            else None,
+            "cached_symbols": list(self.market_data_cache.keys())
+            if self.market_data_cache
+            else [],
         }
 
     async def initialize(self) -> None:
         """Initialize the data manager and its components."""
         try:
-            if self.data_fetcher and hasattr(self.data_fetcher, 'initialize'):
+            if self.data_fetcher and hasattr(self.data_fetcher, "initialize"):
                 await self.data_fetcher.initialize()
 
-            if self.timeframe_manager and hasattr(self.timeframe_manager, 'initialize'):
+            if self.timeframe_manager and hasattr(self.timeframe_manager, "initialize"):
                 await self.timeframe_manager.initialize()
 
             logger.info("DataManager initialized successfully")
@@ -332,7 +364,7 @@ class DataManager(DataManagerInterface):
                 operation="initialize",
                 severity=ErrorSeverity.CRITICAL,
                 category=ErrorCategory.DATA,
-                metadata={"init_error": str(e)}
+                metadata={"init_error": str(e)},
             )
             await error_handler.handle_error(e, context)
             raise
@@ -340,10 +372,10 @@ class DataManager(DataManagerInterface):
     async def shutdown(self) -> None:
         """Shutdown the data manager and its components."""
         try:
-            if self.data_fetcher and hasattr(self.data_fetcher, 'shutdown'):
+            if self.data_fetcher and hasattr(self.data_fetcher, "shutdown"):
                 await self.data_fetcher.shutdown()
 
-            if self.timeframe_manager and hasattr(self.timeframe_manager, 'shutdown'):
+            if self.timeframe_manager and hasattr(self.timeframe_manager, "shutdown"):
                 await self.timeframe_manager.shutdown()
 
             self.clear_cache()
@@ -365,6 +397,6 @@ class DataManager(DataManagerInterface):
             "cache_status": self.get_cache_status(),
             "components_initialized": {
                 "data_fetcher": self.data_fetcher is not None,
-                "timeframe_manager": self.timeframe_manager is not None
-            }
+                "timeframe_manager": self.timeframe_manager is not None,
+            },
         }

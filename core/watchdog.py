@@ -21,26 +21,17 @@ Architecture:
 """
 
 import asyncio
-import logging
+import json
+import statistics
 import time
-import psutil
-import threading
-from typing import Dict, List, Any, Optional, Callable, Tuple, Union
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-import json
-import statistics
-import traceback
-from pathlib import Path
-import aiohttp
+from typing import Any, Callable, Dict, List, Optional
 
-from core.diagnostics import get_diagnostics_manager, HealthStatus, HealthCheckResult
-from core.signal_router.events import (
-    create_diagnostic_alert_event,
-    EventType
-)
+from core.diagnostics import get_diagnostics_manager
 from core.signal_router.event_bus import get_default_enhanced_event_bus
+from core.signal_router.events import create_diagnostic_alert_event
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -48,6 +39,7 @@ logger = get_logger(__name__)
 
 class ComponentStatus(Enum):
     """Component health status levels."""
+
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     FAILING = "failing"
@@ -57,6 +49,7 @@ class ComponentStatus(Enum):
 
 class FailureSeverity(Enum):
     """Failure severity classification."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -65,6 +58,7 @@ class FailureSeverity(Enum):
 
 class FailureType(Enum):
     """Types of failures that can occur."""
+
     CONNECTIVITY = "connectivity"
     PERFORMANCE = "performance"
     LOGIC = "logic"
@@ -82,6 +76,7 @@ class FailureType(Enum):
 @dataclass
 class HeartbeatMessage:
     """Standardized heartbeat message format."""
+
     component_id: str
     component_type: str
     version: str
@@ -98,32 +93,33 @@ class HeartbeatMessage:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         data = {
-            'component_id': self.component_id,
-            'component_type': self.component_type,
-            'version': self.version,
-            'timestamp': self.timestamp.isoformat(),
-            'status': self.status.value,
-            'latency_ms': self.latency_ms,
-            'memory_mb': self.memory_mb,
-            'cpu_percent': self.cpu_percent,
-            'queue_depth': self.queue_depth,
-            'error_count': self.error_count,
-            'custom_metrics': self.custom_metrics,
-            'metadata': self.metadata
+            "component_id": self.component_id,
+            "component_type": self.component_type,
+            "version": self.version,
+            "timestamp": self.timestamp.isoformat(),
+            "status": self.status.value,
+            "latency_ms": self.latency_ms,
+            "memory_mb": self.memory_mb,
+            "cpu_percent": self.cpu_percent,
+            "queue_depth": self.queue_depth,
+            "error_count": self.error_count,
+            "custom_metrics": self.custom_metrics,
+            "metadata": self.metadata,
         }
         return data
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'HeartbeatMessage':
+    def from_dict(cls, data: Dict[str, Any]) -> "HeartbeatMessage":
         """Create from dictionary."""
-        data['timestamp'] = datetime.fromisoformat(data['timestamp'])
-        data['status'] = ComponentStatus(data['status'])
+        data["timestamp"] = datetime.fromisoformat(data["timestamp"])
+        data["status"] = ComponentStatus(data["status"])
         return cls(**data)
 
 
 @dataclass
 class FailureDiagnosis:
     """Detailed failure diagnosis result."""
+
     component_id: str
     failure_type: FailureType
     severity: FailureSeverity
@@ -138,22 +134,23 @@ class FailureDiagnosis:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
-            'component_id': self.component_id,
-            'failure_type': self.failure_type.value,
-            'severity': self.severity.value,
-            'confidence': self.confidence,
-            'root_cause': self.root_cause,
-            'symptoms': self.symptoms,
-            'recommended_actions': self.recommended_actions,
-            'estimated_recovery_time': self.estimated_recovery_time,
-            'dependencies_affected': self.dependencies_affected,
-            'timestamp': self.timestamp.isoformat()
+            "component_id": self.component_id,
+            "failure_type": self.failure_type.value,
+            "severity": self.severity.value,
+            "confidence": self.confidence,
+            "root_cause": self.root_cause,
+            "symptoms": self.symptoms,
+            "recommended_actions": self.recommended_actions,
+            "estimated_recovery_time": self.estimated_recovery_time,
+            "dependencies_affected": self.dependencies_affected,
+            "timestamp": self.timestamp.isoformat(),
         }
 
 
 @dataclass
 class RecoveryAction:
     """Recovery action specification."""
+
     action_id: str
     component_id: str
     action_type: str
@@ -169,17 +166,19 @@ class RecoveryAction:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
-            'action_id': self.action_id,
-            'component_id': self.component_id,
-            'action_type': self.action_type,
-            'priority': self.priority,
-            'timeout_seconds': self.timeout_seconds,
-            'parameters': self.parameters,
-            'dependencies': self.dependencies,
-            'rollback_actions': self.rollback_actions,
-            'status': self.status,
-            'created_at': self.created_at.isoformat(),
-            'completed_at': self.completed_at.isoformat() if self.completed_at else None
+            "action_id": self.action_id,
+            "component_id": self.component_id,
+            "action_type": self.action_type,
+            "priority": self.priority,
+            "timeout_seconds": self.timeout_seconds,
+            "parameters": self.parameters,
+            "dependencies": self.dependencies,
+            "rollback_actions": self.rollback_actions,
+            "status": self.status,
+            "created_at": self.created_at.isoformat(),
+            "completed_at": self.completed_at.isoformat()
+            if self.completed_at
+            else None,
         }
 
 
@@ -202,9 +201,12 @@ class HeartbeatProtocol:
         """Set the heartbeat interval."""
         self._heartbeat_interval = interval_seconds
 
-    def create_heartbeat(self, status: ComponentStatus = ComponentStatus.HEALTHY,
-                        latency_ms: Optional[float] = None,
-                        error_count: int = 0) -> HeartbeatMessage:
+    def create_heartbeat(
+        self,
+        status: ComponentStatus = ComponentStatus.HEALTHY,
+        latency_ms: Optional[float] = None,
+        error_count: int = 0,
+    ) -> HeartbeatMessage:
         """Create a heartbeat message with current system metrics."""
 
         # Skip expensive system metrics gathering for performance
@@ -218,7 +220,7 @@ class HeartbeatProtocol:
             try:
                 metrics = provider()
                 custom_metrics.update(metrics)
-            except Exception as e:
+            except Exception:
                 # Skip logging for performance in tight loops
                 pass
 
@@ -232,7 +234,7 @@ class HeartbeatProtocol:
             memory_mb=memory_mb,
             cpu_percent=cpu_percent,
             error_count=error_count,
-            custom_metrics=custom_metrics
+            custom_metrics=custom_metrics,
         )
 
         self._last_heartbeat = heartbeat
@@ -243,7 +245,9 @@ class HeartbeatProtocol:
         if self._last_heartbeat is None:
             return True
 
-        time_since_last = (datetime.now() - self._last_heartbeat.timestamp).total_seconds()
+        time_since_last = (
+            datetime.now() - self._last_heartbeat.timestamp
+        ).total_seconds()
         return time_since_last > (self._heartbeat_interval * 1.5)  # 50% grace period
 
     def get_last_heartbeat(self) -> Optional[HeartbeatMessage]:
@@ -261,19 +265,23 @@ class FailureDetector:
         self.baseline_metrics: Dict[str, Dict[str, float]] = {}
 
         # Configuration
-        self.anomaly_threshold = config.get('anomaly_threshold', 2.0)
-        self.history_window = config.get('history_window', 100)
-        self.min_samples_for_baseline = config.get('min_samples_for_baseline', 10)
+        self.anomaly_threshold = config.get("anomaly_threshold", 2.0)
+        self.history_window = config.get("history_window", 100)
+        self.min_samples_for_baseline = config.get("min_samples_for_baseline", 10)
 
         # Latency thresholds for severity classification
         self.latency_thresholds = {
-            'low': config.get('latency_low_threshold', 100),      # < 100ms = LOW
-            'medium': config.get('latency_medium_threshold', 200), # 100-200ms = MEDIUM
-            'high': config.get('latency_high_threshold', 500),     # 200-500ms = HIGH
-            'critical': config.get('latency_critical_threshold', 1000) # > 500ms = CRITICAL
+            "low": config.get("latency_low_threshold", 100),  # < 100ms = LOW
+            "medium": config.get("latency_medium_threshold", 200),  # 100-200ms = MEDIUM
+            "high": config.get("latency_high_threshold", 500),  # 200-500ms = HIGH
+            "critical": config.get(
+                "latency_critical_threshold", 1000
+            ),  # > 500ms = CRITICAL
         }
 
-    def process_heartbeat(self, heartbeat: HeartbeatMessage) -> Optional[FailureDiagnosis]:
+    def process_heartbeat(
+        self, heartbeat: HeartbeatMessage
+    ) -> Optional[FailureDiagnosis]:
         """Process a heartbeat and detect potential failures."""
 
         component_id = heartbeat.component_id
@@ -286,7 +294,9 @@ class FailureDetector:
 
         # Keep only recent history
         if len(self.heartbeat_history[component_id]) > self.history_window:
-            self.heartbeat_history[component_id] = self.heartbeat_history[component_id][-self.history_window:]
+            self.heartbeat_history[component_id] = self.heartbeat_history[component_id][
+                -self.history_window :
+            ]
 
         # Update baseline if we have enough samples
         if len(self.heartbeat_history[component_id]) >= self.min_samples_for_baseline:
@@ -311,23 +321,31 @@ class FailureDetector:
         baseline = {}
 
         if latencies:
-            baseline['latency_mean'] = statistics.mean(latencies)
-            baseline['latency_std'] = statistics.stdev(latencies) if len(latencies) > 1 else 0
+            baseline["latency_mean"] = statistics.mean(latencies)
+            baseline["latency_std"] = (
+                statistics.stdev(latencies) if len(latencies) > 1 else 0
+            )
 
         if memory_usage:
-            baseline['memory_mean'] = statistics.mean(memory_usage)
-            baseline['memory_std'] = statistics.stdev(memory_usage) if len(memory_usage) > 1 else 0
+            baseline["memory_mean"] = statistics.mean(memory_usage)
+            baseline["memory_std"] = (
+                statistics.stdev(memory_usage) if len(memory_usage) > 1 else 0
+            )
 
         if cpu_usage:
-            baseline['cpu_mean'] = statistics.mean(cpu_usage)
-            baseline['cpu_std'] = statistics.stdev(cpu_usage) if len(cpu_usage) > 1 else 0
+            baseline["cpu_mean"] = statistics.mean(cpu_usage)
+            baseline["cpu_std"] = (
+                statistics.stdev(cpu_usage) if len(cpu_usage) > 1 else 0
+            )
 
         if error_counts:
-            baseline['error_rate'] = sum(error_counts) / len(error_counts)
+            baseline["error_rate"] = sum(error_counts) / len(error_counts)
 
         self.baseline_metrics[component_id] = baseline
 
-    def _detect_anomalies(self, heartbeat: HeartbeatMessage) -> Optional[FailureDiagnosis]:
+    def _detect_anomalies(
+        self, heartbeat: HeartbeatMessage
+    ) -> Optional[FailureDiagnosis]:
         """Detect anomalies in heartbeat data."""
         component_id = heartbeat.component_id
 
@@ -338,63 +356,87 @@ class FailureDetector:
         anomalies = []
 
         # Check latency anomaly
-        if heartbeat.latency_ms is not None and 'latency_std' in baseline:
-            latency_zscore = abs(heartbeat.latency_ms - baseline['latency_mean']) / (baseline['latency_std'] + 1e-6)
+        if heartbeat.latency_ms is not None and "latency_std" in baseline:
+            latency_zscore = abs(heartbeat.latency_ms - baseline["latency_mean"]) / (
+                baseline["latency_std"] + 1e-6
+            )
             if latency_zscore > self.anomaly_threshold:
                 # For large jumps, use MEDIUM severity instead of HIGH
-                severity = FailureSeverity.MEDIUM if latency_zscore > 3 else FailureSeverity.MEDIUM
-                anomalies.append({
-                    'type': 'latency_spike',
-                    'value': heartbeat.latency_ms,
-                    'threshold': baseline['latency_mean'] + self.anomaly_threshold * baseline['latency_std'],
-                    'severity': severity
-                })
+                severity = (
+                    FailureSeverity.MEDIUM
+                    if latency_zscore > 3
+                    else FailureSeverity.MEDIUM
+                )
+                anomalies.append(
+                    {
+                        "type": "latency_spike",
+                        "value": heartbeat.latency_ms,
+                        "threshold": baseline["latency_mean"]
+                        + self.anomaly_threshold * baseline["latency_std"],
+                        "severity": severity,
+                    }
+                )
 
         # Check memory anomaly
-        if heartbeat.memory_mb is not None and 'memory_std' in baseline:
-            memory_zscore = abs(heartbeat.memory_mb - baseline['memory_mean']) / (baseline['memory_std'] + 1e-6)
+        if heartbeat.memory_mb is not None and "memory_std" in baseline:
+            memory_zscore = abs(heartbeat.memory_mb - baseline["memory_mean"]) / (
+                baseline["memory_std"] + 1e-6
+            )
             if memory_zscore > self.anomaly_threshold:
-                anomalies.append({
-                    'type': 'memory_leak',
-                    'value': heartbeat.memory_mb,
-                    'threshold': baseline['memory_mean'] + self.anomaly_threshold * baseline['memory_std'],
-                    'severity': FailureSeverity.MEDIUM
-                })
+                anomalies.append(
+                    {
+                        "type": "memory_leak",
+                        "value": heartbeat.memory_mb,
+                        "threshold": baseline["memory_mean"]
+                        + self.anomaly_threshold * baseline["memory_std"],
+                        "severity": FailureSeverity.MEDIUM,
+                    }
+                )
 
         # Check error rate anomaly
-        if heartbeat.error_count > 0 and 'error_rate' in baseline:
-            if heartbeat.error_count > baseline['error_rate'] * 2:
-                anomalies.append({
-                    'type': 'error_rate_spike',
-                    'value': heartbeat.error_count,
-                    'threshold': baseline['error_rate'] * 2,
-                    'severity': FailureSeverity.HIGH
-                })
+        if heartbeat.error_count > 0 and "error_rate" in baseline:
+            if heartbeat.error_count > baseline["error_rate"] * 2:
+                anomalies.append(
+                    {
+                        "type": "error_rate_spike",
+                        "value": heartbeat.error_count,
+                        "threshold": baseline["error_rate"] * 2,
+                        "severity": FailureSeverity.HIGH,
+                    }
+                )
 
         # Check status degradation
         if heartbeat.status in [ComponentStatus.FAILING, ComponentStatus.CRITICAL]:
-            anomalies.append({
-                'type': 'status_degradation',
-                'value': heartbeat.status.value,
-                'threshold': 'healthy',
-                'severity': FailureSeverity.CRITICAL
-            })
+            anomalies.append(
+                {
+                    "type": "status_degradation",
+                    "value": heartbeat.status.value,
+                    "threshold": "healthy",
+                    "severity": FailureSeverity.CRITICAL,
+                }
+            )
 
         if not anomalies:
             return None
 
         # Create diagnosis from most severe anomaly
-        most_severe = max(anomalies, key=lambda x: x['severity'].value)
+        most_severe = max(anomalies, key=lambda x: x["severity"].value)
 
         diagnosis = FailureDiagnosis(
             component_id=component_id,
-            failure_type=self._classify_failure_type(most_severe['type']),
-            severity=most_severe['severity'],
-            confidence=min(0.95, self.anomaly_threshold / 2.0),  # Confidence based on z-score
-            root_cause=self._determine_root_cause(most_severe['type'], heartbeat),
-            symptoms=[f"{most_severe['type']}: {most_severe['value']} > {most_severe['threshold']}"],
-            recommended_actions=self._get_recommended_actions(most_severe['type'], component_id),
-            estimated_recovery_time=self._estimate_recovery_time(most_severe['type'])
+            failure_type=self._classify_failure_type(most_severe["type"]),
+            severity=most_severe["severity"],
+            confidence=min(
+                0.95, self.anomaly_threshold / 2.0
+            ),  # Confidence based on z-score
+            root_cause=self._determine_root_cause(most_severe["type"], heartbeat),
+            symptoms=[
+                f"{most_severe['type']}: {most_severe['value']} > {most_severe['threshold']}"
+            ],
+            recommended_actions=self._get_recommended_actions(
+                most_severe["type"], component_id
+            ),
+            estimated_recovery_time=self._estimate_recovery_time(most_severe["type"]),
         )
 
         return diagnosis
@@ -402,58 +444,64 @@ class FailureDetector:
     def _classify_failure_type(self, anomaly_type: str) -> FailureType:
         """Classify the type of failure based on anomaly."""
         mapping = {
-            'latency_spike': FailureType.PERFORMANCE,
-            'memory_leak': FailureType.RESOURCE,
-            'error_rate_spike': FailureType.LOGIC,
-            'status_degradation': FailureType.CONNECTIVITY,
-            'cpu_spike': FailureType.RESOURCE
+            "latency_spike": FailureType.PERFORMANCE,
+            "memory_leak": FailureType.RESOURCE,
+            "error_rate_spike": FailureType.LOGIC,
+            "status_degradation": FailureType.CONNECTIVITY,
+            "cpu_spike": FailureType.RESOURCE,
         }
         return mapping.get(anomaly_type, FailureType.LOGIC)
 
-    def _determine_root_cause(self, anomaly_type: str, heartbeat: HeartbeatMessage) -> str:
+    def _determine_root_cause(
+        self, anomaly_type: str, heartbeat: HeartbeatMessage
+    ) -> str:
         """Determine the likely root cause of the anomaly."""
         causes = {
-            'latency_spike': "High system load or network congestion",
-            'memory_leak': "Memory leak in component or high memory pressure",
-            'error_rate_spike': "Logic error or external service degradation",
-            'status_degradation': "Connectivity loss or component crash",
-            'cpu_spike': "High CPU utilization or inefficient processing"
+            "latency_spike": "High system load or network congestion",
+            "memory_leak": "Memory leak in component or high memory pressure",
+            "error_rate_spike": "Logic error or external service degradation",
+            "status_degradation": "Connectivity loss or component crash",
+            "cpu_spike": "High CPU utilization or inefficient processing",
         }
         return causes.get(anomaly_type, "Unknown root cause")
 
-    def _get_recommended_actions(self, anomaly_type: str, component_id: str) -> List[str]:
+    def _get_recommended_actions(
+        self, anomaly_type: str, component_id: str
+    ) -> List[str]:
         """Get recommended recovery actions."""
         actions = {
-            'latency_spike': [
+            "latency_spike": [
                 "Scale component resources",
                 "Optimize processing logic",
-                "Check network connectivity"
+                "Check network connectivity",
             ],
-            'memory_leak': [
+            "memory_leak": [
                 "Restart component to free memory",
                 "Check for memory leaks in code",
-                "Scale memory resources"
+                "Scale memory resources",
             ],
-            'error_rate_spike': [
+            "error_rate_spike": [
                 "Check error logs for patterns",
                 "Restart component if needed",
-                "Verify external service health"
+                "Verify external service health",
             ],
-            'status_degradation': [
+            "status_degradation": [
                 "Immediate component restart",
                 "Check network connectivity",
-                "Verify configuration settings"
-            ]
+                "Verify configuration settings",
+            ],
         }
-        return actions.get(anomaly_type, ["Investigate component logs", "Consider component restart"])
+        return actions.get(
+            anomaly_type, ["Investigate component logs", "Consider component restart"]
+        )
 
     def _estimate_recovery_time(self, anomaly_type: str) -> Optional[int]:
         """Estimate recovery time in seconds."""
         estimates = {
-            'latency_spike': 60,      # 1 minute
-            'memory_leak': 120,       # 2 minutes
-            'error_rate_spike': 180,  # 3 minutes
-            'status_degradation': 30  # 30 seconds
+            "latency_spike": 60,  # 1 minute
+            "memory_leak": 120,  # 2 minutes
+            "error_rate_spike": 180,  # 3 minutes
+            "status_degradation": 30,  # 30 seconds
         }
         return estimates.get(anomaly_type)
 
@@ -469,14 +517,25 @@ class RecoveryOrchestrator:
 
         # Recovery strategies
         self.recovery_strategies = {
-            FailureType.CONNECTIVITY: ("test_recovery_connectivity", self._recover_connectivity),
-            FailureType.PERFORMANCE: ("test_recovery_performance", self._recover_performance),
+            FailureType.CONNECTIVITY: (
+                "test_recovery_connectivity",
+                self._recover_connectivity,
+            ),
+            FailureType.PERFORMANCE: (
+                "test_recovery_performance",
+                self._recover_performance,
+            ),
             FailureType.LOGIC: ("test_recovery_logic", self._recover_logic),
             FailureType.RESOURCE: ("test_recovery_resource", self._recover_resource),
-            FailureType.DATA_QUALITY: ("test_recovery_data_quality", self._recover_data_quality)
+            FailureType.DATA_QUALITY: (
+                "test_recovery_data_quality",
+                self._recover_data_quality,
+            ),
         }
 
-    async def initiate_recovery(self, diagnosis: FailureDiagnosis) -> Optional[RecoveryAction]:
+    async def initiate_recovery(
+        self, diagnosis: FailureDiagnosis
+    ) -> Optional[RecoveryAction]:
         """Initiate recovery process for a diagnosed failure."""
 
         if diagnosis.component_id in self.pending_actions:
@@ -486,7 +545,9 @@ class RecoveryOrchestrator:
         # Select recovery strategy
         strategy_info = self.recovery_strategies.get(diagnosis.failure_type)
         if not strategy_info:
-            logger.error(f"No recovery strategy for failure type: {diagnosis.failure_type}")
+            logger.error(
+                f"No recovery strategy for failure type: {diagnosis.failure_type}"
+            )
             return None
 
         action_name, strategy_func = strategy_info
@@ -498,10 +559,7 @@ class RecoveryOrchestrator:
             action_type=action_name,
             priority=self._calculate_priority(diagnosis),
             timeout_seconds=diagnosis.estimated_recovery_time or 300,
-            parameters={
-                'diagnosis': diagnosis.to_dict(),
-                'strategy_name': action_name
-            }
+            parameters={"diagnosis": diagnosis.to_dict(), "strategy_name": action_name},
         )
 
         self.pending_actions[diagnosis.component_id] = action
@@ -538,11 +596,13 @@ class RecoveryOrchestrator:
             FailureSeverity.CRITICAL: 10,
             FailureSeverity.HIGH: 7,
             FailureSeverity.MEDIUM: 5,
-            FailureSeverity.LOW: 3
+            FailureSeverity.LOW: 3,
         }
         return priority_map.get(diagnosis.severity, 5)
 
-    async def _recover_connectivity(self, diagnosis: FailureDiagnosis, action: RecoveryAction) -> bool:
+    async def _recover_connectivity(
+        self, diagnosis: FailureDiagnosis, action: RecoveryAction
+    ) -> bool:
         """Recover from connectivity failures."""
         logger.info(f"Executing connectivity recovery for {diagnosis.component_id}")
 
@@ -558,7 +618,9 @@ class RecoveryOrchestrator:
 
         return success
 
-    async def _recover_performance(self, diagnosis: FailureDiagnosis, action: RecoveryAction) -> bool:
+    async def _recover_performance(
+        self, diagnosis: FailureDiagnosis, action: RecoveryAction
+    ) -> bool:
         """Recover from performance issues."""
         logger.info(f"Executing performance recovery for {diagnosis.component_id}")
 
@@ -573,7 +635,9 @@ class RecoveryOrchestrator:
 
         return success
 
-    async def _recover_logic(self, diagnosis: FailureDiagnosis, action: RecoveryAction) -> bool:
+    async def _recover_logic(
+        self, diagnosis: FailureDiagnosis, action: RecoveryAction
+    ) -> bool:
         """Recover from logic errors."""
         logger.info(f"Executing logic recovery for {diagnosis.component_id}")
 
@@ -588,7 +652,9 @@ class RecoveryOrchestrator:
 
         return success
 
-    async def _recover_resource(self, diagnosis: FailureDiagnosis, action: RecoveryAction) -> bool:
+    async def _recover_resource(
+        self, diagnosis: FailureDiagnosis, action: RecoveryAction
+    ) -> bool:
         """Recover from resource issues."""
         logger.info(f"Executing resource recovery for {diagnosis.component_id}")
 
@@ -603,7 +669,9 @@ class RecoveryOrchestrator:
 
         return success
 
-    async def _recover_data_quality(self, diagnosis: FailureDiagnosis, action: RecoveryAction) -> bool:
+    async def _recover_data_quality(
+        self, diagnosis: FailureDiagnosis, action: RecoveryAction
+    ) -> bool:
         """Recover from data quality issues."""
         logger.info(f"Executing data quality recovery for {diagnosis.component_id}")
 
@@ -621,10 +689,11 @@ class RecoveryOrchestrator:
     def get_recovery_stats(self) -> Dict[str, Any]:
         """Get recovery statistics."""
         return {
-            'pending_actions': len(self.pending_actions),
-            'completed_actions': len(self.completed_actions),
-            'failed_actions': len(self.failed_actions),
-            'success_rate': len(self.completed_actions) / max(1, len(self.completed_actions) + len(self.failed_actions))
+            "pending_actions": len(self.pending_actions),
+            "completed_actions": len(self.completed_actions),
+            "failed_actions": len(self.failed_actions),
+            "success_rate": len(self.completed_actions)
+            / max(1, len(self.completed_actions) + len(self.failed_actions)),
         }
 
 
@@ -641,10 +710,10 @@ class StateManager:
         snapshot_id = f"{component_id}_{int(time.time())}"
 
         self.state_snapshots[snapshot_id] = {
-            'component_id': component_id,
-            'timestamp': datetime.now(),
-            'data': state_data.copy(),
-            'version': len(self.state_versions.get(component_id, [])) + 1
+            "component_id": component_id,
+            "timestamp": datetime.now(),
+            "data": state_data.copy(),
+            "version": len(self.state_versions.get(component_id, [])) + 1,
         }
 
         # Track versions
@@ -657,8 +726,10 @@ class StateManager:
             oldest_version = self.state_versions[component_id].pop(0)
             # Remove old snapshots
             snapshots_to_remove = [
-                sid for sid, snapshot in self.state_snapshots.items()
-                if snapshot['component_id'] == component_id and snapshot['timestamp'] == oldest_version
+                sid
+                for sid, snapshot in self.state_snapshots.items()
+                if snapshot["component_id"] == component_id
+                and snapshot["timestamp"] == oldest_version
             ]
             for sid in snapshots_to_remove:
                 del self.state_snapshots[sid]
@@ -666,18 +737,21 @@ class StateManager:
         logger.info(f"Created state snapshot {snapshot_id} for {component_id}")
         return snapshot_id
 
-    def restore_snapshot(self, component_id: str, snapshot_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def restore_snapshot(
+        self, component_id: str, snapshot_id: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         """Restore state from a snapshot."""
         if snapshot_id:
             snapshot = self.state_snapshots.get(snapshot_id)
-            if snapshot and snapshot['component_id'] == component_id:
+            if snapshot and snapshot["component_id"] == component_id:
                 logger.info(f"Restored state from snapshot {snapshot_id}")
-                return snapshot['data'].copy()
+                return snapshot["data"].copy()
 
         # Find latest snapshot for component
         component_snapshots = [
-            (sid, snapshot) for sid, snapshot in self.state_snapshots.items()
-            if snapshot['component_id'] == component_id
+            (sid, snapshot)
+            for sid, snapshot in self.state_snapshots.items()
+            if snapshot["component_id"] == component_id
         ]
 
         if not component_snapshots:
@@ -685,27 +759,29 @@ class StateManager:
             return None
 
         # Get most recent snapshot
-        latest_snapshot = max(component_snapshots, key=lambda x: x[1]['timestamp'])
+        latest_snapshot = max(component_snapshots, key=lambda x: x[1]["timestamp"])
         snapshot_id, snapshot = latest_snapshot
 
         logger.info(f"Restored latest state from snapshot {snapshot_id}")
-        return snapshot['data'].copy()
+        return snapshot["data"].copy()
 
-    def list_snapshots(self, component_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_snapshots(
+        self, component_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         """List available snapshots."""
         if component_id:
             snapshots = [
-                {'snapshot_id': sid, **snapshot}
+                {"snapshot_id": sid, **snapshot}
                 for sid, snapshot in self.state_snapshots.items()
-                if snapshot['component_id'] == component_id
+                if snapshot["component_id"] == component_id
             ]
         else:
             snapshots = [
-                {'snapshot_id': sid, **snapshot}
+                {"snapshot_id": sid, **snapshot}
                 for sid, snapshot in self.state_snapshots.items()
             ]
 
-        return sorted(snapshots, key=lambda x: x['timestamp'], reverse=True)
+        return sorted(snapshots, key=lambda x: x["timestamp"], reverse=True)
 
 
 class WatchdogService:
@@ -721,13 +797,13 @@ class WatchdogService:
 
         # Core components
         self.heartbeat_protocols: Dict[str, HeartbeatProtocol] = {}
-        self.failure_detector = FailureDetector(config.get('failure_detection', {}))
-        self.recovery_orchestrator = RecoveryOrchestrator(config.get('recovery', {}))
-        self.state_manager = StateManager(config.get('state_management', {}))
+        self.failure_detector = FailureDetector(config.get("failure_detection", {}))
+        self.recovery_orchestrator = RecoveryOrchestrator(config.get("recovery", {}))
+        self.state_manager = StateManager(config.get("state_management", {}))
 
         # Order execution monitoring
         self.order_execution_failures: Dict[str, Dict[str, Any]] = {}
-        self.order_failure_threshold = config.get('order_failure_threshold', 3)
+        self.order_failure_threshold = config.get("order_failure_threshold", 3)
 
         # Monitoring state
         self._running = False
@@ -768,21 +844,25 @@ class WatchdogService:
 
         logger.info("WatchdogService stopped")
 
-    def register_component(self, component_id: str, component_type: str,
-                          heartbeat_interval: int = 30) -> HeartbeatProtocol:
+    def register_component(
+        self, component_id: str, component_type: str, heartbeat_interval: int = 30
+    ) -> HeartbeatProtocol:
         """Register a component for monitoring."""
         protocol = HeartbeatProtocol(component_id, component_type)
         protocol.set_heartbeat_interval(heartbeat_interval)
 
         self.heartbeat_protocols[component_id] = protocol
 
-        logger.info(f"Registered component {component_id} ({component_type}) for monitoring")
+        logger.info(
+            f"Registered component {component_id} ({component_type}) for monitoring"
+        )
         return protocol
 
     async def receive_heartbeat(self, heartbeat: HeartbeatMessage) -> None:
         """Receive and process a heartbeat message."""
         # Use atomic increment for thread safety
         import threading
+
         with threading.Lock():
             self.heartbeats_received += 1
 
@@ -801,13 +881,18 @@ class WatchdogService:
             if diagnosis:
                 with threading.Lock():
                     self.failures_detected += 1
-                logger.warning(f"Failure detected: {diagnosis.component_id} - {diagnosis.root_cause}")
+                logger.warning(
+                    f"Failure detected: {diagnosis.component_id} - {diagnosis.root_cause}"
+                )
 
                 # Publish failure event
                 await self._publish_failure_event(diagnosis)
 
                 # Initiate recovery if severity is high enough
-                if diagnosis.severity in [FailureSeverity.HIGH, FailureSeverity.CRITICAL]:
+                if diagnosis.severity in [
+                    FailureSeverity.HIGH,
+                    FailureSeverity.CRITICAL,
+                ]:
                     await self.recovery_orchestrator.initiate_recovery(diagnosis)
                     with threading.Lock():
                         self.recoveries_initiated += 1
@@ -827,7 +912,9 @@ class WatchdogService:
             try:
                 # Check for completed recoveries
                 stats = self.recovery_orchestrator.get_recovery_stats()
-                self.recoveries_successful = stats.get('success_rate', 0) * stats.get('completed_actions', 0)
+                self.recoveries_successful = stats.get("success_rate", 0) * stats.get(
+                    "completed_actions", 0
+                )
 
                 await asyncio.sleep(30)  # Check every 30 seconds
             except Exception as e:
@@ -836,6 +923,7 @@ class WatchdogService:
     async def _check_overdue_heartbeats(self) -> None:
         """Check for overdue heartbeats and create failure diagnoses."""
         import threading
+
         for component_id, protocol in self.heartbeat_protocols.items():
             if protocol.is_heartbeat_overdue():
                 # Increment failures_detected counter with thread safety
@@ -850,8 +938,12 @@ class WatchdogService:
                     confidence=0.9,
                     root_cause="Component not responding to heartbeat checks",
                     symptoms=["Heartbeat overdue", "No recent communication"],
-                    recommended_actions=["Check component status", "Attempt restart", "Verify network connectivity"],
-                    estimated_recovery_time=60
+                    recommended_actions=[
+                        "Check component status",
+                        "Attempt restart",
+                        "Verify network connectivity",
+                    ],
+                    estimated_recovery_time=60,
                 )
 
                 logger.warning(f"Overdue heartbeat detected for {component_id}")
@@ -870,12 +962,14 @@ class WatchdogService:
             alert_type=diagnosis.severity.value,
             component=diagnosis.component_id,
             message=f"Failure detected: {diagnosis.root_cause}",
-            details=diagnosis.to_dict()
+            details=diagnosis.to_dict(),
         )
 
         await self.event_bus.publish_event(event)
 
-    async def report_order_execution_failure(self, failure_data: Dict[str, Any]) -> None:
+    async def report_order_execution_failure(
+        self, failure_data: Dict[str, Any]
+    ) -> None:
         """Report an order execution failure for monitoring and alerting."""
         correlation_id = failure_data.get("correlation_id", "unknown")
         strategy_id = failure_data.get("strategy_id", "unknown")
@@ -887,22 +981,27 @@ class WatchdogService:
                 "failures": [],
                 "first_failure_time": datetime.now(),
                 "strategy_id": strategy_id,
-                "symbol": symbol
+                "symbol": symbol,
             }
 
-        self.order_execution_failures[correlation_id]["failures"].append({
-            "timestamp": datetime.now(),
-            "error_message": failure_data.get("error_message", "Unknown error"),
-            "retry_count": failure_data.get("retry_count", 0)
-        })
+        self.order_execution_failures[correlation_id]["failures"].append(
+            {
+                "timestamp": datetime.now(),
+                "error_message": failure_data.get("error_message", "Unknown error"),
+                "retry_count": failure_data.get("retry_count", 0),
+            }
+        )
 
         # Increment failures_detected and recoveries_initiated for order failures
         import threading
+
         with threading.Lock():
             self.failures_detected += 1
             self.recoveries_initiated += 1
 
-        logger.warning(f"Order execution failure detected: {failure_data.get('error_message', 'Unknown error')}")
+        logger.warning(
+            f"Order execution failure detected: {failure_data.get('error_message', 'Unknown error')}"
+        )
 
         # Attempt recovery for order execution failures
         await self.attempt_recovery(failure_data.get("component_id", "order_manager"))
@@ -912,7 +1011,9 @@ class WatchdogService:
         if failure_count >= self.order_failure_threshold:
             await self._send_order_failure_alert(correlation_id, failure_data)
 
-    async def _send_order_failure_alert(self, correlation_id: str, failure_data: Dict[str, Any]) -> None:
+    async def _send_order_failure_alert(
+        self, correlation_id: str, failure_data: Dict[str, Any]
+    ) -> None:
         """Send an alert for persistent order execution failures."""
         failure_info = self.order_execution_failures[correlation_id]
         failure_count = len(failure_info["failures"])
@@ -927,19 +1028,24 @@ class WatchdogService:
             "retry_count": failure_info["failures"][-1]["retry_count"],
             "total_failures": failure_count,
             "first_failure_time": failure_info["first_failure_time"].isoformat(),
-            "last_failure_time": failure_info["failures"][-1]["timestamp"].isoformat()
+            "last_failure_time": failure_info["failures"][-1]["timestamp"].isoformat(),
         }
 
-        logger.warning(f"Sending order failure alert for {correlation_id}: {failure_count} failures")
+        logger.warning(
+            f"Sending order failure alert for {correlation_id}: {failure_count} failures"
+        )
 
         # Send alert via notifier if available
-        if self.notifier and hasattr(self.notifier, 'send_order_failure_alert'):
+        if self.notifier and hasattr(self.notifier, "send_order_failure_alert"):
             success = await self.notifier.send_order_failure_alert(alert_data)
             if success:
                 import threading
+
                 with threading.Lock():
                     self.order_failures_alerted += 1
-                logger.info(f"Order failure alert sent successfully for {correlation_id}")
+                logger.info(
+                    f"Order failure alert sent successfully for {correlation_id}"
+                )
             else:
                 logger.error(f"Failed to send order failure alert for {correlation_id}")
         else:
@@ -962,13 +1068,16 @@ class WatchdogService:
             # - Reinitializing exchange connections
             # - Sending recovery notifications
 
-            logger.info("Order manager recovery: clearing failed order state and reinitializing connections")
+            logger.info(
+                "Order manager recovery: clearing failed order state and reinitializing connections"
+            )
 
             # Simulate recovery time
             await asyncio.sleep(1)
 
             # Mark recovery as successful
             import threading
+
             with threading.Lock():
                 self.recoveries_successful += 1
 
@@ -985,8 +1094,12 @@ class WatchdogService:
                 confidence=0.8,
                 root_cause="Component reported failure",
                 symptoms=["Component failure detected"],
-                recommended_actions=["Restart component", "Check logs", "Verify configuration"],
-                estimated_recovery_time=60
+                recommended_actions=[
+                    "Restart component",
+                    "Check logs",
+                    "Verify configuration",
+                ],
+                estimated_recovery_time=60,
             )
 
             action = await self.recovery_orchestrator.initiate_recovery(diagnosis)
@@ -995,13 +1108,13 @@ class WatchdogService:
     def get_watchdog_stats(self) -> Dict[str, Any]:
         """Get comprehensive watchdog statistics."""
         return {
-            'heartbeats_received': self.heartbeats_received,
-            'failures_detected': self.failures_detected,
-            'recoveries_initiated': self.recoveries_initiated,
-            'recoveries_successful': self.recoveries_successful,
-            'monitored_components': len(self.heartbeat_protocols),
-            'recovery_stats': self.recovery_orchestrator.get_recovery_stats(),
-            'state_snapshots': len(self.state_manager.state_snapshots)
+            "heartbeats_received": self.heartbeats_received,
+            "failures_detected": self.failures_detected,
+            "recoveries_initiated": self.recoveries_initiated,
+            "recoveries_successful": self.recoveries_successful,
+            "monitored_components": len(self.heartbeat_protocols),
+            "recovery_stats": self.recovery_orchestrator.get_recovery_stats(),
+            "state_snapshots": len(self.state_manager.state_snapshots),
         }
 
     def get_component_status(self, component_id: str) -> Optional[Dict[str, Any]]:
@@ -1016,9 +1129,11 @@ class WatchdogService:
         is_overdue = protocol.is_heartbeat_overdue()
 
         # If overdue or last heartbeat is old, try to create a heartbeat to check if component recovered
-        time_since_last = float('inf')
+        time_since_last = float("inf")
         if last_heartbeat:
-            time_since_last = (datetime.now() - last_heartbeat.timestamp).total_seconds()
+            time_since_last = (
+                datetime.now() - last_heartbeat.timestamp
+            ).total_seconds()
 
         if is_overdue or time_since_last > protocol._heartbeat_interval:
             try:
@@ -1033,17 +1148,21 @@ class WatchdogService:
                 pass
 
         return {
-            'component_id': component_id,
-            'component_type': protocol.component_type,
-            'last_heartbeat': last_heartbeat.to_dict() if last_heartbeat else None,
-            'is_overdue': is_overdue,
-            'heartbeat_interval': protocol._heartbeat_interval
+            "component_id": component_id,
+            "component_type": protocol.component_type,
+            "last_heartbeat": last_heartbeat.to_dict() if last_heartbeat else None,
+            "is_overdue": is_overdue,
+            "heartbeat_interval": protocol._heartbeat_interval,
         }
 
     # Chaos Engineering Extensions
 
-    def detect_chaos_failure(self, error_message: str, component_id: str,
-                           metadata: Optional[Dict[str, Any]] = None) -> Optional[FailureDiagnosis]:
+    def detect_chaos_failure(
+        self,
+        error_message: str,
+        component_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[FailureDiagnosis]:
         """Detect chaos-induced failures from error messages and metadata."""
         metadata = metadata or {}
 
@@ -1055,7 +1174,7 @@ class WatchdogService:
             "rate limit exceeded": FailureType.CHAOS_RATE_LIMIT,
             "429": FailureType.CHAOS_RATE_LIMIT,
             "ServerTimeoutError": FailureType.CHAOS_NETWORK_PARTITION,
-            "ClientConnectionError": FailureType.CHAOS_EXCHANGE_DOWNTIME
+            "ClientConnectionError": FailureType.CHAOS_EXCHANGE_DOWNTIME,
         }
 
         detected_failure_type = None
@@ -1074,7 +1193,7 @@ class WatchdogService:
                 "network_partition": FailureType.CHAOS_NETWORK_PARTITION,
                 "rate_limit_flood": FailureType.CHAOS_RATE_LIMIT,
                 "exchange_downtime": FailureType.CHAOS_EXCHANGE_DOWNTIME,
-                "database_outage": FailureType.CHAOS_DATABASE_OUTAGE
+                "database_outage": FailureType.CHAOS_DATABASE_OUTAGE,
             }
             if scenario in scenario_mapping:
                 detected_failure_type = scenario_mapping[scenario]
@@ -1091,21 +1210,26 @@ class WatchdogService:
                 recommended_actions=[
                     "Verify chaos scenario is active",
                     "Monitor system recovery",
-                    "Log chaos recovery event"
+                    "Log chaos recovery event",
                 ],
-                estimated_recovery_time=self._get_chaos_recovery_time(detected_failure_type),
+                estimated_recovery_time=self._get_chaos_recovery_time(
+                    detected_failure_type
+                ),
                 dependencies_affected=[],
-                timestamp=datetime.now()
+                timestamp=datetime.now(),
             )
 
             # Log chaos failure detection
-            self._log_chaos_event("chaos_failure_detected", {
-                "component_id": component_id,
-                "failure_type": detected_failure_type.value,
-                "error_message": error_message,
-                "confidence": confidence,
-                "metadata": metadata
-            })
+            self._log_chaos_event(
+                "chaos_failure_detected",
+                {
+                    "component_id": component_id,
+                    "failure_type": detected_failure_type.value,
+                    "error_message": error_message,
+                    "confidence": confidence,
+                    "metadata": metadata,
+                },
+            )
 
             return diagnosis
 
@@ -1115,14 +1239,19 @@ class WatchdogService:
         """Get expected recovery time for chaos failure types."""
         recovery_times = {
             FailureType.CHAOS_NETWORK_PARTITION: 120,  # 2 minutes
-            FailureType.CHAOS_RATE_LIMIT: 90,          # 1.5 minutes
+            FailureType.CHAOS_RATE_LIMIT: 90,  # 1.5 minutes
             FailureType.CHAOS_EXCHANGE_DOWNTIME: 600,  # 10 minutes
-            FailureType.CHAOS_DATABASE_OUTAGE: 240     # 4 minutes
+            FailureType.CHAOS_DATABASE_OUTAGE: 240,  # 4 minutes
         }
         return recovery_times.get(failure_type, 300)  # Default 5 minutes
 
-    async def log_chaos_recovery_event(self, component_id: str, scenario_name: str,
-                                     recovery_time_seconds: float, success: bool) -> None:
+    async def log_chaos_recovery_event(
+        self,
+        component_id: str,
+        scenario_name: str,
+        recovery_time_seconds: float,
+        success: bool,
+    ) -> None:
         """Log a chaos recovery event with structured data."""
         recovery_event = {
             "event_type": "chaos_recovery",
@@ -1134,25 +1263,29 @@ class WatchdogService:
             "metadata": {
                 "chaos_engineering": True,
                 "recovery_mechanism": "automatic" if success else "manual",
-                "sla_compliant": recovery_time_seconds <= self._get_scenario_sla(scenario_name)
-            }
+                "sla_compliant": recovery_time_seconds
+                <= self._get_scenario_sla(scenario_name),
+            },
         }
 
         # Log to structured logger
-        logger.info(f"Chaos recovery event: {component_id} - {scenario_name} - {'SUCCESS' if success else 'FAILED'} - {recovery_time_seconds:.1f}s")
+        logger.info(
+            f"Chaos recovery event: {component_id} - {scenario_name} - {'SUCCESS' if success else 'FAILED'} - {recovery_time_seconds:.1f}s"
+        )
 
         # Publish to event bus
         event = create_diagnostic_alert_event(
             alert_type="info" if success else "warning",
             component=component_id,
             message=f"Chaos recovery: {scenario_name} {'succeeded' if success else 'failed'}",
-            details=recovery_event
+            details=recovery_event,
         )
 
         await self.event_bus.publish_event(event)
 
         # Update recovery statistics
         import threading
+
         with threading.Lock():
             if success:
                 self.recoveries_successful += 1
@@ -1164,7 +1297,7 @@ class WatchdogService:
             "network_partition": 30,
             "rate_limit_flood": 45,
             "exchange_downtime": 60,
-            "database_outage": 90
+            "database_outage": 90,
         }
         return sla_times.get(scenario_name, 300)
 
@@ -1174,14 +1307,15 @@ class WatchdogService:
             "timestamp": datetime.now().isoformat(),
             "event_type": event_type,
             "chaos_engineering": True,
-            **event_data
+            **event_data,
         }
 
         # Use structured logging for chaos events
         logger.info(f"CHAOS_EVENT: {json.dumps(chaos_log_entry)}")
 
-    async def monitor_chaos_scenario(self, scenario_name: str, component_ids: List[str],
-                                   duration_seconds: int) -> Dict[str, Any]:
+    async def monitor_chaos_scenario(
+        self, scenario_name: str, component_ids: List[str], duration_seconds: int
+    ) -> Dict[str, Any]:
         """Monitor components during a chaos scenario and collect metrics."""
         start_time = datetime.now()
         chaos_metrics = {
@@ -1191,7 +1325,7 @@ class WatchdogService:
             "start_time": start_time.isoformat(),
             "failures_detected": [],
             "recovery_events": [],
-            "performance_impact": {}
+            "performance_impact": {},
         }
 
         logger.info(f"Starting chaos monitoring for scenario: {scenario_name}")
@@ -1206,18 +1340,23 @@ class WatchdogService:
                 status = self.get_component_status(component_id)
                 if status:
                     # Look for signs of chaos impact
-                    if status.get("is_overdue") or status.get("last_heartbeat", {}).get("status") != "healthy":
+                    if (
+                        status.get("is_overdue")
+                        or status.get("last_heartbeat", {}).get("status") != "healthy"
+                    ):
                         failure_event = {
                             "component_id": component_id,
                             "timestamp": datetime.now().isoformat(),
-                            "status": status
+                            "status": status,
                         }
                         chaos_metrics["failures_detected"].append(failure_event)
 
             await asyncio.sleep(check_interval)
 
         chaos_metrics["end_time"] = datetime.now().isoformat()
-        chaos_metrics["actual_duration_seconds"] = (datetime.now() - start_time).total_seconds()
+        chaos_metrics["actual_duration_seconds"] = (
+            datetime.now() - start_time
+        ).total_seconds()
 
         logger.info(f"Chaos monitoring completed for scenario: {scenario_name}")
 
@@ -1226,18 +1365,29 @@ class WatchdogService:
     def get_chaos_statistics(self) -> Dict[str, Any]:
         """Get chaos engineering specific statistics."""
         return {
-            "chaos_failures_detected": sum(1 for f in self.failure_detector.failure_patterns.values()
-                                         if any(ft.startswith("chaos_") for ft in f.keys())),
-            "chaos_recoveries_initiated": len([r for r in self.recovery_orchestrator.completed_actions
-                                             if "chaos" in r.action_type]),
+            "chaos_failures_detected": sum(
+                1
+                for f in self.failure_detector.failure_patterns.values()
+                if any(ft.startswith("chaos_") for ft in f.keys())
+            ),
+            "chaos_recoveries_initiated": len(
+                [
+                    r
+                    for r in self.recovery_orchestrator.completed_actions
+                    if "chaos" in r.action_type
+                ]
+            ),
             "chaos_recovery_success_rate": self._calculate_chaos_recovery_rate(),
-            "active_chaos_scenarios": []  # Would be populated by active scenario tracking
+            "active_chaos_scenarios": [],  # Would be populated by active scenario tracking
         }
 
     def _calculate_chaos_recovery_rate(self) -> float:
         """Calculate success rate for chaos-related recoveries."""
-        chaos_actions = [r for r in self.recovery_orchestrator.completed_actions
-                        if "chaos" in r.action_type]
+        chaos_actions = [
+            r
+            for r in self.recovery_orchestrator.completed_actions
+            if "chaos" in r.action_type
+        ]
 
         if not chaos_actions:
             return 0.0

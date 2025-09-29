@@ -1,7 +1,8 @@
 from decimal import Decimal
+
 import pytest
 
-from core.contracts import TradingSignal, SignalType, SignalStrength
+from core.contracts import SignalStrength, SignalType, TradingSignal
 
 
 def make_signal(amount, metadata=None):

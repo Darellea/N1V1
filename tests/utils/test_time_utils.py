@@ -5,11 +5,11 @@ Comprehensive tests for time utility functions in utils.time module.
 Tests validate now_ms(), to_ms(), and to_iso() functions work correctly.
 """
 
-import pytest
+import time
 from datetime import datetime, timezone
 from unittest.mock import patch
-import time
-from utils.time import now_ms, to_ms, to_iso
+
+from utils.time import now_ms, to_iso, to_ms
 
 
 class TestNowMs:
@@ -37,7 +37,7 @@ class TestNowMs:
 
         assert time2 >= time1
 
-    @patch('utils.time.datetime')
+    @patch("utils.time.datetime")
     def test_now_ms_uses_utc(self, mock_datetime):
         """Test that now_ms() uses UTC time."""
         # Mock datetime.utcnow() to return a specific time
@@ -225,8 +225,8 @@ class TestToIso:
 
         # Should be a valid ISO string
         assert isinstance(result, str)
-        assert result.endswith('Z')
-        assert 'T' in result
+        assert result.endswith("Z")
+        assert "T" in result
 
         # Should be parseable back
         round_trip = to_ms(result)
@@ -240,8 +240,8 @@ class TestToIso:
         result = to_iso(future_ms)
 
         assert isinstance(result, str)
-        assert result.endswith('Z')
-        assert 'T' in result
+        assert result.endswith("Z")
+        assert "T" in result
 
     def test_to_iso_past_timestamp(self):
         """Test to_iso() with past timestamp."""
@@ -249,30 +249,30 @@ class TestToIso:
         result = to_iso(past_ms)
 
         assert isinstance(result, str)
-        assert result.endswith('Z')
-        assert 'T' in result
+        assert result.endswith("Z")
+        assert "T" in result
 
     def test_to_iso_invalid_input(self):
         """Test to_iso() with invalid input."""
         # Should fallback to current time for invalid inputs
         result = to_iso("invalid")
         assert isinstance(result, str)
-        assert result.endswith('Z')
+        assert result.endswith("Z")
 
         result = to_iso(None)
         assert isinstance(result, str)
-        assert result.endswith('Z')
+        assert result.endswith("Z")
 
         result = to_iso([1, 2, 3])
         assert isinstance(result, str)
-        assert result.endswith('Z')
+        assert result.endswith("Z")
 
     def test_to_iso_negative_timestamp(self):
         """Test to_iso() with negative timestamp."""
         result = to_iso(-1000)
         # Should handle negative timestamps gracefully
         assert isinstance(result, str)
-        assert result.endswith('Z')
+        assert result.endswith("Z")
 
     def test_to_iso_very_large_timestamp(self):
         """Test to_iso() with very large timestamp."""
@@ -280,7 +280,7 @@ class TestToIso:
         result = to_iso(large_ts)
         # Should handle large timestamps gracefully
         assert isinstance(result, str)
-        assert result.endswith('Z')
+        assert result.endswith("Z")
 
 
 class TestRoundTripConversions:
@@ -355,10 +355,10 @@ class TestIntegrationScenarios:
     def test_mixed_timestamp_formats(self):
         """Test handling mixed timestamp formats in a collection."""
         timestamps = [
-            1672574400,        # seconds as int
-            1672574400000,     # milliseconds as int
-            1672574400.123,    # seconds as float
-            "1672574400000",   # milliseconds as string
+            1672574400,  # seconds as int
+            1672574400000,  # milliseconds as int
+            1672574400.123,  # seconds as float
+            "1672574400000",  # milliseconds as string
             "2023-01-01T12:00:00Z",  # ISO string
         ]
 
@@ -373,12 +373,12 @@ class TestIntegrationScenarios:
     def test_error_handling_in_batch_processing(self):
         """Test error handling when processing a batch of timestamps."""
         mixed_inputs = [
-            1672574400000,     # Valid milliseconds
+            1672574400000,  # Valid milliseconds
             "2023-01-01T12:00:00Z",  # Valid ISO
-            "invalid",          # Invalid string
-            None,               # None
-            [1, 2, 3],          # Invalid type
-            1672574400,         # Valid seconds
+            "invalid",  # Invalid string
+            None,  # None
+            [1, 2, 3],  # Invalid type
+            1672574400,  # Valid seconds
         ]
 
         results = [to_ms(ts) for ts in mixed_inputs]

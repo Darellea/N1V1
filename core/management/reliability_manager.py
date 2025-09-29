@@ -7,7 +7,7 @@ Manages retries, error tracking, and safe mode for order execution reliability.
 import asyncio
 import logging
 import random
-from typing import Callable, Any, Optional, Dict
+from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +58,19 @@ class ReliabilityManager:
         Raises:
             The last exception if all retries are exhausted.
         """
-        retries = retries if retries is not None else self._reliability.get("max_retries", 3)
-        base_backoff = base_backoff if base_backoff is not None else self._reliability.get("backoff_base", 0.5)
-        max_backoff = max_backoff if max_backoff is not None else self._reliability.get("max_backoff", 10.0)
+        retries = (
+            retries if retries is not None else self._reliability.get("max_retries", 3)
+        )
+        base_backoff = (
+            base_backoff
+            if base_backoff is not None
+            else self._reliability.get("backoff_base", 0.5)
+        )
+        max_backoff = (
+            max_backoff
+            if max_backoff is not None
+            else self._reliability.get("max_backoff", 10.0)
+        )
 
         attempt = 0
         while True:
@@ -70,7 +80,10 @@ class ReliabilityManager:
                 return await coro
             except exceptions as e:
                 if attempt > retries:
-                    logger.error(f"Retry exhausted after {attempt-1} retries: {str(e)}", exc_info=True)
+                    logger.error(
+                        f"Retry exhausted after {attempt-1} retries: {str(e)}",
+                        exc_info=True,
+                    )
                     raise
                 backoff = min(max_backoff, base_backoff * (2 ** (attempt - 1)))
                 jitter = backoff * 0.1
@@ -81,7 +94,9 @@ class ReliabilityManager:
                 )
                 await asyncio.sleep(max(0.0, sleep_for))
 
-    def record_critical_error(self, exc: Exception, context: Optional[Dict[str, Any]] = None) -> None:
+    def record_critical_error(
+        self, exc: Exception, context: Optional[Dict[str, Any]] = None
+    ) -> None:
         """
         Record a critical error occurrence and activate safe mode if thresholds exceeded.
 
@@ -91,7 +106,10 @@ class ReliabilityManager:
         """
         try:
             self.critical_error_count += 1
-            logger.error(f"Critical error #{self.critical_error_count}: {str(exc)}", exc_info=False)
+            logger.error(
+                f"Critical error #{self.critical_error_count}: {str(exc)}",
+                exc_info=False,
+            )
 
             threshold = int(self._reliability.get("safe_mode_threshold", 5))
             if self.critical_error_count >= threshold and not self.safe_mode_active:
@@ -99,7 +117,9 @@ class ReliabilityManager:
         except Exception:
             logger.exception("Failed to record critical error")
 
-    def activate_safe_mode(self, reason: str = "", context: Optional[Dict[str, Any]] = None) -> None:
+    def activate_safe_mode(
+        self, reason: str = "", context: Optional[Dict[str, Any]] = None
+    ) -> None:
         """
         Enable safe mode which disables opening new positions and optionally closes existing ones.
         """
@@ -107,11 +127,15 @@ class ReliabilityManager:
             self.safe_mode_active = True
             logger.critical(f"Safe mode activated due to: {reason}")
 
-            close_on_safe = bool(self._reliability.get("close_positions_on_safe", False))
+            close_on_safe = bool(
+                self._reliability.get("close_positions_on_safe", False)
+            )
             if close_on_safe:
                 logger.info("Safe mode: closing existing positions")
                 # Implementation: This would require access to order_manager
                 # For now, log the action; integration needed in bot_engine
-                logger.warning("Position closing not implemented; requires order_manager integration")
+                logger.warning(
+                    "Position closing not implemented; requires order_manager integration"
+                )
         except Exception:
             logger.exception("Failed to activate safe mode")

@@ -8,11 +8,11 @@ dashboard creation, rendering, and query execution/performance monitoring.
 The current implementation is minimal and can be extended for production use.
 """
 
-from typing import Dict, Any, List, Optional
-import time
 import asyncio
-import json
+import time
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -21,6 +21,7 @@ logger = get_logger(__name__)
 @dataclass
 class Dashboard:
     """Represents a dashboard configuration."""
+
     id: str
     title: str
     description: str = ""
@@ -55,21 +56,23 @@ class DashboardManager:
         self.config = config
         self.dashboards: Dict[str, Dashboard] = {}
         self.query_cache: Dict[str, Dict[str, Any]] = {}
-        self.cache_ttl = config.get('cache_ttl', 300)  # 5 minutes
-        self.max_dashboards = config.get('max_dashboards', 100)
+        self.cache_ttl = config.get("cache_ttl", 300)  # 5 minutes
+        self.max_dashboards = config.get("max_dashboards", 100)
 
         logger.info("DashboardManager initialized")
 
-    async def create_dashboard(self, dashboard_config: Dict[str, Any]) -> Dict[str, Any]:
+    async def create_dashboard(
+        self, dashboard_config: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Create a new dashboard."""
-        dashboard_id = dashboard_config.get('id', f"dashboard_{int(time.time())}")
+        dashboard_id = dashboard_config.get("id", f"dashboard_{int(time.time())}")
 
         dashboard = Dashboard(
             id=dashboard_id,
-            title=dashboard_config['title'],
-            description=dashboard_config.get('description', ''),
-            panels=dashboard_config.get('panels', []),
-            tags=dashboard_config.get('tags', [])
+            title=dashboard_config["title"],
+            description=dashboard_config.get("description", ""),
+            panels=dashboard_config.get("panels", []),
+            tags=dashboard_config.get("tags", []),
         )
 
         self.dashboards[dashboard.id] = dashboard
@@ -77,13 +80,13 @@ class DashboardManager:
 
         # Return dict representation for compatibility with tests
         return {
-            'id': dashboard.id,
-            'title': dashboard.title,
-            'description': dashboard.description,
-            'panels': dashboard.panels,
-            'tags': dashboard.tags,
-            'created_at': dashboard.created_at,
-            'updated_at': dashboard.updated_at
+            "id": dashboard.id,
+            "title": dashboard.title,
+            "description": dashboard.description,
+            "panels": dashboard.panels,
+            "tags": dashboard.tags,
+            "created_at": dashboard.created_at,
+            "updated_at": dashboard.updated_at,
         }
 
     async def render_dashboard(self, dashboard_id: str) -> Dict[str, Any]:
@@ -97,20 +100,20 @@ class DashboardManager:
         rendered_panels = []
         for panel in dashboard.panels:
             rendered_panel = {
-                'id': panel.get('id', 'panel_1'),
-                'title': panel.get('title', 'Panel'),
-                'type': panel.get('type', 'graph'),
-                'data': self._get_panel_data(panel)
+                "id": panel.get("id", "panel_1"),
+                "title": panel.get("title", "Panel"),
+                "type": panel.get("type", "graph"),
+                "data": self._get_panel_data(panel),
             }
             rendered_panels.append(rendered_panel)
 
         result = {
-            'dashboard_id': dashboard.id,
-            'title': dashboard.title,
-            'description': dashboard.description,
-            'panels': rendered_panels,
-            'rendered_at': time.time(),
-            'status': 'rendered'
+            "dashboard_id": dashboard.id,
+            "title": dashboard.title,
+            "description": dashboard.description,
+            "panels": rendered_panels,
+            "rendered_at": time.time(),
+            "status": "rendered",
         }
 
         logger.debug(f"Rendered dashboard: {dashboard.title}")
@@ -120,13 +123,8 @@ class DashboardManager:
         """Get data for a dashboard panel (stub implementation)."""
         # Stub - in production, this would query actual metrics
         return {
-            'series': [
-                {
-                    'name': 'sample_metric',
-                    'values': [[time.time(), 42.0]]
-                }
-            ],
-            'timestamp': time.time()
+            "series": [{"name": "sample_metric", "values": [[time.time(), 42.0]]}],
+            "timestamp": time.time(),
         }
 
     async def query_metrics(self, expr: str, time_range: str = "1h") -> Dict[str, Any]:
@@ -136,9 +134,9 @@ class DashboardManager:
         # Check cache first
         if cache_key in self.query_cache:
             cached_result = self.query_cache[cache_key]
-            if time.time() - cached_result['timestamp'] < self.cache_ttl:
+            if time.time() - cached_result["timestamp"] < self.cache_ttl:
                 logger.debug(f"Returning cached result for query: {expr}")
-                return cached_result['data']
+                return cached_result["data"]
 
         # Stub query execution - in production, this would execute actual queries
         start_time = time.time()
@@ -147,29 +145,26 @@ class DashboardManager:
         await asyncio.sleep(0.01)
 
         result = {
-            'results': {
-                'A': {
-                    'series': [
+            "results": {
+                "A": {
+                    "series": [
                         {
-                            'name': expr,
-                            'values': [
+                            "name": expr,
+                            "values": [
                                 [time.time() - 3600, 40.0],
                                 [time.time() - 1800, 45.0],
-                                [time.time(), 42.0]
-                            ]
+                                [time.time(), 42.0],
+                            ],
                         }
                     ]
                 }
             },
-            'query_time': time.time() - start_time,
-            'status': 'success'
+            "query_time": time.time() - start_time,
+            "status": "success",
         }
 
         # Cache the result
-        self.query_cache[cache_key] = {
-            'data': result,
-            'timestamp': time.time()
-        }
+        self.query_cache[cache_key] = {"data": result, "timestamp": time.time()}
 
         logger.debug(f"Executed query: {expr} in {result['query_time']:.3f}s")
         return result
@@ -205,10 +200,10 @@ class DashboardManager:
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance statistics for the dashboard manager."""
         return {
-            'total_dashboards': len(self.dashboards),
-            'cache_size': len(self.query_cache),
-            'cache_hit_ratio': 0.0,  # Would need to track hits/misses
-            'avg_query_time': 0.01  # Stub value
+            "total_dashboards": len(self.dashboards),
+            "cache_size": len(self.query_cache),
+            "cache_hit_ratio": 0.0,  # Would need to track hits/misses
+            "avg_query_time": 0.01,  # Stub value
         }
 
     def clear_cache(self):

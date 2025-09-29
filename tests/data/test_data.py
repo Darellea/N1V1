@@ -91,7 +91,9 @@ async def test_data_fetcher_initialization(data_fetcher, mock_exchange_config):
 async def test_fetch_ohlcv_data(data_fetcher, mock_ohlcv_data):
     """Test OHLCV data fetching from exchange."""
     # Mock the exchange fetch_ohlcv method directly
-    data_fetcher.exchange._exchange.fetch_ohlcv = AsyncMock(return_value=mock_ohlcv_data)
+    data_fetcher.exchange._exchange.fetch_ohlcv = AsyncMock(
+        return_value=mock_ohlcv_data
+    )
 
     # Test successful fetch
     df = await data_fetcher.get_historical_data("BTC/USDT", "1h", limit=3)
@@ -114,7 +116,9 @@ async def test_rate_limiting(data_fetcher):
     await data_fetcher.get_historical_data("BTC/USDT", "1h")
     elapsed = (datetime.now() - start_time).total_seconds()
 
-    assert elapsed >= 0.09  # Should have throttled (min_interval = 1/10 = 0.1s, allow some tolerance)
+    assert (
+        elapsed >= 0.09
+    )  # Should have throttled (min_interval = 1/10 = 0.1s, allow some tolerance)
 
 
 @pytest.mark.asyncio
@@ -290,8 +294,12 @@ async def test_historical_data_pagination(historical_loader):
     ]
 
     mock_data = [
-        pd.DataFrame({"close": [100, 101]}, index=pd.to_datetime(date_ranges[0], utc=True)),
-        pd.DataFrame({"close": [102, 103]}, index=pd.to_datetime(date_ranges[1], utc=True)),
+        pd.DataFrame(
+            {"close": [100, 101]}, index=pd.to_datetime(date_ranges[0], utc=True)
+        ),
+        pd.DataFrame(
+            {"close": [102, 103]}, index=pd.to_datetime(date_ranges[1], utc=True)
+        ),
     ]
 
     mock_fetcher.get_historical_data.side_effect = mock_data

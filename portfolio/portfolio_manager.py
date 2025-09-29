@@ -11,18 +11,20 @@ This module provides comprehensive portfolio management capabilities including:
 - Portfolio metrics and performance reporting
 """
 
-from typing import Dict, List, Any, Optional, Tuple, Union
 import logging
-import time
-from datetime import datetime, timedelta
-from dataclasses import dataclass, asdict
-from collections import defaultdict
-
-import pandas as pd
-import numpy as np
+from dataclasses import asdict, dataclass
+from datetime import datetime
 from decimal import Decimal
+from typing import Any, Dict, List, Optional
 
-from .allocator import CapitalAllocator, EqualWeightAllocator, RiskParityAllocator, MomentumWeightAllocator
+import numpy as np
+import pandas as pd
+
+from .allocator import (
+    EqualWeightAllocator,
+    MomentumWeightAllocator,
+    RiskParityAllocator,
+)
 from .hedging import PortfolioHedger
 
 
@@ -35,8 +37,8 @@ class Position:
     entry_price: Decimal
     current_price: Optional[Decimal] = None
     entry_time: datetime = None
-    unrealized_pnl: Decimal = Decimal('0')
-    realized_pnl: Decimal = Decimal('0')
+    unrealized_pnl: Decimal = Decimal("0")
+    realized_pnl: Decimal = Decimal("0")
     stop_loss: Optional[Decimal] = None
     take_profit: Optional[Decimal] = None
 
@@ -49,7 +51,7 @@ class Position:
     def market_value(self) -> Decimal:
         """Calculate current market value of the position."""
         if self.current_price is None:
-            return Decimal('0')
+            return Decimal("0")
         return self.quantity * self.current_price
 
     @property
@@ -84,9 +86,9 @@ class PortfolioMetrics:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         data = asdict(self)
-        data['total_value'] = float(self.total_value)
-        data['total_pnl'] = float(self.total_pnl)
-        data['timestamp'] = self.timestamp.isoformat()
+        data["total_value"] = float(self.total_value)
+        data["total_pnl"] = float(self.total_pnl)
+        data["timestamp"] = self.timestamp.isoformat()
         return data
 
 
@@ -102,7 +104,9 @@ class PortfolioManager:
     - Performance metrics and reporting
     """
 
-    def __init__(self, config: Dict[str, Any], initial_balance: Decimal = Decimal('10000')):
+    def __init__(
+        self, config: Dict[str, Any], initial_balance: Decimal = Decimal("10000")
+    ):
         """
         Initialize Portfolio Manager.
 
@@ -130,32 +134,38 @@ class PortfolioManager:
         # Setup logging
         self._setup_logging()
 
-        self.logger.info(f"Portfolio Manager initialized with ${initial_balance} balance")
+        self.logger.info(
+            f"Portfolio Manager initialized with ${initial_balance} balance"
+        )
 
     def _setup_components(self) -> None:
         """Setup portfolio management components."""
         # Initialize capital allocator
-        allocation_config = self.config.get('rebalancing', {})
-        scheme = allocation_config.get('scheme', 'equal_weight')
+        allocation_config = self.config.get("rebalancing", {})
+        scheme = allocation_config.get("scheme", "equal_weight")
 
-        if scheme == 'equal_weight':
+        if scheme == "equal_weight":
             self.allocator = EqualWeightAllocator()
-        elif scheme == 'risk_parity':
+        elif scheme == "risk_parity":
             self.allocator = RiskParityAllocator()
-        elif scheme == 'momentum_weighted':
+        elif scheme == "momentum_weighted":
             self.allocator = MomentumWeightAllocator()
         else:
             self.allocator = EqualWeightAllocator()
 
         # Initialize hedger
-        hedging_config = self.config.get('hedging', {})
-        self.hedger = PortfolioHedger(hedging_config) if hedging_config.get('enabled', False) else None
+        hedging_config = self.config.get("hedging", {})
+        self.hedger = (
+            PortfolioHedger(hedging_config)
+            if hedging_config.get("enabled", False)
+            else None
+        )
 
     def _setup_logging(self) -> None:
         """Setup logging for portfolio manager."""
         handler = logging.StreamHandler()
         formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
         handler.setFormatter(formatter)
         self.logger.addHandler(handler)
@@ -193,8 +203,10 @@ class PortfolioManager:
         """
         total_value = self.get_portfolio_value()
         total_pnl = total_value - self.initial_balance
-        total_return = float((total_value - self.initial_balance) / self.initial_balance)
-        
+        total_return = float(
+            (total_value - self.initial_balance) / self.initial_balance
+        )
+
         sharpe_ratio = self._calculate_sharpe_ratio()
         max_drawdown = self._calculate_max_drawdown()
         win_rate = self._calculate_win_rate()
@@ -211,7 +223,7 @@ class PortfolioManager:
             num_positions=num_positions,
             num_assets=num_assets,
             allocation_history=self.allocation_history[-10:],  # Last 10 allocations
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         # Store in history
@@ -222,12 +234,14 @@ class PortfolioManager:
     def _calculate_sharpe_ratio(self) -> float:
         """
         Calculate Sharpe ratio based on historical returns.
-        
+
         Returns:
             Sharpe ratio value
         """
         if len(self.portfolio_history) > 1:
-            returns = [m.total_return for m in self.portfolio_history[-30:]]  # Last 30 periods
+            returns = [
+                m.total_return for m in self.portfolio_history[-30:]
+            ]  # Last 30 periods
             if len(returns) > 1 and np.std(returns) > 0:
                 return np.mean(returns) / np.std(returns) * np.sqrt(252)
         return 0.0
@@ -235,13 +249,13 @@ class PortfolioManager:
     def _calculate_max_drawdown(self) -> float:
         """
         Calculate maximum drawdown from portfolio history.
-        
+
         Returns:
             Maximum drawdown value
         """
         if not self.portfolio_history:
             return 0.0
-            
+
         values = [m.total_value for m in self.portfolio_history]
         peak = max(values)
         if peak > 0:
@@ -251,16 +265,21 @@ class PortfolioManager:
     def _calculate_win_rate(self) -> float:
         """
         Calculate win rate based on profitable positions.
-        
+
         Returns:
             Win rate as a percentage
         """
-        winning_positions = sum(1 for pos in self.positions.values() if pos.total_pnl > 0)
+        winning_positions = sum(
+            1 for pos in self.positions.values() if pos.total_pnl > 0
+        )
         total_positions = len(self.positions)
         return winning_positions / total_positions if total_positions > 0 else 0.0
 
-    def rotate_assets(self, strategy_signals: Dict[str, Any],
-                     market_data: Optional[pd.DataFrame] = None) -> List[str]:
+    def rotate_assets(
+        self,
+        strategy_signals: Dict[str, Any],
+        market_data: Optional[pd.DataFrame] = None,
+    ) -> List[str]:
         """
         Rotate assets based on strategy signals and market conditions.
 
@@ -271,15 +290,15 @@ class PortfolioManager:
         Returns:
             List of selected assets for allocation
         """
-        rotation_config = self.config.get('rotation', {})
-        method = rotation_config.get('method', 'momentum')
-        top_n = rotation_config.get('top_n', 5)
+        rotation_config = self.config.get("rotation", {})
+        method = rotation_config.get("method", "momentum")
+        top_n = rotation_config.get("top_n", 5)
 
-        if method == 'momentum' and market_data is not None:
+        if method == "momentum" and market_data is not None:
             selected_assets = self._rotate_by_momentum(market_data, top_n)
-        elif method == 'signal_strength':
+        elif method == "signal_strength":
             selected_assets = self._rotate_by_signal_strength(strategy_signals, top_n)
-        elif method == 'performance':
+        elif method == "performance":
             selected_assets = self._rotate_by_performance(top_n)
         else:
             # Default: use all assets with signals
@@ -289,7 +308,9 @@ class PortfolioManager:
         selected_assets = selected_assets[:top_n]
 
         self.last_rotation_time = datetime.now()
-        self.logger.info(f"Asset rotation completed. Selected assets: {selected_assets}")
+        self.logger.info(
+            f"Asset rotation completed. Selected assets: {selected_assets}"
+        )
 
         return selected_assets
 
@@ -304,7 +325,7 @@ class PortfolioManager:
         Returns:
             List of selected asset symbols
         """
-        lookback_days = self.config.get('rotation', {}).get('lookback_days', 30)
+        lookback_days = self.config.get("rotation", {}).get("lookback_days", 30)
 
         momentum_scores = {}
         for symbol in market_data.columns:
@@ -313,17 +334,25 @@ class PortfolioManager:
                     prices = market_data[symbol].dropna()
                     if len(prices) >= lookback_days:
                         # Calculate momentum as percentage change over lookback period
-                        momentum = (prices.iloc[-1] - prices.iloc[-lookback_days]) / prices.iloc[-lookback_days]
+                        momentum = (
+                            prices.iloc[-1] - prices.iloc[-lookback_days]
+                        ) / prices.iloc[-lookback_days]
                         momentum_scores[symbol] = float(momentum)
                 except Exception as e:
-                    self.logger.debug(f"Error calculating momentum for {symbol}: {str(e)}")
+                    self.logger.debug(
+                        f"Error calculating momentum for {symbol}: {str(e)}"
+                    )
                     continue
 
         # Sort by momentum score (descending)
-        sorted_assets = sorted(momentum_scores.items(), key=lambda x: x[1], reverse=True)
+        sorted_assets = sorted(
+            momentum_scores.items(), key=lambda x: x[1], reverse=True
+        )
         return [symbol for symbol, _ in sorted_assets[:top_n]]
 
-    def _rotate_by_signal_strength(self, strategy_signals: Dict[str, Any], top_n: int) -> List[str]:
+    def _rotate_by_signal_strength(
+        self, strategy_signals: Dict[str, Any], top_n: int
+    ) -> List[str]:
         """
         Rotate assets based on signal strength.
 
@@ -338,12 +367,18 @@ class PortfolioManager:
         for symbol, signals in strategy_signals.items():
             if isinstance(signals, list) and signals:
                 # Calculate average signal strength
-                strengths = [getattr(s, 'signal_strength', 0) for s in signals if hasattr(s, 'signal_strength')]
+                strengths = [
+                    getattr(s, "signal_strength", 0)
+                    for s in signals
+                    if hasattr(s, "signal_strength")
+                ]
                 if strengths:
                     signal_strengths[symbol] = np.mean(strengths)
 
         # Sort by signal strength (descending)
-        sorted_assets = sorted(signal_strengths.items(), key=lambda x: x[1], reverse=True)
+        sorted_assets = sorted(
+            signal_strengths.items(), key=lambda x: x[1], reverse=True
+        )
         return [symbol for symbol, _ in sorted_assets[:top_n]]
 
     def _rotate_by_performance(self, top_n: int) -> List[str]:
@@ -364,11 +399,16 @@ class PortfolioManager:
                 performance_scores[symbol] = float(position.total_pnl / entry_value)
 
         # Sort by performance (descending)
-        sorted_assets = sorted(performance_scores.items(), key=lambda x: x[1], reverse=True)
+        sorted_assets = sorted(
+            performance_scores.items(), key=lambda x: x[1], reverse=True
+        )
         return [symbol for symbol, _ in sorted_assets[:top_n]]
 
-    def rebalance(self, target_allocations: Dict[str, float],
-                  current_prices: Optional[Dict[str, Decimal]] = None) -> Dict[str, Any]:
+    def rebalance(
+        self,
+        target_allocations: Dict[str, float],
+        current_prices: Optional[Dict[str, Decimal]] = None,
+    ) -> Dict[str, Any]:
         """
         Rebalance portfolio to target allocations.
 
@@ -381,25 +421,29 @@ class PortfolioManager:
         """
         # Check if rebalancing is needed
         rebalance_check = self._check_rebalance_needed(target_allocations)
-        if not rebalance_check['should_rebalance']:
+        if not rebalance_check["should_rebalance"]:
             # Return consistent structure for no-rebalance case
             return {
                 "rebalanced": False,
                 "actions": [],
                 "current_allocations": self._get_current_allocations(),
                 "target_allocations": target_allocations,
-                "reason": rebalance_check.get('reason', 'no_rebalance_needed')
+                "reason": rebalance_check.get("reason", "no_rebalance_needed"),
             }
 
         # Calculate and execute trades
         total_value = self.get_portfolio_value()
-        trades = self._calculate_rebalance_trades(target_allocations, total_value, current_prices)
+        trades = self._calculate_rebalance_trades(
+            target_allocations, total_value, current_prices
+        )
         executed_trades = self._execute_trades(trades)
 
         # Update allocation history and timestamp
         self._update_allocation_history(target_allocations, executed_trades)
         self.last_rebalance_time = datetime.now()
-        self.logger.info(f"Portfolio rebalanced. Executed {len(executed_trades)} trades")
+        self.logger.info(
+            f"Portfolio rebalanced. Executed {len(executed_trades)} trades"
+        )
 
         return {
             "rebalanced": True,
@@ -407,10 +451,12 @@ class PortfolioManager:
             "trades": executed_trades,  # Keep both for compatibility
             "current_allocations": self._get_current_allocations(),
             "target_allocations": target_allocations,
-            "total_value": float(total_value)
+            "total_value": float(total_value),
         }
 
-    def _check_rebalance_needed(self, target_allocations: Optional[Dict[str, float]] = None) -> Dict[str, Any]:
+    def _check_rebalance_needed(
+        self, target_allocations: Optional[Dict[str, float]] = None
+    ) -> Dict[str, Any]:
         """
         Check if rebalancing is needed based on configuration.
 
@@ -420,34 +466,45 @@ class PortfolioManager:
         Returns:
             Dictionary with rebalance decision
         """
-        rebalance_config = self.config.get('rebalancing', {})
-        mode = rebalance_config.get('mode', 'threshold')
-        threshold = rebalance_config.get('threshold', 0.05)
+        rebalance_config = self.config.get("rebalancing", {})
+        mode = rebalance_config.get("mode", "threshold")
+        threshold = rebalance_config.get("threshold", 0.05)
 
-        if mode == 'threshold':
+        if mode == "threshold":
             # Use provided target allocations or get from allocator
             allocations_to_check = target_allocations or {}
-            if not allocations_to_check and hasattr(self, 'allocator') and self.allocator:
-                allocations_to_check = getattr(self.allocator, 'get_target_allocations', lambda: {})()
+            if (
+                not allocations_to_check
+                and hasattr(self, "allocator")
+                and self.allocator
+            ):
+                allocations_to_check = getattr(
+                    self.allocator, "get_target_allocations", lambda: {}
+                )()
 
             # If no target allocations available, assume rebalancing is needed
             if not allocations_to_check:
-                return {'should_rebalance': True}
+                return {"should_rebalance": True}
 
             if not self._should_rebalance_threshold(allocations_to_check, threshold):
-                self.logger.info("Rebalancing not needed - allocations within threshold")
-                return {'should_rebalance': False, 'reason': 'within_threshold'}
+                self.logger.info(
+                    "Rebalancing not needed - allocations within threshold"
+                )
+                return {"should_rebalance": False, "reason": "within_threshold"}
 
-        elif mode == 'periodic':
-            period_days = rebalance_config.get('period_days', 7)
+        elif mode == "periodic":
+            period_days = rebalance_config.get("period_days", 7)
             if not self._should_rebalance_periodic(period_days):
                 self.logger.info("Rebalancing not needed - within periodic interval")
-                return {'should_rebalance': False, 'reason': 'within_period'}
+                return {"should_rebalance": False, "reason": "within_period"}
 
-        return {'should_rebalance': True}
+        return {"should_rebalance": True}
 
-    def _update_allocation_history(self, target_allocations: Dict[str, float],
-                                  executed_trades: List[Dict[str, Any]]) -> None:
+    def _update_allocation_history(
+        self,
+        target_allocations: Dict[str, float],
+        executed_trades: List[Dict[str, Any]],
+    ) -> None:
         """
         Update allocation history with rebalancing record.
 
@@ -456,15 +513,16 @@ class PortfolioManager:
             executed_trades: List of executed trades
         """
         allocation_record = {
-            'timestamp': datetime.now(),
-            'target_allocations': target_allocations,
-            'current_allocations': self._get_current_allocations(),
-            'trades': executed_trades
+            "timestamp": datetime.now(),
+            "target_allocations": target_allocations,
+            "current_allocations": self._get_current_allocations(),
+            "trades": executed_trades,
         }
         self.allocation_history.append(allocation_record)
 
-    def _should_rebalance_threshold(self, target_allocations: Dict[str, float],
-                                   threshold: float) -> bool:
+    def _should_rebalance_threshold(
+        self, target_allocations: Dict[str, float], threshold: float
+    ) -> bool:
         """
         Check if rebalancing is needed based on threshold deviation.
 
@@ -524,13 +582,16 @@ class PortfolioManager:
 
         # Include cash allocation
         cash_pct = float(self.cash_balance / total_value)
-        allocations['CASH'] = cash_pct
+        allocations["CASH"] = cash_pct
 
         return allocations
 
-    def _calculate_rebalance_trades(self, target_allocations: Dict[str, float],
-                                   total_value: Decimal,
-                                   current_prices: Optional[Dict[str, Decimal]] = None) -> List[Dict[str, Any]]:
+    def _calculate_rebalance_trades(
+        self,
+        target_allocations: Dict[str, float],
+        total_value: Decimal,
+        current_prices: Optional[Dict[str, Decimal]] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Calculate trades needed to achieve target allocations.
 
@@ -552,7 +613,7 @@ class PortfolioManager:
 
             value_difference = target_value - current_value
 
-            if abs(value_difference) > Decimal('1'):  # Minimum trade size
+            if abs(value_difference) > Decimal("1"):  # Minimum trade size
                 # Get price for the symbol
                 price = None
                 if current_prices and symbol in current_prices:
@@ -564,12 +625,12 @@ class PortfolioManager:
                     quantity = value_difference / price
 
                     trade = {
-                        'symbol': symbol,
-                        'side': 'buy' if quantity > 0 else 'sell',
-                        'quantity': abs(float(quantity)),
-                        'price': float(price),
-                        'value': abs(float(value_difference)),
-                        'reason': 'rebalance'
+                        "symbol": symbol,
+                        "side": "buy" if quantity > 0 else "sell",
+                        "quantity": abs(float(quantity)),
+                        "price": float(price),
+                        "value": abs(float(value_difference)),
+                        "reason": "rebalance",
                     }
                     trades.append(trade)
 
@@ -592,8 +653,8 @@ class PortfolioManager:
                 # In a real implementation, this would interface with the exchange
                 # For now, we'll simulate execution
                 executed_trade = trade.copy()
-                executed_trade['status'] = 'executed'
-                executed_trade['timestamp'] = datetime.now()
+                executed_trade["status"] = "executed"
+                executed_trade["timestamp"] = datetime.now()
 
                 # Update portfolio state
                 self._update_portfolio_from_trade(executed_trade)
@@ -604,8 +665,8 @@ class PortfolioManager:
             except Exception as e:
                 self.logger.error(f"Failed to execute trade {trade}: {str(e)}")
                 executed_trade = trade.copy()
-                executed_trade['status'] = 'failed'
-                executed_trade['error'] = str(e)
+                executed_trade["status"] = "failed"
+                executed_trade["error"] = str(e)
                 executed_trades.append(executed_trade)
 
         return executed_trades
@@ -617,19 +678,21 @@ class PortfolioManager:
         Args:
             trade: Executed trade details
         """
-        symbol = trade['symbol']
-        side = trade['side']
-        quantity = Decimal(str(trade['quantity']))
-        price = Decimal(str(trade['price']))
-        value = Decimal(str(trade['value']))
+        symbol = trade["symbol"]
+        side = trade["side"]
+        quantity = Decimal(str(trade["quantity"]))
+        price = Decimal(str(trade["price"]))
+        value = Decimal(str(trade["value"]))
 
-        if side == 'buy':
+        if side == "buy":
             # Add to position or create new position
             if symbol in self.positions:
                 existing_pos = self.positions[symbol]
                 total_quantity = existing_pos.quantity + quantity
                 # Weighted average price
-                total_value = (existing_pos.quantity * existing_pos.entry_price) + (quantity * price)
+                total_value = (existing_pos.quantity * existing_pos.entry_price) + (
+                    quantity * price
+                )
                 new_entry_price = total_value / total_quantity
 
                 existing_pos.quantity = total_quantity
@@ -639,12 +702,12 @@ class PortfolioManager:
                     symbol=symbol,
                     quantity=quantity,
                     entry_price=price,
-                    current_price=price
+                    current_price=price,
                 )
 
             self.cash_balance -= value
 
-        elif side == 'sell':
+        elif side == "sell":
             # Reduce position
             if symbol in self.positions:
                 position = self.positions[symbol]
@@ -660,7 +723,9 @@ class PortfolioManager:
 
                     self.cash_balance += value
 
-    def hedge_positions(self, market_conditions: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def hedge_positions(
+        self, market_conditions: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         """
         Apply hedging strategy based on market conditions.
 
@@ -673,13 +738,15 @@ class PortfolioManager:
         if not self.hedger:
             return None
 
-        hedging_actions = self.hedger.evaluate_hedging(self.positions, market_conditions)
+        hedging_actions = self.hedger.evaluate_hedging(
+            self.positions, market_conditions
+        )
 
         if hedging_actions:
             self.logger.info(f"Applying hedging actions: {hedging_actions}")
             # Execute hedging trades
-            executed_hedges = self._execute_trades(hedging_actions.get('trades', []))
-            hedging_actions['executed_trades'] = executed_hedges
+            executed_hedges = self._execute_trades(hedging_actions.get("trades", []))
+            hedging_actions["executed_trades"] = executed_hedges
 
         return hedging_actions
 
@@ -704,23 +771,27 @@ class PortfolioManager:
         """
         import csv
 
-        with open(filepath, 'w', newline='') as csvfile:
-            fieldnames = ['timestamp', 'symbol', 'allocation_pct', 'value']
+        with open(filepath, "w", newline="") as csvfile:
+            fieldnames = ["timestamp", "symbol", "allocation_pct", "value"]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
 
             for record in self.allocation_history:
-                timestamp = record['timestamp']
-                for symbol, allocation_pct in record.get('current_allocations', {}).items():
-                    total_value = record.get('total_value', 0)
+                timestamp = record["timestamp"]
+                for symbol, allocation_pct in record.get(
+                    "current_allocations", {}
+                ).items():
+                    total_value = record.get("total_value", 0)
                     value = total_value * allocation_pct if total_value > 0 else 0
 
-                    writer.writerow({
-                        'timestamp': timestamp,
-                        'symbol': symbol,
-                        'allocation_pct': allocation_pct,
-                        'value': value
-                    })
+                    writer.writerow(
+                        {
+                            "timestamp": timestamp,
+                            "symbol": symbol,
+                            "allocation_pct": allocation_pct,
+                            "value": value,
+                        }
+                    )
 
         self.logger.info(f"Allocation history exported to {filepath}")
         return filepath
@@ -735,29 +806,31 @@ class PortfolioManager:
         metrics = self.get_portfolio_metrics()
 
         summary = {
-            'portfolio_value': float(metrics.total_value),
-            'total_pnl': float(metrics.total_pnl),
-            'total_return_pct': metrics.total_return * 100,
-            'sharpe_ratio': metrics.sharpe_ratio,
-            'max_drawdown_pct': metrics.max_drawdown * 100,
-            'win_rate_pct': metrics.win_rate * 100,
-            'num_positions': metrics.num_positions,
-            'num_assets': metrics.num_assets,
-            'cash_balance': float(self.cash_balance),
-            'positions': [
+            "portfolio_value": float(metrics.total_value),
+            "total_pnl": float(metrics.total_pnl),
+            "total_return_pct": metrics.total_return * 100,
+            "sharpe_ratio": metrics.sharpe_ratio,
+            "max_drawdown_pct": metrics.max_drawdown * 100,
+            "win_rate_pct": metrics.win_rate * 100,
+            "num_positions": metrics.num_positions,
+            "num_assets": metrics.num_assets,
+            "cash_balance": float(self.cash_balance),
+            "positions": [
                 {
-                    'symbol': pos.symbol,
-                    'quantity': float(pos.quantity),
-                    'entry_price': float(pos.entry_price),
-                    'current_price': float(pos.current_price) if pos.current_price else None,
-                    'market_value': float(pos.market_value),
-                    'unrealized_pnl': float(pos.unrealized_pnl),
-                    'total_pnl': float(pos.total_pnl)
+                    "symbol": pos.symbol,
+                    "quantity": float(pos.quantity),
+                    "entry_price": float(pos.entry_price),
+                    "current_price": float(pos.current_price)
+                    if pos.current_price
+                    else None,
+                    "market_value": float(pos.market_value),
+                    "unrealized_pnl": float(pos.unrealized_pnl),
+                    "total_pnl": float(pos.total_pnl),
                 }
                 for pos in self.positions.values()
             ],
-            'last_rebalance': self.last_rebalance_time.isoformat(),
-            'last_rotation': self.last_rotation_time.isoformat()
+            "last_rebalance": self.last_rebalance_time.isoformat(),
+            "last_rotation": self.last_rotation_time.isoformat(),
         }
 
         return summary

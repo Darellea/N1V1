@@ -5,22 +5,18 @@ Generates comprehensive documentation for configuration files,
 validation schemas, and usage examples.
 """
 
-import json
-import yaml
-from typing import Dict, Any, List, Optional
-from pathlib import Path
 import argparse
+import json
 from datetime import datetime
+from pathlib import Path
 
 from utils.constants import (
-    DEFAULT_TRADING_CONFIG,
-    DEFAULT_RISK_CONFIG,
     DEFAULT_LOGGING_CONFIG,
-    TIMEFRAMES,
-    TRADING_MODES,
+    DEFAULT_RISK_CONFIG,
+    DEFAULT_TRADING_CONFIG,
     ORDER_TYPES,
-    VALID_ENVIRONMENTS,
-    VALID_MODES
+    TIMEFRAMES,
+    VALID_MODES,
 )
 
 
@@ -34,7 +30,7 @@ class ConfigDocumentationGenerator:
         self.templates = {
             "trading": DEFAULT_TRADING_CONFIG,
             "risk": DEFAULT_RISK_CONFIG,
-            "logging": DEFAULT_LOGGING_CONFIG
+            "logging": DEFAULT_LOGGING_CONFIG,
         }
 
     def generate_full_documentation(self, output_dir: str = "docs") -> None:
@@ -226,57 +222,57 @@ For additional help, refer to:
                         "mode": {
                             "type": "string",
                             "enum": VALID_MODES,
-                            "description": "Trading mode"
+                            "description": "Trading mode",
                         },
                         "debug": {
                             "type": "boolean",
-                            "description": "Enable debug logging"
+                            "description": "Enable debug logging",
                         },
                         "log_level": {
                             "type": "string",
                             "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-                            "description": "Logging level"
-                        }
+                            "description": "Logging level",
+                        },
                     },
-                    "required": ["mode"]
+                    "required": ["mode"],
                 },
                 "exchange": {
                     "type": "object",
                     "properties": {
                         "name": {
                             "type": "string",
-                            "description": "Exchange name (binance, kucoin, etc.)"
+                            "description": "Exchange name (binance, kucoin, etc.)",
                         },
                         "api_key": {
                             "type": "string",
-                            "description": "Exchange API key"
+                            "description": "Exchange API key",
                         },
                         "api_secret": {
                             "type": "string",
-                            "description": "Exchange API secret"
+                            "description": "Exchange API secret",
                         },
                         "api_passphrase": {
                             "type": "string",
-                            "description": "Exchange API passphrase (if required)"
+                            "description": "Exchange API passphrase (if required)",
                         },
                         "sandbox": {
                             "type": "boolean",
-                            "description": "Use sandbox/testnet"
+                            "description": "Use sandbox/testnet",
                         },
                         "timeout": {
                             "type": "number",
                             "minimum": 1000,
                             "maximum": 120000,
-                            "description": "Request timeout in milliseconds"
+                            "description": "Request timeout in milliseconds",
                         },
                         "rate_limit": {
                             "type": "number",
                             "minimum": 1,
                             "maximum": 100,
-                            "description": "Requests per second"
-                        }
+                            "description": "Requests per second",
+                        },
                     },
-                    "required": ["name"]
+                    "required": ["name"],
                 },
                 "trading": {
                     "type": "object",
@@ -284,37 +280,37 @@ For additional help, refer to:
                         "initial_balance": {
                             "type": "number",
                             "minimum": 0,
-                            "description": "Starting balance"
+                            "description": "Starting balance",
                         },
                         "max_concurrent_trades": {
                             "type": "number",
                             "minimum": 1,
                             "maximum": 50,
-                            "description": "Maximum concurrent trades"
+                            "description": "Maximum concurrent trades",
                         },
                         "slippage": {
                             "type": "number",
                             "minimum": 0,
                             "maximum": 0.1,
-                            "description": "Slippage tolerance"
+                            "description": "Slippage tolerance",
                         },
                         "order_timeout": {
                             "type": "number",
                             "minimum": 10,
                             "maximum": 3600,
-                            "description": "Order timeout in seconds"
+                            "description": "Order timeout in seconds",
                         },
                         "trade_fee": {
                             "type": "number",
                             "minimum": 0,
                             "maximum": 0.01,
-                            "description": "Trading fee"
+                            "description": "Trading fee",
                         },
                         "portfolio_mode": {
                             "type": "boolean",
-                            "description": "Enable portfolio trading"
-                        }
-                    }
+                            "description": "Enable portfolio trading",
+                        },
+                    },
                 },
                 "risk_management": {
                     "type": "object",
@@ -323,41 +319,41 @@ For additional help, refer to:
                             "type": "number",
                             "minimum": 0.001,
                             "maximum": 0.5,
-                            "description": "Stop loss percentage"
+                            "description": "Stop loss percentage",
                         },
                         "take_profit": {
                             "type": "number",
                             "minimum": 0.001,
                             "maximum": 1.0,
-                            "description": "Take profit percentage"
+                            "description": "Take profit percentage",
                         },
                         "position_size": {
                             "type": "number",
                             "minimum": 0.01,
                             "maximum": 1.0,
-                            "description": "Position size percentage"
+                            "description": "Position size percentage",
                         },
                         "max_position_size": {
                             "type": "number",
                             "minimum": 0.01,
                             "maximum": 1.0,
-                            "description": "Maximum position size"
+                            "description": "Maximum position size",
                         },
                         "risk_reward_ratio": {
                             "type": "number",
                             "minimum": 1.0,
                             "maximum": 10.0,
-                            "description": "Risk-reward ratio"
+                            "description": "Risk-reward ratio",
                         },
                         "max_daily_drawdown": {
                             "type": "number",
                             "minimum": 0.01,
                             "maximum": 1.0,
-                            "description": "Maximum daily drawdown"
-                        }
-                    }
-                }
-            }
+                            "description": "Maximum daily drawdown",
+                        },
+                    },
+                },
+            },
         }
 
         with open(output_dir / "configuration_schema.json", "w") as f:
@@ -367,70 +363,59 @@ For additional help, refer to:
         """Generate configuration examples."""
         examples = {
             "paper_trading": {
-                "environment": {
-                    "mode": "paper",
-                    "debug": True,
-                    "log_level": "INFO"
-                },
+                "environment": {"mode": "paper", "debug": True, "log_level": "INFO"},
                 "exchange": {
                     "name": "binance",
                     "sandbox": True,
                     "timeout": 30000,
-                    "rate_limit": 10
+                    "rate_limit": 10,
                 },
                 "trading": DEFAULT_TRADING_CONFIG,
                 "risk_management": DEFAULT_RISK_CONFIG,
-                "logging": DEFAULT_LOGGING_CONFIG
+                "logging": DEFAULT_LOGGING_CONFIG,
             },
             "live_trading": {
-                "environment": {
-                    "mode": "live",
-                    "debug": False,
-                    "log_level": "WARNING"
-                },
+                "environment": {"mode": "live", "debug": False, "log_level": "WARNING"},
                 "exchange": {
                     "name": "binance",
                     "sandbox": False,
                     "timeout": 30000,
-                    "rate_limit": 5
+                    "rate_limit": 5,
                 },
                 "trading": {
                     **DEFAULT_TRADING_CONFIG,
                     "max_concurrent_trades": 1,
-                    "position_size": 0.05
+                    "position_size": 0.05,
                 },
                 "risk_management": {
                     **DEFAULT_RISK_CONFIG,
                     "stop_loss": 0.03,
-                    "take_profit": 0.06
+                    "take_profit": 0.06,
                 },
-                "logging": DEFAULT_LOGGING_CONFIG
+                "logging": DEFAULT_LOGGING_CONFIG,
             },
             "backtesting": {
                 "environment": {
                     "mode": "backtest",
                     "debug": False,
-                    "log_level": "INFO"
+                    "log_level": "INFO",
                 },
                 "exchange": {
                     "name": "binance",
                     "sandbox": True,
                     "timeout": 30000,
-                    "rate_limit": 50
+                    "rate_limit": 50,
                 },
-                "trading": {
-                    **DEFAULT_TRADING_CONFIG,
-                    "initial_balance": 10000.0
-                },
+                "trading": {**DEFAULT_TRADING_CONFIG, "initial_balance": 10000.0},
                 "risk_management": DEFAULT_RISK_CONFIG,
                 "backtesting": {
                     "start_date": "2023-01-01",
                     "end_date": "2023-12-31",
                     "timeframe": "1h",
-                    "commission": 0.001
+                    "commission": 0.001,
                 },
-                "logging": DEFAULT_LOGGING_CONFIG
-            }
+                "logging": DEFAULT_LOGGING_CONFIG,
+            },
         }
 
         for name, config in examples.items():
@@ -549,10 +534,16 @@ The framework automatically validates configuration on:
 def main():
     """Command-line interface for configuration documentation generation."""
     parser = argparse.ArgumentParser(description="Generate configuration documentation")
-    parser.add_argument("--output", "-o", default="docs",
-                       help="Output directory for documentation")
-    parser.add_argument("--format", "-f", choices=["markdown", "json", "yaml"],
-                       default="markdown", help="Documentation format")
+    parser.add_argument(
+        "--output", "-o", default="docs", help="Output directory for documentation"
+    )
+    parser.add_argument(
+        "--format",
+        "-f",
+        choices=["markdown", "json", "yaml"],
+        default="markdown",
+        help="Documentation format",
+    )
 
     args = parser.parse_args()
 

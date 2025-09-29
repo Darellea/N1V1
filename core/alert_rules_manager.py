@@ -8,10 +8,10 @@ evaluation, deduplication, and notification delivery.
 The current implementation is minimal and can be extended for production use.
 """
 
-from typing import Dict, Any, List, Optional
 import time
-import asyncio
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -20,6 +20,7 @@ logger = get_logger(__name__)
 @dataclass
 class AlertRule:
     """Represents an alert rule configuration."""
+
     name: str
     query: str
     duration: str
@@ -27,7 +28,7 @@ class AlertRule:
     description: str = ""
     channels: List[str] = None
     enabled: bool = True
-    manager: Optional['AlertRulesManager'] = None
+    manager: Optional["AlertRulesManager"] = None
 
     def __post_init__(self):
         if self.channels is None:
@@ -57,7 +58,7 @@ class AlertRule:
                             "<": left < right,
                             "<=": left <= right,
                             "==": left == right,
-                            "!=": left != right
+                            "!=": left != right,
                         }
                         return operators.get(operator, False)
                     except (ValueError, TypeError):
@@ -81,9 +82,11 @@ class AlertRule:
             return False
         current_time = time.time()
         recent_alerts = [
-            alert for alert in self.manager.alert_history
-            if alert['rule_name'] == self.name and alert['severity'] == self.severity and
-            current_time - alert['timestamp'] < self.manager.deduplication_window
+            alert
+            for alert in self.manager.alert_history
+            if alert["rule_name"] == self.name
+            and alert["severity"] == self.severity
+            and current_time - alert["timestamp"] < self.manager.deduplication_window
         ]
         return len(recent_alerts) > 0
 
@@ -93,9 +96,9 @@ class AlertRule:
             self.manager.alert_history.append(alert)
             # Maintain max history size
             if len(self.manager.alert_history) > self.manager.max_history_size:
-                self.manager.alert_history = self.manager.alert_history[-self.manager.max_history_size:]
-
-
+                self.manager.alert_history = self.manager.alert_history[
+                    -self.manager.max_history_size :
+                ]
 
 
 class AlertRulesManager:
@@ -113,28 +116,30 @@ class AlertRulesManager:
         self.config = config
         self.rules: Dict[str, AlertRule] = {}
         self.alert_history: List[Dict[str, Any]] = []
-        self.deduplication_window = config.get('deduplication_window', 300)  # 5 minutes
-        self.max_history_size = config.get('max_history_size', 1000)
+        self.deduplication_window = config.get("deduplication_window", 300)  # 5 minutes
+        self.max_history_size = config.get("max_history_size", 1000)
 
         logger.info("AlertRulesManager initialized")
 
     async def create_rule(self, rule_config: Dict[str, Any]) -> AlertRule:
         """Create a new alert rule."""
         rule = AlertRule(
-            name=rule_config['name'],
-            query=rule_config['query'],
-            duration=rule_config.get('duration', '5m'),
-            severity=rule_config.get('severity', 'warning'),
-            description=rule_config.get('description', ''),
-            channels=rule_config.get('channels', ['log']),
-            manager=self
+            name=rule_config["name"],
+            query=rule_config["query"],
+            duration=rule_config.get("duration", "5m"),
+            severity=rule_config.get("severity", "warning"),
+            description=rule_config.get("description", ""),
+            channels=rule_config.get("channels", ["log"]),
+            manager=self,
         )
 
         self.rules[rule.name] = rule
         logger.info(f"Created alert rule: {rule.name}")
         return rule
 
-    async def evaluate_rules(self, metrics_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    async def evaluate_rules(
+        self, metrics_data: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         """Evaluate all enabled rules against the provided metrics data."""
         alerts = []
 
@@ -148,18 +153,21 @@ class AlertRulesManager:
                     # Check deduplication per (rule_name, severity)
                     current_time = time.time()
                     recent_alerts = [
-                        alert for alert in self.alert_history
-                        if alert['rule_name'] == rule.name and alert['severity'] == rule.severity and
-                        current_time - alert['timestamp'] < self.deduplication_window
+                        alert
+                        for alert in self.alert_history
+                        if alert["rule_name"] == rule.name
+                        and alert["severity"] == rule.severity
+                        and current_time - alert["timestamp"]
+                        < self.deduplication_window
                     ]
                     if not recent_alerts:
                         # Trigger alert
                         alert = {
-                            'rule_name': rule.name,
-                            'severity': rule.severity,
-                            'description': rule.description,
-                            'timestamp': current_time,
-                            'metrics_data': metrics_data
+                            "rule_name": rule.name,
+                            "severity": rule.severity,
+                            "description": rule.description,
+                            "timestamp": current_time,
+                            "metrics_data": metrics_data,
                         }
                         self._record_alert(alert)
                         await self._deliver_notifications(alert, rule.channels)
@@ -169,22 +177,22 @@ class AlertRulesManager:
 
         return alerts
 
-
-
     def _record_alert(self, alert: Dict[str, Any]):
         """Record an alert in the history."""
         self.alert_history.append(alert)
 
         # Maintain max history size
         if len(self.alert_history) > self.max_history_size:
-            self.alert_history = self.alert_history[-self.max_history_size:]
+            self.alert_history = self.alert_history[-self.max_history_size :]
 
     async def _deliver_notifications(self, alert: Dict[str, Any], channels: List[str]):
         """Deliver alert notifications to specified channels."""
         for channel in channels:
             try:
                 if channel == "log":
-                    logger.warning(f"ALERT: {alert['rule_name']} - {alert['description']}")
+                    logger.warning(
+                        f"ALERT: {alert['rule_name']} - {alert['description']}"
+                    )
                 elif channel == "discord":
                     await self._send_discord_notification(alert)
                 elif channel == "email":

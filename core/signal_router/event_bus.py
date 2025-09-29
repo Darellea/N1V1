@@ -7,11 +7,11 @@ including strategies, risk managers, executors, knowledge base, and monitoring.
 
 import asyncio
 import logging
-import json
-from typing import Dict, List, Callable, Any, Optional, Awaitable, Union
 from dataclasses import dataclass
-from datetime import datetime
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Union
+
 from core.contracts import TradingSignal
+
 from .events import BaseEvent, EventType
 
 logger = logging.getLogger(__name__)
@@ -22,6 +22,7 @@ class SignalEvent:
     """
     Represents a signal routing event.
     """
+
     signal: TradingSignal
     event_type: str  # 'new_signal', 'signal_approved', 'signal_rejected', etc.
     source: str  # Component that generated the event
@@ -110,9 +111,13 @@ class EventBus:
                     self._subscribers[event_type].remove(callback)
                     logger.debug(f"Unsubscribed from {event_type} events")
                 except ValueError:
-                    logger.warning(f"Callback not found in subscribers for {event_type}")
+                    logger.warning(
+                        f"Callback not found in subscribers for {event_type}"
+                    )
 
-    def get_event_history(self, event_type: Optional[str] = None, limit: int = 100) -> List[SignalEvent]:
+    def get_event_history(
+        self, event_type: Optional[str] = None, limit: int = 100
+    ) -> List[SignalEvent]:
         """
         Get recent event history.
 
@@ -172,9 +177,9 @@ class EnhancedEventBus:
             config: Configuration dictionary
         """
         self.config = config or {}
-        self.async_mode = self.config.get('async_mode', True)
-        self.log_all_events = self.config.get('log_all_events', True)
-        self.buffer_size = self.config.get('buffer_size', 1000)
+        self.async_mode = self.config.get("async_mode", True)
+        self.log_all_events = self.config.get("log_all_events", True)
+        self.buffer_size = self.config.get("buffer_size", 1000)
 
         # Subscriber registry
         self._subscribers: Dict[str, List[Callable]] = {}
@@ -216,18 +221,26 @@ class EnhancedEventBus:
                     tasks = []
                     for subscriber in self._subscribers[event_type]:
                         try:
-                            if self.async_mode and asyncio.iscoroutinefunction(subscriber):
+                            if self.async_mode and asyncio.iscoroutinefunction(
+                                subscriber
+                            ):
                                 tasks.append(subscriber(event))
                             elif not self.async_mode:
                                 # Run sync subscriber in thread pool
                                 loop = asyncio.get_event_loop()
-                                tasks.append(loop.run_in_executor(None, subscriber, event))
+                                tasks.append(
+                                    loop.run_in_executor(None, subscriber, event)
+                                )
                             else:
                                 # Async mode but sync subscriber - run in thread pool
                                 loop = asyncio.get_event_loop()
-                                tasks.append(loop.run_in_executor(None, subscriber, event))
+                                tasks.append(
+                                    loop.run_in_executor(None, subscriber, event)
+                                )
                         except Exception as e:
-                            logger.exception(f"Error queuing subscriber notification: {e}")
+                            logger.exception(
+                                f"Error queuing subscriber notification: {e}"
+                            )
                             self._error_count += 1
 
                     # Execute notifications
@@ -239,11 +252,15 @@ class EnhancedEventBus:
                                 await self._notify_subscribers_async(tasks)
                             else:
                                 # Wait for completion in sync mode
-                                results = await asyncio.gather(*tasks, return_exceptions=True)
+                                results = await asyncio.gather(
+                                    *tasks, return_exceptions=True
+                                )
                                 # Check for exceptions in results
                                 for result in results:
                                     if isinstance(result, Exception):
-                                        logger.exception(f"Error in subscriber notification: {result}")
+                                        logger.exception(
+                                            f"Error in subscriber notification: {result}"
+                                        )
                                         self._error_count += 1
                         except Exception as e:
                             logger.exception(f"Error in event notification: {e}")
@@ -271,13 +288,17 @@ class EnhancedEventBus:
             # Check for exceptions in results
             for result in results:
                 if isinstance(result, Exception):
-                    logger.exception(f"Error in async subscriber notification: {result}")
+                    logger.exception(
+                        f"Error in async subscriber notification: {result}"
+                    )
                     self._error_count += 1
         except Exception as e:
             logger.exception(f"Error in async subscriber notification: {e}")
             self._error_count += 1
 
-    async def subscribe(self, event_type: Union[str, EventType], callback: Callable) -> None:
+    async def subscribe(
+        self, event_type: Union[str, EventType], callback: Callable
+    ) -> None:
         """
         Subscribe to events of a specific type.
 
@@ -295,7 +316,9 @@ class EnhancedEventBus:
             self._subscribers[event_type].append(callback)
             logger.debug(f"Subscribed to {event_type} events")
 
-    async def unsubscribe(self, event_type: Union[str, EventType], callback: Callable) -> None:
+    async def unsubscribe(
+        self, event_type: Union[str, EventType], callback: Callable
+    ) -> None:
         """
         Unsubscribe from events of a specific type.
 
@@ -313,7 +336,9 @@ class EnhancedEventBus:
                     self._subscribers[event_type].remove(callback)
                     logger.debug(f"Unsubscribed from {event_type} events")
                 except ValueError:
-                    logger.warning(f"Callback not found in subscribers for {event_type}")
+                    logger.warning(
+                        f"Callback not found in subscribers for {event_type}"
+                    )
 
     async def publish_event(self, event: BaseEvent) -> None:
         """
@@ -325,9 +350,7 @@ class EnhancedEventBus:
         await self.publish(event)
 
     def get_event_history(
-        self,
-        event_type: Optional[Union[str, EventType]] = None,
-        limit: int = 100
+        self, event_type: Optional[Union[str, EventType]] = None, limit: int = 100
     ) -> List[Union[SignalEvent, BaseEvent]]:
         """
         Get recent event history.
@@ -347,9 +370,12 @@ class EnhancedEventBus:
                 event_type = event_type.value
 
             if isinstance(event_type, str):
-                events = [e for e in events if
-                         (isinstance(e, BaseEvent) and e.event_type.value == event_type) or
-                         (isinstance(e, SignalEvent) and e.event_type == event_type)]
+                events = [
+                    e
+                    for e in events
+                    if (isinstance(e, BaseEvent) and e.event_type.value == event_type)
+                    or (isinstance(e, SignalEvent) and e.event_type == event_type)
+                ]
 
         return events[-limit:]
 
@@ -361,7 +387,9 @@ class EnhancedEventBus:
             self._subscribers.clear()
             logger.info("Cleared all event subscribers")
 
-    def get_subscriber_count(self, event_type: Optional[Union[str, EventType]] = None) -> int:
+    def get_subscriber_count(
+        self, event_type: Optional[Union[str, EventType]] = None
+    ) -> int:
         """
         Get the number of subscribers.
 
@@ -391,12 +419,14 @@ class EnhancedEventBus:
                     "event_type": event.event_type.value,
                     "source": event.source,
                     "timestamp": event.timestamp.isoformat(),
-                    "payload": event.payload
+                    "payload": event.payload,
                 }
                 if event.metadata:
                     log_data["metadata"] = event.metadata
 
-                logger.info(f"Event: {event.event_type.value}", extra={"event_data": log_data})
+                logger.info(
+                    f"Event: {event.event_type.value}", extra={"event_data": log_data}
+                )
             else:
                 # Legacy SignalEvent logging
                 logger.info(f"Signal Event: {event.event_type} from {event.source}")
@@ -427,10 +457,8 @@ class EnhancedEventBus:
             "subscribers": self.get_subscriber_count(),
             "event_counts": event_counts,
             "buffer_size": self.buffer_size,
-            "async_mode": self.async_mode
+            "async_mode": self.async_mode,
         }
-
-
 
 
 class SignalRouter:
@@ -475,7 +503,9 @@ class SignalRouter:
         self._components[name] = component
         logger.info(f"Registered component: {name}")
 
-    async def route_signal(self, signal: TradingSignal, source: str = "unknown") -> None:
+    async def route_signal(
+        self, signal: TradingSignal, source: str = "unknown"
+    ) -> None:
         """
         Route a signal through the event bus.
 
@@ -490,7 +520,7 @@ class SignalRouter:
             signal=signal,
             event_type="new_signal",
             source=source,
-            metadata={"routing_start": asyncio.get_event_loop().time()}
+            metadata={"routing_start": asyncio.get_event_loop().time()},
         )
 
         await self.event_bus.publish(event)
@@ -517,7 +547,7 @@ class SignalRouter:
                 signal=event.signal,
                 event_type="signal_rejected",
                 source="signal_router",
-                metadata={"reason": "processing_error", "error": str(e)}
+                metadata={"reason": "processing_error", "error": str(e)},
             )
             await self.event_bus.publish(reject_event)
 
@@ -542,7 +572,7 @@ class SignalRouter:
                     signal=event.signal,
                     event_type="signal_approved",
                     source="risk_manager",
-                    metadata={"approved_by": "risk_manager"}
+                    metadata={"approved_by": "risk_manager"},
                 )
                 await self.event_bus.publish(approve_event)
             else:
@@ -551,7 +581,7 @@ class SignalRouter:
                     signal=event.signal,
                     event_type="signal_rejected",
                     source="risk_manager",
-                    metadata={"reason": "risk_check_failed"}
+                    metadata={"reason": "risk_check_failed"},
                 )
                 await self.event_bus.publish(reject_event)
 
@@ -562,7 +592,7 @@ class SignalRouter:
                 signal=event.signal,
                 event_type="signal_rejected",
                 source="risk_manager",
-                metadata={"reason": "risk_error", "error": str(e)}
+                metadata={"reason": "risk_error", "error": str(e)},
             )
             await self.event_bus.publish(reject_event)
 
@@ -579,9 +609,9 @@ class SignalRouter:
 
             try:
                 # Check if component has a signal handler
-                if hasattr(component, 'handle_signal'):
+                if hasattr(component, "handle_signal"):
                     await component.handle_signal(event.signal)
-                elif hasattr(component, 'process_signal'):
+                elif hasattr(component, "process_signal"):
                     await component.process_signal(event.signal)
                 elif callable(component):
                     # Assume it's a callable that accepts signals
@@ -608,9 +638,9 @@ class SignalRouter:
         for name, component in self._components.items():
             if name in ["executor", "order_manager"]:
                 try:
-                    if hasattr(component, 'execute_signal'):
+                    if hasattr(component, "execute_signal"):
                         await component.execute_signal(event.signal)
-                    elif hasattr(component, 'handle_signal'):
+                    elif hasattr(component, "handle_signal"):
                         await component.handle_signal(event.signal)
                 except Exception as e:
                     logger.exception(f"Error executing signal on {name}: {e}")
@@ -622,8 +652,12 @@ class SignalRouter:
         Args:
             event: The rejection event
         """
-        reason = event.metadata.get("reason", "unknown") if event.metadata else "unknown"
-        logger.info(f"Signal rejected: {event.signal.symbol} from {event.source}, reason: {reason}")
+        reason = (
+            event.metadata.get("reason", "unknown") if event.metadata else "unknown"
+        )
+        logger.info(
+            f"Signal rejected: {event.signal.symbol} from {event.source}, reason: {reason}"
+        )
 
     def get_routing_stats(self) -> Dict[str, Any]:
         """
@@ -637,7 +671,7 @@ class SignalRouter:
         stats = {
             "total_events": len(history),
             "subscribers": self.event_bus.get_subscriber_count(),
-            "components": list(self._components.keys())
+            "components": list(self._components.keys()),
         }
 
         # Count events by type
@@ -653,9 +687,14 @@ class SignalRouter:
 default_event_bus = EventBus()
 default_enhanced_event_bus = EnhancedEventBus()
 
+
 # Convenience functions
-async def publish_signal_event(signal: TradingSignal, event_type: str, source: str,
-                              metadata: Optional[Dict[str, Any]] = None) -> None:
+async def publish_signal_event(
+    signal: TradingSignal,
+    event_type: str,
+    source: str,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
     """
     Convenience function to publish a signal event.
 
@@ -666,10 +705,7 @@ async def publish_signal_event(signal: TradingSignal, event_type: str, source: s
         metadata: Optional metadata
     """
     event = SignalEvent(
-        signal=signal,
-        event_type=event_type,
-        source=source,
-        metadata=metadata
+        signal=signal, event_type=event_type, source=source, metadata=metadata
     )
     await default_event_bus.publish(event)
 
@@ -717,7 +753,9 @@ def create_signal_router(event_bus: Optional[EventBus] = None) -> SignalRouter:
     return SignalRouter(event_bus)
 
 
-def create_enhanced_event_bus(config: Optional[Dict[str, Any]] = None) -> EnhancedEventBus:
+def create_enhanced_event_bus(
+    config: Optional[Dict[str, Any]] = None
+) -> EnhancedEventBus:
     """
     Create a new enhanced event bus instance.
 

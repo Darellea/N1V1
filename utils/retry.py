@@ -45,11 +45,14 @@ async def async_retry_call(
             last_exc = exc
             # If this was the last allowed attempt, log error and re-raise the last exception.
             if attempt >= retries - 1:
-                logger.error("Non-recoverable error in async_retry_call; re-raising", exc_info=True)
+                logger.error(
+                    "Non-recoverable error in async_retry_call; re-raising",
+                    exc_info=True,
+                )
                 raise last_exc
 
             # Compute exponential backoff (attempt 0 -> base_backoff, attempt 1 -> base_backoff*2, ...)
-            backoff = min(base_backoff * (2 ** attempt), max_backoff)
+            backoff = min(base_backoff * (2**attempt), max_backoff)
             # Small jitter to avoid thundering herd: +/-10%
             jitter = backoff * 0.1
             sleep_for = max(0.0, backoff + random.uniform(-jitter, jitter))
@@ -77,6 +80,7 @@ def retry_async(retries: int = 3, base_backoff: float = 0.5, max_backoff: float 
                 raise RuntimeError("transient error")
             return "success"
     """
+
     def decorator(func: Callable[..., "Coroutine[Any, Any, Any]"]):
         async def wrapper(*args, **kwargs):
             return await async_retry_call(
@@ -85,5 +89,7 @@ def retry_async(retries: int = 3, base_backoff: float = 0.5, max_backoff: float 
                 base_backoff=base_backoff,
                 max_backoff=max_backoff,
             )
+
         return wrapper
+
     return decorator

@@ -20,22 +20,21 @@ Usage:
 
 import asyncio
 import logging
-import time
 import random
-from datetime import datetime, timedelta
 from pathlib import Path
-import json
 
 # Import N1V1 components
 from core.self_healing_engine import (
-    get_self_healing_engine, SelfHealingEngine, ComponentType, ComponentStatus
+    ComponentStatus,
+    ComponentType,
+    SelfHealingEngine,
 )
-from core.watchdog import ComponentStatus as WatchdogStatus
-from core.diagnostics import get_diagnostics_manager
 from utils.logger import get_logger
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = get_logger(__name__)
 
 
@@ -84,11 +83,11 @@ class MockComponent:
     def get_metrics(self) -> dict:
         """Get component metrics."""
         return {
-            'latency_ms': self.latency_ms,
-            'error_count': self.error_count,
-            'uptime_percentage': 99.9 if self.healthy else 50.0,
-            'active_connections': random.randint(1, 10),
-            'queue_size': random.randint(0, 100)
+            "latency_ms": self.latency_ms,
+            "error_count": self.error_count,
+            "uptime_percentage": 99.9 if self.healthy else 50.0,
+            "active_connections": random.randint(1, 10),
+            "queue_size": random.randint(0, 100),
         }
 
 
@@ -107,20 +106,20 @@ class SelfHealingEngineDemo:
 
         # Create self-healing engine
         config = {
-            'monitoring': {
-                'heartbeat_interval': 30,
-                'failure_detection_threshold': 2.0,
-                'emergency_webhook_url': 'https://discord.com/api/webhooks/demo'
+            "monitoring": {
+                "heartbeat_interval": 30,
+                "failure_detection_threshold": 2.0,
+                "emergency_webhook_url": "https://discord.com/api/webhooks/demo",
             },
-            'recovery': {
-                'max_recovery_attempts': 3,
-                'recovery_timeout_seconds': 300,
-                'auto_recovery_enabled': True
+            "recovery": {
+                "max_recovery_attempts": 3,
+                "recovery_timeout_seconds": 300,
+                "auto_recovery_enabled": True,
             },
-            'emergency': {
-                'emergency_mode_threshold': 0.5,
-                'emergency_webhook_url': 'https://discord.com/api/webhooks/demo'
-            }
+            "emergency": {
+                "emergency_mode_threshold": 0.5,
+                "emergency_webhook_url": "https://discord.com/api/webhooks/demo",
+            },
         }
 
         self.engine = SelfHealingEngine(config)
@@ -138,19 +137,35 @@ class SelfHealingEngineDemo:
         logger.info("Creating mock components...")
 
         # Core trading components
-        self.mock_components['bot_engine_main'] = MockComponent('bot_engine_main', 'bot_engine')
-        self.mock_components['order_manager_primary'] = MockComponent('order_manager_primary', 'order_manager')
-        self.mock_components['signal_router_main'] = MockComponent('signal_router_main', 'signal_router')
-        self.mock_components['data_fetcher_binance'] = MockComponent('data_fetcher_binance', 'data_fetcher')
+        self.mock_components["bot_engine_main"] = MockComponent(
+            "bot_engine_main", "bot_engine"
+        )
+        self.mock_components["order_manager_primary"] = MockComponent(
+            "order_manager_primary", "order_manager"
+        )
+        self.mock_components["signal_router_main"] = MockComponent(
+            "signal_router_main", "signal_router"
+        )
+        self.mock_components["data_fetcher_binance"] = MockComponent(
+            "data_fetcher_binance", "data_fetcher"
+        )
 
         # Strategy components
-        self.mock_components['strategy_rsi'] = MockComponent('strategy_rsi', 'strategy')
-        self.mock_components['strategy_macd'] = MockComponent('strategy_macd', 'strategy')
-        self.mock_components['strategy_bollinger'] = MockComponent('strategy_bollinger', 'strategy')
+        self.mock_components["strategy_rsi"] = MockComponent("strategy_rsi", "strategy")
+        self.mock_components["strategy_macd"] = MockComponent(
+            "strategy_macd", "strategy"
+        )
+        self.mock_components["strategy_bollinger"] = MockComponent(
+            "strategy_bollinger", "strategy"
+        )
 
         # External services
-        self.mock_components['discord_notifier'] = MockComponent('discord_notifier', 'notifier')
-        self.mock_components['database_main'] = MockComponent('database_main', 'database')
+        self.mock_components["discord_notifier"] = MockComponent(
+            "discord_notifier", "notifier"
+        )
+        self.mock_components["database_main"] = MockComponent(
+            "database_main", "database"
+        )
 
         logger.info(f"Created {len(self.mock_components)} mock components")
 
@@ -160,44 +175,56 @@ class SelfHealingEngineDemo:
 
         # Register core components (critical)
         self.engine.register_component(
-            'bot_engine_main', ComponentType.BOT_ENGINE,
-            self.mock_components['bot_engine_main'], critical=True,
-            dependencies=['order_manager_primary', 'signal_router_main']
+            "bot_engine_main",
+            ComponentType.BOT_ENGINE,
+            self.mock_components["bot_engine_main"],
+            critical=True,
+            dependencies=["order_manager_primary", "signal_router_main"],
         )
 
         self.engine.register_component(
-            'order_manager_primary', ComponentType.ORDER_MANAGER,
-            self.mock_components['order_manager_primary'], critical=True,
-            dependencies=['data_fetcher_binance']
+            "order_manager_primary",
+            ComponentType.ORDER_MANAGER,
+            self.mock_components["order_manager_primary"],
+            critical=True,
+            dependencies=["data_fetcher_binance"],
         )
 
         self.engine.register_component(
-            'signal_router_main', ComponentType.SIGNAL_ROUTER,
-            self.mock_components['signal_router_main'], critical=True,
-            dependencies=['strategy_rsi', 'strategy_macd', 'strategy_bollinger']
+            "signal_router_main",
+            ComponentType.SIGNAL_ROUTER,
+            self.mock_components["signal_router_main"],
+            critical=True,
+            dependencies=["strategy_rsi", "strategy_macd", "strategy_bollinger"],
         )
 
         self.engine.register_component(
-            'data_fetcher_binance', ComponentType.DATA_FETCHER,
-            self.mock_components['data_fetcher_binance'], critical=True
+            "data_fetcher_binance",
+            ComponentType.DATA_FETCHER,
+            self.mock_components["data_fetcher_binance"],
+            critical=True,
         )
 
         # Register strategy components
         for comp_id, component in self.mock_components.items():
-            if comp_id.startswith('strategy_'):
+            if comp_id.startswith("strategy_"):
                 self.engine.register_component(
                     comp_id, ComponentType.STRATEGY, component, critical=False
                 )
 
         # Register external services
         self.engine.register_component(
-            'discord_notifier', ComponentType.NOTIFIER,
-            self.mock_components['discord_notifier'], critical=False
+            "discord_notifier",
+            ComponentType.NOTIFIER,
+            self.mock_components["discord_notifier"],
+            critical=False,
         )
 
         self.engine.register_component(
-            'database_main', ComponentType.DATABASE,
-            self.mock_components['database_main'], critical=True
+            "database_main",
+            ComponentType.DATABASE,
+            self.mock_components["database_main"],
+            critical=True,
         )
 
         logger.info("✅ All components registered successfully")
@@ -210,7 +237,9 @@ class SelfHealingEngineDemo:
         # Start heartbeat simulation
         heartbeat_tasks = []
         for comp_id, component in self.mock_components.items():
-            task = asyncio.create_task(self._simulate_component_heartbeat(comp_id, component))
+            task = asyncio.create_task(
+                self._simulate_component_heartbeat(comp_id, component)
+            )
             heartbeat_tasks.append(task)
 
         # Let heartbeats run for a bit
@@ -230,7 +259,9 @@ class SelfHealingEngineDemo:
 
         logger.info("✅ Heartbeat monitoring demonstration completed")
 
-    async def _simulate_component_heartbeat(self, component_id: str, component: MockComponent):
+    async def _simulate_component_heartbeat(
+        self, component_id: str, component: MockComponent
+    ):
         """Simulate heartbeat for a component."""
         while True:
             try:
@@ -242,9 +273,9 @@ class SelfHealingEngineDemo:
                 await self.engine.send_heartbeat(
                     component_id=component_id,
                     status=status,
-                    latency_ms=metrics['latency_ms'],
-                    error_count=metrics['error_count'],
-                    custom_metrics=metrics
+                    latency_ms=metrics["latency_ms"],
+                    error_count=metrics["error_count"],
+                    custom_metrics=metrics,
                 )
 
                 # Log heartbeat
@@ -281,30 +312,30 @@ class SelfHealingEngineDemo:
 
         # Failure 1: High latency in data fetcher
         logger.info("1. Simulating high latency in data fetcher...")
-        self.mock_components['data_fetcher_binance'].simulate_failure("latency")
+        self.mock_components["data_fetcher_binance"].simulate_failure("latency")
         await asyncio.sleep(3)
 
         # Failure 2: Errors in signal router
         logger.info("2. Simulating errors in signal router...")
-        self.mock_components['signal_router_main'].simulate_failure("errors")
+        self.mock_components["signal_router_main"].simulate_failure("errors")
         await asyncio.sleep(3)
 
         # Failure 3: Critical failure in strategy
         logger.info("3. Simulating critical failure in RSI strategy...")
-        self.mock_components['strategy_rsi'].simulate_failure("critical")
+        self.mock_components["strategy_rsi"].simulate_failure("critical")
         await asyncio.sleep(3)
 
         # Failure 4: Multiple component failures
         logger.info("4. Simulating multiple component failures...")
-        self.mock_components['order_manager_primary'].simulate_failure("latency")
-        self.mock_components['discord_notifier'].simulate_failure("errors")
+        self.mock_components["order_manager_primary"].simulate_failure("latency")
+        self.mock_components["discord_notifier"].simulate_failure("errors")
         await asyncio.sleep(3)
 
         # Recovery simulation
         logger.info("5. Simulating component recoveries...")
-        self.mock_components['data_fetcher_binance'].simulate_recovery()
-        self.mock_components['signal_router_main'].simulate_recovery()
-        self.mock_components['strategy_rsi'].simulate_recovery()
+        self.mock_components["data_fetcher_binance"].simulate_recovery()
+        self.mock_components["signal_router_main"].simulate_recovery()
+        self.mock_components["strategy_rsi"].simulate_recovery()
         await asyncio.sleep(3)
 
     async def _monitor_recovery_process(self):
@@ -357,7 +388,7 @@ class SelfHealingEngineDemo:
         dashboard_data = self.engine.monitoring_dashboard.get_dashboard_data()
 
         # Display key metrics
-        system_health = dashboard_data['system_health']
+        system_health = dashboard_data["system_health"]
         logger.info("System Health Summary:")
         logger.info(f"  Overall Health: {system_health['overall_health']}")
         logger.info(f"  Health Score: {system_health['health_score']}%")
@@ -366,18 +397,22 @@ class SelfHealingEngineDemo:
         logger.info(f"  Failing Components: {system_health['failing_components']}")
 
         # Display component status
-        component_status = dashboard_data['component_status']
+        component_status = dashboard_data["component_status"]
         logger.info(f"\nComponent Status ({len(component_status)} components):")
         for comp in component_status[:5]:  # Show first 5
-            status_emoji = "✅" if comp['consecutive_failures'] == 0 else "❌"
-            logger.info(f"  {status_emoji} {comp['component_id']} ({comp['component_type']}) - {comp['consecutive_failures']} failures")
+            status_emoji = "✅" if comp["consecutive_failures"] == 0 else "❌"
+            logger.info(
+                f"  {status_emoji} {comp['component_id']} ({comp['component_type']}) - {comp['consecutive_failures']} failures"
+            )
 
         # Display failure statistics
-        failure_stats = dashboard_data['failure_stats']
+        failure_stats = dashboard_data["failure_stats"]
         logger.info("\nFailure Statistics:")
         logger.info(f"  Total Failures: {failure_stats['total_failures']}")
         logger.info(f"  Recovery Attempts: {failure_stats['recovery_attempts']}")
-        logger.info(f"  Recovery Success Rate: {failure_stats['recovery_success_rate']:.1f}%")
+        logger.info(
+            f"  Recovery Success Rate: {failure_stats['recovery_success_rate']:.1f}%"
+        )
 
         logger.info("✅ Monitoring dashboard demonstration completed")
 
@@ -392,10 +427,12 @@ class SelfHealingEngineDemo:
         logger.info("Self-Healing Engine Statistics:")
         logger.info(f"  Uptime: {stats['uptime']}")
         logger.info(f"  Total Failures Handled: {stats['total_failures_handled']}")
-        logger.info(f"  Total Recoveries Successful: {stats['total_recoveries_successful']}")
+        logger.info(
+            f"  Total Recoveries Successful: {stats['total_recoveries_successful']}"
+        )
 
         # Registry statistics
-        registry_stats = stats['registry_stats']
+        registry_stats = stats["registry_stats"]
         logger.info("\nComponent Registry:")
         logger.info(f"  Total Components: {registry_stats['total_components']}")
         logger.info(f"  Critical Components: {registry_stats['critical_components']}")
@@ -403,7 +440,7 @@ class SelfHealingEngineDemo:
         logger.info(f"  Failing Components: {registry_stats['failing_components']}")
 
         # Healing statistics
-        healing_stats = stats['healing_stats']
+        healing_stats = stats["healing_stats"]
         logger.info("\nHealing Statistics:")
         logger.info(f"  Pending Actions: {healing_stats['pending_actions']}")
         logger.info(f"  Completed Actions: {healing_stats['completed_actions']}")
@@ -411,7 +448,7 @@ class SelfHealingEngineDemo:
         logger.info(f"  Success Rate: {healing_stats['success_rate']:.1f}%")
 
         # Watchdog statistics
-        watchdog_stats = stats['watchdog_stats']
+        watchdog_stats = stats["watchdog_stats"]
         logger.info("\nWatchdog Statistics:")
         logger.info(f"  Heartbeats Received: {watchdog_stats['heartbeats_received']}")
         logger.info(f"  Failures Detected: {watchdog_stats['failures_detected']}")
@@ -422,18 +459,20 @@ class SelfHealingEngineDemo:
     async def _display_system_status(self):
         """Display current system status."""
         dashboard_data = self.engine.monitoring_dashboard.get_dashboard_data()
-        system_health = dashboard_data['system_health']
+        system_health = dashboard_data["system_health"]
 
         status_emoji = {
             "HEALTHY": "🟢",
             "DEGRADED": "🟡",
             "CRITICAL": "🔴",
-            "EMERGENCY": "🚨"
-        }.get(system_health['overall_health'], "⚪")
+            "EMERGENCY": "🚨",
+        }.get(system_health["overall_health"], "⚪")
 
-        logger.info(f"{status_emoji} System Status: {system_health['overall_health']} "
-                   f"(Score: {system_health['health_score']}%) - "
-                   f"{system_health['healthy_components']}/{system_health['total_components']} healthy")
+        logger.info(
+            f"{status_emoji} System Status: {system_health['overall_health']} "
+            f"(Score: {system_health['health_score']}%) - "
+            f"{system_health['healthy_components']}/{system_health['total_components']} healthy"
+        )
 
     async def _display_emergency_status(self):
         """Display emergency status."""
@@ -478,6 +517,7 @@ class SelfHealingEngineDemo:
         except Exception as e:
             logger.error(f"Demo failed: {e}")
             import traceback
+
             logger.debug(traceback.format_exc())
 
         finally:

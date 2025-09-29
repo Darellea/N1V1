@@ -15,24 +15,18 @@ Key Features:
 - SLA compliance verification
 """
 
-import asyncio
-import time
-import logging
-import statistics
-import threading
-from typing import Dict, List, Any, Optional, Tuple
-from dataclasses import dataclass, field
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import numpy as np
-from datetime import datetime, timedelta
-import json
 import argparse
-import os
+import asyncio
+import json
+import statistics
+import time
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+import numpy as np
 
 from core.order_executor import OrderExecutor
-from core.order_manager import OrderManager
-from core.performance_tracker import PerformanceTracker
-from notifier.discord_bot import DiscordNotifier
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -41,6 +35,7 @@ logger = get_logger(__name__)
 @dataclass
 class LoadTestConfig:
     """Configuration for load stress testing."""
+
     num_strategies: int = 50
     orders_per_burst: int = 1000
     num_bursts: int = 10
@@ -53,12 +48,15 @@ class LoadTestConfig:
     cooldown_time: int = 30  # seconds
 
     def __post_init__(self):
-        self.total_orders = self.num_strategies * self.orders_per_burst * self.num_bursts
+        self.total_orders = (
+            self.num_strategies * self.orders_per_burst * self.num_bursts
+        )
 
 
 @dataclass
 class LoadTestMetrics:
     """Comprehensive metrics collected during load testing."""
+
     total_orders_submitted: int = 0
     total_orders_processed: int = 0
     successful_orders: int = 0
@@ -94,7 +92,11 @@ class LoadTestMetrics:
     @property
     def avg_throughput(self) -> float:
         """Calculate average throughput."""
-        return statistics.mean(self.throughput_per_second) if self.throughput_per_second else 0.0
+        return (
+            statistics.mean(self.throughput_per_second)
+            if self.throughput_per_second
+            else 0.0
+        )
 
 
 class MockStrategy:
@@ -128,8 +130,8 @@ class MockStrategy:
             "metadata": {
                 "strategy_version": "1.0.0",
                 "risk_level": np.random.choice(["low", "medium", "high"]),
-                "confidence": np.random.uniform(0.5, 1.0)
-            }
+                "confidence": np.random.uniform(0.5, 1.0),
+            },
         }
 
     def record_result(self, latency: float, success: bool):
@@ -143,7 +145,9 @@ class MockStrategy:
     def get_stats(self) -> Dict[str, Any]:
         """Get strategy performance statistics."""
         total_orders = self.success_count + self.failure_count
-        success_rate = (self.success_count / total_orders) * 100 if total_orders > 0 else 0.0
+        success_rate = (
+            (self.success_count / total_orders) * 100 if total_orders > 0 else 0.0
+        )
         avg_latency = statistics.mean(self.latencies) if self.latencies else 0.0
 
         return {
@@ -151,7 +155,7 @@ class MockStrategy:
             "total_orders": total_orders,
             "success_rate": success_rate,
             "avg_latency": avg_latency,
-            "p95_latency": np.percentile(self.latencies, 95) if self.latencies else 0.0
+            "p95_latency": np.percentile(self.latencies, 95) if self.latencies else 0.0,
         }
 
 
@@ -165,10 +169,7 @@ class MockOrderManager:
         self.order_history: List[Dict[str, Any]] = []
         self.execution_latencies: List[float] = []
         self.failure_rate = 0.002  # 0.2% baseline failure rate
-        self.latency_distribution = {
-            'mean': 50.0,  # ms
-            'std': 25.0   # ms
-        }
+        self.latency_distribution = {"mean": 50.0, "std": 25.0}  # ms  # ms
 
     async def execute_order(self, signal: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Execute a mock order with realistic latency and failure simulation."""
@@ -188,14 +189,13 @@ class MockOrderManager:
                 "status": "failed",
                 "error": "Simulated exchange error",
                 "timestamp": datetime.now(),
-                "latency_ms": (time.time() - start_time) * 1000
+                "latency_ms": (time.time() - start_time) * 1000,
             }
         else:
             # Successful order
             # Simulate realistic latency with some outliers
             base_latency = np.random.normal(
-                self.latency_distribution['mean'],
-                self.latency_distribution['std']
+                self.latency_distribution["mean"], self.latency_distribution["std"]
             )
             # Add occasional spikes
             if np.random.random() < 0.05:  # 5% chance of spike
@@ -213,7 +213,7 @@ class MockOrderManager:
                 "pnl": np.random.normal(0, 10),  # Simulated P&L
                 "fee": signal["amount"] * 0.001,  # 0.1% fee
                 "timestamp": datetime.now(),
-                "latency_ms": total_latency
+                "latency_ms": total_latency,
             }
 
         self.execution_latencies.append(result["latency_ms"])
@@ -263,7 +263,7 @@ class LoadTestRunner:
             {"max_retries": 2, "retry_base_delay": 0.1},
             self.order_manager,
             self.performance_tracker,
-            self.notifier
+            self.notifier,
         )
 
         # Test control
@@ -273,8 +273,10 @@ class LoadTestRunner:
 
     async def run_load_test(self) -> LoadTestMetrics:
         """Run the complete load test."""
-        logger.info(f"Starting load test: {self.config.num_strategies} strategies, "
-                   f"{self.config.total_orders} total orders")
+        logger.info(
+            f"Starting load test: {self.config.num_strategies} strategies, "
+            f"{self.config.total_orders} total orders"
+        )
 
         self.start_time = time.time()
         self.running = True
@@ -296,9 +298,11 @@ class LoadTestRunner:
         # Calculate final metrics
         self._calculate_final_metrics()
 
-        logger.info(f"Load test completed: {self.metrics.total_orders_processed} orders processed, "
-                   f"{self.metrics.failure_rate:.2f}% failure rate, "
-                   f"{self.metrics.p95_latency:.1f}ms p95 latency")
+        logger.info(
+            f"Load test completed: {self.metrics.total_orders_processed} orders processed, "
+            f"{self.metrics.failure_rate:.2f}% failure rate, "
+            f"{self.metrics.p95_latency:.1f}ms p95 latency"
+        )
 
         return self.metrics
 
@@ -334,8 +338,7 @@ class LoadTestRunner:
 
             # Run order burst
             await self._run_order_burst(
-                self.config.num_strategies,
-                self.config.orders_per_burst
+                self.config.num_strategies, self.config.orders_per_burst
             )
 
             # Wait between bursts
@@ -396,12 +399,16 @@ class LoadTestRunner:
                     else:
                         self.metrics.failed_orders += 1
                         error_type = result.get("error", "unknown")
-                        self.metrics.error_counts[error_type] = self.metrics.error_counts.get(error_type, 0) + 1
+                        self.metrics.error_counts[error_type] = (
+                            self.metrics.error_counts.get(error_type, 0) + 1
+                        )
 
                 # Store strategy latency
                 if strategy.strategy_id not in self.metrics.strategy_latencies:
                     self.metrics.strategy_latencies[strategy.strategy_id] = []
-                self.metrics.strategy_latencies[strategy.strategy_id].append(order_latency)
+                self.metrics.strategy_latencies[strategy.strategy_id].append(
+                    order_latency
+                )
 
         # Generate and execute orders for this strategy
         tasks = []
@@ -428,22 +435,25 @@ class LoadTestRunner:
         # Ensure we have processed all submitted orders
         self.metrics.total_orders_processed = min(
             self.metrics.total_orders_submitted,
-            self.metrics.successful_orders + self.metrics.failed_orders
+            self.metrics.successful_orders + self.metrics.failed_orders,
         )
 
     def validate_sla_compliance(self) -> Dict[str, Any]:
         """Validate SLA compliance based on test results."""
         sla_results = {
-            "latency_sla_met": self.metrics.p95_latency <= self.config.target_latency_p95,
-            "failure_rate_sla_met": self.metrics.failure_rate <= self.config.target_failure_rate,
-            "throughput_sufficient": self.metrics.avg_throughput >= 100,  # 100 orders/sec minimum
-            "overall_pass": False
+            "latency_sla_met": self.metrics.p95_latency
+            <= self.config.target_latency_p95,
+            "failure_rate_sla_met": self.metrics.failure_rate
+            <= self.config.target_failure_rate,
+            "throughput_sufficient": self.metrics.avg_throughput
+            >= 100,  # 100 orders/sec minimum
+            "overall_pass": False,
         }
 
         sla_results["overall_pass"] = (
-            sla_results["latency_sla_met"] and
-            sla_results["failure_rate_sla_met"] and
-            sla_results["throughput_sufficient"]
+            sla_results["latency_sla_met"]
+            and sla_results["failure_rate_sla_met"]
+            and sla_results["throughput_sufficient"]
         )
 
         return sla_results
@@ -461,7 +471,7 @@ class LoadTestRunner:
                 "num_bursts": self.config.num_bursts,
                 "total_orders": self.config.total_orders,
                 "target_latency_p95": self.config.target_latency_p95,
-                "target_failure_rate": self.config.target_failure_rate
+                "target_failure_rate": self.config.target_failure_rate,
             },
             "performance_metrics": {
                 "total_orders_submitted": self.metrics.total_orders_submitted,
@@ -473,21 +483,25 @@ class LoadTestRunner:
                 "p95_latency_ms": self.metrics.p95_latency,
                 "p99_latency_ms": self.metrics.p99_latency,
                 "avg_throughput_orders_per_sec": self.metrics.avg_throughput,
-                "error_breakdown": self.metrics.error_counts
+                "error_breakdown": self.metrics.error_counts,
             },
             "sla_compliance": self.validate_sla_compliance(),
             "strategy_performance": self.get_strategy_performance_report(),
-            "test_duration_seconds": self.end_time - self.start_time if self.end_time else 0,
-            "timestamp": datetime.now().isoformat()
+            "test_duration_seconds": self.end_time - self.start_time
+            if self.end_time
+            else 0,
+            "timestamp": datetime.now().isoformat(),
         }
 
-        with open(output_file, 'w') as f:
+        with open(output_file, "w") as f:
             json.dump(results, f, indent=2, default=str)
 
         logger.info(f"Test results exported to {output_file}")
 
 
-async def run_load_test(config: LoadTestConfig, output_file: str = "load_test_results.json"):
+async def run_load_test(
+    config: LoadTestConfig, output_file: str = "load_test_results.json"
+):
     """Run load stress test with given configuration."""
     runner = LoadTestRunner(config)
 
@@ -501,9 +515,9 @@ async def run_load_test(config: LoadTestConfig, output_file: str = "load_test_re
         sla_results = runner.validate_sla_compliance()
 
         # Print summary
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("LOAD STRESS TEST RESULTS")
-        print("="*80)
+        print("=" * 80)
         print(f"Strategies: {config.num_strategies}")
         print(f"Total Orders: {metrics.total_orders_processed}")
         print(f"Failure Rate: {metrics.failure_rate:.2f}%")
@@ -513,13 +527,19 @@ async def run_load_test(config: LoadTestConfig, output_file: str = "load_test_re
         print(f"Avg Throughput: {metrics.avg_throughput:.1f} orders/sec")
         print()
         print("SLA COMPLIANCE:")
-        print(f"Latency (<{config.target_latency_p95}ms p95): {'✓' if sla_results['latency_sla_met'] else '✗'}")
-        print(f"Failure Rate (<{config.target_failure_rate*100:.1f}%): {'✓' if sla_results['failure_rate_sla_met'] else '✗'}")
-        print(f"Throughput (>100/sec): {'✓' if sla_results['throughput_sufficient'] else '✗'}")
+        print(
+            f"Latency (<{config.target_latency_p95}ms p95): {'✓' if sla_results['latency_sla_met'] else '✗'}"
+        )
+        print(
+            f"Failure Rate (<{config.target_failure_rate*100:.1f}%): {'✓' if sla_results['failure_rate_sla_met'] else '✗'}"
+        )
+        print(
+            f"Throughput (>100/sec): {'✓' if sla_results['throughput_sufficient'] else '✗'}"
+        )
         print(f"Overall SLA: {'PASS' if sla_results['overall_pass'] else 'FAIL'}")
-        print("="*80)
+        print("=" * 80)
 
-        return sla_results['overall_pass']
+        return sla_results["overall_pass"]
 
     except Exception as e:
         logger.exception(f"Load test failed: {e}")
@@ -529,22 +549,34 @@ async def run_load_test(config: LoadTestConfig, output_file: str = "load_test_re
 def main():
     """Main entry point for load testing."""
     parser = argparse.ArgumentParser(description="N1V1 Load Stress Test")
-    parser.add_argument("--strategies", type=int, default=50,
-                       help="Number of concurrent strategies")
-    parser.add_argument("--orders-per-burst", type=int, default=1000,
-                       help="Orders per burst per strategy")
-    parser.add_argument("--bursts", type=int, default=10,
-                       help="Number of bursts")
-    parser.add_argument("--burst-interval", type=float, default=1.0,
-                       help="Seconds between bursts")
-    parser.add_argument("--target-latency", type=float, default=150.0,
-                       help="Target P95 latency in ms")
-    parser.add_argument("--target-failure-rate", type=float, default=0.005,
-                       help="Target failure rate (0.005 = 0.5%)")
-    parser.add_argument("--output", default="load_test_results.json",
-                       help="Output file for results")
-    parser.add_argument("--duration", type=int, default=300,
-                       help="Test duration in seconds")
+    parser.add_argument(
+        "--strategies", type=int, default=50, help="Number of concurrent strategies"
+    )
+    parser.add_argument(
+        "--orders-per-burst",
+        type=int,
+        default=1000,
+        help="Orders per burst per strategy",
+    )
+    parser.add_argument("--bursts", type=int, default=10, help="Number of bursts")
+    parser.add_argument(
+        "--burst-interval", type=float, default=1.0, help="Seconds between bursts"
+    )
+    parser.add_argument(
+        "--target-latency", type=float, default=150.0, help="Target P95 latency in ms"
+    )
+    parser.add_argument(
+        "--target-failure-rate",
+        type=float,
+        default=0.005,
+        help="Target failure rate (0.005 = 0.5%)",
+    )
+    parser.add_argument(
+        "--output", default="load_test_results.json", help="Output file for results"
+    )
+    parser.add_argument(
+        "--duration", type=int, default=300, help="Test duration in seconds"
+    )
 
     args = parser.parse_args()
 
@@ -555,7 +587,7 @@ def main():
         burst_interval=args.burst_interval,
         target_latency_p95=args.target_latency,
         target_failure_rate=args.target_failure_rate,
-        test_duration=args.duration
+        test_duration=args.duration,
     )
 
     logger.info("Starting N1V1 load stress test")

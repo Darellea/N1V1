@@ -8,19 +8,15 @@ and performance benchmarking for the N1V1 Trading Framework.
 import asyncio
 import logging
 import time
-import threading
-from typing import Dict, Any, List, Optional, Callable, Type
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from unittest.mock import Mock, MagicMock, patch
-import pytest
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional
+
 import numpy as np
-import pandas as pd
-from concurrent.futures import ThreadPoolExecutor
 
 from utils.constants import (
-    TIMEFRAMES, ORDER_TYPES, ORDER_SIDES, DEFAULT_TRADING_CONFIG,
-    DEFAULT_RISK_CONFIG, VALID_ENVIRONMENTS
+    DEFAULT_RISK_CONFIG,
+    DEFAULT_TRADING_CONFIG,
 )
 from utils.error_handler import ErrorHandler, TradingError
 
@@ -30,6 +26,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class MockExchange:
     """Mock exchange for realistic trading simulation."""
+
     name: str = "mock_exchange"
     base_url: str = "https://mock.exchange.com"
     api_key: str = "mock_api_key"
@@ -37,20 +34,28 @@ class MockExchange:
     sandbox: bool = True
 
     # Market data
-    symbols: List[str] = field(default_factory=lambda: ["BTC/USDT", "ETH/USDT", "ADA/USDT"])
-    prices: Dict[str, float] = field(default_factory=lambda: {
-        "BTC/USDT": 50000.0, "ETH/USDT": 3000.0, "ADA/USDT": 1.50
-    })
+    symbols: List[str] = field(
+        default_factory=lambda: ["BTC/USDT", "ETH/USDT", "ADA/USDT"]
+    )
+    prices: Dict[str, float] = field(
+        default_factory=lambda: {
+            "BTC/USDT": 50000.0,
+            "ETH/USDT": 3000.0,
+            "ADA/USDT": 1.50,
+        }
+    )
 
     # Order book data
     order_books: Dict[str, Dict[str, List[List[float]]]] = field(default_factory=dict)
 
     # Account data
-    balances: Dict[str, Dict[str, float]] = field(default_factory=lambda: {
-        "USDT": {"free": 10000.0, "used": 0.0, "total": 10000.0},
-        "BTC": {"free": 0.2, "used": 0.0, "total": 0.2},
-        "ETH": {"free": 3.0, "used": 0.0, "total": 3.0}
-    })
+    balances: Dict[str, Dict[str, float]] = field(
+        default_factory=lambda: {
+            "USDT": {"free": 10000.0, "used": 0.0, "total": 10000.0},
+            "BTC": {"free": 0.2, "used": 0.0, "total": 0.2},
+            "ETH": {"free": 3.0, "used": 0.0, "total": 3.0},
+        }
+    )
 
     # Orders
     orders: List[Dict[str, Any]] = field(default_factory=list)
@@ -63,8 +68,14 @@ class MockExchange:
         """Initialize order books and other data structures."""
         for symbol in self.symbols:
             self.order_books[symbol] = {
-                "bids": [[self.prices[symbol] * 0.999, 10.0], [self.prices[symbol] * 0.998, 15.0]],
-                "asks": [[self.prices[symbol] * 1.001, 10.0], [self.prices[symbol] * 1.002, 15.0]]
+                "bids": [
+                    [self.prices[symbol] * 0.999, 10.0],
+                    [self.prices[symbol] * 0.998, 15.0],
+                ],
+                "asks": [
+                    [self.prices[symbol] * 1.001, 10.0],
+                    [self.prices[symbol] * 1.002, 15.0],
+                ],
             }
 
     async def fetch_ticker(self, symbol: str) -> Dict[str, Any]:
@@ -74,7 +85,7 @@ class MockExchange:
 
         price = self.prices[symbol]
         # Add some price movement
-        price *= (1 + np.random.normal(0, 0.001))
+        price *= 1 + np.random.normal(0, 0.001)
 
         return {
             "symbol": symbol,
@@ -82,10 +93,12 @@ class MockExchange:
             "bid": price * 0.999,
             "ask": price * 1.001,
             "volume": np.random.uniform(100, 1000),
-            "timestamp": int(time.time() * 1000)
+            "timestamp": int(time.time() * 1000),
         }
 
-    async def fetch_ohlcv(self, symbol: str, timeframe: str = "1h", limit: int = 100) -> List[List[float]]:
+    async def fetch_ohlcv(
+        self, symbol: str, timeframe: str = "1h", limit: int = 100
+    ) -> List[List[float]]:
         """Fetch OHLCV data."""
         if symbol not in self.prices:
             raise TradingError(f"Symbol {symbol} not found")
@@ -101,19 +114,29 @@ class MockExchange:
             close_price = open_price * (1 + np.random.normal(0, 0.01))
             volume = np.random.uniform(10, 100)
 
-            data.append([timestamp, open_price, high_price, low_price, close_price, volume])
+            data.append(
+                [timestamp, open_price, high_price, low_price, close_price, volume]
+            )
 
         return data
 
-    async def fetch_order_book(self, symbol: str, limit: int = 20) -> Dict[str, List[List[float]]]:
+    async def fetch_order_book(
+        self, symbol: str, limit: int = 20
+    ) -> Dict[str, List[List[float]]]:
         """Fetch order book."""
         if symbol not in self.order_books:
             raise TradingError(f"Symbol {symbol} not found")
 
         return self.order_books[symbol]
 
-    async def create_order(self, symbol: str, type: str, side: str,
-                          amount: float, price: Optional[float] = None) -> Dict[str, Any]:
+    async def create_order(
+        self,
+        symbol: str,
+        type: str,
+        side: str,
+        amount: float,
+        price: Optional[float] = None,
+    ) -> Dict[str, Any]:
         """Create an order."""
         self.order_counter += 1
         order_id = f"order_{self.order_counter}"
@@ -130,7 +153,7 @@ class MockExchange:
             "price": price,
             "filled": 0.0,
             "remaining": amount,
-            "cost": 0.0
+            "cost": 0.0,
         }
 
         self.orders.append(order)
@@ -149,7 +172,9 @@ class MockExchange:
                 fill_amount = order["amount"] * np.random.uniform(0.5, 1.0)
                 order["filled"] = fill_amount
                 order["remaining"] = order["amount"] - fill_amount
-                order["cost"] = fill_amount * (order["price"] or self.prices[order["symbol"]])
+                order["cost"] = fill_amount * (
+                    order["price"] or self.prices[order["symbol"]]
+                )
 
                 if order["remaining"] <= 0.0001:
                     order["status"] = "closed"
@@ -165,7 +190,7 @@ class MockExchange:
                     "side": order["side"],
                     "amount": fill_amount,
                     "price": order["price"] or self.prices[order["symbol"]],
-                    "cost": order["cost"]
+                    "cost": order["cost"],
                 }
                 self.trades.append(trade)
                 break
@@ -194,30 +219,45 @@ class MockExchange:
 class MarketConditionSimulator:
     """Simulates various market conditions for stress testing."""
 
-    volatility_levels: Dict[str, float] = field(default_factory=lambda: {
-        "low": 0.005,      # 0.5% daily volatility
-        "normal": 0.02,    # 2% daily volatility
-        "high": 0.08,      # 8% daily volatility
-        "extreme": 0.15    # 15% daily volatility
-    })
+    volatility_levels: Dict[str, float] = field(
+        default_factory=lambda: {
+            "low": 0.005,  # 0.5% daily volatility
+            "normal": 0.02,  # 2% daily volatility
+            "high": 0.08,  # 8% daily volatility
+            "extreme": 0.15,  # 15% daily volatility
+        }
+    )
 
-    trend_types: List[str] = field(default_factory=lambda: [
-        "bullish", "bearish", "sideways", "volatile", "flash_crash"
-    ])
+    trend_types: List[str] = field(
+        default_factory=lambda: [
+            "bullish",
+            "bearish",
+            "sideways",
+            "volatile",
+            "flash_crash",
+        ]
+    )
 
     def __init__(self):
         self.current_conditions: Dict[str, Any] = {}
         self.price_history: Dict[str, List[float]] = {}
         self.volume_history: Dict[str, List[float]] = {}
 
-    def set_market_condition(self, symbol: str, condition: str,
-                           volatility: str = "normal", trend: str = "sideways"):
+    def set_market_condition(
+        self,
+        symbol: str,
+        condition: str,
+        volatility: str = "normal",
+        trend: str = "sideways",
+    ):
         """Set market conditions for a symbol."""
         self.current_conditions[symbol] = {
             "condition": condition,
-            "volatility": self.volatility_levels.get(volatility, self.volatility_levels["normal"]),
+            "volatility": self.volatility_levels.get(
+                volatility, self.volatility_levels["normal"]
+            ),
             "trend": trend,
-            "start_time": time.time()
+            "start_time": time.time(),
         }
 
         if symbol not in self.price_history:
@@ -233,7 +273,9 @@ class MarketConditionSimulator:
         condition = self.current_conditions[symbol]
 
         # Base movement
-        base_movement = np.random.normal(0, condition["volatility"] / 16)  # Hourly movement
+        base_movement = np.random.normal(
+            0, condition["volatility"] / 16
+        )  # Hourly movement
 
         # Add trend bias
         if condition["trend"] == "bullish":
@@ -264,7 +306,9 @@ class MarketConditionSimulator:
             return base_volume * np.random.uniform(0.5, 1.5)
 
         condition = self.current_conditions[symbol]
-        volatility_multiplier = condition["volatility"] / self.volatility_levels["normal"]
+        volatility_multiplier = (
+            condition["volatility"] / self.volatility_levels["normal"]
+        )
 
         volume = base_volume * np.random.uniform(0.5, 2.0) * volatility_multiplier
 
@@ -287,19 +331,15 @@ class IntegrationTestFramework:
         self.performance_metrics: Dict[str, Any] = {}
         self.error_handler = ErrorHandler()
 
-    async def setup_test_environment(self, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def setup_test_environment(
+        self, config: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """Set up test environment with mock components."""
         test_config = config or {
-            "environment": {
-                "mode": "paper",
-                "debug": True
-            },
-            "exchange": {
-                "name": "mock_exchange",
-                "sandbox": True
-            },
+            "environment": {"mode": "paper", "debug": True},
+            "exchange": {"name": "mock_exchange", "sandbox": True},
             "trading": DEFAULT_TRADING_CONFIG,
-            "risk_management": DEFAULT_RISK_CONFIG
+            "risk_management": DEFAULT_RISK_CONFIG,
         }
 
         # Initialize mock exchange
@@ -323,13 +363,19 @@ class IntegrationTestFramework:
     def _setup_market_conditions(self):
         """Set up various market conditions for testing."""
         # Set different conditions for different symbols
-        self.market_simulator.set_market_condition("BTC/USDT", "normal", "normal", "bullish")
-        self.market_simulator.set_market_condition("ETH/USDT", "volatile", "high", "sideways")
-        self.market_simulator.set_market_condition("ADA/USDT", "trending", "normal", "bearish")
+        self.market_simulator.set_market_condition(
+            "BTC/USDT", "normal", "normal", "bullish"
+        )
+        self.market_simulator.set_market_condition(
+            "ETH/USDT", "volatile", "high", "sideways"
+        )
+        self.market_simulator.set_market_condition(
+            "ADA/USDT", "trending", "normal", "bearish"
+        )
 
-    async def run_trading_scenario(self, scenario_name: str,
-                                 strategy_func: Callable,
-                                 duration_minutes: int = 60) -> Dict[str, Any]:
+    async def run_trading_scenario(
+        self, scenario_name: str, strategy_func: Callable, duration_minutes: int = 60
+    ) -> Dict[str, Any]:
         """Run a complete trading scenario."""
         logger.info(f"Starting trading scenario: {scenario_name}")
 
@@ -340,7 +386,7 @@ class IntegrationTestFramework:
             "duration": duration_minutes,
             "trades": [],
             "performance": {},
-            "errors": []
+            "errors": [],
         }
 
         try:
@@ -348,10 +394,14 @@ class IntegrationTestFramework:
             await self._initialize_trading_components()
 
             # Run scenario
-            await self._execute_scenario(strategy_func, duration_minutes, scenario_results)
+            await self._execute_scenario(
+                strategy_func, duration_minutes, scenario_results
+            )
 
             # Calculate performance metrics
-            scenario_results["performance"] = self._calculate_scenario_performance(scenario_results)
+            scenario_results["performance"] = self._calculate_scenario_performance(
+                scenario_results
+            )
 
         except Exception as e:
             logger.exception(f"Error in scenario {scenario_name}: {e}")
@@ -368,9 +418,12 @@ class IntegrationTestFramework:
         # This would initialize actual trading components with mock dependencies
         pass
 
-    async def _execute_scenario(self, strategy_func: Callable,
-                              duration_minutes: int,
-                              scenario_results: Dict[str, Any]):
+    async def _execute_scenario(
+        self,
+        strategy_func: Callable,
+        duration_minutes: int,
+        scenario_results: Dict[str, Any],
+    ):
         """Execute the trading scenario."""
         end_time = time.time() + (duration_minutes * 60)
 
@@ -396,10 +449,14 @@ class IntegrationTestFramework:
         """Update market data with simulated movements."""
         for symbol in self.mock_exchange.symbols:
             current_price = self.mock_exchange.prices[symbol]
-            new_price = self.market_simulator.generate_price_movement(symbol, current_price)
+            new_price = self.market_simulator.generate_price_movement(
+                symbol, current_price
+            )
             self.mock_exchange.prices[symbol] = new_price
 
-    def _calculate_scenario_performance(self, scenario_results: Dict[str, Any]) -> Dict[str, Any]:
+    def _calculate_scenario_performance(
+        self, scenario_results: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Calculate performance metrics for the scenario."""
         trades = scenario_results.get("trades", [])
 
@@ -422,8 +479,10 @@ class IntegrationTestFramework:
             "win_rate": win_rate,
             "total_profit": total_profit,
             "total_volume": total_volume,
-            "avg_profit_per_trade": total_profit / total_trades if total_trades > 0 else 0,
-            "sharpe_ratio": self._calculate_sharpe_ratio(trades)
+            "avg_profit_per_trade": total_profit / total_trades
+            if total_trades > 0
+            else 0,
+            "sharpe_ratio": self._calculate_sharpe_ratio(trades),
         }
 
     def _calculate_sharpe_ratio(self, trades: List[Dict[str, Any]]) -> float:
@@ -450,7 +509,9 @@ class IntegrationTestFramework:
 
         return sharpe * np.sqrt(365)  # Annualize
 
-    async def run_stress_test(self, test_name: str, stress_config: Dict[str, Any]) -> Dict[str, Any]:
+    async def run_stress_test(
+        self, test_name: str, stress_config: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Run stress test with extreme market conditions."""
         logger.info(f"Starting stress test: {test_name}")
 
@@ -460,21 +521,23 @@ class IntegrationTestFramework:
                 symbol,
                 stress_config.get("condition", "extreme"),
                 stress_config.get("volatility", "extreme"),
-                stress_config.get("trend", "volatile")
+                stress_config.get("trend", "volatile"),
             )
 
         # Run test scenario
         results = await self.run_trading_scenario(
             f"stress_{test_name}",
             self._stress_test_strategy,
-            stress_config.get("duration", 30)
+            stress_config.get("duration", 30),
         )
 
         # Additional stress metrics
         results["stress_metrics"] = {
             "max_drawdown": self._calculate_max_drawdown(results["trades"]),
-            "volatility_exposure": self._calculate_volatility_exposure(results["trades"]),
-            "error_rate": len(results["errors"]) / max(1, len(results["trades"]))
+            "volatility_exposure": self._calculate_volatility_exposure(
+                results["trades"]
+            ),
+            "error_rate": len(results["errors"]) / max(1, len(results["trades"])),
         }
 
         return results
@@ -494,7 +557,7 @@ class IntegrationTestFramework:
                 "side": side,
                 "amount": amount,
                 "price": self.mock_exchange.prices[symbol],
-                "profit": np.random.normal(0, 10)  # Random profit/loss
+                "profit": np.random.normal(0, 10),  # Random profit/loss
             }
             trades.append(trade)
 
@@ -525,15 +588,16 @@ class IntegrationTestFramework:
         profits = [trade.get("profit", 0) for trade in trades]
         return np.std(profits) if profits else 0.0
 
-    async def run_performance_benchmark(self, benchmark_name: str,
-                                      operations: List[Callable]) -> Dict[str, Any]:
+    async def run_performance_benchmark(
+        self, benchmark_name: str, operations: List[Callable]
+    ) -> Dict[str, Any]:
         """Run performance benchmark on specified operations."""
         logger.info(f"Starting performance benchmark: {benchmark_name}")
 
         benchmark_results = {
             "benchmark": benchmark_name,
             "start_time": time.time(),
-            "operation_results": []
+            "operation_results": [],
         }
 
         for operation in operations:
@@ -541,7 +605,9 @@ class IntegrationTestFramework:
             benchmark_results["operation_results"].append(op_result)
 
         benchmark_results["end_time"] = time.time()
-        benchmark_results["total_time"] = benchmark_results["end_time"] - benchmark_results["start_time"]
+        benchmark_results["total_time"] = (
+            benchmark_results["end_time"] - benchmark_results["start_time"]
+        )
 
         # Calculate aggregate metrics
         benchmark_results["aggregate_metrics"] = self._calculate_aggregate_metrics(
@@ -573,10 +639,12 @@ class IntegrationTestFramework:
             "min_time": np.min(times),
             "max_time": np.max(times),
             "std_time": np.std(times),
-            "total_time": np.sum(times)
+            "total_time": np.sum(times),
         }
 
-    def _calculate_aggregate_metrics(self, operation_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _calculate_aggregate_metrics(
+        self, operation_results: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
         """Calculate aggregate metrics across all operations."""
         total_time = sum(op["total_time"] for op in operation_results)
         total_operations = sum(op["iterations"] for op in operation_results)
@@ -584,8 +652,12 @@ class IntegrationTestFramework:
         return {
             "total_operations": total_operations,
             "total_time": total_time,
-            "avg_operation_time": total_time / total_operations if total_operations > 0 else 0,
-            "operations_per_second": total_operations / total_time if total_time > 0 else 0
+            "avg_operation_time": total_time / total_operations
+            if total_operations > 0
+            else 0,
+            "operations_per_second": total_operations / total_time
+            if total_time > 0
+            else 0,
         }
 
     def generate_test_report(self, output_file: str = "integration_test_report.md"):
@@ -596,7 +668,11 @@ class IntegrationTestFramework:
         # Summary
         total_scenarios = len(self.test_results)
         successful_scenarios = sum(1 for r in self.test_results if not r.get("errors"))
-        error_rate = (total_scenarios - successful_scenarios) / total_scenarios if total_scenarios > 0 else 0
+        error_rate = (
+            (total_scenarios - successful_scenarios) / total_scenarios
+            if total_scenarios > 0
+            else 0
+        )
 
         report += "## Summary\n\n"
         report += f"- **Total Scenarios:** {total_scenarios}\n"
@@ -637,7 +713,9 @@ class IntegrationTestFramework:
 
                 report += "#### Operation Details\n\n"
                 for op in benchmark.get("operation_results", []):
-                    report += f"- **{op['operation']}:** {op['avg_time']*1000:.2f}ms avg\n"
+                    report += (
+                        f"- **{op['operation']}:** {op['avg_time']*1000:.2f}ms avg\n"
+                    )
 
                 report += "\n"
 
@@ -668,14 +746,18 @@ async def scenario_high_volatility():
 
     # Set high volatility conditions
     for symbol in framework.mock_exchange.symbols:
-        framework.market_simulator.set_market_condition(symbol, "volatile", "high", "sideways")
+        framework.market_simulator.set_market_condition(
+            symbol, "volatile", "high", "sideways"
+        )
 
     async def volatility_strategy():
         trades = []
         # Strategy that handles high volatility
         return trades
 
-    return await framework.run_trading_scenario("high_volatility", volatility_strategy, 45)
+    return await framework.run_trading_scenario(
+        "high_volatility", volatility_strategy, 45
+    )
 
 
 async def scenario_stress_test():
@@ -687,7 +769,7 @@ async def scenario_stress_test():
         "condition": "flash_crash",
         "volatility": "extreme",
         "trend": "bearish",
-        "duration": 20
+        "duration": 20,
     }
 
     return await framework.run_stress_test("market_crash", stress_config)
@@ -698,7 +780,9 @@ if __name__ == "__main__":
     async def main():
         # Run basic integration test
         results = await scenario_basic_trading()
-        print(f"Basic trading scenario completed: {len(results.get('trades', []))} trades")
+        print(
+            f"Basic trading scenario completed: {len(results.get('trades', []))} trades"
+        )
 
         # Run stress test
         stress_results = await scenario_stress_test()

@@ -8,13 +8,13 @@ validation, retry mechanisms, and adaptive pricing.
 
 import asyncio
 import sys
-from decimal import Decimal
 from datetime import datetime
+from decimal import Decimal
 
 # Add the project root to Python path
-sys.path.insert(0, '.')
+sys.path.insert(0, ".")
 
-from core.contracts import TradingSignal, SignalType, SignalStrength
+from core.contracts import SignalStrength, SignalType, TradingSignal
 from core.types.order_types import OrderType
 
 
@@ -25,7 +25,7 @@ async def demo_smart_execution():
 
     try:
         # Import the execution layer
-        from core.execution.smart_layer import ExecutionSmartLayer, ExecutionPolicy
+        from core.execution.smart_layer import ExecutionSmartLayer
 
         # Create execution layer with default config
         execution_layer = ExecutionSmartLayer()
@@ -43,9 +43,8 @@ async def demo_smart_execution():
                 order_type=OrderType.MARKET,
                 amount=Decimal("100"),
                 current_price=Decimal("50000"),
-                timestamp=datetime.now()
+                timestamp=datetime.now(),
             ),
-
             # Large limit order
             TradingSignal(
                 strategy_id="demo_strategy",
@@ -56,9 +55,8 @@ async def demo_smart_execution():
                 amount=Decimal("20000"),  # Large order
                 price=Decimal("3000"),
                 current_price=Decimal("3000"),
-                timestamp=datetime.now()
+                timestamp=datetime.now(),
             ),
-
             # High spread scenario
             TradingSignal(
                 strategy_id="demo_strategy",
@@ -68,42 +66,42 @@ async def demo_smart_execution():
                 order_type=OrderType.MARKET,
                 amount=Decimal("5000"),
                 current_price=Decimal("1.50"),
-                timestamp=datetime.now()
-            )
+                timestamp=datetime.now(),
+            ),
         ]
 
         # Market contexts for different scenarios
         contexts = [
             # Normal market conditions
             {
-                'spread_pct': 0.002,
-                'liquidity_stability': 0.8,
-                'market_price': Decimal("50000"),
-                'account_balance': Decimal("100000")
+                "spread_pct": 0.002,
+                "liquidity_stability": 0.8,
+                "market_price": Decimal("50000"),
+                "account_balance": Decimal("100000"),
             },
-
             # Large order with good liquidity
             {
-                'spread_pct': 0.001,
-                'liquidity_stability': 0.9,
-                'market_price': Decimal("3000"),
-                'account_balance': Decimal("1000000")
+                "spread_pct": 0.001,
+                "liquidity_stability": 0.9,
+                "market_price": Decimal("3000"),
+                "account_balance": Decimal("1000000"),
             },
-
             # High spread conditions
             {
-                'spread_pct': 0.02,  # 2% spread
-                'liquidity_stability': 0.5,
-                'market_price': Decimal("1.50"),
-                'account_balance': Decimal("100000")
-            }
+                "spread_pct": 0.02,  # 2% spread
+                "liquidity_stability": 0.5,
+                "market_price": Decimal("1.50"),
+                "account_balance": Decimal("100000"),
+            },
         ]
 
         print("\n📊 Testing Policy Selection Logic")
         print("-" * 30)
 
         for i, (signal, context) in enumerate(zip(signals, contexts)):
-            print(f"\nSignal {i+1}: {signal.symbol} {signal.amount} {signal.order_type.value}")
+            print(
+                f"\nSignal {i+1}: {signal.symbol} {signal.amount} {signal.order_type.value}"
+            )
 
             # Test policy selection
             policy = execution_layer._select_execution_policy(signal, context)
@@ -112,8 +110,8 @@ async def demo_smart_execution():
             # Show reasoning
             price = signal.current_price or signal.price or Decimal(1)
             order_value = signal.amount * price
-            spread_pct = context.get('spread_pct', 0.002)
-            liquidity_stability = context.get('liquidity_stability', 0.8)
+            spread_pct = context.get("spread_pct", 0.002)
+            liquidity_stability = context.get("liquidity_stability", 0.8)
 
             print(f"Order Value: ${order_value:,.0f}")
             print(f"Spread: {spread_pct:.1%}")
@@ -145,7 +143,7 @@ async def demo_smart_execution():
             ("DCA", "Dollar-Cost Averaging - scales in during high spread"),
             ("SMART_SPLIT", "Smart Order Splitting - intelligent order chunking"),
             ("MARKET", "Market Order - immediate execution"),
-            ("LIMIT", "Limit Order - price-controlled execution")
+            ("LIMIT", "Limit Order - price-controlled execution"),
         ]
 
         for name, description in policies:
@@ -159,6 +157,7 @@ async def demo_smart_execution():
     except Exception as e:
         print(f"❌ Error during demo: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -173,11 +172,11 @@ async def demo_validator():
 
         # Create validator
         config = {
-            'enabled': True,
-            'check_balance': True,
-            'max_slippage_pct': 0.02,
-            'min_order_size': 0.000001,
-            'max_order_size': 1000000
+            "enabled": True,
+            "check_balance": True,
+            "max_slippage_pct": 0.02,
+            "min_order_size": 0.000001,
+            "max_order_size": 1000000,
         }
 
         validator = ExecutionValidator(config)
@@ -185,39 +184,54 @@ async def demo_validator():
 
         # Test validation scenarios
         scenarios = [
-            ("Valid Signal", True, lambda: TradingSignal(
-                strategy_id="test",
-                symbol="BTC/USDT",
-                signal_type=SignalType.ENTRY_LONG,
-                signal_strength=SignalStrength.STRONG,
-                order_type=OrderType.LIMIT,
-                amount=Decimal("1000"),
-                price=Decimal("50000"),
-                timestamp=datetime.now()
-            )),
-            ("Invalid Amount", False, lambda: TradingSignal(
-                strategy_id="test",
-                symbol="BTC/USDT",
-                signal_type=SignalType.ENTRY_LONG,
-                signal_strength=SignalStrength.STRONG,
-                order_type=OrderType.MARKET,
-                amount=Decimal("-100"),  # Invalid
-                timestamp=datetime.now()
-            )),
-            ("Missing Symbol", False, lambda: TradingSignal(
-                strategy_id="test",
-                symbol="",  # Invalid
-                signal_type=SignalType.ENTRY_LONG,
-                signal_strength=SignalStrength.STRONG,
-                order_type=OrderType.MARKET,
-                amount=Decimal("1000"),
-                timestamp=datetime.now()
-            ))
+            (
+                "Valid Signal",
+                True,
+                lambda: TradingSignal(
+                    strategy_id="test",
+                    symbol="BTC/USDT",
+                    signal_type=SignalType.ENTRY_LONG,
+                    signal_strength=SignalStrength.STRONG,
+                    order_type=OrderType.LIMIT,
+                    amount=Decimal("1000"),
+                    price=Decimal("50000"),
+                    timestamp=datetime.now(),
+                ),
+            ),
+            (
+                "Invalid Amount",
+                False,
+                lambda: TradingSignal(
+                    strategy_id="test",
+                    symbol="BTC/USDT",
+                    signal_type=SignalType.ENTRY_LONG,
+                    signal_strength=SignalStrength.STRONG,
+                    order_type=OrderType.MARKET,
+                    amount=Decimal("-100"),  # Invalid
+                    timestamp=datetime.now(),
+                ),
+            ),
+            (
+                "Missing Symbol",
+                False,
+                lambda: TradingSignal(
+                    strategy_id="test",
+                    symbol="",  # Invalid
+                    signal_type=SignalType.ENTRY_LONG,
+                    signal_strength=SignalStrength.STRONG,
+                    order_type=OrderType.MARKET,
+                    amount=Decimal("1000"),
+                    timestamp=datetime.now(),
+                ),
+            ),
         ]
 
         for name, expected, signal_func in scenarios:
             signal = signal_func()
-            context = {'market_price': Decimal("50000"), 'account_balance': Decimal("100000")}
+            context = {
+                "market_price": Decimal("50000"),
+                "account_balance": Decimal("100000"),
+            }
 
             try:
                 result = await validator.validate_signal(signal, context)
@@ -243,10 +257,10 @@ async def demo_adaptive_pricer():
 
         # Create pricer
         config = {
-            'enabled': True,
-            'atr_window': 14,
-            'price_adjustment_multiplier': 0.5,
-            'max_price_adjustment_pct': 0.05
+            "enabled": True,
+            "atr_window": 14,
+            "price_adjustment_multiplier": 0.5,
+            "max_price_adjustment_pct": 0.05,
         }
 
         pricer = AdaptivePricer(config)
@@ -261,21 +275,23 @@ async def demo_adaptive_pricer():
             order_type=OrderType.LIMIT,
             amount=Decimal("1000"),
             price=Decimal("50000"),
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         # Different market conditions
         contexts = [
-            ("Low Volatility", {'atr': Decimal("200"), 'spread_pct': 0.001}),
-            ("High Volatility", {'atr': Decimal("1000"), 'spread_pct': 0.005}),
-            ("Extreme Spread", {'atr': Decimal("500"), 'spread_pct': 0.03})
+            ("Low Volatility", {"atr": Decimal("200"), "spread_pct": 0.001}),
+            ("High Volatility", {"atr": Decimal("1000"), "spread_pct": 0.005}),
+            ("Extreme Spread", {"atr": Decimal("500"), "spread_pct": 0.03}),
         ]
 
         for condition_name, context in contexts:
             try:
                 adjusted_price = await pricer.adjust_price(signal, context)
                 if adjusted_price:
-                    adjustment_pct = (adjusted_price - signal.price) / signal.price * 100
+                    adjustment_pct = (
+                        (adjusted_price - signal.price) / signal.price * 100
+                    )
                     print(f"📊 {condition_name}: Adjusted by {adjustment_pct:.3f}%")
                 else:
                     print(f"📊 {condition_name}: No adjustment needed")

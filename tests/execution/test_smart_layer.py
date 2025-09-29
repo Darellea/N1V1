@@ -5,20 +5,20 @@ Comprehensive tests for the unified execution layer with validation,
 retry/fallback mechanisms, and adaptive pricing.
 """
 
-import pytest
-import asyncio
-from unittest.mock import Mock, patch, AsyncMock
-from decimal import Decimal
 from datetime import datetime
+from decimal import Decimal
+from unittest.mock import patch
 
+import pytest
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
 from core.execution.smart_layer import (
-    ExecutionSmartLayer,
     ExecutionPolicy,
+    ExecutionResult,
+    ExecutionSmartLayer,
     ExecutionStatus,
-    ExecutionResult
 )
-from core.contracts import TradingSignal, SignalType, SignalStrength
-from core.types.order_types import OrderType, OrderStatus, Order
+from core.types.order_types import OrderType
 
 
 class TestExecutionSmartLayer:
@@ -28,31 +28,31 @@ class TestExecutionSmartLayer:
     def config(self):
         """Test configuration."""
         return {
-            'test_mode': True,  # Enable test mode to bypass trading hours validation
-            'policy_thresholds': {
-                'large_order': 10000,
-                'high_spread': 0.005,
-                'liquidity_stable': 0.7
+            "test_mode": True,  # Enable test mode to bypass trading hours validation
+            "policy_thresholds": {
+                "large_order": 10000,
+                "high_spread": 0.005,
+                "liquidity_stable": 0.7,
             },
-            'validation': {
-                'enabled': True,
-                'check_balance': True,
-                'check_slippage': True,
-                'max_slippage_pct': 0.02
+            "validation": {
+                "enabled": True,
+                "check_balance": True,
+                "check_slippage": True,
+                "max_slippage_pct": 0.02,
             },
-            'retry': {
-                'enabled': True,
-                'max_retries': 2,
-                'backoff_base': 0.1,
-                'max_backoff': 1.0,
-                'retry_on_errors': ['network', 'exchange_timeout']
+            "retry": {
+                "enabled": True,
+                "max_retries": 2,
+                "backoff_base": 0.1,
+                "max_backoff": 1.0,
+                "retry_on_errors": ["network", "exchange_timeout"],
             },
-            'adaptive_pricing': {
-                'enabled': True,
-                'atr_window': 14,
-                'price_adjustment_multiplier': 0.5,
-                'max_price_adjustment_pct': 0.05
-            }
+            "adaptive_pricing": {
+                "enabled": True,
+                "atr_window": 14,
+                "price_adjustment_multiplier": 0.5,
+                "max_price_adjustment_pct": 0.05,
+            },
         }
 
     @pytest.fixture
@@ -73,60 +73,76 @@ class TestExecutionSmartLayer:
             price=Decimal("50000"),
             current_price=Decimal("50000"),
             stop_loss=Decimal("49000"),
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
     @pytest.fixture
     def market_context(self):
         """Sample market context."""
         return {
-            'spread_pct': 0.002,
-            'liquidity_stability': 0.8,
-            'atr': Decimal("500"),
-            'volatility_pct': 0.02,
-            'market_price': Decimal("50000"),
-            'account_balance': Decimal("100000")
+            "spread_pct": 0.002,
+            "liquidity_stability": 0.8,
+            "atr": Decimal("500"),
+            "volatility_pct": 0.02,
+            "market_price": Decimal("50000"),
+            "account_balance": Decimal("100000"),
         }
 
     def test_initialization(self, smart_layer, config):
         """Test smart layer initialization."""
         assert smart_layer.config == config
-        assert smart_layer.policy_thresholds == config['policy_thresholds']
-        assert hasattr(smart_layer, 'validator')
-        assert hasattr(smart_layer, 'retry_manager')
-        assert hasattr(smart_layer, 'adaptive_pricer')
-        assert hasattr(smart_layer, 'executors')
+        assert smart_layer.policy_thresholds == config["policy_thresholds"]
+        assert hasattr(smart_layer, "validator")
+        assert hasattr(smart_layer, "retry_manager")
+        assert hasattr(smart_layer, "adaptive_pricer")
+        assert hasattr(smart_layer, "executors")
 
-    def test_policy_selection_small_order(self, smart_layer, sample_signal, market_context):
+    def test_policy_selection_small_order(
+        self, smart_layer, sample_signal, market_context
+    ):
         """Test policy selection for small orders."""
         # Small order should use market or limit - use small amount to ensure order value is below large_order threshold
         small_signal = sample_signal.copy()
-        small_signal.amount = Decimal("0.1")  # Order value = 0.1 * 50000 = 5000, below large_order threshold of 10000
+        small_signal.amount = Decimal(
+            "0.1"
+        )  # Order value = 0.1 * 50000 = 5000, below large_order threshold of 10000
         policy = smart_layer._select_execution_policy(small_signal, market_context)
         assert policy in [ExecutionPolicy.MARKET, ExecutionPolicy.LIMIT]
 
-    def test_policy_selection_large_order(self, smart_layer, sample_signal, market_context):
+    def test_policy_selection_large_order(
+        self, smart_layer, sample_signal, market_context
+    ):
         """Test policy selection for large orders."""
         # Make it a large order
         large_signal = sample_signal.copy()
         large_signal.amount = Decimal("20000")  # Above large_order threshold
 
         policy = smart_layer._select_execution_policy(large_signal, market_context)
-        assert policy in [ExecutionPolicy.TWAP, ExecutionPolicy.VWAP, ExecutionPolicy.DCA]
+        assert policy in [
+            ExecutionPolicy.TWAP,
+            ExecutionPolicy.VWAP,
+            ExecutionPolicy.DCA,
+        ]
 
-    def test_policy_selection_high_spread(self, smart_layer, sample_signal, market_context):
+    def test_policy_selection_high_spread(
+        self, smart_layer, sample_signal, market_context
+    ):
         """Test policy selection for high spread conditions."""
         high_spread_context = market_context.copy()
-        high_spread_context['spread_pct'] = 0.01  # High spread
-        high_spread_context['liquidity_stability'] = 0.6  # Low stability
+        high_spread_context["spread_pct"] = 0.01  # High spread
+        high_spread_context["liquidity_stability"] = 0.6  # Low stability
 
-        policy = smart_layer._select_execution_policy(sample_signal, high_spread_context)
+        policy = smart_layer._select_execution_policy(
+            sample_signal, high_spread_context
+        )
         assert policy == ExecutionPolicy.DCA
 
-    def test_policy_selection_stable_liquidity(self, smart_layer, sample_signal, market_context):
+    def test_policy_selection_stable_liquidity(
+        self, smart_layer, sample_signal, market_context
+    ):
         """Test policy selection for stable liquidity."""
         stable_context = market_context.copy()
-        stable_context['liquidity_stability'] = 0.9  # High stability
+        stable_context["liquidity_stability"] = 0.9  # High stability
         large_signal = sample_signal.copy()
         large_signal.amount = Decimal("20000")
 
@@ -134,20 +150,26 @@ class TestExecutionSmartLayer:
         assert policy == ExecutionPolicy.VWAP
 
     @pytest.mark.asyncio
-    async def test_simple_order_execution(self, smart_layer, sample_signal, market_context):
+    async def test_simple_order_execution(
+        self, smart_layer, sample_signal, market_context
+    ):
         """Test simple market/limit order execution."""
-        result = await smart_layer._execute_simple_order(sample_signal, ExecutionPolicy.MARKET)
+        result = await smart_layer._execute_simple_order(
+            sample_signal, ExecutionPolicy.MARKET
+        )
 
-        assert result['status'] == ExecutionStatus.COMPLETED
-        assert len(result['orders']) == 1
-        assert result['executed_amount'] == sample_signal.amount
-        assert result['average_price'] is not None
-        assert result['total_cost'] > 0
-        assert result['fees'] > 0
-        assert result['slippage'] >= 0
+        assert result["status"] == ExecutionStatus.COMPLETED
+        assert len(result["orders"]) == 1
+        assert result["executed_amount"] == sample_signal.amount
+        assert result["average_price"] is not None
+        assert result["total_cost"] > 0
+        assert result["fees"] > 0
+        assert result["slippage"] >= 0
 
     @pytest.mark.asyncio
-    async def test_execution_with_validation_failure(self, smart_layer, sample_signal, market_context):
+    async def test_execution_with_validation_failure(
+        self, smart_layer, sample_signal, market_context
+    ):
         """Test execution with validation failure."""
         # Create invalid signal
         invalid_signal = sample_signal.copy()
@@ -161,16 +183,20 @@ class TestExecutionSmartLayer:
         assert "validation failed" in (result.error_message or "").lower()
 
     @pytest.mark.asyncio
-    async def test_execution_with_retry_success(self, smart_layer, sample_signal, market_context):
+    async def test_execution_with_retry_success(
+        self, smart_layer, sample_signal, market_context
+    ):
         """Test execution with successful retry."""
         # Use a small signal to ensure LIMIT policy is selected
         small_signal = sample_signal.copy()
         small_signal.amount = Decimal("0.01")  # Very small amount
 
         # Mock the validator to always return True to bypass validation
-        with patch.object(smart_layer.validator, 'validate_signal', return_value=True):
+        with patch.object(smart_layer.validator, "validate_signal", return_value=True):
             # Mock the adaptive pricer to avoid decimal/float multiplication error
-            with patch.object(smart_layer.adaptive_pricer, 'adjust_price', return_value=None):
+            with patch.object(
+                smart_layer.adaptive_pricer, "adjust_price", return_value=None
+            ):
                 # Mock the execution to fail once then succeed
                 call_count = 0
 
@@ -181,24 +207,34 @@ class TestExecutionSmartLayer:
                     if call_count == 1:
                         # First call fails
                         return {
-                            'status': ExecutionStatus.FAILED,
-                            'error_message': 'Network timeout',
-                            'orders': []
+                            "status": ExecutionStatus.FAILED,
+                            "error_message": "Network timeout",
+                            "orders": [],
                         }
                     else:
                         # Second call succeeds - use MARKET policy for simple execution
-                        return await smart_layer._execute_simple_order(signal, ExecutionPolicy.MARKET)
+                        return await smart_layer._execute_simple_order(
+                            signal, ExecutionPolicy.MARKET
+                        )
 
                 # Patch the _execute_with_policy method to allow retry logic to work
-                with patch.object(smart_layer, '_execute_with_policy', side_effect=mock_execute_with_policy):
-                    result = await smart_layer.execute_signal(small_signal, market_context)
+                with patch.object(
+                    smart_layer,
+                    "_execute_with_policy",
+                    side_effect=mock_execute_with_policy,
+                ):
+                    result = await smart_layer.execute_signal(
+                        small_signal, market_context
+                    )
 
                     assert result.status == ExecutionStatus.COMPLETED
                     assert result.retries == 1
                     assert len(result.orders) == 1
 
     @pytest.mark.asyncio
-    async def test_execution_with_fallback(self, smart_layer, sample_signal, market_context):
+    async def test_execution_with_fallback(
+        self, smart_layer, sample_signal, market_context
+    ):
         """Test execution with policy fallback."""
         # Use a small signal to ensure LIMIT policy is selected
         small_signal = sample_signal.copy()
@@ -211,22 +247,26 @@ class TestExecutionSmartLayer:
         # This allows the retry manager to run its fallback logic
         async def mock_execute_with_policy(signal, policy, context):
             return {
-                'status': ExecutionStatus.FAILED,
-                'error_message': 'Network timeout',
-                'orders': []
+                "status": ExecutionStatus.FAILED,
+                "error_message": "Network timeout",
+                "orders": [],
             }
 
-        with patch.object(smart_layer, '_execute_with_policy', side_effect=mock_execute_with_policy):
+        with patch.object(
+            smart_layer, "_execute_with_policy", side_effect=mock_execute_with_policy
+        ):
             result = await smart_layer.execute_signal(small_signal, market_context)
 
             assert result.status == ExecutionStatus.FAILED
             assert result.fallback_used
             # Check that metadata indicates fallback was applied
             assert result.metadata is not None
-            assert result.metadata.get('fallback_applied') == True
+            assert result.metadata.get("fallback_applied") == True
 
     @pytest.mark.asyncio
-    async def test_adaptive_pricing_applied(self, smart_layer, sample_signal, market_context):
+    async def test_adaptive_pricing_applied(
+        self, smart_layer, sample_signal, market_context
+    ):
         """Test that adaptive pricing is applied."""
         # Mock adaptive pricer to return adjusted price
         adjusted_price = Decimal("49900")  # 0.2% lower
@@ -234,7 +274,9 @@ class TestExecutionSmartLayer:
         async def mock_adjust_price(signal, context):
             return adjusted_price
 
-        with patch.object(smart_layer.adaptive_pricer, 'adjust_price', side_effect=mock_adjust_price):
+        with patch.object(
+            smart_layer.adaptive_pricer, "adjust_price", side_effect=mock_adjust_price
+        ):
             result = await smart_layer.execute_signal(sample_signal, market_context)
 
             # Verify execution completed
@@ -255,16 +297,16 @@ class TestExecutionSmartLayer:
             slippage=Decimal("0.001"),
             duration_ms=1500,
             retries=0,
-            fallback_used=False
+            fallback_used=False,
         )
 
         # Test serialization
         data = result.to_dict()
-        assert data['execution_id'] == "test-123"
-        assert data['status'] == "completed"
-        assert data['policy_used'] == "market"
-        assert data['executed_amount'] == 1000.0
-        assert data['average_price'] == 50000.0
+        assert data["execution_id"] == "test-123"
+        assert data["status"] == "completed"
+        assert data["policy_used"] == "market"
+        assert data["executed_amount"] == 1000.0
+        assert data["average_price"] == 50000.0
 
     def test_get_execution_status(self, smart_layer):
         """Test getting execution status."""
@@ -289,10 +331,10 @@ class TestExecutionSmartLayer:
         """Test default configuration loading."""
         default_layer = ExecutionSmartLayer()
         assert default_layer.config is not None
-        assert 'policy_thresholds' in default_layer.config
-        assert 'validation' in default_layer.config
-        assert 'retry' in default_layer.config
-        assert 'adaptive_pricing' in default_layer.config
+        assert "policy_thresholds" in default_layer.config
+        assert "validation" in default_layer.config
+        assert "retry" in default_layer.config
+        assert "adaptive_pricing" in default_layer.config
 
 
 class TestExecutionPolicy:
@@ -345,15 +387,15 @@ class TestIntegrationScenarios:
     def integration_config(self):
         """Configuration for integration tests."""
         return {
-            'test_mode': True,  # Enable test mode to bypass trading hours validation
-            'policy_thresholds': {
-                'large_order': 5000,  # Lower threshold for testing
-                'high_spread': 0.003,
-                'liquidity_stable': 0.8
+            "test_mode": True,  # Enable test mode to bypass trading hours validation
+            "policy_thresholds": {
+                "large_order": 5000,  # Lower threshold for testing
+                "high_spread": 0.003,
+                "liquidity_stable": 0.8,
             },
-            'validation': {'enabled': True},
-            'retry': {'enabled': False},  # Disable retry for simpler testing
-            'adaptive_pricing': {'enabled': False}  # Disable for simpler testing
+            "validation": {"enabled": True},
+            "retry": {"enabled": False},  # Disable retry for simpler testing
+            "adaptive_pricing": {"enabled": False},  # Disable for simpler testing
         }
 
     @pytest.fixture
@@ -370,17 +412,19 @@ class TestIntegrationScenarios:
             signal_type=SignalType.ENTRY_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.LIMIT,
-            amount=Decimal("0.01"),  # Very small amount to ensure it's below large_order threshold
+            amount=Decimal(
+                "0.01"
+            ),  # Very small amount to ensure it's below large_order threshold
             price=Decimal("50000"),
             current_price=Decimal("50000"),
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         context = {
-            'spread_pct': 0.001,
-            'liquidity_stability': 0.9,
-            'market_price': Decimal("50000"),
-            'account_balance': Decimal("100000")
+            "spread_pct": 0.001,
+            "liquidity_stability": 0.9,
+            "market_price": Decimal("50000"),
+            "account_balance": Decimal("100000"),
         }
 
         result = await integration_layer.execute_signal(signal, context)
@@ -402,14 +446,14 @@ class TestIntegrationScenarios:
             order_type=OrderType.MARKET,
             amount=Decimal("10000"),  # Large order
             current_price=Decimal("50000"),
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         context = {
-            'spread_pct': 0.001,
-            'liquidity_stability': 0.5,  # Low stability
-            'market_price': Decimal("50000"),
-            'account_balance': Decimal("1000000")
+            "spread_pct": 0.001,
+            "liquidity_stability": 0.5,  # Low stability
+            "market_price": Decimal("50000"),
+            "account_balance": Decimal("1000000"),
         }
 
         result = await integration_layer.execute_signal(signal, context)
@@ -430,14 +474,14 @@ class TestIntegrationScenarios:
             order_type=OrderType.MARKET,
             amount=Decimal("1000"),
             current_price=Decimal("3000"),
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         context = {
-            'spread_pct': 0.01,  # High spread
-            'liquidity_stability': 0.6,
-            'market_price': Decimal("3000"),
-            'account_balance': Decimal("100000")
+            "spread_pct": 0.01,  # High spread
+            "liquidity_stability": 0.6,
+            "market_price": Decimal("3000"),
+            "account_balance": Decimal("100000"),
         }
 
         result = await integration_layer.execute_signal(signal, context)

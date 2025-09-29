@@ -1,23 +1,20 @@
-import pytest
-import asyncio
-import time
-import threading
-import requests
-import json
-import pandas as pd
-import numpy as np
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from unittest.mock import Mock, patch
-import os
 import tempfile
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from unittest.mock import patch
+
 import joblib
-from sklearn.ensemble import RandomForestClassifier
+import numpy as np
+import pandas as pd
+import pytest
+from fastapi.testclient import TestClient
 from sklearn.datasets import make_classification
+from sklearn.ensemble import RandomForestClassifier
+
+from ml.model_loader import predict as local_predict
 
 # Import the serving module
 from ml.serving import app
-from ml.model_loader import predict as local_predict
-from fastapi.testclient import TestClient
 
 
 @pytest.fixture
@@ -30,7 +27,9 @@ def client():
 def sample_model():
     """Create a sample trained model for testing."""
     # Generate sample data
-    X, y = make_classification(n_samples=1000, n_features=10, n_classes=2, random_state=42)
+    X, y = make_classification(
+        n_samples=1000, n_features=10, n_classes=2, random_state=42
+    )
 
     # Train a simple model
     model = RandomForestClassifier(n_estimators=10, random_state=42)
@@ -42,7 +41,7 @@ def sample_model():
 @pytest.fixture
 def temp_model_file(sample_model):
     """Create a temporary model file."""
-    with tempfile.NamedTemporaryFile(suffix='.joblib', delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".joblib", delete=False) as f:
         joblib.dump(sample_model, f.name)
         return f.name
 
@@ -51,34 +50,40 @@ def temp_model_file(sample_model):
 def sample_features():
     """Generate sample feature data for testing."""
     np.random.seed(42)
-    return pd.DataFrame({
-        'feature_0': np.random.randn(100),
-        'feature_1': np.random.randn(100),
-        'feature_2': np.random.randn(100),
-        'feature_3': np.random.randn(100),
-        'feature_4': np.random.randn(100),
-        'feature_5': np.random.randn(100),
-        'feature_6': np.random.randn(100),
-        'feature_7': np.random.randn(100),
-        'feature_8': np.random.randn(100),
-        'feature_9': np.random.randn(100)
-    })
+    return pd.DataFrame(
+        {
+            "feature_0": np.random.randn(100),
+            "feature_1": np.random.randn(100),
+            "feature_2": np.random.randn(100),
+            "feature_3": np.random.randn(100),
+            "feature_4": np.random.randn(100),
+            "feature_5": np.random.randn(100),
+            "feature_6": np.random.randn(100),
+            "feature_7": np.random.randn(100),
+            "feature_8": np.random.randn(100),
+            "feature_9": np.random.randn(100),
+        }
+    )
 
 
 class TestMLServingIntegration:
     """Integration tests for ML serving infrastructure."""
 
-    @patch('ml.serving.load_model_with_fallback')
-    def test_single_prediction_integration(self, mock_load_fallback, client, sample_model, sample_features):
+    @patch("ml.serving.load_model_with_fallback")
+    def test_single_prediction_integration(
+        self, mock_load_fallback, client, sample_model, sample_features
+    ):
         """Test end-to-end single prediction flow."""
         mock_load_fallback.return_value = (sample_model, None)
 
         # Prepare request data
-        features_dict = {col: sample_features[col].tolist() for col in sample_features.columns}
+        features_dict = {
+            col: sample_features[col].tolist() for col in sample_features.columns
+        }
         request_data = {
             "model_name": "test_model",
             "features": features_dict,
-            "correlation_id": "integration-test-001"
+            "correlation_id": "integration-test-001",
         }
 
         # Make prediction request
@@ -107,23 +112,24 @@ class TestMLServingIntegration:
         assert all(isinstance(pred, (int, float)) for pred in data["prediction"])
         assert all(0 <= conf <= 1 for conf in data["confidence"])
 
-    @patch('ml.serving.load_model_with_fallback')
-    def test_batch_prediction_integration(self, mock_load_fallback, client, sample_model, sample_features):
+    @patch("ml.serving.load_model_with_fallback")
+    def test_batch_prediction_integration(
+        self, mock_load_fallback, client, sample_model, sample_features
+    ):
         """Test end-to-end batch prediction flow."""
         mock_load_fallback.return_value = (sample_model, None)
 
         # Prepare batch request
-        features_dict = {col: sample_features[col][:10].tolist() for col in sample_features.columns}
+        features_dict = {
+            col: sample_features[col][:10].tolist() for col in sample_features.columns
+        }
         request_data = {
             "model_name": "test_model",
             "features": features_dict,
-            "correlation_id": "batch-test-001"
+            "correlation_id": "batch-test-001",
         }
 
-        batch_request = {
-            "requests": [request_data, request_data],
-            "batch_size": 2
-        }
+        batch_request = {"requests": [request_data, request_data], "batch_size": 2}
 
         # Make batch prediction request
         start_time = time.time()
@@ -162,8 +168,10 @@ class TestMLServingIntegration:
         assert "inference_requests_total" in metrics_text
         assert "inference_latency_seconds" in metrics_text
 
-    @patch('ml.serving.load_model_with_fallback')
-    def test_model_reloading_integration(self, mock_load_fallback, client, sample_model):
+    @patch("ml.serving.load_model_with_fallback")
+    def test_model_reloading_integration(
+        self, mock_load_fallback, client, sample_model
+    ):
         """Test model reloading functionality."""
         mock_load_fallback.return_value = (sample_model, None)
 
@@ -179,18 +187,23 @@ class TestMLServingIntegration:
 class TestConcurrentLoad:
     """Test concurrent load handling."""
 
-    @patch('ml.serving.load_model_with_fallback')
-    def test_concurrent_predictions(self, mock_load_fallback, sample_model, sample_features):
+    @patch("ml.serving.load_model_with_fallback")
+    def test_concurrent_predictions(
+        self, mock_load_fallback, sample_model, sample_features
+    ):
         """Test handling of concurrent prediction requests."""
         mock_load_fallback.return_value = (sample_model, None)
 
         def make_prediction_request(request_id):
             """Make a single prediction request."""
-            features_dict = {col: sample_features[col][:5].tolist() for col in sample_features.columns}
+            features_dict = {
+                col: sample_features[col][:5].tolist()
+                for col in sample_features.columns
+            }
             request_data = {
                 "model_name": "test_model",
                 "features": features_dict,
-                "correlation_id": f"concurrent-test-{request_id}"
+                "correlation_id": f"concurrent-test-{request_id}",
             }
 
             client = TestClient(app)
@@ -202,13 +215,15 @@ class TestConcurrentLoad:
                 "request_id": request_id,
                 "status_code": response.status_code,
                 "latency": end_time - start_time,
-                "success": response.status_code == 200
+                "success": response.status_code == 200,
             }
 
         # Run concurrent requests
         num_requests = 10
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(make_prediction_request, i) for i in range(num_requests)]
+            futures = [
+                executor.submit(make_prediction_request, i) for i in range(num_requests)
+            ]
             results = [future.result() for future in as_completed(futures)]
 
         # Analyze results
@@ -216,7 +231,9 @@ class TestConcurrentLoad:
         latencies = [r["latency"] for r in results]
 
         # Verify performance
-        assert len(successful_requests) == num_requests, f"Expected {num_requests} successful requests, got {len(successful_requests)}"
+        assert (
+            len(successful_requests) == num_requests
+        ), f"Expected {num_requests} successful requests, got {len(successful_requests)}"
 
         # Check latency statistics
         avg_latency = np.mean(latencies)
@@ -229,14 +246,18 @@ class TestConcurrentLoad:
 
         # Assert reasonable performance (adjust thresholds based on environment)
         assert avg_latency < 1.0, f"Average latency too high: {avg_latency:.3f}s"
-        assert p95_latency < 2.0, f"95th percentile latency too high: {p95_latency:.3f}s"
+        assert (
+            p95_latency < 2.0
+        ), f"95th percentile latency too high: {p95_latency:.3f}s"
 
 
 class TestAccuracyValidation:
     """Test prediction accuracy consistency."""
 
-    @patch('ml.serving.load_model_with_fallback')
-    def test_prediction_consistency(self, mock_load_fallback, sample_model, sample_features):
+    @patch("ml.serving.load_model_with_fallback")
+    def test_prediction_consistency(
+        self, mock_load_fallback, sample_model, sample_features
+    ):
         """Test that serving predictions match local predictions."""
         mock_load_fallback.return_value = (sample_model, None)
 
@@ -245,29 +266,32 @@ class TestAccuracyValidation:
 
         # Get serving predictions
         client = TestClient(app)
-        features_dict = {col: sample_features[col][:10].tolist() for col in sample_features.columns}
-        request_data = {
-            "model_name": "test_model",
-            "features": features_dict
+        features_dict = {
+            col: sample_features[col][:10].tolist() for col in sample_features.columns
         }
+        request_data = {"model_name": "test_model", "features": features_dict}
 
         response = client.post("/predict", json=request_data)
         assert response.status_code == 200
         serving_result = response.json()
 
         # Compare predictions
-        local_predictions = local_result['prediction'].tolist()
-        serving_predictions = serving_result['prediction']
+        local_predictions = local_result["prediction"].tolist()
+        serving_predictions = serving_result["prediction"]
 
         # Predictions should match exactly
-        assert local_predictions == serving_predictions, "Local and serving predictions don't match"
+        assert (
+            local_predictions == serving_predictions
+        ), "Local and serving predictions don't match"
 
         # Confidence values should be very close (allowing for minor numerical differences)
-        local_confidence = local_result['confidence'].tolist()
-        serving_confidence = serving_result['confidence']
+        local_confidence = local_result["confidence"].tolist()
+        serving_confidence = serving_result["confidence"]
 
         for local_conf, serving_conf in zip(local_confidence, serving_confidence):
-            assert abs(local_conf - serving_conf) < 1e-6, f"Confidence mismatch: {local_conf} vs {serving_conf}"
+            assert (
+                abs(local_conf - serving_conf) < 1e-6
+            ), f"Confidence mismatch: {local_conf} vs {serving_conf}"
 
 
 class TestFaultTolerance:
@@ -277,7 +301,7 @@ class TestFaultTolerance:
         """Test handling of invalid model names."""
         request_data = {
             "model_name": "nonexistent_model",
-            "features": {"feature1": [1.0, 2.0]}
+            "features": {"feature1": [1.0, 2.0]},
         }
 
         response = client.post("/predict", json=request_data)
@@ -290,21 +314,17 @@ class TestFaultTolerance:
         assert response.status_code == 422
 
         # Invalid feature format
-        response = client.post("/predict", json={
-            "model_name": "test",
-            "features": "invalid_format"
-        })
+        response = client.post(
+            "/predict", json={"model_name": "test", "features": "invalid_format"}
+        )
         assert response.status_code == 422
 
-    @patch('ml.serving.load_model_with_fallback')
+    @patch("ml.serving.load_model_with_fallback")
     def test_model_loading_failure(self, mock_load_fallback, client):
         """Test handling of model loading failures."""
         mock_load_fallback.side_effect = Exception("Model loading failed")
 
-        request_data = {
-            "model_name": "failing_model",
-            "features": {"feature1": [1.0]}
-        }
+        request_data = {"model_name": "failing_model", "features": {"feature1": [1.0]}}
 
         response = client.post("/predict", json=request_data)
         assert response.status_code == 500
@@ -316,25 +336,24 @@ class TestFaultTolerance:
 class TestPerformanceBenchmarks:
     """Performance benchmarking tests."""
 
-    @patch('ml.serving.load_model_with_fallback')
+    @patch("ml.serving.load_model_with_fallback")
     def test_latency_under_load(self, mock_load_fallback, sample_model):
         """Test latency performance under load."""
         mock_load_fallback.return_value = (sample_model, None)
 
         # Generate test data
         np.random.seed(42)
-        test_features = pd.DataFrame({
-            f'feature_{i}': np.random.randn(50) for i in range(10)
-        })
+        test_features = pd.DataFrame(
+            {f"feature_{i}": np.random.randn(50) for i in range(10)}
+        )
 
         client = TestClient(app)
 
         # Warm up
-        features_dict = {col: test_features[col][:5].tolist() for col in test_features.columns}
-        request_data = {
-            "model_name": "test_model",
-            "features": features_dict
+        features_dict = {
+            col: test_features[col][:5].tolist() for col in test_features.columns
         }
+        request_data = {"model_name": "test_model", "features": features_dict}
 
         for _ in range(3):
             client.post("/predict", json=request_data)
@@ -357,15 +376,19 @@ class TestPerformanceBenchmarks:
         p95_latency = np.percentile(latencies, 95)
         p99_latency = np.percentile(latencies, 99)
 
-        print(f"Benchmark Results:")
+        print("Benchmark Results:")
         print(f"Average latency: {avg_latency*1000:.2f}ms")
         print(f"50th percentile: {p50_latency*1000:.2f}ms")
         print(f"95th percentile: {p95_latency*1000:.2f}ms")
         print(f"99th percentile: {p99_latency*1000:.2f}ms")
 
         # Assert performance targets
-        assert p50_latency < 0.05, f"Median latency too high: {p50_latency*1000:.2f}ms (target: <50ms)"
-        assert p95_latency < 0.1, f"95th percentile latency too high: {p95_latency*1000:.2f}ms"
+        assert (
+            p50_latency < 0.05
+        ), f"Median latency too high: {p50_latency*1000:.2f}ms (target: <50ms)"
+        assert (
+            p95_latency < 0.1
+        ), f"95th percentile latency too high: {p95_latency*1000:.2f}ms"
 
 
 if __name__ == "__main__":

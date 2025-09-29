@@ -6,19 +6,20 @@ focusing on areas with low coverage and edge cases not covered by the main test 
 """
 
 import asyncio
-import pytest
-import pandas as pd
+from datetime import datetime
+from unittest.mock import AsyncMock, Mock, patch
+
 import numpy as np
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from datetime import datetime, timedelta
+import pandas as pd
+import pytest
 
 from core.binary_model_integration import (
     BinaryModelIntegration,
     BinaryModelResult,
-    StrategySelectionResult,
     IntegratedTradingDecision,
+    StrategySelectionResult,
     get_binary_integration,
-    integrate_binary_model
+    integrate_binary_model,
 )
 from knowledge_base.schema import MarketRegime
 
@@ -34,7 +35,7 @@ class TestBinaryModelIntegrationConfiguration:
                 "threshold": 0.7,
                 "min_confidence": 0.6,
                 "require_regime_confirmation": False,
-                "use_adaptive_position_sizing": False
+                "use_adaptive_position_sizing": False,
             }
         }
 
@@ -48,11 +49,7 @@ class TestBinaryModelIntegrationConfiguration:
 
     def test_initialization_with_minimal_config(self):
         """Test initialization with minimal configuration."""
-        config = {
-            "binary_integration": {
-                "enabled": True
-            }
-        }
+        config = {"binary_integration": {"enabled": True}}
 
         integration = BinaryModelIntegration(config)
 
@@ -67,7 +64,7 @@ class TestBinaryModelIntegrationConfiguration:
             "binary_integration": {
                 "enabled": True,
                 "threshold": 1.5,  # Invalid: > 1.0
-                "min_confidence": -0.1  # Invalid: < 0
+                "min_confidence": -0.1,  # Invalid: < 0
             }
         }
 
@@ -99,15 +96,15 @@ class TestBinaryModelIntegrationFeatureExtraction:
     def test_extract_features_with_sufficient_data(self, integration):
         """Test feature extraction with sufficient market data."""
         # Create market data with enough rows for all calculations
-        dates = pd.date_range(start='2023-01-01', periods=50, freq='1h')
+        dates = pd.date_range(start="2023-01-01", periods=50, freq="1h")
         np.random.seed(42)
 
         data = {
-            'open': 100 + np.random.normal(0, 1, 50),
-            'high': 105 + np.random.normal(0, 1, 50),
-            'low': 95 + np.random.normal(0, 1, 50),
-            'close': 100 + np.random.normal(0, 0.5, 50),
-            'volume': np.random.uniform(1000, 5000, 50)
+            "open": 100 + np.random.normal(0, 1, 50),
+            "high": 105 + np.random.normal(0, 1, 50),
+            "low": 95 + np.random.normal(0, 1, 50),
+            "close": 100 + np.random.normal(0, 0.5, 50),
+            "volume": np.random.uniform(1000, 5000, 50),
         }
 
         market_data = pd.DataFrame(data, index=dates)
@@ -115,7 +112,15 @@ class TestBinaryModelIntegrationFeatureExtraction:
         features = integration._extract_features(market_data)
 
         # Verify all expected features are present
-        expected_features = ['RSI', 'MACD', 'EMA_20', 'ATR', 'StochRSI', 'TrendStrength', 'Volatility']
+        expected_features = [
+            "RSI",
+            "MACD",
+            "EMA_20",
+            "ATR",
+            "StochRSI",
+            "TrendStrength",
+            "Volatility",
+        ]
         for feature in expected_features:
             assert feature in features
             assert isinstance(features[feature], (int, float))
@@ -125,11 +130,11 @@ class TestBinaryModelIntegrationFeatureExtraction:
         """Test feature extraction handles NaN values properly."""
         # Create data with some NaN values
         data = {
-            'open': [100, np.nan, 102, 103, 104],
-            'high': [105, 106, np.nan, 108, 109],
-            'low': [95, np.nan, 97, 98, 99],
-            'close': [102, 103, 104, 105, 106],
-            'volume': [1000, np.nan, 1200, 1300, 1400]
+            "open": [100, np.nan, 102, 103, 104],
+            "high": [105, 106, np.nan, 108, 109],
+            "low": [95, np.nan, 97, 98, 99],
+            "close": [102, 103, 104, 105, 106],
+            "volume": [1000, np.nan, 1200, 1300, 1400],
         }
 
         market_data = pd.DataFrame(data)
@@ -145,11 +150,11 @@ class TestBinaryModelIntegrationFeatureExtraction:
         """Test feature extraction with extreme market values."""
         # Create data with extreme price movements
         data = {
-            'open': [100, 1000, 1, 10000, 0.01],
-            'high': [1000, 10000, 100, 100000, 1],
-            'low': [1, 10, 0.01, 1000, 0.001],
-            'close': [500, 5000, 50, 50000, 0.5],
-            'volume': [1000, 1000000, 10, 10000000, 1]
+            "open": [100, 1000, 1, 10000, 0.01],
+            "high": [1000, 10000, 100, 100000, 1],
+            "low": [1, 10, 0.01, 1000, 0.001],
+            "close": [500, 5000, 50, 50000, 0.5],
+            "volume": [1000, 1000000, 10, 10000000, 1],
         }
 
         market_data = pd.DataFrame(data)
@@ -187,11 +192,7 @@ class TestBinaryModelIntegrationFeatureExtraction:
     def test_calculate_atr_edge_cases(self, integration):
         """Test ATR calculation edge cases."""
         # Create data with no volatility
-        data = {
-            'high': [100] * 20,
-            'low': [100] * 20,
-            'close': [100] * 20
-        }
+        data = {"high": [100] * 20, "low": [100] * 20, "close": [100] * 20}
         df = pd.DataFrame(data)
 
         atr = integration._calculate_atr(df)
@@ -222,7 +223,7 @@ class TestBinaryModelIntegrationGlobalFunctions:
 
     def test_get_binary_integration_singleton_pattern(self):
         """Test that get_binary_integration returns singleton."""
-        with patch('core.binary_model_integration.get_config') as mock_get_config:
+        with patch("core.binary_model_integration.get_config") as mock_get_config:
             mock_get_config.return_value = {"binary_integration": {"enabled": False}}
 
             instance1 = get_binary_integration()
@@ -235,6 +236,7 @@ class TestBinaryModelIntegrationGlobalFunctions:
         """Test get_binary_integration with specific config."""
         # Reset singleton for this test
         import core.binary_model_integration
+
         core.binary_model_integration._binary_integration_instance = None
         core.binary_model_integration._last_config = None
 
@@ -248,16 +250,22 @@ class TestBinaryModelIntegrationGlobalFunctions:
     @pytest.mark.asyncio
     async def test_integrate_binary_model_convenience_function(self):
         """Test the integrate_binary_model convenience function."""
-        with patch('core.binary_model_integration.get_binary_integration') as mock_get_integration:
+        with patch(
+            "core.binary_model_integration.get_binary_integration"
+        ) as mock_get_integration:
             mock_integration = Mock()
-            mock_integration.process_market_data = AsyncMock(return_value=Mock(should_trade=True))
+            mock_integration.process_market_data = AsyncMock(
+                return_value=Mock(should_trade=True)
+            )
             mock_get_integration.return_value = mock_integration
 
-            market_data = pd.DataFrame({'close': [100, 101, 102]})
+            market_data = pd.DataFrame({"close": [100, 101, 102]})
             result = await integrate_binary_model(market_data, "BTC/USDT")
 
             assert result.should_trade == True
-            mock_integration.process_market_data.assert_called_once_with(market_data, "BTC/USDT")
+            mock_integration.process_market_data.assert_called_once_with(
+                market_data, "BTC/USDT"
+            )
 
 
 class TestBinaryModelIntegrationMetricsIntegration:
@@ -276,15 +284,19 @@ class TestBinaryModelIntegrationMetricsIntegration:
         mock_model.predict_proba.return_value = np.array([[0.3, 0.7]])
         integration.binary_model = mock_model
 
-        market_data = pd.DataFrame({
-            'open': [100, 101, 102],
-            'high': [105, 106, 107],
-            'low': [95, 96, 97],
-            'close': [102, 103, 104],
-            'volume': [1000, 1100, 1200]
-        })
+        market_data = pd.DataFrame(
+            {
+                "open": [100, 101, 102],
+                "high": [105, 106, 107],
+                "low": [95, 96, 97],
+                "close": [102, 103, 104],
+                "volume": [1000, 1100, 1200],
+            }
+        )
 
-        with patch('core.binary_model_integration.get_binary_model_metrics_collector') as mock_get_collector:
+        with patch(
+            "core.binary_model_integration.get_binary_model_metrics_collector"
+        ) as mock_get_collector:
             mock_collector = Mock()
             mock_get_collector.return_value = mock_collector
 
@@ -301,7 +313,7 @@ class TestBinaryModelIntegrationMetricsIntegration:
             confidence=0.9,
             threshold=0.6,
             features={},
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         strategy_result = StrategySelectionResult(
@@ -310,7 +322,7 @@ class TestBinaryModelIntegrationMetricsIntegration:
             regime=MarketRegime.BULLISH,
             confidence=0.8,
             reasoning="Test",
-            risk_multiplier=1.0
+            risk_multiplier=1.0,
         )
 
         risk_result = {
@@ -318,10 +330,12 @@ class TestBinaryModelIntegrationMetricsIntegration:
             "position_size": 1000.0,
             "stop_loss": 95.0,
             "take_profit": 110.0,
-            "risk_score": 1.0
+            "risk_score": 1.0,
         }
 
-        with patch('core.binary_model_integration.get_binary_model_metrics_collector') as mock_get_collector:
+        with patch(
+            "core.binary_model_integration.get_binary_model_metrics_collector"
+        ) as mock_get_collector:
             mock_collector = Mock()
             mock_get_collector.return_value = mock_collector
 
@@ -348,13 +362,15 @@ class TestBinaryModelIntegrationErrorRecovery:
         mock_model.predict_proba.side_effect = Exception("Model prediction failed")
         integration.binary_model = mock_model
 
-        market_data = pd.DataFrame({
-            'open': [100, 101, 102],
-            'high': [105, 106, 107],
-            'low': [95, 96, 97],
-            'close': [102, 103, 104],
-            'volume': [1000, 1100, 1200]
-        })
+        market_data = pd.DataFrame(
+            {
+                "open": [100, 101, 102],
+                "high": [105, 106, 107],
+                "low": [95, 96, 97],
+                "close": [102, 103, 104],
+                "volume": [1000, 1100, 1200],
+            }
+        )
 
         result = await integration._predict_binary_model(market_data, "BTC/USDT")
 
@@ -366,14 +382,19 @@ class TestBinaryModelIntegrationErrorRecovery:
     @pytest.mark.asyncio
     async def test_select_strategy_with_regime_detector_failure(self, integration):
         """Test strategy selection when regime detector fails."""
-        with patch('core.binary_model_integration.get_market_regime_detector', side_effect=Exception("Regime detection failed")):
-            market_data = pd.DataFrame({
-                'open': [100, 101, 102],
-                'high': [105, 106, 107],
-                'low': [95, 96, 97],
-                'close': [102, 103, 104],
-                'volume': [1000, 1100, 1200]
-            })
+        with patch(
+            "core.binary_model_integration.get_market_regime_detector",
+            side_effect=Exception("Regime detection failed"),
+        ):
+            market_data = pd.DataFrame(
+                {
+                    "open": [100, 101, 102],
+                    "high": [105, 106, 107],
+                    "low": [95, 96, 97],
+                    "close": [102, 103, 104],
+                    "volume": [1000, 1100, 1200],
+                }
+            )
 
             binary_result = BinaryModelResult(
                 should_trade=True,
@@ -381,7 +402,7 @@ class TestBinaryModelIntegrationErrorRecovery:
                 confidence=0.8,
                 threshold=0.6,
                 features={},
-                timestamp=datetime.now()
+                timestamp=datetime.now(),
             )
 
             result = await integration._select_strategy(market_data, binary_result)
@@ -396,16 +417,20 @@ class TestBinaryModelIntegrationErrorRecovery:
         """Test risk validation when components fail."""
         # Mock risk manager to raise exception
         mock_risk_manager = Mock()
-        mock_risk_manager.evaluate_signal = AsyncMock(side_effect=Exception("Risk evaluation failed"))
+        mock_risk_manager.evaluate_signal = AsyncMock(
+            side_effect=Exception("Risk evaluation failed")
+        )
         integration.risk_manager = mock_risk_manager
 
-        market_data = pd.DataFrame({
-            'open': [100, 101, 102],
-            'high': [105, 106, 107],
-            'low': [95, 96, 97],
-            'close': [102, 103, 104],
-            'volume': [1000, 1100, 1200]
-        })
+        market_data = pd.DataFrame(
+            {
+                "open": [100, 101, 102],
+                "high": [105, 106, 107],
+                "low": [95, 96, 97],
+                "close": [102, 103, 104],
+                "volume": [1000, 1100, 1200],
+            }
+        )
 
         strategy_result = StrategySelectionResult(
             selected_strategy=Mock(__name__="TestStrategy"),
@@ -413,10 +438,12 @@ class TestBinaryModelIntegrationErrorRecovery:
             regime=MarketRegime.BULLISH,
             confidence=0.8,
             reasoning="Test",
-            risk_multiplier=1.0
+            risk_multiplier=1.0,
         )
 
-        result = await integration._validate_risk(market_data, strategy_result, "BTC/USDT")
+        result = await integration._validate_risk(
+            market_data, strategy_result, "BTC/USDT"
+        )
 
         # Should return safe defaults on exception
         assert result["approved"] == False
@@ -429,7 +456,7 @@ class TestBinaryModelIntegrationErrorRecovery:
             "binary_integration": {
                 "enabled": True,
                 "threshold": 0.6,
-                "min_confidence": 0.5
+                "min_confidence": 0.5,
             }
         }
 
@@ -440,13 +467,15 @@ class TestBinaryModelIntegrationErrorRecovery:
         mock_model.predict_proba.side_effect = Exception("Model failed")
         integration.binary_model = mock_model
 
-        market_data = pd.DataFrame({
-            'open': [100, 101, 102],
-            'high': [105, 106, 107],
-            'low': [95, 96, 97],
-            'close': [102, 103, 104],
-            'volume': [1000, 1100, 1200]
-        })
+        market_data = pd.DataFrame(
+            {
+                "open": [100, 101, 102],
+                "high": [105, 106, 107],
+                "low": [95, 96, 97],
+                "close": [102, 103, 104],
+                "volume": [1000, 1100, 1200],
+            }
+        )
 
         decision = await integration.process_market_data(market_data, "BTC/USDT")
 
@@ -467,13 +496,15 @@ class TestBinaryModelIntegrationDataValidation:
     async def test_process_market_data_with_invalid_ohlc(self, integration):
         """Test processing with invalid OHLC data."""
         # Create data where high < close (invalid)
-        market_data = pd.DataFrame({
-            'open': [100],
-            'high': [99],  # High < close, invalid
-            'low': [95],
-            'close': [102],
-            'volume': [1000]
-        })
+        market_data = pd.DataFrame(
+            {
+                "open": [100],
+                "high": [99],  # High < close, invalid
+                "low": [95],
+                "close": [102],
+                "volume": [1000],
+            }
+        )
 
         decision = await integration.process_market_data(market_data, "BTC/USDT")
 
@@ -483,13 +514,15 @@ class TestBinaryModelIntegrationDataValidation:
     @pytest.mark.asyncio
     async def test_process_market_data_with_empty_symbol(self, integration):
         """Test processing with empty symbol."""
-        market_data = pd.DataFrame({
-            'open': [100, 101, 102],
-            'high': [105, 106, 107],
-            'low': [95, 96, 97],
-            'close': [102, 103, 104],
-            'volume': [1000, 1100, 1200]
-        })
+        market_data = pd.DataFrame(
+            {
+                "open": [100, 101, 102],
+                "high": [105, 106, 107],
+                "low": [95, 96, 97],
+                "close": [102, 103, 104],
+                "volume": [1000, 1100, 1200],
+            }
+        )
 
         decision = await integration.process_market_data(market_data, "")
 
@@ -498,28 +531,34 @@ class TestBinaryModelIntegrationDataValidation:
     @pytest.mark.asyncio
     async def test_process_market_data_with_none_symbol(self, integration):
         """Test processing with None symbol."""
-        market_data = pd.DataFrame({
-            'open': [100, 101, 102],
-            'high': [105, 106, 107],
-            'low': [95, 96, 97],
-            'close': [102, 103, 104],
-            'volume': [1000, 1100, 1200]
-        })
+        market_data = pd.DataFrame(
+            {
+                "open": [100, 101, 102],
+                "high": [105, 106, 107],
+                "low": [95, 96, 97],
+                "close": [102, 103, 104],
+                "volume": [1000, 1100, 1200],
+            }
+        )
 
         decision = await integration.process_market_data(market_data, None)
 
         assert decision.should_trade == False
 
     @pytest.mark.asyncio
-    async def test_process_market_data_with_special_characters_symbol(self, integration):
+    async def test_process_market_data_with_special_characters_symbol(
+        self, integration
+    ):
         """Test processing with symbol containing special characters."""
-        market_data = pd.DataFrame({
-            'open': [100, 101, 102],
-            'high': [105, 106, 107],
-            'low': [95, 96, 97],
-            'close': [102, 103, 104],
-            'volume': [1000, 1100, 1200]
-        })
+        market_data = pd.DataFrame(
+            {
+                "open": [100, 101, 102],
+                "high": [105, 106, 107],
+                "low": [95, 96, 97],
+                "close": [102, 103, 104],
+                "volume": [1000, 1100, 1200],
+            }
+        )
 
         decision = await integration.process_market_data(market_data, "BTC/USDT:PERP")
 
@@ -543,15 +582,17 @@ class TestBinaryModelIntegrationLogging:
         mock_model.predict_proba.return_value = np.array([[0.3, 0.7]])
         integration.binary_model = mock_model
 
-        market_data = pd.DataFrame({
-            'open': [100, 101, 102],
-            'high': [105, 106, 107],
-            'low': [95, 96, 97],
-            'close': [102, 103, 104],
-            'volume': [1000, 1100, 1200]
-        })
+        market_data = pd.DataFrame(
+            {
+                "open": [100, 101, 102],
+                "high": [105, 106, 107],
+                "low": [95, 96, 97],
+                "close": [102, 103, 104],
+                "volume": [1000, 1100, 1200],
+            }
+        )
 
-        with patch('core.binary_model_integration.trade_logger') as mock_trade_logger:
+        with patch("core.binary_model_integration.trade_logger") as mock_trade_logger:
             await integration._predict_binary_model(market_data, "BTC/USDT")
 
             # Verify logging was called
@@ -566,7 +607,7 @@ class TestBinaryModelIntegrationLogging:
             confidence=0.9,
             threshold=0.6,
             features={},
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         strategy_result = StrategySelectionResult(
@@ -575,7 +616,7 @@ class TestBinaryModelIntegrationLogging:
             regime=MarketRegime.BULLISH,
             confidence=0.8,
             reasoning="Test",
-            risk_multiplier=1.0
+            risk_multiplier=1.0,
         )
 
         risk_result = {
@@ -583,10 +624,10 @@ class TestBinaryModelIntegrationLogging:
             "position_size": 1000.0,
             "stop_loss": 95.0,
             "take_profit": 110.0,
-            "risk_score": 1.0
+            "risk_score": 1.0,
         }
 
-        with patch('core.binary_model_integration.trade_logger') as mock_trade_logger:
+        with patch("core.binary_model_integration.trade_logger") as mock_trade_logger:
             await integration._create_integrated_decision(
                 binary_result, strategy_result, risk_result, "BTC/USDT"
             )
@@ -605,7 +646,7 @@ class TestBinaryModelIntegrationPerformance:
             "binary_integration": {
                 "enabled": True,
                 "threshold": 0.6,
-                "min_confidence": 0.5
+                "min_confidence": 0.5,
             }
         }
 
@@ -627,19 +668,23 @@ class TestBinaryModelIntegrationPerformance:
         # Create multiple integration instances
         integrations = []
         for i in range(3):  # Reduced number for performance
-            integration = BinaryModelIntegration(config, strategy_selector=mock_strategy_selector)
+            integration = BinaryModelIntegration(
+                config, strategy_selector=mock_strategy_selector
+            )
             integration.binary_model = mock_model
             integration.risk_manager = mock_risk_manager
             integrations.append(integration)
 
         # Create test market data
-        market_data = pd.DataFrame({
-            'open': [100, 101, 102],
-            'high': [105, 106, 107],
-            'low': [95, 96, 97],
-            'close': [102, 103, 104],
-            'volume': [1000, 1100, 1200]
-        })
+        market_data = pd.DataFrame(
+            {
+                "open": [100, 101, 102],
+                "high": [105, 106, 107],
+                "low": [95, 96, 97],
+                "close": [102, 103, 104],
+                "volume": [1000, 1100, 1200],
+            }
+        )
 
         # Process concurrently
         tasks = [
@@ -669,13 +714,15 @@ class TestBinaryModelIntegrationMemoryManagement:
         integration = BinaryModelIntegration({})
 
         # Create large market data
-        large_data = pd.DataFrame({
-            'open': np.random.normal(100, 5, 10000),
-            'high': np.random.normal(105, 5, 10000),
-            'low': np.random.normal(95, 5, 10000),
-            'close': np.random.normal(100, 5, 10000),
-            'volume': np.random.uniform(1000, 5000, 10000)
-        })
+        large_data = pd.DataFrame(
+            {
+                "open": np.random.normal(100, 5, 10000),
+                "high": np.random.normal(105, 5, 10000),
+                "low": np.random.normal(95, 5, 10000),
+                "close": np.random.normal(100, 5, 10000),
+                "volume": np.random.uniform(1000, 5000, 10000),
+            }
+        )
 
         # Should handle large datasets without memory issues
         features = integration._extract_features(large_data)
@@ -689,13 +736,15 @@ class TestBinaryModelIntegrationMemoryManagement:
 
         # Process multiple datasets
         for i in range(10):
-            market_data = pd.DataFrame({
-                'open': [100 + i, 101 + i, 102 + i],
-                'high': [105 + i, 106 + i, 107 + i],
-                'low': [95 + i, 96 + i, 97 + i],
-                'close': [102 + i, 103 + i, 104 + i],
-                'volume': [1000 + i*100, 1100 + i*100, 1200 + i*100]
-            })
+            market_data = pd.DataFrame(
+                {
+                    "open": [100 + i, 101 + i, 102 + i],
+                    "high": [105 + i, 106 + i, 107 + i],
+                    "low": [95 + i, 96 + i, 97 + i],
+                    "close": [102 + i, 103 + i, 104 + i],
+                    "volume": [1000 + i * 100, 1100 + i * 100, 1200 + i * 100],
+                }
+            )
 
             features = integration._extract_features(market_data)
             assert isinstance(features, dict)

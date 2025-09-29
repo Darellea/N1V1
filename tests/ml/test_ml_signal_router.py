@@ -1,11 +1,12 @@
 import asyncio
 from decimal import Decimal
-from unittest.mock import patch, MagicMock
-import pytest
-import pandas as pd
+from unittest.mock import MagicMock, patch
 
+import pandas as pd
+import pytest
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
 from core.signal_router import SignalRouter
-from core.contracts import TradingSignal, SignalType, SignalStrength
 
 
 class DummyRiskManager:
@@ -33,9 +34,9 @@ async def test_ml_confirmation_rejects_weak_signal_on_opposite_prediction():
     # Create a mock ML filter that rejects the signal
     mock_filter = MagicMock()
     mock_filter.filter_signal.return_value = {
-        'approved': False,
-        'confidence': 0.8,
-        'reason': 'direction_mismatch'
+        "approved": False,
+        "confidence": 0.8,
+        "reason": "direction_mismatch",
     }
     router.ml_filter = mock_filter
 
@@ -55,9 +56,7 @@ async def test_ml_confirmation_rejects_weak_signal_on_opposite_prediction():
     )
 
     # Mock market data with features
-    market_data = {
-        "features": pd.DataFrame([{"feature1": 1.0, "feature2": 2.0}])
-    }
+    market_data = {"features": pd.DataFrame([{"feature1": 1.0, "feature2": 2.0}])}
 
     result = await router.process_signal(weak_buy_signal, market_data)
 
@@ -74,7 +73,9 @@ async def test_ml_confirmation_accepts_signal_on_matching_prediction():
 
     # Create a mock ML model and prediction function
     mock_model = MagicMock()
-    mock_prediction_df = pd.DataFrame([{"prediction": 1, "confidence": 0.8}])  # Same direction, high confidence
+    mock_prediction_df = pd.DataFrame(
+        [{"prediction": 1, "confidence": 0.8}]
+    )  # Same direction, high confidence
 
     def mock_predict(model, features_df):
         return mock_prediction_df
@@ -104,12 +105,10 @@ async def test_ml_confirmation_accepts_signal_on_matching_prediction():
     )
 
     # Mock market data with features
-    market_data = {
-        "features": pd.DataFrame([{"feature1": 1.0, "feature2": 2.0}])
-    }
+    market_data = {"features": pd.DataFrame([{"feature1": 1.0, "feature2": 2.0}])}
 
     # Mock the ML prediction function
-    with patch('core.signal_router.ml_predict', side_effect=mock_predict):
+    with patch("core.signal_router.ml_predict", side_effect=mock_predict):
         result = await router.process_signal(buy_signal, market_data)
 
     # Signal should be accepted because ML prediction matches signal direction
@@ -147,9 +146,7 @@ async def test_ml_confirmation_skips_when_no_features():
     )
 
     # Mock market data without features
-    market_data = {
-        "ohlcv": [100, 105, 95, 102, 1000]  # No features key
-    }
+    market_data = {"ohlcv": [100, 105, 95, 102, 1000]}  # No features key
 
     # Process signal without mocking ML (should skip ML confirmation)
     result = await router.process_signal(buy_signal, market_data)

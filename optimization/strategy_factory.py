@@ -14,13 +14,11 @@ Key Features:
 """
 
 import logging
-from typing import Dict, List, Any, Optional, Tuple, Callable
-from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
 from .config import (
-    get_strategy_generation_config,
     get_indicator_params,
-    get_signal_logic_params
+    get_signal_logic_params,
 )
 
 
@@ -32,9 +30,13 @@ class StrategyGenerationError(Exception):
     generation failed, including the specific error type and context.
     """
 
-    def __init__(self, message: str, error_type: str = "unknown",
-                 genome_info: Optional[Dict[str, Any]] = None,
-                 cause: Optional[Exception] = None):
+    def __init__(
+        self,
+        message: str,
+        error_type: str = "unknown",
+        genome_info: Optional[Dict[str, Any]] = None,
+        cause: Optional[Exception] = None,
+    ):
         """
         Initialize the exception.
 
@@ -77,46 +79,51 @@ class StrategyFactory:
     # SECURITY: Classes are explicitly defined to prevent dynamic code execution
     # Only pre-approved strategy classes can be instantiated through this factory
     STRATEGY_REGISTRY = {
-        'rsi_momentum': {
-            'class': None,  # To be registered by calling register_strategy()
-            'description': 'RSI-based momentum strategy',
-            'parameters': {
-                'rsi_period': {'min': 2, 'max': 50, 'type': int},
-                'overbought': {'min': 60, 'max': 90, 'type': int},
-                'oversold': {'min': 10, 'max': 40, 'type': int},
-                'momentum_period': {'min': 5, 'max': 30, 'type': int}
-            }
+        "rsi_momentum": {
+            "class": None,  # To be registered by calling register_strategy()
+            "description": "RSI-based momentum strategy",
+            "parameters": {
+                "rsi_period": {"min": 2, "max": 50, "type": int},
+                "overbought": {"min": 60, "max": 90, "type": int},
+                "oversold": {"min": 10, "max": 40, "type": int},
+                "momentum_period": {"min": 5, "max": 30, "type": int},
+            },
         },
-        'macd_crossover': {
-            'class': None,  # To be registered by calling register_strategy()
-            'description': 'MACD crossover strategy',
-            'parameters': {
-                'fast_period': {'min': 5, 'max': 20, 'type': int},
-                'slow_period': {'min': 20, 'max': 50, 'type': int},
-                'signal_period': {'min': 5, 'max': 15, 'type': int}
-            }
+        "macd_crossover": {
+            "class": None,  # To be registered by calling register_strategy()
+            "description": "MACD crossover strategy",
+            "parameters": {
+                "fast_period": {"min": 5, "max": 20, "type": int},
+                "slow_period": {"min": 20, "max": 50, "type": int},
+                "signal_period": {"min": 5, "max": 15, "type": int},
+            },
         },
-        'bollinger_reversion': {
-            'class': None,  # To be registered by calling register_strategy()
-            'description': 'Bollinger Bands mean reversion strategy',
-            'parameters': {
-                'period': {'min': 10, 'max': 50, 'type': int},
-                'std_dev': {'min': 1.5, 'max': 3.0, 'type': float}
-            }
+        "bollinger_reversion": {
+            "class": None,  # To be registered by calling register_strategy()
+            "description": "Bollinger Bands mean reversion strategy",
+            "parameters": {
+                "period": {"min": 10, "max": 50, "type": int},
+                "std_dev": {"min": 1.5, "max": 3.0, "type": float},
+            },
         },
-        'volume_price': {
-            'class': None,  # To be registered by calling register_strategy()
-            'description': 'Volume-weighted price action strategy',
-            'parameters': {
-                'volume_threshold': {'min': 0.5, 'max': 3.0, 'type': float},
-                'price_lookback': {'min': 3, 'max': 20, 'type': int}
-            }
-        }
+        "volume_price": {
+            "class": None,  # To be registered by calling register_strategy()
+            "description": "Volume-weighted price action strategy",
+            "parameters": {
+                "volume_threshold": {"min": 0.5, "max": 3.0, "type": float},
+                "price_lookback": {"min": 3, "max": 20, "type": int},
+            },
+        },
     }
 
     @classmethod
-    def register_strategy(cls, strategy_type: str, strategy_class: type,
-                         description: str, parameters: Dict[str, Any]) -> None:
+    def register_strategy(
+        cls,
+        strategy_type: str,
+        strategy_class: type,
+        description: str,
+        parameters: Dict[str, Any],
+    ) -> None:
         """
         Register a new strategy type with the factory.
 
@@ -127,12 +134,14 @@ class StrategyFactory:
             parameters: Parameter constraints
         """
         if strategy_type in cls.STRATEGY_REGISTRY:
-            logger.warning(f"Strategy type '{strategy_type}' already registered, overwriting")
+            logger.warning(
+                f"Strategy type '{strategy_type}' already registered, overwriting"
+            )
 
         cls.STRATEGY_REGISTRY[strategy_type] = {
-            'class': strategy_class,
-            'description': description,
-            'parameters': parameters
+            "class": strategy_class,
+            "description": description,
+            "parameters": parameters,
         }
 
         logger.info(f"Registered strategy type: {strategy_type}")
@@ -161,10 +170,12 @@ class StrategyFactory:
                 continue  # Skip disabled genes
 
             # Validate component type
-            if gene.component_type not in [StrategyComponent.INDICATOR,
-                                         StrategyComponent.SIGNAL_LOGIC,
-                                         StrategyComponent.RISK_MANAGEMENT,
-                                         StrategyComponent.FILTER]:
+            if gene.component_type not in [
+                StrategyComponent.INDICATOR,
+                StrategyComponent.SIGNAL_LOGIC,
+                StrategyComponent.RISK_MANAGEMENT,
+                StrategyComponent.FILTER,
+            ]:
                 errors.append(f"Gene {i}: Invalid component type {gene.component_type}")
 
             # Validate parameters based on component type
@@ -181,7 +192,9 @@ class StrategyFactory:
         # Get parameter constraints based on component type
         if gene.component_type == StrategyComponent.INDICATOR and gene.indicator_type:
             constraints = cls._get_indicator_constraints(gene.indicator_type)
-        elif gene.component_type == StrategyComponent.SIGNAL_LOGIC and gene.signal_logic:
+        elif (
+            gene.component_type == StrategyComponent.SIGNAL_LOGIC and gene.signal_logic
+        ):
             constraints = cls._get_signal_constraints(gene.signal_logic)
         else:
             # For other component types, use generic validation
@@ -192,7 +205,9 @@ class StrategyFactory:
             if param_name in constraints:
                 constraint = constraints[param_name]
                 if not cls._validate_parameter(param_value, constraint):
-                    errors.append(f"Parameter {param_name}={param_value} violates constraint {constraint}")
+                    errors.append(
+                        f"Parameter {param_name}={param_value} violates constraint {constraint}"
+                    )
             else:
                 errors.append(f"Unknown parameter {param_name}")
 
@@ -203,18 +218,21 @@ class StrategyFactory:
         """Validate a single parameter against its constraint."""
         try:
             # Type check
-            expected_type = constraint['type']
+            expected_type = constraint["type"]
             if not isinstance(value, expected_type):
                 return False
 
             # Range check
-            if 'min' in constraint and value < constraint['min']:
+            if "min" in constraint and value < constraint["min"]:
                 return False
-            if 'max' in constraint and value > constraint['max']:
+            if "max" in constraint and value > constraint["max"]:
                 return False
 
             # Enum check
-            if 'allowed_values' in constraint and value not in constraint['allowed_values']:
+            if (
+                "allowed_values" in constraint
+                and value not in constraint["allowed_values"]
+            ):
                 return False
 
             return True
@@ -232,38 +250,34 @@ class StrategyFactory:
         # Fallback to hardcoded constraints
         constraints = {
             IndicatorType.RSI: {
-                'period': {'min': 2, 'max': 50, 'type': int},
-                'overbought': {'min': 50, 'max': 95, 'type': int},
-                'oversold': {'min': 5, 'max': 50, 'type': int}
+                "period": {"min": 2, "max": 50, "type": int},
+                "overbought": {"min": 50, "max": 95, "type": int},
+                "oversold": {"min": 5, "max": 50, "type": int},
             },
             IndicatorType.MACD: {
-                'fast_period': {'min': 5, 'max': 20, 'type': int},
-                'slow_period': {'min': 20, 'max': 50, 'type': int},
-                'signal_period': {'min': 5, 'max': 15, 'type': int}
+                "fast_period": {"min": 5, "max": 20, "type": int},
+                "slow_period": {"min": 20, "max": 50, "type": int},
+                "signal_period": {"min": 5, "max": 15, "type": int},
             },
             IndicatorType.BOLLINGER_BANDS: {
-                'period': {'min': 10, 'max': 50, 'type': int},
-                'std_dev': {'min': 1.0, 'max': 3.0, 'type': float}
+                "period": {"min": 10, "max": 50, "type": int},
+                "std_dev": {"min": 1.0, "max": 3.0, "type": float},
             },
             IndicatorType.STOCHASTIC: {
-                'k_period': {'min': 5, 'max': 30, 'type': int},
-                'd_period': {'min': 3, 'max': 10, 'type': int},
-                'overbought': {'min': 70, 'max': 95, 'type': int},
-                'oversold': {'min': 5, 'max': 30, 'type': int}
+                "k_period": {"min": 5, "max": 30, "type": int},
+                "d_period": {"min": 3, "max": 10, "type": int},
+                "overbought": {"min": 70, "max": 95, "type": int},
+                "oversold": {"min": 5, "max": 30, "type": int},
             },
             IndicatorType.MOVING_AVERAGE: {
-                'period': {'min': 5, 'max': 100, 'type': int},
-                'type': {'allowed_values': ['sma', 'ema', 'wma'], 'type': str}
+                "period": {"min": 5, "max": 100, "type": int},
+                "type": {"allowed_values": ["sma", "ema", "wma"], "type": str},
             },
-            IndicatorType.ATR: {
-                'period': {'min': 5, 'max': 30, 'type': int}
-            },
-            IndicatorType.VOLUME: {
-                'period': {'min': 5, 'max': 50, 'type': int}
-            },
+            IndicatorType.ATR: {"period": {"min": 5, "max": 30, "type": int}},
+            IndicatorType.VOLUME: {"period": {"min": 5, "max": 50, "type": int}},
             IndicatorType.PRICE_ACTION: {
-                'lookback': {'min': 3, 'max': 20, 'type': int}
-            }
+                "lookback": {"min": 3, "max": 20, "type": int}
+            },
         }
         return constraints.get(indicator_type, {})
 
@@ -278,29 +292,32 @@ class StrategyFactory:
         # Fallback to hardcoded constraints
         constraints = {
             SignalLogic.CROSSOVER: {
-                'fast_period': {'min': 5, 'max': 20, 'type': int},
-                'slow_period': {'min': 20, 'max': 50, 'type': int}
+                "fast_period": {"min": 5, "max": 20, "type": int},
+                "slow_period": {"min": 20, "max": 50, "type": int},
             },
             SignalLogic.THRESHOLD: {
-                'threshold': {'min': 0.1, 'max': 0.9, 'type': float},
-                'direction': {'allowed_values': ['above', 'below'], 'type': str}
+                "threshold": {"min": 0.1, "max": 0.9, "type": float},
+                "direction": {"allowed_values": ["above", "below"], "type": str},
             },
             SignalLogic.PATTERN: {
-                'pattern_type': {'allowed_values': ['double_bottom', 'double_top', 'head_shoulders'], 'type': str},
-                'tolerance': {'min': 0.01, 'max': 0.1, 'type': float}
+                "pattern_type": {
+                    "allowed_values": ["double_bottom", "double_top", "head_shoulders"],
+                    "type": str,
+                },
+                "tolerance": {"min": 0.01, "max": 0.1, "type": float},
             },
             SignalLogic.DIVERGENCE: {
-                'lookback': {'min': 5, 'max': 20, 'type': int},
-                'threshold': {'min': 0.05, 'max': 0.5, 'type': float}
+                "lookback": {"min": 5, "max": 20, "type": int},
+                "threshold": {"min": 0.05, "max": 0.5, "type": float},
             },
             SignalLogic.MOMENTUM: {
-                'period': {'min': 5, 'max': 30, 'type': int},
-                'threshold': {'min': 0.01, 'max': 0.1, 'type': float}
+                "period": {"min": 5, "max": 30, "type": int},
+                "threshold": {"min": 0.01, "max": 0.1, "type": float},
             },
             SignalLogic.MEAN_REVERSION: {
-                'mean_period': {'min': 10, 'max': 50, 'type': int},
-                'std_threshold': {'min': 1.0, 'max': 3.0, 'type': float}
-            }
+                "mean_period": {"min": 10, "max": 50, "type": int},
+                "std_threshold": {"min": 1.0, "max": 3.0, "type": float},
+            },
         }
         return constraints.get(signal_logic, {})
 
@@ -309,12 +326,12 @@ class StrategyFactory:
         """Get generic parameter constraints for component types."""
         constraints = {
             StrategyComponent.RISK_MANAGEMENT: {
-                'stop_loss': {'min': 0.005, 'max': 0.1, 'type': float},
-                'take_profit': {'min': 0.01, 'max': 0.2, 'type': float}
+                "stop_loss": {"min": 0.005, "max": 0.1, "type": float},
+                "take_profit": {"min": 0.01, "max": 0.2, "type": float},
             },
             StrategyComponent.FILTER: {
-                'volume_threshold': {'min': 0.1, 'max': 5.0, 'type': float}
-            }
+                "volume_threshold": {"min": 0.1, "max": 5.0, "type": float}
+            },
         }
         return constraints.get(component_type, {})
 
@@ -344,7 +361,7 @@ class StrategyFactory:
 
             # Get strategy class
             strategy_info = cls.STRATEGY_REGISTRY[strategy_type]
-            strategy_class = strategy_info['class']
+            strategy_class = strategy_info["class"]
 
             if strategy_class is None:
                 logger.error(f"Strategy class not registered for type: {strategy_type}")
@@ -355,19 +372,21 @@ class StrategyFactory:
 
             # Create strategy configuration
             strategy_config = {
-                'name': f'secure_generated_{strategy_type}_{id(genome)}',
-                'symbols': ['BTC/USDT'],  # Default, can be overridden
-                'timeframe': '1h',
-                'required_history': 100,
-                'params': strategy_params,
-                'genome_id': id(genome),  # For tracking
-                'strategy_type': strategy_type  # For audit trail
+                "name": f"secure_generated_{strategy_type}_{id(genome)}",
+                "symbols": ["BTC/USDT"],  # Default, can be overridden
+                "timeframe": "1h",
+                "required_history": 100,
+                "params": strategy_params,
+                "genome_id": id(genome),  # For tracking
+                "strategy_type": strategy_type,  # For audit trail
             }
 
             # Create and return strategy instance
             strategy_instance = strategy_class(strategy_config)
 
-            logger.info(f"Successfully created strategy of type '{strategy_type}' from genome")
+            logger.info(
+                f"Successfully created strategy of type '{strategy_type}' from genome"
+            )
             return strategy_instance
 
         except Exception as e:
@@ -387,30 +406,32 @@ class StrategyFactory:
         for gene in genome.genes:
             if gene.enabled:
                 component_type = gene.component_type.value
-                component_counts[component_type] = component_counts.get(component_type, 0) + 1
+                component_counts[component_type] = (
+                    component_counts.get(component_type, 0) + 1
+                )
 
         # Simple inference based on dominant components
-        if component_counts.get('indicator', 0) > 0:
+        if component_counts.get("indicator", 0) > 0:
             # Look for specific indicator types
             for gene in genome.genes:
                 if gene.enabled and gene.component_type == StrategyComponent.INDICATOR:
                     if gene.indicator_type == IndicatorType.RSI:
-                        return 'rsi_momentum'
+                        return "rsi_momentum"
                     elif gene.indicator_type == IndicatorType.MACD:
-                        return 'macd_crossover'
+                        return "macd_crossover"
                     elif gene.indicator_type == IndicatorType.BOLLINGER_BANDS:
-                        return 'bollinger_reversion'
+                        return "bollinger_reversion"
                     elif gene.indicator_type == IndicatorType.VOLUME:
-                        return 'volume_price'
+                        return "volume_price"
 
         # Default fallback
-        return 'rsi_momentum'  # Safe default
+        return "rsi_momentum"  # Safe default
 
     @classmethod
     def _extract_strategy_parameters(cls, genome, strategy_type: str) -> Dict[str, Any]:
         """Extract validated parameters for the strategy."""
         strategy_info = cls.STRATEGY_REGISTRY[strategy_type]
-        allowed_params = strategy_info['parameters']
+        allowed_params = strategy_info["parameters"]
 
         extracted_params = {}
 
@@ -429,23 +450,30 @@ class StrategyFactory:
         # Set defaults for missing parameters
         for param_name, constraint in allowed_params.items():
             if param_name not in extracted_params:
-                if 'default' in constraint:
-                    extracted_params[param_name] = constraint['default']
+                if "default" in constraint:
+                    extracted_params[param_name] = constraint["default"]
                 else:
                     # Use midpoint of range for numeric types
-                    if 'min' in constraint and 'max' in constraint:
-                        if constraint['type'] == int:
-                            extracted_params[param_name] = (constraint['min'] + constraint['max']) // 2
-                        elif constraint['type'] == float:
-                            extracted_params[param_name] = (constraint['min'] + constraint['max']) / 2.0
+                    if "min" in constraint and "max" in constraint:
+                        if constraint["type"] == int:
+                            extracted_params[param_name] = (
+                                constraint["min"] + constraint["max"]
+                            ) // 2
+                        elif constraint["type"] == float:
+                            extracted_params[param_name] = (
+                                constraint["min"] + constraint["max"]
+                            ) / 2.0
 
         return extracted_params
 
     @classmethod
     def get_available_strategies(cls) -> Dict[str, str]:
         """Get list of available strategy types and their descriptions."""
-        return {name: info['description'] for name, info in cls.STRATEGY_REGISTRY.items()
-                if info['class'] is not None}
+        return {
+            name: info["description"]
+            for name, info in cls.STRATEGY_REGISTRY.items()
+            if info["class"] is not None
+        }
 
     @classmethod
     def get_strategy_info(cls, strategy_type: str) -> Optional[Dict[str, Any]]:
@@ -455,14 +483,15 @@ class StrategyFactory:
 
         info = cls.STRATEGY_REGISTRY[strategy_type].copy()
         # Remove the class object from the returned info for security
-        info.pop('class', None)
+        info.pop("class", None)
         return info
 
 
 # Import required classes to avoid circular imports
 # These will be imported when the module is loaded
 try:
-    from .genome import StrategyComponent, IndicatorType, SignalLogic
+    from .genome import IndicatorType, SignalLogic, StrategyComponent
+
     logger = logging.getLogger(f"{__name__}")
 except ImportError:
     # Fallback for when genome module is not available yet

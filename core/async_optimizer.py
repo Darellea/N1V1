@@ -6,17 +6,17 @@ implements thread pools for CPU-bound operations, and adds performance monitorin
 """
 
 import asyncio
-import logging
-import time
-import threading
-import psutil
 import gc
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-from typing import Dict, Any, Optional, List, Callable, Awaitable
-import aiofiles
-import os
 import json
-from functools import wraps, partial
+import logging
+import os
+import time
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from functools import partial, wraps
+from typing import Any, Awaitable, Callable, Dict, List
+
+import aiofiles
+import psutil
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,9 @@ class AsyncOptimizer:
         self.enable_monitoring = enable_monitoring
 
         # Thread pools for different types of operations
-        self._thread_pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="AsyncOpt")
+        self._thread_pool = ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix="AsyncOpt"
+        )
         self._process_pool = ProcessPoolExecutor(max_workers=max_workers // 2)
 
         # Performance monitoring
@@ -49,7 +51,7 @@ class AsyncOptimizer:
             "async_operations": 0,
             "threaded_operations": 0,
             "blocking_detected": 0,
-            "avg_response_time": 0.0
+            "avg_response_time": 0.0,
         }
 
         # Memory monitoring
@@ -57,22 +59,32 @@ class AsyncOptimizer:
         self._memory_thresholds = {
             "warning_mb": 500,  # Warn at 500MB
             "critical_mb": 1000,  # Critical at 1GB
-            "cleanup_interval": 300  # Cleanup every 5 minutes
+            "cleanup_interval": 300,  # Cleanup every 5 minutes
         }
         self._last_cleanup = time.time()
         self._gc_threshold = gc.get_threshold()
 
         # Known blocking operations to monitor
         self._blocking_patterns = [
-            "open(", "read(", "write(", "os.path", "os.stat",
-            "json.load", "json.dump", "pickle.load", "pickle.dump",
-            "time.sleep", "requests.get", "requests.post"
+            "open(",
+            "read(",
+            "write(",
+            "os.path",
+            "os.stat",
+            "json.load",
+            "json.dump",
+            "pickle.load",
+            "pickle.dump",
+            "time.sleep",
+            "requests.get",
+            "requests.post",
         ]
 
         logger.info(f"AsyncOptimizer initialized with {max_workers} workers")
 
-    async def async_file_read(self, file_path: str, mode: str = 'r',
-                            encoding: str = 'utf-8') -> str:
+    async def async_file_read(
+        self, file_path: str, mode: str = "r", encoding: str = "utf-8"
+    ) -> str:
         """Asynchronously read a file.
 
         Args:
@@ -96,8 +108,9 @@ class AsyncOptimizer:
             logger.exception(f"Error reading file {file_path}: {e}")
             raise
 
-    async def async_file_write(self, file_path: str, content: str,
-                             mode: str = 'w', encoding: str = 'utf-8') -> None:
+    async def async_file_write(
+        self, file_path: str, content: str, mode: str = "w", encoding: str = "utf-8"
+    ) -> None:
         """Asynchronously write to a file.
 
         Args:
@@ -133,8 +146,9 @@ class AsyncOptimizer:
         content = await self.async_file_read(file_path)
         return json.loads(content)
 
-    async def async_json_dump(self, data: Dict[str, Any], file_path: str,
-                            indent: int = 2) -> None:
+    async def async_json_dump(
+        self, data: Dict[str, Any], file_path: str, indent: int = 2
+    ) -> None:
         """Asynchronously dump data to JSON file.
 
         Args:
@@ -161,8 +175,7 @@ class AsyncOptimizer:
             try:
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(
-                    self._thread_pool,
-                    partial(func, *args, **kwargs)
+                    self._thread_pool, partial(func, *args, **kwargs)
                 )
 
                 self._record_operation("threaded", time.time() - start_time)
@@ -190,8 +203,7 @@ class AsyncOptimizer:
             try:
                 loop = asyncio.get_event_loop()
                 result = await loop.run_in_executor(
-                    self._process_pool,
-                    partial(func, *args, **kwargs)
+                    self._process_pool, partial(func, *args, **kwargs)
                 )
 
                 self._record_operation("processed", time.time() - start_time)
@@ -218,11 +230,13 @@ class AsyncOptimizer:
                 detected.append(pattern)
 
         if detected:
-            self._blocking_operations.append({
-                "timestamp": time.time(),
-                "patterns": detected,
-                "code_sample": code[:200] + "..." if len(code) > 200 else code
-            })
+            self._blocking_operations.append(
+                {
+                    "timestamp": time.time(),
+                    "patterns": detected,
+                    "code_sample": code[:200] + "..." if len(code) > 200 else code,
+                }
+            )
 
         return detected
 
@@ -235,6 +249,7 @@ class AsyncOptimizer:
         Returns:
             Monitored function
         """
+
         @wraps(func)
         async def wrapper(*args, **kwargs):
             start_time = time.time()
@@ -246,7 +261,7 @@ class AsyncOptimizer:
                 self._record_operation(f"async_{func.__name__}", execution_time)
                 return result
 
-            except Exception as e:
+            except Exception:
                 execution_time = time.time() - start_time
                 self._record_operation(f"async_{func.__name__}_error", execution_time)
                 raise
@@ -262,6 +277,7 @@ class AsyncOptimizer:
         Returns:
             Monitored function with blocking detection
         """
+
         @wraps(func)
         def wrapper(*args, **kwargs):
             start_time = time.time()
@@ -269,11 +285,14 @@ class AsyncOptimizer:
             try:
                 # Check if this might be a blocking operation
                 import inspect
+
                 source = inspect.getsource(func)
                 blocking_patterns = self.detect_blocking_operations(source)
 
                 if blocking_patterns:
-                    logger.warning(f"Detected potentially blocking patterns in {func.__name__}: {blocking_patterns}")
+                    logger.warning(
+                        f"Detected potentially blocking patterns in {func.__name__}: {blocking_patterns}"
+                    )
 
                 result = func(*args, **kwargs)
                 execution_time = time.time() - start_time
@@ -282,11 +301,13 @@ class AsyncOptimizer:
 
                 # Warn about slow synchronous operations
                 if execution_time > 1.0:  # More than 1 second
-                    logger.warning(f"Slow synchronous operation {func.__name__}: {execution_time:.2f}s")
+                    logger.warning(
+                        f"Slow synchronous operation {func.__name__}: {execution_time:.2f}s"
+                    )
 
                 return result
 
-            except Exception as e:
+            except Exception:
                 execution_time = time.time() - start_time
                 self._record_operation(f"sync_{func.__name__}_error", execution_time)
                 raise
@@ -307,7 +328,9 @@ class AsyncOptimizer:
 
         # Keep only last 1000 measurements per operation type
         if len(self._operation_stats[operation_type]) > 1000:
-            self._operation_stats[operation_type] = self._operation_stats[operation_type][-1000:]
+            self._operation_stats[operation_type] = self._operation_stats[
+                operation_type
+            ][-1000:]
 
         # Update global metrics
         self._performance_metrics["total_operations"] += 1
@@ -340,21 +363,30 @@ class AsyncOptimizer:
 
             # Keep only last 100 measurements
             if len(self._memory_stats["memory_usage"]) > 100:
-                self._memory_stats["memory_usage"] = self._memory_stats["memory_usage"][-100:]
+                self._memory_stats["memory_usage"] = self._memory_stats["memory_usage"][
+                    -100:
+                ]
 
             # Check thresholds
             warning_threshold = self._memory_thresholds["warning_mb"]
             critical_threshold = self._memory_thresholds["critical_mb"]
 
             if memory_mb > critical_threshold:
-                logger.warning(f"Critical memory usage: {memory_mb:.1f}MB (threshold: {critical_threshold}MB)")
+                logger.warning(
+                    f"Critical memory usage: {memory_mb:.1f}MB (threshold: {critical_threshold}MB)"
+                )
                 self._perform_memory_cleanup()
             elif memory_mb > warning_threshold:
-                logger.info(f"High memory usage: {memory_mb:.1f}MB (threshold: {warning_threshold}MB)")
+                logger.info(
+                    f"High memory usage: {memory_mb:.1f}MB (threshold: {warning_threshold}MB)"
+                )
 
             # Periodic cleanup
             current_time = time.time()
-            if current_time - self._last_cleanup > self._memory_thresholds["cleanup_interval"]:
+            if (
+                current_time - self._last_cleanup
+                > self._memory_thresholds["cleanup_interval"]
+            ):
                 self._perform_periodic_cleanup()
                 self._last_cleanup = current_time
 
@@ -372,7 +404,9 @@ class AsyncOptimizer:
             for op_type in list(self._operation_stats.keys()):
                 if len(self._operation_stats[op_type]) > 500:
                     # Keep only recent measurements
-                    self._operation_stats[op_type] = self._operation_stats[op_type][-250:]
+                    self._operation_stats[op_type] = self._operation_stats[op_type][
+                        -250:
+                    ]
 
             # Clear blocking operations if too many
             if len(self._blocking_operations) > 100:
@@ -418,7 +452,7 @@ class AsyncOptimizer:
                 "warning_threshold_mb": self._memory_thresholds["warning_mb"],
                 "critical_threshold_mb": self._memory_thresholds["critical_mb"],
                 "cleanup_interval_seconds": self._memory_thresholds["cleanup_interval"],
-                "last_cleanup_seconds_ago": time.time() - self._last_cleanup
+                "last_cleanup_seconds_ago": time.time() - self._last_cleanup,
             }
 
             # Add memory statistics
@@ -428,7 +462,7 @@ class AsyncOptimizer:
                     "avg_memory_mb": sum(memory_usage) / len(memory_usage),
                     "max_memory_mb": max(memory_usage),
                     "min_memory_mb": min(memory_usage),
-                    "samples": len(memory_usage)
+                    "samples": len(memory_usage),
                 }
 
             # Add GC statistics
@@ -440,9 +474,15 @@ class AsyncOptimizer:
             # Add recommendations
             current_mb = report["current_memory_mb"]
             if current_mb > self._memory_thresholds["critical_mb"]:
-                report["recommendations"] = ["Immediate memory cleanup required", "Consider reducing concurrent operations"]
+                report["recommendations"] = [
+                    "Immediate memory cleanup required",
+                    "Consider reducing concurrent operations",
+                ]
             elif current_mb > self._memory_thresholds["warning_mb"]:
-                report["recommendations"] = ["Monitor memory usage closely", "Consider periodic cleanup"]
+                report["recommendations"] = [
+                    "Monitor memory usage closely",
+                    "Consider periodic cleanup",
+                ]
             else:
                 report["recommendations"] = ["Memory usage normal"]
 
@@ -452,8 +492,12 @@ class AsyncOptimizer:
             logger.error(f"Failed to generate memory report: {e}")
             return {"error": str(e)}
 
-    def set_memory_thresholds(self, warning_mb: int = None, critical_mb: int = None,
-                            cleanup_interval: int = None):
+    def set_memory_thresholds(
+        self,
+        warning_mb: int = None,
+        critical_mb: int = None,
+        cleanup_interval: int = None,
+    ):
         """Set memory monitoring thresholds.
 
         Args:
@@ -468,9 +512,11 @@ class AsyncOptimizer:
         if cleanup_interval is not None:
             self._memory_thresholds["cleanup_interval"] = cleanup_interval
 
-        logger.info(f"Memory thresholds updated: warning={self._memory_thresholds['warning_mb']}MB, "
-                   f"critical={self._memory_thresholds['critical_mb']}MB, "
-                   f"cleanup_interval={self._memory_thresholds['cleanup_interval']}s")
+        logger.info(
+            f"Memory thresholds updated: warning={self._memory_thresholds['warning_mb']}MB, "
+            f"critical={self._memory_thresholds['critical_mb']}MB, "
+            f"cleanup_interval={self._memory_thresholds['cleanup_interval']}s"
+        )
 
     async def batch_async_operations(self, operations: List[Callable]) -> List[Any]:
         """Execute multiple async operations in batch.
@@ -508,7 +554,9 @@ class AsyncOptimizer:
             logger.exception(f"Error in batch async operations: {e}")
             raise
 
-    def optimize_data_fetching(self, symbols: List[str], fetch_func: Callable) -> Callable:
+    def optimize_data_fetching(
+        self, symbols: List[str], fetch_func: Callable
+    ) -> Callable:
         """Optimize data fetching with batching and caching.
 
         Args:
@@ -518,6 +566,7 @@ class AsyncOptimizer:
         Returns:
             Optimized fetch function
         """
+
         async def optimized_fetch():
             # Batch fetch operations
             operations = [partial(fetch_func, symbol) for symbol in symbols]
@@ -547,7 +596,7 @@ class AsyncOptimizer:
                     "avg_time": sum(times) / len(times),
                     "min_time": min(times),
                     "max_time": max(times),
-                    "total_time": sum(times)
+                    "total_time": sum(times),
                 }
 
         report["operation_stats"] = operation_stats
@@ -583,10 +632,16 @@ class AsyncOptimizer:
         """
         health = {
             "thread_pool_active": not self._thread_pool._shutdown,
-            "process_pool_active": not getattr(self._process_pool, '_shutdown', False),
-            "threads_alive": len(self._thread_pool._threads) if hasattr(self._thread_pool, '_threads') else 0,
-            "processes_alive": self._process_pool._processes if hasattr(self._process_pool, '_processes') else 0,
-            "queued_tasks": getattr(self._thread_pool, '_work_queue', None).qsize() if hasattr(self._thread_pool, '_work_queue') else 0
+            "process_pool_active": not getattr(self._process_pool, "_shutdown", False),
+            "threads_alive": len(self._thread_pool._threads)
+            if hasattr(self._thread_pool, "_threads")
+            else 0,
+            "processes_alive": self._process_pool._processes
+            if hasattr(self._process_pool, "_processes")
+            else 0,
+            "queued_tasks": getattr(self._thread_pool, "_work_queue", None).qsize()
+            if hasattr(self._thread_pool, "_work_queue")
+            else 0,
         }
 
         # Test thread pool with a simple operation
@@ -608,9 +663,11 @@ class AsyncOptimizer:
         if current_task:
             # Get all tasks and cancel those related to this optimizer
             all_tasks = asyncio.all_tasks()
-            optimizer_tasks = [task for task in all_tasks
-                             if hasattr(task, 'get_coro') and
-                             'AsyncOpt' in str(task.get_coro())]
+            optimizer_tasks = [
+                task
+                for task in all_tasks
+                if hasattr(task, "get_coro") and "AsyncOpt" in str(task.get_coro())
+            ]
 
             for task in optimizer_tasks:
                 if not task.done() and task != current_task:
@@ -621,7 +678,7 @@ class AsyncOptimizer:
                 try:
                     await asyncio.wait_for(
                         asyncio.gather(*optimizer_tasks, return_exceptions=True),
-                        timeout=5.0
+                        timeout=5.0,
                     )
                 except asyncio.TimeoutError:
                     logger.warning("Some tasks did not cancel within timeout")
@@ -640,9 +697,9 @@ class AsyncOptimizer:
     def __del__(self):
         """Cleanup on deletion."""
         try:
-            if hasattr(self, '_thread_pool') and not self._thread_pool._shutdown:
+            if hasattr(self, "_thread_pool") and not self._thread_pool._shutdown:
                 self._thread_pool.shutdown(wait=False)
-            if hasattr(self, '_process_pool') and not self._process_pool._shutdown:
+            if hasattr(self, "_process_pool") and not self._process_pool._shutdown:
                 self._process_pool.shutdown(wait=False)
         except:
             pass  # Ignore errors during cleanup
@@ -650,6 +707,7 @@ class AsyncOptimizer:
 
 # Global async optimizer instance
 _async_optimizer = None
+
 
 def get_async_optimizer() -> AsyncOptimizer:
     """Get the global async optimizer instance."""
@@ -660,13 +718,15 @@ def get_async_optimizer() -> AsyncOptimizer:
 
 
 # Utility functions for easy integration
-async def async_read_file(file_path: str, encoding: str = 'utf-8') -> str:
+async def async_read_file(file_path: str, encoding: str = "utf-8") -> str:
     """Convenience function for async file reading."""
     optimizer = get_async_optimizer()
     return await optimizer.async_file_read(file_path, encoding=encoding)
 
 
-async def async_write_file(file_path: str, content: str, encoding: str = 'utf-8') -> None:
+async def async_write_file(
+    file_path: str, content: str, encoding: str = "utf-8"
+) -> None:
     """Convenience function for async file writing."""
     optimizer = get_async_optimizer()
     return await optimizer.async_file_write(file_path, content, encoding=encoding)

@@ -8,21 +8,20 @@ into system health.
 
 import asyncio
 import logging
-import time
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, Callable
-from dataclasses import dataclass, field
-from enum import Enum
 import statistics
+import time
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
+
 import aiohttp
 import numpy as np
 
-from core.signal_router.events import (
-    DiagnosticAlertEvent,
-    create_diagnostic_alert_event,
-    EventType
-)
 from core.signal_router.event_bus import get_default_enhanced_event_bus
+from core.signal_router.events import (
+    create_diagnostic_alert_event,
+)
 from utils.logger import get_trade_logger
 
 logger = logging.getLogger(__name__)
@@ -30,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 class HealthStatus(Enum):
     """System health status levels."""
+
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     CRITICAL = "critical"
@@ -37,6 +37,7 @@ class HealthStatus(Enum):
 
 class AlertSeverity(Enum):
     """Alert severity levels."""
+
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
@@ -46,6 +47,7 @@ class AlertSeverity(Enum):
 @dataclass
 class HealthCheckResult:
     """Result of a health check."""
+
     component: str
     status: HealthStatus
     latency_ms: Optional[float] = None
@@ -57,6 +59,7 @@ class HealthCheckResult:
 @dataclass
 class AnomalyDetection:
     """Anomaly detection result."""
+
     component: str
     metric: str
     value: float
@@ -69,6 +72,7 @@ class AnomalyDetection:
 @dataclass
 class DiagnosticState:
     """Current diagnostic state of the system with optimized memory usage."""
+
     overall_status: HealthStatus = HealthStatus.HEALTHY
     last_check: Optional[datetime] = None
     check_count: int = 0
@@ -106,15 +110,17 @@ class DiagnosticsManager:
         self.logger = get_trade_logger()
 
         # Configuration with defaults
-        self.check_interval_sec = self.config.get('interval_sec', 60)
-        self.latency_threshold_ms = self.config.get('latency_threshold_ms', 5000)
-        self.drawdown_threshold_pct = self.config.get('drawdown_threshold_pct', 5.0)
-        self.data_integrity_check = self.config.get('data_integrity_check', True)
-        self.discord_webhook_url = self.config.get('discord_webhook_url', '')
+        self.check_interval_sec = self.config.get("interval_sec", 60)
+        self.latency_threshold_ms = self.config.get("latency_threshold_ms", 5000)
+        self.drawdown_threshold_pct = self.config.get("drawdown_threshold_pct", 5.0)
+        self.data_integrity_check = self.config.get("data_integrity_check", True)
+        self.discord_webhook_url = self.config.get("discord_webhook_url", "")
 
         # Rolling windows for anomaly detection
-        self.latency_window_size = self.config.get('latency_window_size', 10)
-        self.anomaly_std_dev_threshold = self.config.get('anomaly_std_dev_threshold', 2.0)
+        self.latency_window_size = self.config.get("latency_window_size", 10)
+        self.anomaly_std_dev_threshold = self.config.get(
+            "anomaly_std_dev_threshold", 2.0
+        )
 
         # State management
         self.state = DiagnosticState()
@@ -184,7 +190,7 @@ class DiagnosticsManager:
                 error_result = HealthCheckResult(
                     component=component_name,
                     status=HealthStatus.CRITICAL,
-                    message=f"Health check failed: {str(e)}"
+                    message=f"Health check failed: {str(e)}",
                 )
                 results.append(error_result)
                 self.state.component_statuses[component_name] = error_result
@@ -208,7 +214,9 @@ class DiagnosticsManager:
 
         return self.state
 
-    def _calculate_overall_status(self, results: List[HealthCheckResult]) -> HealthStatus:
+    def _calculate_overall_status(
+        self, results: List[HealthCheckResult]
+    ) -> HealthStatus:
         """Calculate overall system health status from individual results."""
         if any(r.status == HealthStatus.CRITICAL for r in results):
             return HealthStatus.CRITICAL
@@ -246,13 +254,15 @@ class DiagnosticsManager:
                 "metric": anomaly.metric,
                 "value": anomaly.value,
                 "threshold": anomaly.threshold,
-                "severity": anomaly.severity.value
-            }
+                "severity": anomaly.severity.value,
+            },
         )
 
         await self.event_bus.publish_event(alert_event)
 
-    async def _log_health_check_results(self, results: List[HealthCheckResult], total_time: float) -> None:
+    async def _log_health_check_results(
+        self, results: List[HealthCheckResult], total_time: float
+    ) -> None:
         """Log health check results."""
         status_counts = {}
         for result in results:
@@ -265,13 +275,15 @@ class DiagnosticsManager:
             "total_time_ms": round(total_time, 2),
             "check_count": self.state.check_count,
             "error_count": self.state.error_count,
-            "anomaly_count": self.state.anomaly_count
+            "anomaly_count": self.state.anomaly_count,
         }
 
         if self.state.overall_status == HealthStatus.CRITICAL:
             self.logger.error("Health check completed", extra={"health_data": log_data})
         elif self.state.overall_status == HealthStatus.DEGRADED:
-            self.logger.warning("Health check completed", extra={"health_data": log_data})
+            self.logger.warning(
+                "Health check completed", extra={"health_data": log_data}
+            )
         else:
             self.logger.info("Health check completed", extra={"health_data": log_data})
 
@@ -283,31 +295,36 @@ class DiagnosticsManager:
         critical_components = [r for r in results if r.status == HealthStatus.CRITICAL]
 
         alert_message = {
-            "embeds": [{
-                "title": "🚨 CRITICAL SYSTEM ALERT",
-                "description": f"System health status: {self.state.overall_status.value.upper()}",
-                "color": 15158332,  # Red color
-                "fields": [
-                    {
-                        "name": "Critical Components",
-                        "value": "\n".join([f"• {r.component}: {r.message}" for r in critical_components[:5]]),
-                        "inline": False
-                    },
-                    {
-                        "name": "Timestamp",
-                        "value": datetime.now().isoformat(),
-                        "inline": True
-                    },
-                    {
-                        "name": "Check Count",
-                        "value": str(self.state.check_count),
-                        "inline": True
-                    }
-                ],
-                "footer": {
-                    "text": "Trading Framework Diagnostics"
+            "embeds": [
+                {
+                    "title": "🚨 CRITICAL SYSTEM ALERT",
+                    "description": f"System health status: {self.state.overall_status.value.upper()}",
+                    "color": 15158332,  # Red color
+                    "fields": [
+                        {
+                            "name": "Critical Components",
+                            "value": "\n".join(
+                                [
+                                    f"• {r.component}: {r.message}"
+                                    for r in critical_components[:5]
+                                ]
+                            ),
+                            "inline": False,
+                        },
+                        {
+                            "name": "Timestamp",
+                            "value": datetime.now().isoformat(),
+                            "inline": True,
+                        },
+                        {
+                            "name": "Check Count",
+                            "value": str(self.state.check_count),
+                            "inline": True,
+                        },
+                    ],
+                    "footer": {"text": "Trading Framework Diagnostics"},
                 }
-            }]
+            ]
         }
 
         try:
@@ -315,12 +332,14 @@ class DiagnosticsManager:
                 async with session.post(
                     self.discord_webhook_url,
                     json=alert_message,
-                    timeout=aiohttp.ClientTimeout(total=10)
+                    timeout=aiohttp.ClientTimeout(total=10),
                 ) as response:
                     if response.status == 204:
                         logger.info("Critical alert sent to Discord")
                     else:
-                        logger.error(f"Failed to send Discord alert: HTTP {response.status}")
+                        logger.error(
+                            f"Failed to send Discord alert: HTTP {response.status}"
+                        )
 
         except Exception as e:
             logger.exception(f"Error sending Discord alert: {e}")
@@ -350,19 +369,23 @@ class DiagnosticsManager:
         """Get current health status summary."""
         return {
             "overall_status": self.state.overall_status.value,
-            "last_check": self.state.last_check.isoformat() if self.state.last_check else None,
+            "last_check": self.state.last_check.isoformat()
+            if self.state.last_check
+            else None,
             "check_count": self.state.check_count,
             "error_count": self.state.error_count,
             "anomaly_count": self.state.anomaly_count,
             "component_count": len(self.state.component_statuses),
-            "running": self._running
+            "running": self._running,
         }
 
     def get_detailed_status(self) -> Dict[str, Any]:
         """Get detailed health status including all components."""
         return {
             "overall_status": self.state.overall_status.value,
-            "last_check": self.state.last_check.isoformat() if self.state.last_check else None,
+            "last_check": self.state.last_check.isoformat()
+            if self.state.last_check
+            else None,
             "check_count": self.state.check_count,
             "error_count": self.state.error_count,
             "anomaly_count": self.state.anomaly_count,
@@ -371,7 +394,7 @@ class DiagnosticsManager:
                     "status": result.status.value,
                     "latency_ms": result.latency_ms,
                     "message": result.message,
-                    "timestamp": result.timestamp.isoformat()
+                    "timestamp": result.timestamp.isoformat(),
                 }
                 for name, result in self.state.component_statuses.items()
             },
@@ -383,26 +406,29 @@ class DiagnosticsManager:
                     "threshold": a.threshold,
                     "severity": a.severity.value,
                     "description": a.description,
-                    "timestamp": a.timestamp.isoformat()
+                    "timestamp": a.timestamp.isoformat(),
                 }
                 for a in self.state.recent_anomalies[-10:]  # Last 10 anomalies
-            ]
+            ],
         }
 
 
 # Built-in health check functions
 
-async def check_api_connectivity(base_url: str, timeout_ms: int = 5000) -> HealthCheckResult:
+
+async def check_api_connectivity(
+    base_url: str, timeout_ms: int = 5000
+) -> HealthCheckResult:
     """
     Check API connectivity and response time.
-    
+
     This function makes HTTP requests to check API availability and handles
     different failure scenarios including timeouts, connection errors, and DNS failures.
-    
+
     Args:
         base_url: The URL to check connectivity to
         timeout_ms: Timeout in milliseconds for the request
-        
+
     Returns:
         HealthCheckResult with connectivity status, latency, and details
     """
@@ -411,8 +437,7 @@ async def check_api_connectivity(base_url: str, timeout_ms: int = 5000) -> Healt
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                base_url,
-                timeout=aiohttp.ClientTimeout(total=timeout_ms/1000)
+                base_url, timeout=aiohttp.ClientTimeout(total=timeout_ms / 1000)
             ) as response:
                 latency = (time.time() - start_time) * 1000
 
@@ -422,7 +447,7 @@ async def check_api_connectivity(base_url: str, timeout_ms: int = 5000) -> Healt
                         status=HealthStatus.HEALTHY,
                         latency_ms=latency,
                         message=f"API responsive ({latency:.1f}ms)",
-                        details={"status_code": response.status, "url": base_url}
+                        details={"status_code": response.status, "url": base_url},
                     )
                 else:
                     return HealthCheckResult(
@@ -430,7 +455,7 @@ async def check_api_connectivity(base_url: str, timeout_ms: int = 5000) -> Healt
                         status=HealthStatus.DEGRADED,
                         latency_ms=latency,
                         message=f"API returned status {response.status} ({latency:.1f}ms)",
-                        details={"status_code": response.status, "url": base_url}
+                        details={"status_code": response.status, "url": base_url},
                     )
 
     except asyncio.TimeoutError:
@@ -440,20 +465,27 @@ async def check_api_connectivity(base_url: str, timeout_ms: int = 5000) -> Healt
             status=HealthStatus.CRITICAL,
             latency_ms=latency,
             message=f"API timeout after {latency:.1f}ms",
-            details={"error": "timeout", "url": base_url}
+            details={"error": "timeout", "url": base_url},
         )
 
     except aiohttp.ClientConnectorError as e:
         latency = (time.time() - start_time) * 1000
         # Handle specific DNS resolution errors
         error_msg = str(e)
-        if "getaddrinfo failed" in error_msg or "Name or service not known" in error_msg:
+        if (
+            "getaddrinfo failed" in error_msg
+            or "Name or service not known" in error_msg
+        ):
             return HealthCheckResult(
                 component="api_connectivity",
                 status=HealthStatus.CRITICAL,
                 latency_ms=latency,
                 message="API connection failed: Connection failed",
-                details={"error": "Connection failed", "url": base_url, "original_error": str(e)}
+                details={
+                    "error": "Connection failed",
+                    "url": base_url,
+                    "original_error": str(e),
+                },
             )
         else:
             return HealthCheckResult(
@@ -461,7 +493,11 @@ async def check_api_connectivity(base_url: str, timeout_ms: int = 5000) -> Healt
                 status=HealthStatus.CRITICAL,
                 latency_ms=latency,
                 message="API connection failed: Connection failed",
-                details={"error": "Connection failed", "url": base_url, "original_error": str(e)}
+                details={
+                    "error": "Connection failed",
+                    "url": base_url,
+                    "original_error": str(e),
+                },
             )
 
     except aiohttp.ClientConnectionError as e:
@@ -471,7 +507,11 @@ async def check_api_connectivity(base_url: str, timeout_ms: int = 5000) -> Healt
             status=HealthStatus.CRITICAL,
             latency_ms=latency,
             message="API connection failed: Connection failed",
-            details={"error": "Connection failed", "url": base_url, "original_error": str(e)}
+            details={
+                "error": "Connection failed",
+                "url": base_url,
+                "original_error": str(e),
+            },
         )
 
     except Exception as e:
@@ -481,7 +521,11 @@ async def check_api_connectivity(base_url: str, timeout_ms: int = 5000) -> Healt
             status=HealthStatus.CRITICAL,
             latency_ms=latency,
             message=f"API request failed: {type(e).__name__}",
-            details={"error": type(e).__name__, "url": base_url, "original_error": str(e)}
+            details={
+                "error": type(e).__name__,
+                "url": base_url,
+                "original_error": str(e),
+            },
         )
 
 
@@ -494,14 +538,14 @@ async def check_data_integrity(data_feed: Any) -> HealthCheckResult:
             component="data_integrity",
             status=HealthStatus.HEALTHY,
             message="Data integrity check passed",
-            details={"missing_data_points": 0, "irregular_timestamps": 0}
+            details={"missing_data_points": 0, "irregular_timestamps": 0},
         )
     except Exception as e:
         return HealthCheckResult(
             component="data_integrity",
             status=HealthStatus.CRITICAL,
             message=f"Data integrity check failed: {str(e)}",
-            details={"error": str(e)}
+            details={"error": str(e)},
         )
 
 
@@ -519,7 +563,7 @@ async def check_strategy_responsiveness(strategy_manager: Any) -> HealthCheckRes
             status=HealthStatus.HEALTHY,
             latency_ms=latency,
             message=f"Strategy responsive ({latency:.1f}ms)",
-            details={"active_strategies": 0}  # Would be populated from actual manager
+            details={"active_strategies": 0},  # Would be populated from actual manager
         )
     except Exception as e:
         latency = (time.time() - start_time) * 1000
@@ -528,13 +572,16 @@ async def check_strategy_responsiveness(strategy_manager: Any) -> HealthCheckRes
             status=HealthStatus.CRITICAL,
             latency_ms=latency,
             message=f"Strategy check failed: {str(e)}",
-            details={"error": str(e)}
+            details={"error": str(e)},
         )
 
 
 # Built-in anomaly detectors
 
-async def detect_latency_anomalies(diagnostics: DiagnosticsManager) -> List[AnomalyDetection]:
+
+async def detect_latency_anomalies(
+    diagnostics: DiagnosticsManager,
+) -> List[AnomalyDetection]:
     """Detect anomalous latency spikes."""
     anomalies = []
 
@@ -570,7 +617,9 @@ async def detect_latency_anomalies(diagnostics: DiagnosticsManager) -> List[Anom
                 # Determine severity based on magnitude of spike
                 if result.latency_ms > mean_latency * 10:  # Severe spike (10x baseline)
                     severity = AlertSeverity.CRITICAL
-                elif result.latency_ms > mean_latency * 2.4:  # Moderate spike (2.4x baseline)
+                elif (
+                    result.latency_ms > mean_latency * 2.4
+                ):  # Moderate spike (2.4x baseline)
                     severity = AlertSeverity.WARNING
                 else:  # Mild spike
                     severity = AlertSeverity.INFO
@@ -581,7 +630,7 @@ async def detect_latency_anomalies(diagnostics: DiagnosticsManager) -> List[Anom
                     value=result.latency_ms,
                     threshold=anomaly_threshold,
                     severity=severity,
-                    description=f"Latency spike detected: {result.latency_ms:.1f}ms (threshold: {anomaly_threshold:.1f}ms)"
+                    description=f"Latency spike detected: {result.latency_ms:.1f}ms (threshold: {anomaly_threshold:.1f}ms)",
                 )
                 anomalies.append(anomaly)
 
@@ -592,7 +641,9 @@ async def detect_latency_anomalies(diagnostics: DiagnosticsManager) -> List[Anom
     return anomalies
 
 
-async def detect_drawdown_anomalies(portfolio_manager: Any, diagnostics: DiagnosticsManager) -> List[AnomalyDetection]:
+async def detect_drawdown_anomalies(
+    portfolio_manager: Any, diagnostics: DiagnosticsManager
+) -> List[AnomalyDetection]:
     """Detect abnormal drawdown spikes."""
     anomalies = []
 
@@ -617,6 +668,8 @@ def get_diagnostics_manager() -> DiagnosticsManager:
     return _global_diagnostics_manager
 
 
-def create_diagnostics_manager(config: Optional[Dict[str, Any]] = None) -> DiagnosticsManager:
+def create_diagnostics_manager(
+    config: Optional[Dict[str, Any]] = None
+) -> DiagnosticsManager:
     """Create a new diagnostics manager instance."""
     return DiagnosticsManager(config)

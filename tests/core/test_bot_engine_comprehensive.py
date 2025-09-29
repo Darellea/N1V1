@@ -6,26 +6,22 @@ integration with components, error handling, and edge cases.
 """
 
 import asyncio
-import pytest
-import pandas as pd
-import numpy as np
 import time
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
-from core.bot_engine import (
-    BotEngine, BotState, TradingMode, now_ms
-)
-from data.data_fetcher import DataFetcher
+import pandas as pd
+import pytest
+
+from core.bot_engine import BotEngine, TradingMode, now_ms
+from core.contracts import SignalStrength, SignalType, TradingSignal
 from core.order_manager import OrderManager
 from core.signal_router import SignalRouter
-from risk.risk_manager import RiskManager
-from core.timeframe_manager import TimeframeManager
 from core.task_manager import TaskManager
+from core.timeframe_manager import TimeframeManager
+from data.data_fetcher import DataFetcher
 from notifier.discord_bot import DiscordNotifier
+from risk.risk_manager import RiskManager
 from strategies.base_strategy import BaseStrategy
-from core.contracts import TradingSignal, SignalType, SignalStrength
 
 
 class TestBotEngineInitialization:
@@ -40,29 +36,19 @@ class TestBotEngineInitialization:
                 "portfolio_mode": False,
                 "symbol": "BTC/USDT",
                 "initial_balance": 10000.0,
-                "pair_allocation": {"BTC/USDT": 0.6, "ETH/USDT": 0.4}
+                "pair_allocation": {"BTC/USDT": 0.6, "ETH/USDT": 0.4},
             },
-            "exchange": {
-                "markets": ["BTC/USDT"],
-                "base_currency": "USDT"
-            },
+            "exchange": {"markets": ["BTC/USDT"], "base_currency": "USDT"},
             "strategies": {
                 "active_strategies": ["TestStrategy"],
-                "strategy_config": {
-                    "TestStrategy": {"param1": "value1"}
-                }
+                "strategy_config": {"TestStrategy": {"param1": "value1"}},
             },
-            "notifications": {
-                "discord": {"enabled": False}
-            },
-            "monitoring": {
-                "update_interval": 1.0,
-                "terminal_display": False
-            },
+            "notifications": {"discord": {"enabled": False}},
+            "monitoring": {"update_interval": 1.0, "terminal_display": False},
             "risk_management": {},
             "backtesting": {"timeframe": "1h"},
             "cache": {"enabled": False},
-            "multi_timeframe": {}
+            "multi_timeframe": {},
         }
 
     @pytest.fixture
@@ -75,7 +61,7 @@ class TestBotEngineInitialization:
             "signal_router": Mock(spec=SignalRouter),
             "timeframe_manager": Mock(spec=TimeframeManager),
             "notifier": Mock(spec=DiscordNotifier),
-            "task_manager": Mock(spec=TaskManager)
+            "task_manager": Mock(spec=TaskManager),
         }
 
     def test_initialization_with_minimal_config(self, mock_config):
@@ -145,9 +131,9 @@ class TestBotEngineInitialization:
         """Test cache initialization when enabled."""
         mock_config["cache"]["enabled"] = True
 
-        with patch('core.bot_engine.initialize_cache') as mock_init_cache, \
-             patch('core.bot_engine.close_cache') as mock_close_cache:
-
+        with patch("core.bot_engine.initialize_cache") as mock_init_cache, patch(
+            "core.bot_engine.close_cache"
+        ) as mock_close_cache:
             mock_init_cache.return_value = True
 
             engine = BotEngine(mock_config)
@@ -160,7 +146,7 @@ class TestBotEngineInitialization:
         """Test cache initialization when disabled."""
         mock_config["cache"]["enabled"] = False
 
-        with patch('core.bot_engine.initialize_cache') as mock_init_cache:
+        with patch("core.bot_engine.initialize_cache") as mock_init_cache:
             engine = BotEngine(mock_config)
             await engine._initialize_cache()
 
@@ -169,12 +155,20 @@ class TestBotEngineInitialization:
     @pytest.mark.asyncio
     async def test_initialize_core_modules(self, mock_config, mock_components):
         """Test core modules initialization."""
-        with patch('core.bot_engine.DataFetcher', return_value=mock_components["data_fetcher"]), \
-             patch('core.bot_engine.OrderManager', return_value=mock_components["order_manager"]), \
-             patch('core.bot_engine.RiskManager', return_value=mock_components["risk_manager"]), \
-             patch('core.bot_engine.SignalRouter', return_value=mock_components["signal_router"]), \
-             patch('core.bot_engine.TimeframeManager', return_value=mock_components["timeframe_manager"]):
-
+        with patch(
+            "core.bot_engine.DataFetcher", return_value=mock_components["data_fetcher"]
+        ), patch(
+            "core.bot_engine.OrderManager",
+            return_value=mock_components["order_manager"],
+        ), patch(
+            "core.bot_engine.RiskManager", return_value=mock_components["risk_manager"]
+        ), patch(
+            "core.bot_engine.SignalRouter",
+            return_value=mock_components["signal_router"],
+        ), patch(
+            "core.bot_engine.TimeframeManager",
+            return_value=mock_components["timeframe_manager"],
+        ):
             mock_components["data_fetcher"].initialize = AsyncMock()
             mock_components["timeframe_manager"].initialize = AsyncMock()
             mock_components["order_manager"].initialize_portfolio = AsyncMock()
@@ -197,7 +191,10 @@ class TestBotEngineInitialization:
         mock_strategy = Mock(spec=BaseStrategy)
         mock_strategy.initialize = AsyncMock()
 
-        with patch('core.bot_engine.STRATEGY_MAP', {"TestStrategy": Mock(return_value=mock_strategy)}):
+        with patch(
+            "core.bot_engine.STRATEGY_MAP",
+            {"TestStrategy": Mock(return_value=mock_strategy)},
+        ):
             engine = BotEngine(mock_config)
             await engine._initialize_strategies()
 
@@ -208,9 +205,9 @@ class TestBotEngineInitialization:
     @pytest.mark.asyncio
     async def test_initialize_strategies_unknown_strategy(self, mock_config):
         """Test initialization with unknown strategy."""
-        with patch('core.bot_engine.STRATEGY_MAP', {}), \
-             patch('core.bot_engine.logger') as mock_logger:
-
+        with patch("core.bot_engine.STRATEGY_MAP", {}), patch(
+            "core.bot_engine.logger"
+        ) as mock_logger:
             engine = BotEngine(mock_config)
             await engine._initialize_strategies()
 
@@ -222,7 +219,9 @@ class TestBotEngineInitialization:
         """Test notification system initialization when enabled."""
         mock_config["notifications"]["discord"]["enabled"] = True
 
-        with patch('core.bot_engine.DiscordNotifier', return_value=mock_components["notifier"]):
+        with patch(
+            "core.bot_engine.DiscordNotifier", return_value=mock_components["notifier"]
+        ):
             mock_components["notifier"].initialize = AsyncMock()
 
             engine = BotEngine(mock_config)
@@ -236,7 +235,7 @@ class TestBotEngineInitialization:
         """Test notification system initialization when disabled."""
         mock_config["notifications"]["discord"]["enabled"] = False
 
-        with patch('core.bot_engine.DiscordNotifier') as mock_notifier_class:
+        with patch("core.bot_engine.DiscordNotifier") as mock_notifier_class:
             engine = BotEngine(mock_config)
             await engine._initialize_notifications()
 
@@ -252,35 +251,41 @@ class TestBotEngineInitialization:
 
         assert engine.live_display is None
 
-    @pytest.mark.parametrize("invalid_balance,expected_default", [
-        ("invalid", 1000.0),
-        (None, 1000.0),
-        (-100, 1000.0),
-        (0, 1000.0),
-    ])
+    @pytest.mark.parametrize(
+        "invalid_balance,expected_default",
+        [
+            ("invalid", 1000.0),
+            (None, 1000.0),
+            (-100, 1000.0),
+            (0, 1000.0),
+        ],
+    )
     @pytest.mark.asyncio
-    async def test_initialization_with_invalid_balance(self, invalid_balance, expected_default):
+    async def test_initialization_with_invalid_balance(
+        self, invalid_balance, expected_default
+    ):
         """Test initialization with various invalid balance values."""
         config = {
             "environment": {"mode": "paper"},
             "trading": {
                 "portfolio_mode": False,
                 "symbol": "BTC/USDT",
-                "initial_balance": invalid_balance
+                "initial_balance": invalid_balance,
             },
             "exchange": {"markets": ["BTC/USDT"], "base_currency": "USDT"},
             "strategies": {"active_strategies": [], "strategy_config": {}},
             "notifications": {"discord": {"enabled": False}},
             "monitoring": {"terminal_display": False, "update_interval": 1.0},
             "risk_management": {},
-            "backtesting": {"timeframe": "1h"}
+            "backtesting": {"timeframe": "1h"},
         }
-        with patch('core.bot_engine.DataFetcher'), \
-             patch('core.bot_engine.OrderManager'), \
-             patch('core.bot_engine.RiskManager'), \
-             patch('core.bot_engine.SignalRouter'), \
-             patch('core.bot_engine.DiscordNotifier', return_value=None):
-
+        with patch("core.bot_engine.DataFetcher"), patch(
+            "core.bot_engine.OrderManager"
+        ), patch("core.bot_engine.RiskManager"), patch(
+            "core.bot_engine.SignalRouter"
+        ), patch(
+            "core.bot_engine.DiscordNotifier", return_value=None
+        ):
             engine = BotEngine(config)
             assert engine.starting_balance == expected_default
 
@@ -289,12 +294,19 @@ class TestBotEngineInitialization:
         """Test initialization with Discord notifications enabled."""
         mock_config["notifications"]["discord"]["enabled"] = True
 
-        with patch('core.bot_engine.DataFetcher', return_value=mock_components["data_fetcher"]), \
-             patch('core.bot_engine.OrderManager', return_value=mock_components["order_manager"]), \
-             patch('core.bot_engine.RiskManager', return_value=mock_components["risk_manager"]), \
-             patch('core.bot_engine.SignalRouter', return_value=mock_components["signal_router"]), \
-             patch('core.bot_engine.DiscordNotifier', return_value=mock_components["notifier"]):
-
+        with patch(
+            "core.bot_engine.DataFetcher", return_value=mock_components["data_fetcher"]
+        ), patch(
+            "core.bot_engine.OrderManager",
+            return_value=mock_components["order_manager"],
+        ), patch(
+            "core.bot_engine.RiskManager", return_value=mock_components["risk_manager"]
+        ), patch(
+            "core.bot_engine.SignalRouter",
+            return_value=mock_components["signal_router"],
+        ), patch(
+            "core.bot_engine.DiscordNotifier", return_value=mock_components["notifier"]
+        ):
             engine = BotEngine(mock_config)
             await engine.initialize()
 
@@ -302,7 +314,9 @@ class TestBotEngineInitialization:
             mock_components["notifier"].initialize.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_initialize_strategies_with_active_strategies(self, mock_config, mock_components):
+    async def test_initialize_strategies_with_active_strategies(
+        self, mock_config, mock_components
+    ):
         """Test initializing strategies with active strategies."""
         mock_config["strategies"]["active_strategies"] = ["test_strategy"]
         mock_config["strategies"]["strategy_config"] = {"test_strategy": {}}
@@ -310,39 +324,63 @@ class TestBotEngineInitialization:
         mock_strategy = Mock(spec=BaseStrategy)
         mock_strategy.initialize = AsyncMock()
 
-        with patch('core.bot_engine.DataFetcher', return_value=mock_components["data_fetcher"]), \
-             patch('core.bot_engine.OrderManager', return_value=mock_components["order_manager"]), \
-             patch('core.bot_engine.RiskManager', return_value=mock_components["risk_manager"]), \
-             patch('core.bot_engine.SignalRouter', return_value=mock_components["signal_router"]), \
-             patch('core.bot_engine.DiscordNotifier', return_value=None), \
-             patch('core.bot_engine.STRATEGY_MAP', {"test_strategy": Mock(return_value=mock_strategy)}):
-
+        with patch(
+            "core.bot_engine.DataFetcher", return_value=mock_components["data_fetcher"]
+        ), patch(
+            "core.bot_engine.OrderManager",
+            return_value=mock_components["order_manager"],
+        ), patch(
+            "core.bot_engine.RiskManager", return_value=mock_components["risk_manager"]
+        ), patch(
+            "core.bot_engine.SignalRouter",
+            return_value=mock_components["signal_router"],
+        ), patch(
+            "core.bot_engine.DiscordNotifier", return_value=None
+        ), patch(
+            "core.bot_engine.STRATEGY_MAP",
+            {"test_strategy": Mock(return_value=mock_strategy)},
+        ):
             engine = BotEngine(mock_config)
             await engine.initialize()
 
             assert len(engine.strategies) == 1
             assert engine.strategies[0] == mock_strategy
-            mock_strategy.initialize.assert_called_once_with(mock_components["data_fetcher"])
+            mock_strategy.initialize.assert_called_once_with(
+                mock_components["data_fetcher"]
+            )
 
     @pytest.mark.asyncio
-    async def test_initialize_strategies_with_unknown_strategy(self, mock_config, mock_components):
+    async def test_initialize_strategies_with_unknown_strategy(
+        self, mock_config, mock_components
+    ):
         """Test initializing strategies with unknown strategy name."""
         mock_config["strategies"]["active_strategies"] = ["unknown_strategy"]
         mock_config["strategies"]["strategy_config"] = {"unknown_strategy": {}}
 
-        with patch('core.bot_engine.DataFetcher', return_value=mock_components["data_fetcher"]), \
-             patch('core.bot_engine.OrderManager', return_value=mock_components["order_manager"]), \
-             patch('core.bot_engine.RiskManager', return_value=mock_components["risk_manager"]), \
-             patch('core.bot_engine.SignalRouter', return_value=mock_components["signal_router"]), \
-             patch('core.bot_engine.DiscordNotifier', return_value=None), \
-             patch('core.bot_engine.STRATEGY_MAP', {}), \
-             patch('core.bot_engine.logger') as mock_logger:
-
+        with patch(
+            "core.bot_engine.DataFetcher", return_value=mock_components["data_fetcher"]
+        ), patch(
+            "core.bot_engine.OrderManager",
+            return_value=mock_components["order_manager"],
+        ), patch(
+            "core.bot_engine.RiskManager", return_value=mock_components["risk_manager"]
+        ), patch(
+            "core.bot_engine.SignalRouter",
+            return_value=mock_components["signal_router"],
+        ), patch(
+            "core.bot_engine.DiscordNotifier", return_value=None
+        ), patch(
+            "core.bot_engine.STRATEGY_MAP", {}
+        ), patch(
+            "core.bot_engine.logger"
+        ) as mock_logger:
             engine = BotEngine(mock_config)
             await engine.initialize()
 
             assert len(engine.strategies) == 0
-            mock_logger.warning.assert_called_once_with("Strategy not found: unknown_strategy")
+            mock_logger.warning.assert_called_once_with(
+                "Strategy not found: unknown_strategy"
+            )
 
 
 class TestBotEngineTradingCycle:
@@ -353,13 +391,17 @@ class TestBotEngineTradingCycle:
         """Create mock configuration."""
         return {
             "environment": {"mode": "paper"},
-            "trading": {"portfolio_mode": False, "symbol": "BTC/USDT", "initial_balance": 10000.0},
+            "trading": {
+                "portfolio_mode": False,
+                "symbol": "BTC/USDT",
+                "initial_balance": 10000.0,
+            },
             "exchange": {"markets": ["BTC/USDT"], "base_currency": "USDT"},
             "strategies": {"active_strategies": [], "strategy_config": {}},
             "notifications": {"discord": {"enabled": False}},
             "monitoring": {"update_interval": 1.0},
             "risk_management": {},
-            "backtesting": {"timeframe": "1h"}
+            "backtesting": {"timeframe": "1h"},
         }
 
     @pytest.fixture
@@ -390,13 +432,15 @@ class TestBotEngineTradingCycle:
         mock_engine.pairs = ["BTC/USDT"]
 
         # Mock data fetcher response
-        mock_data = pd.DataFrame({
-            'open': [100, 101, 102],
-            'high': [105, 106, 107],
-            'low': [95, 96, 97],
-            'close': [102, 103, 104],
-            'volume': [1000, 1100, 1200]
-        })
+        mock_data = pd.DataFrame(
+            {
+                "open": [100, 101, 102],
+                "high": [105, 106, 107],
+                "low": [95, 96, 97],
+                "close": [102, 103, 104],
+                "volume": [1000, 1100, 1200],
+            }
+        )
         mock_engine.data_fetcher.get_historical_data.return_value = mock_data
 
         result = await mock_engine._fetch_market_data()
@@ -413,7 +457,7 @@ class TestBotEngineTradingCycle:
         # Mock realtime data response
         mock_data = {
             "BTC/USDT": {"price": 50000, "volume": 100},
-            "ETH/USDT": {"price": 3000, "volume": 200}
+            "ETH/USDT": {"price": 3000, "volume": 200},
         }
         mock_engine.data_fetcher.get_realtime_data = AsyncMock(return_value=mock_data)
 
@@ -421,7 +465,9 @@ class TestBotEngineTradingCycle:
 
         assert "BTC/USDT" in result
         assert "ETH/USDT" in result
-        mock_engine.data_fetcher.get_realtime_data.assert_called_once_with(["BTC/USDT", "ETH/USDT"])
+        mock_engine.data_fetcher.get_realtime_data.assert_called_once_with(
+            ["BTC/USDT", "ETH/USDT"]
+        )
 
     @pytest.mark.asyncio
     async def test_fetch_market_data_with_cache(self, mock_engine):
@@ -430,7 +476,9 @@ class TestBotEngineTradingCycle:
         mock_engine.cache_timestamp = time.time()
         mock_engine.cache_ttl = 100  # Long TTL
 
-        with patch('core.bot_engine.time.time', return_value=mock_engine.cache_timestamp + 10):
+        with patch(
+            "core.bot_engine.time.time", return_value=mock_engine.cache_timestamp + 10
+        ):
             result = await mock_engine._fetch_market_data()
 
             assert result == {"BTC/USDT": "cached_data"}
@@ -438,17 +486,28 @@ class TestBotEngineTradingCycle:
             mock_engine.data_fetcher.get_historical_data.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_trading_cycle_with_portfolio_mode(self, mock_config, mock_data_fetcher, mock_order_manager, mock_risk_manager, mock_signal_router):
+    async def test_trading_cycle_with_portfolio_mode(
+        self,
+        mock_config,
+        mock_data_fetcher,
+        mock_order_manager,
+        mock_risk_manager,
+        mock_signal_router,
+    ):
         """Test trading cycle in portfolio mode."""
         config = mock_config.copy()
         config["trading"]["portfolio_mode"] = True
         config["exchange"]["markets"] = ["BTC/USDT", "ETH/USDT"]
 
-        with patch('core.bot_engine.DataFetcher', return_value=mock_data_fetcher), \
-             patch('core.bot_engine.OrderManager', return_value=mock_order_manager), \
-             patch('core.bot_engine.RiskManager', return_value=mock_risk_manager), \
-             patch('core.bot_engine.SignalRouter', return_value=mock_signal_router):
-
+        with patch(
+            "core.bot_engine.DataFetcher", return_value=mock_data_fetcher
+        ), patch(
+            "core.bot_engine.OrderManager", return_value=mock_order_manager
+        ), patch(
+            "core.bot_engine.RiskManager", return_value=mock_risk_manager
+        ), patch(
+            "core.bot_engine.SignalRouter", return_value=mock_signal_router
+        ):
             engine = BotEngine(config)
             engine.data_fetcher = mock_data_fetcher
             engine.order_manager = mock_order_manager
@@ -465,25 +524,42 @@ class TestBotEngineTradingCycle:
             mock_signal_router.block_signals = False
 
             # Mock realtime data
-            mock_data_fetcher.get_realtime_data = AsyncMock(return_value={"BTC/USDT": MagicMock(), "ETH/USDT": MagicMock()})
+            mock_data_fetcher.get_realtime_data = AsyncMock(
+                return_value={"BTC/USDT": MagicMock(), "ETH/USDT": MagicMock()}
+            )
 
             await engine._trading_cycle()
 
-            mock_data_fetcher.get_realtime_data.assert_called_once_with(["BTC/USDT", "ETH/USDT"])
+            mock_data_fetcher.get_realtime_data.assert_called_once_with(
+                ["BTC/USDT", "ETH/USDT"]
+            )
 
     @pytest.mark.asyncio
-    async def test_trading_cycle_with_safe_mode_active(self, mock_config, mock_data_fetcher, mock_order_manager, mock_risk_manager, mock_signal_router, mock_notifier):
+    async def test_trading_cycle_with_safe_mode_active(
+        self,
+        mock_config,
+        mock_data_fetcher,
+        mock_order_manager,
+        mock_risk_manager,
+        mock_signal_router,
+        mock_notifier,
+    ):
         """Test trading cycle when global safe mode is active."""
         # Enable Discord notifications in config
         config = mock_config.copy()
         config["notifications"]["discord"]["enabled"] = True
 
-        with patch('core.bot_engine.DataFetcher', return_value=mock_data_fetcher), \
-             patch('core.bot_engine.OrderManager', return_value=mock_order_manager), \
-             patch('core.bot_engine.RiskManager', return_value=mock_risk_manager), \
-             patch('core.bot_engine.SignalRouter', return_value=mock_signal_router), \
-             patch('core.bot_engine.DiscordNotifier', return_value=mock_notifier):
-
+        with patch(
+            "core.bot_engine.DataFetcher", return_value=mock_data_fetcher
+        ), patch(
+            "core.bot_engine.OrderManager", return_value=mock_order_manager
+        ), patch(
+            "core.bot_engine.RiskManager", return_value=mock_risk_manager
+        ), patch(
+            "core.bot_engine.SignalRouter", return_value=mock_signal_router
+        ), patch(
+            "core.bot_engine.DiscordNotifier", return_value=mock_notifier
+        ):
             engine = BotEngine(config)
             engine.data_fetcher = mock_data_fetcher
             engine.order_manager = mock_order_manager
@@ -502,7 +578,9 @@ class TestBotEngineTradingCycle:
             await engine._trading_cycle()
 
             # Should not proceed to trading
-            mock_notifier.send_alert.assert_called_once_with("Bot entering SAFE MODE: suspending new trades.")
+            mock_notifier.send_alert.assert_called_once_with(
+                "Bot entering SAFE MODE: suspending new trades."
+            )
 
     @pytest.mark.asyncio
     async def test_check_safe_mode_conditions_normal(self, mock_engine):
@@ -523,7 +601,7 @@ class TestBotEngineTradingCycle:
         mock_engine.risk_manager.block_signals = False
         mock_engine.signal_router.block_signals = False
 
-        with patch('core.bot_engine.logger') as mock_logger:
+        with patch("core.bot_engine.logger") as mock_logger:
             result = await mock_engine._check_safe_mode_conditions()
 
             assert result == True
@@ -535,14 +613,18 @@ class TestBotEngineTradingCycle:
         """Test signal generation from strategies."""
         # Create mock strategy
         mock_strategy = Mock()
-        mock_strategy.generate_signals = AsyncMock(return_value=[
-            TradingSignal("BTC/USDT", SignalType.BUY, SignalStrength.MODERATE, 50000, 1000)
-        ])
+        mock_strategy.generate_signals = AsyncMock(
+            return_value=[
+                TradingSignal(
+                    "BTC/USDT", SignalType.BUY, SignalStrength.MODERATE, 50000, 1000
+                )
+            ]
+        )
 
         mock_engine.strategies = [mock_strategy]
         mock_engine.pairs = ["BTC/USDT"]
 
-        market_data = {"BTC/USDT": pd.DataFrame({'close': [50000]})}
+        market_data = {"BTC/USDT": pd.DataFrame({"close": [50000]})}
 
         signals = await mock_engine._generate_signals(market_data)
 
@@ -552,11 +634,13 @@ class TestBotEngineTradingCycle:
     @pytest.mark.asyncio
     async def test_evaluate_risk_approved(self, mock_engine):
         """Test risk evaluation with approved signals."""
-        mock_signal = TradingSignal("BTC/USDT", SignalType.BUY, SignalStrength.MODERATE, 50000, 1000)
+        mock_signal = TradingSignal(
+            "BTC/USDT", SignalType.BUY, SignalStrength.MODERATE, 50000, 1000
+        )
         mock_engine.risk_manager.evaluate_signal = AsyncMock(return_value=True)
 
         signals = [mock_signal]
-        market_data = {"BTC/USDT": pd.DataFrame({'close': [50000]})}
+        market_data = {"BTC/USDT": pd.DataFrame({"close": [50000]})}
 
         approved_signals = await mock_engine._evaluate_risk(signals, market_data)
 
@@ -567,11 +651,13 @@ class TestBotEngineTradingCycle:
     @pytest.mark.asyncio
     async def test_evaluate_risk_rejected(self, mock_engine):
         """Test risk evaluation with rejected signals."""
-        mock_signal = TradingSignal("BTC/USDT", SignalType.BUY, SignalStrength.MODERATE, 50000, 1000)
+        mock_signal = TradingSignal(
+            "BTC/USDT", SignalType.BUY, SignalStrength.MODERATE, 50000, 1000
+        )
         mock_engine.risk_manager.evaluate_signal = AsyncMock(return_value=False)
 
         signals = [mock_signal]
-        market_data = {"BTC/USDT": pd.DataFrame({'close': [50000]})}
+        market_data = {"BTC/USDT": pd.DataFrame({"close": [50000]})}
 
         approved_signals = await mock_engine._evaluate_risk(signals, market_data)
 
@@ -581,7 +667,9 @@ class TestBotEngineTradingCycle:
     @pytest.mark.asyncio
     async def test_execute_orders_success(self, mock_engine):
         """Test successful order execution."""
-        mock_signal = TradingSignal("BTC/USDT", SignalType.BUY, SignalStrength.MODERATE, 50000, 1000)
+        mock_signal = TradingSignal(
+            "BTC/USDT", SignalType.BUY, SignalStrength.MODERATE, 50000, 1000
+        )
         mock_engine.order_manager.execute_order = AsyncMock(return_value={"pnl": 50.0})
 
         approved_signals = [mock_signal]
@@ -614,13 +702,17 @@ class TestBotEnginePerformanceTracking:
         """Create mock configuration."""
         return {
             "environment": {"mode": "paper"},
-            "trading": {"portfolio_mode": False, "symbol": "BTC/USDT", "initial_balance": 10000.0},
+            "trading": {
+                "portfolio_mode": False,
+                "symbol": "BTC/USDT",
+                "initial_balance": 10000.0,
+            },
             "exchange": {"markets": ["BTC/USDT"], "base_currency": "USDT"},
             "strategies": {"active_strategies": [], "strategy_config": {}},
             "notifications": {"discord": {"enabled": False}},
             "monitoring": {"update_interval": 1.0},
             "risk_management": {},
-            "backtesting": {"timeframe": "1h"}
+            "backtesting": {"timeframe": "1h"},
         }
 
     @pytest.fixture
@@ -658,12 +750,12 @@ class TestBotEnginePerformanceTracking:
         """Test performance metrics update for multiple trades."""
         mock_engine._update_performance_metrics(100.0)  # Win
         mock_engine._update_performance_metrics(-50.0)  # Loss
-        mock_engine._update_performance_metrics(75.0)   # Win
+        mock_engine._update_performance_metrics(75.0)  # Win
 
         assert mock_engine.performance_stats["total_pnl"] == 125.0
         assert mock_engine.performance_stats["wins"] == 2
         assert mock_engine.performance_stats["losses"] == 1
-        assert mock_engine.performance_stats["win_rate"] == 2/3
+        assert mock_engine.performance_stats["win_rate"] == 2 / 3
 
     def test_calculate_max_drawdown(self, mock_engine):
         """Test maximum drawdown calculation."""
@@ -685,7 +777,13 @@ class TestBotEnginePerformanceTracking:
     def test_calculate_sharpe_ratio(self, mock_engine):
         """Test Sharpe ratio calculation."""
         # Add some returns history
-        mock_engine.performance_stats["returns_history"] = [0.01, 0.005, -0.003, 0.008, 0.002]
+        mock_engine.performance_stats["returns_history"] = [
+            0.01,
+            0.005,
+            -0.003,
+            0.008,
+            0.002,
+        ]
 
         mock_engine._calculate_sharpe_ratio()
 
@@ -698,11 +796,7 @@ class TestBotEnginePerformanceTracking:
         """Test successful trade equity recording."""
         mock_engine.order_manager.get_equity = AsyncMock(return_value=10100.0)
 
-        order_result = {
-            "id": "test_trade_123",
-            "pnl": 100.0,
-            "symbol": "BTC/USDT"
-        }
+        order_result = {"id": "test_trade_123", "pnl": 100.0, "symbol": "BTC/USDT"}
 
         await mock_engine.record_trade_equity(order_result)
 
@@ -729,7 +823,9 @@ class TestBotEnginePerformanceTracking:
         assert record["equity"] == 10050.0  # 10000 + 50
 
     @pytest.mark.asyncio
-    async def test_record_trade_equity_backtest_mode(self, mock_config, mock_order_manager):
+    async def test_record_trade_equity_backtest_mode(
+        self, mock_config, mock_order_manager
+    ):
         """Test recording trade equity in backtest mode."""
         config = mock_config.copy()
         config["environment"]["mode"] = "backtest"
@@ -749,7 +845,9 @@ class TestBotEnginePerformanceTracking:
         assert record["equity"] == 1050.0  # starting_balance + total_pnl
 
     @pytest.mark.asyncio
-    async def test_check_global_safe_mode_activation(self, mock_config, mock_order_manager, mock_risk_manager, mock_signal_router):
+    async def test_check_global_safe_mode_activation(
+        self, mock_config, mock_order_manager, mock_risk_manager, mock_signal_router
+    ):
         """Test global safe mode activation."""
         engine = BotEngine(mock_config)
         engine.order_manager = mock_order_manager
@@ -796,7 +894,7 @@ class TestBotEnginePerformanceTracking:
             "id": "trade_123",
             "timestamp": 1640995200000,  # Example timestamp
             "symbol": "BTC/USDT",
-            "pnl": 150.0
+            "pnl": 150.0,
         }
 
         record = mock_engine._create_equity_record(order_result, 10150.0, 0.015)
@@ -830,13 +928,17 @@ class TestBotEngineStateManagement:
         """Create mock configuration."""
         return {
             "environment": {"mode": "paper"},
-            "trading": {"portfolio_mode": False, "symbol": "BTC/USDT", "initial_balance": 10000.0},
+            "trading": {
+                "portfolio_mode": False,
+                "symbol": "BTC/USDT",
+                "initial_balance": 10000.0,
+            },
             "exchange": {"markets": ["BTC/USDT"], "base_currency": "USDT"},
             "strategies": {"active_strategies": [], "strategy_config": {}},
             "notifications": {"discord": {"enabled": False}},
             "monitoring": {"update_interval": 1.0},
             "risk_management": {},
-            "backtesting": {"timeframe": "1h"}
+            "backtesting": {"timeframe": "1h"},
         }
 
     @pytest.fixture
@@ -850,10 +952,13 @@ class TestBotEngineStateManagement:
         """Test main run loop under normal operation."""
         mock_engine.state.running = True
 
-        with patch.object(mock_engine, '_trading_cycle', new_callable=AsyncMock) as mock_cycle, \
-             patch.object(mock_engine, '_update_display') as mock_update, \
-             patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
-
+        with patch.object(
+            mock_engine, "_trading_cycle", new_callable=AsyncMock
+        ) as mock_cycle, patch.object(
+            mock_engine, "_update_display"
+        ) as mock_update, patch(
+            "asyncio.sleep", new_callable=AsyncMock
+        ) as mock_sleep:
             # Stop after first cycle
             async def stop_after_cycle():
                 mock_engine.state.running = False
@@ -872,7 +977,7 @@ class TestBotEngineStateManagement:
         mock_engine.state.running = True
         mock_engine.state.paused = True
 
-        with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             # Stop after a few sleep cycles
             async def stop_after_sleeps(*args, **kwargs):
                 mock_engine.state.running = False
@@ -889,10 +994,13 @@ class TestBotEngineStateManagement:
         """Test main run loop exception handling."""
         mock_engine.state.running = True
 
-        with patch.object(mock_engine, '_trading_cycle', side_effect=Exception("Test error")), \
-             patch.object(mock_engine, '_emergency_shutdown', new_callable=AsyncMock) as mock_emergency, \
-             patch('core.bot_engine.logger') as mock_logger:
-
+        with patch.object(
+            mock_engine, "_trading_cycle", side_effect=Exception("Test error")
+        ), patch.object(
+            mock_engine, "_emergency_shutdown", new_callable=AsyncMock
+        ) as mock_emergency, patch(
+            "core.bot_engine.logger"
+        ) as mock_logger:
             await mock_engine.run()
 
             mock_emergency.assert_called_once()
@@ -906,7 +1014,7 @@ class TestBotEngineStateManagement:
         engine.state.paused = True
         engine.task_manager = MagicMock()
 
-        with patch('asyncio.sleep', new_callable=AsyncMock) as mock_sleep:
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
 
             async def stop_after_pause(*args, **kwargs):
                 engine.state.running = False
@@ -928,10 +1036,13 @@ class TestBotEngineStateManagement:
         async def fake_emergency_shutdown():
             engine.state.running = False
 
-        with patch.object(engine, '_trading_cycle', side_effect=Exception("Test exception")), \
-             patch.object(engine, '_emergency_shutdown', side_effect=fake_emergency_shutdown) as mock_emergency, \
-             patch('core.bot_engine.logger') as mock_logger:
-
+        with patch.object(
+            engine, "_trading_cycle", side_effect=Exception("Test exception")
+        ), patch.object(
+            engine, "_emergency_shutdown", side_effect=fake_emergency_shutdown
+        ) as mock_emergency, patch(
+            "core.bot_engine.logger"
+        ) as mock_logger:
             await engine.run()
 
             mock_emergency.assert_called_once()
@@ -975,7 +1086,7 @@ class TestBotEngineStateManagement:
         mock_engine.state.active_orders = 2
         mock_engine.state.open_positions = 1
 
-        with patch('core.bot_engine.logger') as mock_logger:
+        with patch("core.bot_engine.logger") as mock_logger:
             mock_engine._log_status()
 
             mock_logger.info.assert_called_once()
@@ -992,10 +1103,7 @@ class TestBotEngineStateManagement:
         mock_engine.state.equity = 10100.0
         mock_engine.state.active_orders = 2
         mock_engine.state.open_positions = 1
-        mock_engine.performance_stats = {
-            "total_pnl": 100.0,
-            "win_rate": 0.75
-        }
+        mock_engine.performance_stats = {"total_pnl": 100.0, "win_rate": 0.75}
 
         mock_engine.print_status_table()
 
@@ -1014,13 +1122,17 @@ class TestBotEngineIntegration:
         """Create mock configuration."""
         return {
             "environment": {"mode": "paper"},
-            "trading": {"portfolio_mode": False, "symbol": "BTC/USDT", "initial_balance": 10000.0},
+            "trading": {
+                "portfolio_mode": False,
+                "symbol": "BTC/USDT",
+                "initial_balance": 10000.0,
+            },
             "exchange": {"markets": ["BTC/USDT"], "base_currency": "USDT"},
             "strategies": {"active_strategies": [], "strategy_config": {}},
             "notifications": {"discord": {"enabled": False}},
             "monitoring": {"update_interval": 1.0},
             "risk_management": {},
-            "backtesting": {"timeframe": "1h"}
+            "backtesting": {"timeframe": "1h"},
         }
 
     @pytest.fixture
@@ -1041,16 +1153,15 @@ class TestBotEngineIntegration:
     @pytest.mark.asyncio
     async def test_process_binary_integration_enabled(self, mock_engine):
         """Test binary integration processing when enabled."""
-        with patch('core.bot_engine.get_binary_integration') as mock_get_integration:
+        with patch("core.bot_engine.get_binary_integration") as mock_get_integration:
             mock_integration = Mock()
             mock_integration.enabled = True
-            mock_integration.process_market_data = AsyncMock(return_value=Mock(
-                should_trade=True,
-                reasoning="Test decision"
-            ))
+            mock_integration.process_market_data = AsyncMock(
+                return_value=Mock(should_trade=True, reasoning="Test decision")
+            )
             mock_get_integration.return_value = mock_integration
 
-            market_data = {"BTC/USDT": pd.DataFrame({'close': [50000]})}
+            market_data = {"BTC/USDT": pd.DataFrame({"close": [50000]})}
 
             decisions = await mock_engine._process_binary_integration(market_data)
 
@@ -1060,12 +1171,12 @@ class TestBotEngineIntegration:
     @pytest.mark.asyncio
     async def test_process_binary_integration_disabled(self, mock_engine):
         """Test binary integration processing when disabled."""
-        with patch('core.bot_engine.get_binary_integration') as mock_get_integration:
+        with patch("core.bot_engine.get_binary_integration") as mock_get_integration:
             mock_integration = Mock()
             mock_integration.enabled = False
             mock_get_integration.return_value = mock_integration
 
-            market_data = {"BTC/USDT": pd.DataFrame({'close': [50000]})}
+            market_data = {"BTC/USDT": pd.DataFrame({"close": [50000]})}
 
             decisions = await mock_engine._process_binary_integration(market_data)
 
@@ -1077,8 +1188,8 @@ class TestBotEngineIntegration:
         mock_engine.order_manager.execute_order = AsyncMock(return_value={"pnl": 100.0})
 
         decision_data = {
-            'symbol': 'BTC/USDT',
-            'decision': Mock(
+            "symbol": "BTC/USDT",
+            "decision": Mock(
                 should_trade=True,
                 binary_probability=0.8,
                 selected_strategy=Mock(__name__="TestStrategy"),
@@ -1086,9 +1197,9 @@ class TestBotEngineIntegration:
                 position_size=1000.0,
                 stop_loss=49000.0,
                 take_profit=52000.0,
-                reasoning="Test decision"
+                reasoning="Test decision",
             ),
-            'market_data': pd.DataFrame({'close': [50000]})
+            "market_data": pd.DataFrame({"close": [50000]}),
         }
 
         integrated_decisions = [decision_data]
@@ -1129,13 +1240,17 @@ class TestBotEngineErrorHandling:
         """Create mock configuration."""
         return {
             "environment": {"mode": "paper"},
-            "trading": {"portfolio_mode": False, "symbol": "BTC/USDT", "initial_balance": 10000.0},
+            "trading": {
+                "portfolio_mode": False,
+                "symbol": "BTC/USDT",
+                "initial_balance": 10000.0,
+            },
             "exchange": {"markets": ["BTC/USDT"], "base_currency": "USDT"},
             "strategies": {"active_strategies": [], "strategy_config": {}},
             "notifications": {"discord": {"enabled": False}},
             "monitoring": {"update_interval": 1.0},
             "risk_management": {},
-            "backtesting": {"timeframe": "1h"}
+            "backtesting": {"timeframe": "1h"},
         }
 
     @pytest.fixture
@@ -1148,7 +1263,9 @@ class TestBotEngineErrorHandling:
     async def test_trading_cycle_with_data_fetch_error(self, mock_engine):
         """Test trading cycle resilience to data fetch errors."""
         mock_engine.data_fetcher = Mock()
-        mock_engine.data_fetcher.get_historical_data = AsyncMock(side_effect=Exception("Data fetch failed"))
+        mock_engine.data_fetcher.get_historical_data = AsyncMock(
+            side_effect=Exception("Data fetch failed")
+        )
 
         # Should not crash, should handle gracefully
         await mock_engine._trading_cycle()
@@ -1160,12 +1277,14 @@ class TestBotEngineErrorHandling:
     async def test_signal_generation_with_strategy_error(self, mock_engine):
         """Test signal generation resilience to strategy errors."""
         mock_strategy = Mock()
-        mock_strategy.generate_signals = AsyncMock(side_effect=Exception("Strategy failed"))
+        mock_strategy.generate_signals = AsyncMock(
+            side_effect=Exception("Strategy failed")
+        )
 
         mock_engine.strategies = [mock_strategy]
         mock_engine.pairs = ["BTC/USDT"]
 
-        market_data = {"BTC/USDT": pd.DataFrame({'close': [50000]})}
+        market_data = {"BTC/USDT": pd.DataFrame({"close": [50000]})}
 
         # Should not crash, should handle gracefully
         signals = await mock_engine._generate_signals(market_data)
@@ -1176,10 +1295,12 @@ class TestBotEngineErrorHandling:
     @pytest.mark.asyncio
     async def test_risk_evaluation_with_component_error(self, mock_engine):
         """Test risk evaluation resilience to component errors."""
-        mock_engine.risk_manager.evaluate_signal = AsyncMock(side_effect=Exception("Risk evaluation failed"))
+        mock_engine.risk_manager.evaluate_signal = AsyncMock(
+            side_effect=Exception("Risk evaluation failed")
+        )
 
         signals = [Mock()]
-        market_data = {"BTC/USDT": pd.DataFrame({'close': [50000]})}
+        market_data = {"BTC/USDT": pd.DataFrame({"close": [50000]})}
 
         # Should not crash, should handle gracefully
         approved_signals = await mock_engine._evaluate_risk(signals, market_data)
@@ -1190,7 +1311,9 @@ class TestBotEngineErrorHandling:
     @pytest.mark.asyncio
     async def test_order_execution_with_component_error(self, mock_engine):
         """Test order execution resilience to component errors."""
-        mock_engine.order_manager.execute_order = AsyncMock(side_effect=Exception("Order execution failed"))
+        mock_engine.order_manager.execute_order = AsyncMock(
+            side_effect=Exception("Order execution failed")
+        )
 
         signals = [Mock()]
 
@@ -1214,8 +1337,12 @@ class TestBotEngineErrorHandling:
     @pytest.mark.asyncio
     async def test_state_update_with_component_errors(self, mock_engine):
         """Test state update resilience to component errors."""
-        mock_engine.order_manager.get_balance = AsyncMock(side_effect=Exception("Balance fetch failed"))
-        mock_engine.order_manager.get_equity = AsyncMock(return_value=10000.0)  # This should work
+        mock_engine.order_manager.get_balance = AsyncMock(
+            side_effect=Exception("Balance fetch failed")
+        )
+        mock_engine.order_manager.get_equity = AsyncMock(
+            return_value=10000.0
+        )  # This should work
         mock_engine.order_manager.get_active_order_count = AsyncMock(return_value=0)
         mock_engine.order_manager.get_open_position_count = AsyncMock(return_value=0)
 
@@ -1234,13 +1361,17 @@ class TestBotEngineEdgeCases:
         """Create mock configuration."""
         return {
             "environment": {"mode": "paper"},
-            "trading": {"portfolio_mode": False, "symbol": "BTC/USDT", "initial_balance": 10000.0},
+            "trading": {
+                "portfolio_mode": False,
+                "symbol": "BTC/USDT",
+                "initial_balance": 10000.0,
+            },
             "exchange": {"markets": ["BTC/USDT"], "base_currency": "USDT"},
             "strategies": {"active_strategies": [], "strategy_config": {}},
             "notifications": {"discord": {"enabled": False}},
             "monitoring": {"update_interval": 1.0},
             "risk_management": {},
-            "backtesting": {"timeframe": "1h"}
+            "backtesting": {"timeframe": "1h"},
         }
 
     @pytest.fixture
@@ -1263,7 +1394,9 @@ class TestBotEngineEdgeCases:
     async def test_trading_cycle_with_empty_market_data(self, mock_engine):
         """Test trading cycle with empty market data."""
         mock_engine.data_fetcher = Mock()
-        mock_engine.data_fetcher.get_historical_data = AsyncMock(return_value=pd.DataFrame())
+        mock_engine.data_fetcher.get_historical_data = AsyncMock(
+            return_value=pd.DataFrame()
+        )
 
         # Should handle empty data gracefully
         await mock_engine._trading_cycle()
@@ -1303,7 +1436,9 @@ class TestBotEngineEdgeCases:
     async def test_concurrent_trading_cycles(self, mock_engine):
         """Test concurrent trading cycle execution."""
         mock_engine.data_fetcher = Mock()
-        mock_engine.data_fetcher.get_historical_data = AsyncMock(return_value=pd.DataFrame({'close': [50000]}))
+        mock_engine.data_fetcher.get_historical_data = AsyncMock(
+            return_value=pd.DataFrame({"close": [50000]})
+        )
 
         # Run multiple concurrent trading cycles
         tasks = [mock_engine._trading_cycle() for _ in range(5)]
@@ -1315,10 +1450,10 @@ class TestBotEngineEdgeCases:
     def test_status_logging_with_invalid_values(self, mock_engine):
         """Test status logging with invalid values."""
         mock_engine.state.balance = None
-        mock_engine.state.equity = float('inf')
+        mock_engine.state.equity = float("inf")
 
         # Should handle invalid values gracefully
-        with patch('core.bot_engine.logger') as mock_logger:
+        with patch("core.bot_engine.logger") as mock_logger:
             mock_engine._log_status()
 
             # Should still attempt to log
@@ -1337,6 +1472,7 @@ class TestBotEngineUtilityFunctions:
 
         # Should be current time in milliseconds
         import time
+
         current_time_ms = int(time.time() * 1000)
         assert abs(timestamp - current_time_ms) < 1000  # Within 1 second
 
@@ -1346,25 +1482,25 @@ class TestBotEngineUtilityFunctions:
 
         market_data = {
             "BTC/USDT": {
-                'single_timeframe': pd.DataFrame({'close': [50000]}),
-                'multi_timeframe': {
-                    '1h': pd.DataFrame({'close': [50000]}),
-                    '4h': pd.DataFrame({'close': [50100]})
-                }
+                "single_timeframe": pd.DataFrame({"close": [50000]}),
+                "multi_timeframe": {
+                    "1h": pd.DataFrame({"close": [50000]}),
+                    "4h": pd.DataFrame({"close": [50100]}),
+                },
             }
         }
 
         result = engine._extract_multi_tf_data(market_data, "BTC/USDT")
 
         assert result is not None
-        assert '1h' in result
-        assert '4h' in result
+        assert "1h" in result
+        assert "4h" in result
 
     def test_extract_multi_tf_data_with_missing_data(self):
         """Test multi-timeframe data extraction with missing data."""
         engine = BotEngine({})
 
-        market_data = {"BTC/USDT": pd.DataFrame({'close': [50000]})}
+        market_data = {"BTC/USDT": pd.DataFrame({"close": [50000]})}
 
         result = engine._extract_multi_tf_data(market_data, "BTC/USDT")
 
@@ -1374,7 +1510,7 @@ class TestBotEngineUtilityFunctions:
         """Test multi-timeframe data extraction with invalid symbol."""
         engine = BotEngine({})
 
-        market_data = {"BTC/USDT": pd.DataFrame({'close': [50000]})}
+        market_data = {"BTC/USDT": pd.DataFrame({"close": [50000]})}
 
         result = engine._extract_multi_tf_data(market_data, "INVALID")
 
@@ -1384,19 +1520,19 @@ class TestBotEngineUtilityFunctions:
         """Test market data combination function."""
         engine = BotEngine({})
 
-        market_data = {"BTC/USDT": pd.DataFrame({'close': [50000]})}
+        market_data = {"BTC/USDT": pd.DataFrame({"close": [50000]})}
         multi_timeframe_data = {
             "BTC/USDT": {
-                '1h': pd.DataFrame({'close': [50000]}),
-                '4h': pd.DataFrame({'close': [50100]})
+                "1h": pd.DataFrame({"close": [50000]}),
+                "4h": pd.DataFrame({"close": [50100]}),
             }
         }
 
         result = engine._combine_market_data(market_data, multi_timeframe_data)
 
         assert "BTC/USDT" in result
-        assert 'single_timeframe' in result["BTC/USDT"]
-        assert 'multi_timeframe' in result["BTC/USDT"]
+        assert "single_timeframe" in result["BTC/USDT"]
+        assert "multi_timeframe" in result["BTC/USDT"]
 
     def test_initialize_performance_stats(self, mock_config):
         """Test performance stats initialization."""
@@ -1449,7 +1585,7 @@ class TestBotEngineUtilityFunctions:
         engine.state.active_orders = 0
         engine.state.open_positions = 0
 
-        with patch('core.bot_engine.logger') as mock_logger:
+        with patch("core.bot_engine.logger") as mock_logger:
             engine._log_status()
 
             mock_logger.info.assert_called_once()
@@ -1462,7 +1598,7 @@ class TestBotEngineUtilityFunctions:
         engine = BotEngine(mock_config)
         engine.state.balance = "invalid"  # Invalid type to trigger exception
 
-        with patch('core.bot_engine.logger') as mock_logger:
+        with patch("core.bot_engine.logger") as mock_logger:
             engine.print_status_table()
 
             # Should still log something, but handle exception

@@ -8,35 +8,33 @@ Handles order execution, tracking, and management across all trading modes.
 from __future__ import annotations
 
 import asyncio
-import logging
-from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING, Union, Protocol
-from decimal import Decimal, InvalidOperation
 import random
 import time
-from utils.time import now_ms, to_ms
-from typing import Callable
-import os
 from abc import ABC, abstractmethod
-import json
+from decimal import Decimal, InvalidOperation
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional,
+    Union,
+)
+
 import jsonschema
+from ccxt.base.errors import ExchangeError, NetworkError
 
-import ccxt.async_support as ccxt
-from ccxt.base.errors import NetworkError, ExchangeError
-
-from utils.logger import get_trade_logger
-from utils.config_loader import ConfigLoader
-from core.types import TradingMode
-from core.types.order_types import Order, OrderType, OrderStatus
-from core.execution.live_executor import LiveOrderExecutor
-from core.execution.paper_executor import PaperOrderExecutor
 from core.execution.backtest_executor import BacktestOrderExecutor
+from core.execution.live_executor import LiveOrderExecutor
 from core.execution.order_processor import OrderProcessor
-from core.management.reliability_manager import ReliabilityManager
+from core.execution.paper_executor import PaperOrderExecutor
 from core.management.portfolio_manager import PortfolioManager
+from core.management.reliability_manager import ReliabilityManager
+from core.types import TradingMode
+from core.types.order_types import OrderStatus
 from utils.adapter import signal_to_dict
-from core.contracts import SignalType
+from utils.logger import get_trade_logger
 
-from .logging_utils import get_structured_logger, LogSensitivity
+from .logging_utils import LogSensitivity, get_structured_logger
 
 logger = get_structured_logger("core.order_manager", LogSensitivity.SECURE)
 trade_logger = get_trade_logger()
@@ -53,11 +51,11 @@ class MockLiveExecutor:
         """Mock live order execution."""
         # Return a mock successful response
         return {
-            'id': f'mock_order_{random.randint(1000, 9999)}',
-            'status': 'filled',
-            'amount': getattr(signal, 'amount', 0.001),
-            'price': 50000.0,
-            'symbol': getattr(signal, 'symbol', 'BTC/USDT')
+            "id": f"mock_order_{random.randint(1000, 9999)}",
+            "status": "filled",
+            "amount": getattr(signal, "amount", 0.001),
+            "price": 50000.0,
+            "symbol": getattr(signal, "symbol", "BTC/USDT"),
         }
 
     async def shutdown(self):
@@ -68,7 +66,7 @@ class MockLiveExecutor:
 class OrderExecutionStrategy(ABC):
     """Abstract base class for order execution strategies."""
 
-    def __init__(self, order_manager: 'OrderManager'):
+    def __init__(self, order_manager: "OrderManager"):
         self.order_manager = order_manager
 
     @abstractmethod
@@ -95,8 +93,12 @@ class LiveOrderExecutionStrategy(OrderExecutionStrategy):
                 lambda: self.order_manager.live_executor.execute_live_order(signal),
                 exceptions=(NetworkError, ExchangeError, asyncio.TimeoutError, OSError),
             )
-            order = self.order_manager.order_processor.parse_order_response(order_response)
-            processed_order = await self.order_manager.order_processor.process_order(order)
+            order = self.order_manager.order_processor.parse_order_response(
+                order_response
+            )
+            processed_order = await self.order_manager.order_processor.process_order(
+                order
+            )
             trade_logger.log_order(processed_order, self.get_mode_name())
             return processed_order
         except (NetworkError, ExchangeError, asyncio.TimeoutError) as e:
@@ -109,13 +111,17 @@ class LiveOrderExecutionStrategy(OrderExecutionStrategy):
 
             # Notify watchdog of order execution failure
             if self.order_manager.watchdog_service:
-                await self.order_manager.watchdog_service.report_order_execution_failure({
-                    "component_id": "order_manager",
-                    "error_message": str(e),
-                    "symbol": getattr(signal, "symbol", None),
-                    "strategy_id": getattr(signal, "strategy_id", "unknown"),
-                    "correlation_id": getattr(signal, "correlation_id", f"order_{int(time.time())}")
-                })
+                await self.order_manager.watchdog_service.report_order_execution_failure(
+                    {
+                        "component_id": "order_manager",
+                        "error_message": str(e),
+                        "symbol": getattr(signal, "symbol", None),
+                        "strategy_id": getattr(signal, "strategy_id", "unknown"),
+                        "correlation_id": getattr(
+                            signal, "correlation_id", f"order_{int(time.time())}"
+                        ),
+                    }
+                )
 
             # Trigger rollback logic
             await self._rollback_failed_order(signal, str(e))
@@ -133,13 +139,17 @@ class LiveOrderExecutionStrategy(OrderExecutionStrategy):
 
             # Notify watchdog of order execution failure
             if self.order_manager.watchdog_service:
-                await self.order_manager.watchdog_service.report_order_execution_failure({
-                    "component_id": "order_manager",
-                    "error_message": str(e),
-                    "symbol": getattr(signal, "symbol", None),
-                    "strategy_id": getattr(signal, "strategy_id", "unknown"),
-                    "correlation_id": getattr(signal, "correlation_id", f"order_{int(time.time())}")
-                })
+                await self.order_manager.watchdog_service.report_order_execution_failure(
+                    {
+                        "component_id": "order_manager",
+                        "error_message": str(e),
+                        "symbol": getattr(signal, "symbol", None),
+                        "strategy_id": getattr(signal, "strategy_id", "unknown"),
+                        "correlation_id": getattr(
+                            signal, "correlation_id", f"order_{int(time.time())}"
+                        ),
+                    }
+                )
 
             # Trigger rollback logic
             await self._rollback_failed_order(signal, str(e))
@@ -149,7 +159,7 @@ class LiveOrderExecutionStrategy(OrderExecutionStrategy):
                 "id": None,
                 "status": "failed",
                 "error": str(e),
-                "symbol": getattr(signal, "symbol", None)
+                "symbol": getattr(signal, "symbol", None),
             }
 
     async def _rollback_failed_order(self, signal: Any, error_message: str) -> None:
@@ -159,9 +169,13 @@ class LiveOrderExecutionStrategy(OrderExecutionStrategy):
             if symbol:
                 # Cancel any pending orders for this symbol
                 await self.order_manager.cancel_all_orders()
-                logger.info(f"Rollback completed for failed order on {symbol}: {error_message}")
+                logger.info(
+                    f"Rollback completed for failed order on {symbol}: {error_message}"
+                )
             else:
-                logger.warning(f"Could not rollback failed order - no symbol available: {error_message}")
+                logger.warning(
+                    f"Could not rollback failed order - no symbol available: {error_message}"
+                )
         except Exception as rollback_error:
             logger.error(f"Error during order rollback: {rollback_error}")
 
@@ -186,7 +200,9 @@ class BacktestOrderExecutionStrategy(OrderExecutionStrategy):
 
     async def execute_order(self, signal: Any) -> Optional[Dict[str, Any]]:
         """Execute order in backtest mode."""
-        order = await self.order_manager.backtest_executor.execute_backtest_order(signal)
+        order = await self.order_manager.backtest_executor.execute_backtest_order(
+            signal
+        )
         return await self.order_manager.order_processor.process_order(order)
 
 
@@ -208,7 +224,7 @@ class FallbackOrderExecutionStrategy(OrderExecutionStrategy):
 class BalanceRetrievalStrategy(ABC):
     """Abstract base class for balance retrieval strategies."""
 
-    def __init__(self, order_manager: 'OrderManager'):
+    def __init__(self, order_manager: "OrderManager"):
         self.order_manager = order_manager
 
     @abstractmethod
@@ -225,7 +241,13 @@ class LiveBalanceStrategy(BalanceRetrievalStrategy):
         await self.order_manager._rate_limit()
         try:
             balance = await self.order_manager.live_executor.exchange.fetch_balance()
-            return Decimal(str(balance["total"].get(self.order_manager.config.get("base_currency"), 0)))
+            return Decimal(
+                str(
+                    balance["total"].get(
+                        self.order_manager.config.get("base_currency"), 0
+                    )
+                )
+            )
         except Exception as e:
             logger.warning(f"Failed to fetch live balance: {e}")
             return Decimal(0)
@@ -244,8 +266,16 @@ class BacktestBalanceStrategy(BalanceRetrievalStrategy):
 
     async def get_balance(self) -> Decimal:
         """Get balance from backtest/portfolio manager."""
-        if self.order_manager.portfolio_mode and self.order_manager.portfolio_manager.paper_balances:
-            total = sum([float(v) for v in self.order_manager.portfolio_manager.paper_balances.values()])
+        if (
+            self.order_manager.portfolio_mode
+            and self.order_manager.portfolio_manager.paper_balances
+        ):
+            total = sum(
+                [
+                    float(v)
+                    for v in self.order_manager.portfolio_manager.paper_balances.values()
+                ]
+            )
             return Decimal(str(total))
         return Decimal(0)
 
@@ -253,7 +283,7 @@ class BacktestBalanceStrategy(BalanceRetrievalStrategy):
 class EquityCalculationStrategy(ABC):
     """Abstract base class for equity calculation strategies."""
 
-    def __init__(self, order_manager: 'OrderManager'):
+    def __init__(self, order_manager: "OrderManager"):
         self.order_manager = order_manager
 
     @abstractmethod
@@ -274,7 +304,9 @@ class LiveEquityStrategy(EquityCalculationStrategy):
                 entry_price = position.get("entry_price")
                 amount = position.get("amount")
                 if entry_price is None or amount is None:
-                    logger.warning(f"Invalid position data for {symbol}: missing entry_price or amount")
+                    logger.warning(
+                        f"Invalid position data for {symbol}: missing entry_price or amount"
+                    )
                     continue
 
                 entry_price = Decimal(str(entry_price))
@@ -282,13 +314,17 @@ class LiveEquityStrategy(EquityCalculationStrategy):
 
                 # Use cached ticker to reduce API calls
                 ticker = await self.order_manager._get_cached_ticker(symbol)
-                current_price = Decimal(str(ticker.get("last") or ticker.get("close") or 0))
+                current_price = Decimal(
+                    str(ticker.get("last") or ticker.get("close") or 0)
+                )
                 unrealized += (current_price - entry_price) * amount
             except (NetworkError, ExchangeError, OSError) as e:
                 logger.warning(f"Failed to fetch ticker for {symbol}: {e}")
                 continue
             except (TypeError, ValueError, InvalidOperation) as e:
-                logger.warning(f"Data error while computing unrealized for {symbol}: {e}")
+                logger.warning(
+                    f"Data error while computing unrealized for {symbol}: {e}"
+                )
                 continue
             except asyncio.CancelledError:
                 raise
@@ -308,7 +344,9 @@ class PortfolioEquityStrategy(EquityCalculationStrategy):
             total = Decimal(0)
             # Sum balances and unrealized from positions
             if self.order_manager.portfolio_manager.paper_balances:
-                total += sum(self.order_manager.portfolio_manager.paper_balances.values())
+                total += sum(
+                    self.order_manager.portfolio_manager.paper_balances.values()
+                )
             # Add unrealized per-position
             for symbol, pos in self.order_manager.order_processor.positions.items():
                 try:
@@ -338,7 +376,12 @@ class SimpleEquityStrategy(EquityCalculationStrategy):
 class OrderManager:
     """Manages order execution and tracking across all trading modes."""
 
-    def __init__(self, config: Dict[str, Any], mode: Union[str, "TradingMode"], watchdog_service=None) -> None:
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        mode: Union[str, "TradingMode"],
+        watchdog_service=None,
+    ) -> None:
         """Initialize the OrderManager.
 
         Args:
@@ -347,9 +390,11 @@ class OrderManager:
         """
         # Accept either a nested config (with 'order','risk','paper') or a flat one to remain backward compatible
         self.config: Dict[str, Any] = config.get("order", config)
-        self.risk_config: Dict[str, Any] = config.get("risk", self.config.get("risk", {}))
+        self.risk_config: Dict[str, Any] = config.get(
+            "risk", self.config.get("risk", {})
+        )
         self.mode_original = mode
-        
+
         # Normalize incoming mode to the canonical TradingMode enum
         try:
             if isinstance(mode, str):
@@ -359,7 +404,9 @@ class OrderManager:
                 except KeyError:
                     # Fallback: match by enum value ("live","paper","backtest")
                     try:
-                        self.mode = next(m for m in TradingMode if m.value == str(mode).lower())
+                        self.mode = next(
+                            m for m in TradingMode if m.value == str(mode).lower()
+                        )
                     except StopIteration:
                         self.mode = TradingMode.PAPER
             elif isinstance(mode, TradingMode):
@@ -398,7 +445,9 @@ class OrderManager:
         try:
             balance = Decimal(str(raw_balance))
         except (InvalidOperation, TypeError, ValueError):
-            logger.warning(f"Invalid initial_balance value: {raw_balance}, using default")
+            logger.warning(
+                f"Invalid initial_balance value: {raw_balance}, using default"
+            )
             balance = default_balance
 
         # Set balance on paper executor if it exists (paper/backtest modes)
@@ -427,26 +476,30 @@ class OrderManager:
         self._balance_cache_timestamp: float = 0.0
         self._equity_cache_timestamp: float = 0.0
         self._balance_cache_ttl: float = 10.0  # 10 seconds cache for balance
-        self._equity_cache_ttl: float = 5.0   # 5 seconds cache for equity
+        self._equity_cache_ttl: float = 5.0  # 5 seconds cache for equity
 
         # Initialize strategy patterns
         self._execution_strategies = {
             TradingMode.LIVE: LiveOrderExecutionStrategy(self),
             TradingMode.PAPER: PaperOrderExecutionStrategy(self),
-            TradingMode.BACKTEST: BacktestOrderExecutionStrategy(self)
+            TradingMode.BACKTEST: BacktestOrderExecutionStrategy(self),
         }
         self._fallback_strategy = FallbackOrderExecutionStrategy(self)
 
         self._balance_strategies = {
             TradingMode.LIVE: LiveBalanceStrategy(self),
             TradingMode.PAPER: PaperBalanceStrategy(self),
-            TradingMode.BACKTEST: BacktestBalanceStrategy(self)
+            TradingMode.BACKTEST: BacktestBalanceStrategy(self),
         }
 
         self._equity_strategies = {
             TradingMode.LIVE: LiveEquityStrategy(self),
-            TradingMode.PAPER: PortfolioEquityStrategy(self) if self.portfolio_mode else SimpleEquityStrategy(self),
-            TradingMode.BACKTEST: PortfolioEquityStrategy(self) if self.portfolio_mode else SimpleEquityStrategy(self)
+            TradingMode.PAPER: PortfolioEquityStrategy(self)
+            if self.portfolio_mode
+            else SimpleEquityStrategy(self),
+            TradingMode.BACKTEST: PortfolioEquityStrategy(self)
+            if self.portfolio_mode
+            else SimpleEquityStrategy(self),
         }
 
     @property
@@ -461,17 +514,38 @@ class OrderManager:
             "properties": {
                 "strategy_id": {"type": "string", "minLength": 1},
                 "symbol": {"type": "string", "pattern": r"^[A-Z]+/[A-Z]+$"},
-                "signal_type": {"type": "string", "enum": ["ENTRY_LONG", "ENTRY_SHORT", "EXIT_LONG", "EXIT_SHORT"]},
-                "signal_strength": {"type": "string", "enum": ["WEAK", "MODERATE", "STRONG"]},
-                "order_type": {"type": "string", "enum": ["MARKET", "LIMIT", "STOP", "STOP_LIMIT"]},
+                "signal_type": {
+                    "type": "string",
+                    "enum": ["ENTRY_LONG", "ENTRY_SHORT", "EXIT_LONG", "EXIT_SHORT"],
+                },
+                "signal_strength": {
+                    "type": "string",
+                    "enum": ["WEAK", "MODERATE", "STRONG"],
+                },
+                "order_type": {
+                    "type": "string",
+                    "enum": ["MARKET", "LIMIT", "STOP", "STOP_LIMIT"],
+                },
                 "amount": {"type": "string", "pattern": r"^-?\d+(\.\d+)?$"},
                 "price": {"type": ["string", "null"], "pattern": r"^-?\d+(\.\d+)?$"},
-                "stop_loss": {"type": ["string", "null"], "pattern": r"^-?\d+(\.\d+)?$"},
-                "take_profit": {"type": ["string", "null"], "pattern": r"^-?\d+(\.\d+)?$"},
-                "timestamp": {"type": "string", "pattern": r"^\d+$"}
+                "stop_loss": {
+                    "type": ["string", "null"],
+                    "pattern": r"^-?\d+(\.\d+)?$",
+                },
+                "take_profit": {
+                    "type": ["string", "null"],
+                    "pattern": r"^-?\d+(\.\d+)?$",
+                },
+                "timestamp": {"type": "string", "pattern": r"^\d+$"},
             },
-            "required": ["strategy_id", "symbol", "signal_type", "order_type", "amount"],
-            "additionalProperties": True
+            "required": [
+                "strategy_id",
+                "symbol",
+                "signal_type",
+                "order_type",
+                "amount",
+            ],
+            "additionalProperties": True,
         }
 
     def _normalize_payload(self, payload: dict) -> dict:
@@ -490,8 +564,11 @@ class OrderManager:
     def _normalize_enum(self, value):
         """Normalize enum values to their string names for schema validation."""
         from enum import Enum
+
         if isinstance(value, Enum):
-            return value.name  # Use name instead of value for string-based serialization
+            return (
+                value.name
+            )  # Use name instead of value for string-based serialization
         elif isinstance(value, dict):
             return {k: self._normalize_enum(v) for k, v in value.items()}
         elif isinstance(value, list):
@@ -502,6 +579,7 @@ class OrderManager:
         """Validate order payload against schema and business rules."""
         # Allow mocks in test mode (detected by Mock type)
         from unittest.mock import Mock
+
         if isinstance(signal, Mock):
             logger.debug("Skipping validation for Mock object in test mode")
             return
@@ -523,7 +601,9 @@ class OrderManager:
             # Additional business rule validations (use original dict for business logic)
             self._validate_business_rules(signal_dict)
 
-            logger.debug(f"Order payload validation passed for {signal_dict.get('symbol', 'unknown')}")
+            logger.debug(
+                f"Order payload validation passed for {signal_dict.get('symbol', 'unknown')}"
+            )
 
         except jsonschema.ValidationError as e:
             error_msg = f"Schema validation failed: {e.message}"
@@ -541,8 +621,9 @@ class OrderManager:
     def _normalize_signal_enums(self, signal: Any) -> None:
         """Normalize enum attributes in signal object to use names instead of values."""
         from enum import Enum
+
         # Common enum attributes that might be in signals
-        enum_attrs = ['signal_type', 'signal_strength', 'side']
+        enum_attrs = ["signal_type", "signal_strength", "side"]
         for attr in enum_attrs:
             if hasattr(signal, attr):
                 value = getattr(signal, attr)
@@ -591,7 +672,9 @@ class OrderManager:
         if not base or not quote:
             raise ValueError("Symbol must have both base and quote currencies")
 
-    async def execute_order(self, signal: Any, return_legacy_none_on_failure: bool = False) -> Optional[Dict[str, Any]]:
+    async def execute_order(
+        self, signal: Any, return_legacy_none_on_failure: bool = False
+    ) -> Optional[Dict[str, Any]]:
         """
         Execute an order based on the trading signal.
 
@@ -602,7 +685,8 @@ class OrderManager:
         # Auto-detect test context for legacy None return
         if not return_legacy_none_on_failure:
             from unittest.mock import Mock
-            if isinstance(signal, Mock) or signal.__class__.__name__ == 'MockSignal':
+
+            if isinstance(signal, Mock) or signal.__class__.__name__ == "MockSignal":
                 return_legacy_none_on_failure = True
 
         # Validate order payload first
@@ -610,32 +694,50 @@ class OrderManager:
             self._validate_order_payload(signal)
         except ValueError as e:
             logger.error(f"Order validation failed: {str(e)}")
-            trade_logger.log_failed_order(signal_to_dict(signal), f"validation_error: {str(e)}")
+            trade_logger.log_failed_order(
+                signal_to_dict(signal), f"validation_error: {str(e)}"
+            )
             # Return legacy None for test contexts, structured dict for production
             if return_legacy_none_on_failure:
                 return None
             else:
-                return {
-                    "status": "validation_failed",
-                    "error": str(e)
-                }
+                return {"status": "validation_failed", "error": str(e)}
 
         # Safe mode: if activated, do not open new positions
         if self.reliability_manager.safe_mode_active:
             # Increment safe mode trigger counter
-            if not hasattr(self, '_safe_mode_triggers'):
+            if not hasattr(self, "_safe_mode_triggers"):
                 self._safe_mode_triggers = 0
             self._safe_mode_triggers += 1
-            logger.info("Safe mode active: order skipped (not counted as failure)", exc_info=False)
+            logger.info(
+                "Safe mode active: order skipped (not counted as failure)",
+                exc_info=False,
+            )
             # Log as a separate event, not as a failed order
-            trade_logger.trade("Order skipped: safe_mode_active", {"signal": signal_to_dict(signal), "reason": "safe_mode_active"})
-            return {"id": None, "symbol": getattr(signal, "symbol", None), "status": "skipped", "reason": "safe_mode_active"}
+            trade_logger.trade(
+                "Order skipped: safe_mode_active",
+                {"signal": signal_to_dict(signal), "reason": "safe_mode_active"},
+            )
+            return {
+                "id": None,
+                "symbol": getattr(signal, "symbol", None),
+                "status": "skipped",
+                "reason": "safe_mode_active",
+            }
 
         # Use strategy pattern for order execution
         try:
-            strategy = self._execution_strategies.get(self.mode, self._fallback_strategy)
+            strategy = self._execution_strategies.get(
+                self.mode, self._fallback_strategy
+            )
             return await strategy.execute_order(signal)
-        except (NetworkError, ExchangeError, OSError, asyncio.TimeoutError, ValueError) as e:
+        except (
+            NetworkError,
+            ExchangeError,
+            OSError,
+            asyncio.TimeoutError,
+            ValueError,
+        ) as e:
             logger.error(f"Order execution failed: {str(e)}", exc_info=True)
             trade_logger.log_failed_order(signal_to_dict(signal), str(e))
             return None
@@ -644,7 +746,9 @@ class OrderManager:
             raise
         except Exception as e:
             logger.exception("Unexpected error during order execution")
-            self.reliability_manager.record_critical_error(e, context={"symbol": getattr(signal, "symbol", None)})
+            self.reliability_manager.record_critical_error(
+                e, context={"symbol": getattr(signal, "symbol", None)}
+            )
             trade_logger.log_failed_order(signal_to_dict(signal), str(e))
             return None
 
@@ -657,7 +761,9 @@ class OrderManager:
             await self.live_executor.exchange.cancel_order(order_id)
             if order_id in self.order_processor.open_orders:
                 self.order_processor.open_orders[order_id].status = OrderStatus.CANCELED
-                self.order_processor.closed_orders[order_id] = self.order_processor.open_orders[order_id]
+                self.order_processor.closed_orders[
+                    order_id
+                ] = self.order_processor.open_orders[order_id]
                 del self.order_processor.open_orders[order_id]
             return True
         except (NetworkError, ExchangeError, OSError) as e:
@@ -697,7 +803,9 @@ class OrderManager:
             raise Exception("Failed to cancel orders")
         elif failed_cancellations:
             # Some failed, some succeeded - log but don't raise
-            logger.warning(f"Partial cancellation failure: {len(successful_cancellations)} succeeded, {len(failed_cancellations)} failed")
+            logger.warning(
+                f"Partial cancellation failure: {len(successful_cancellations)} succeeded, {len(failed_cancellations)} failed"
+            )
 
     async def _rate_limit(self) -> None:
         """Simple rate limiter for KuCoin API calls."""
@@ -707,7 +815,11 @@ class OrderManager:
         # If this is the first call (_last_request_time is 0.0) or not enough time has passed,
         # ensure we wait for the full interval
         if self._last_request_time == 0.0 or time_since_last < self._request_interval:
-            wait_time = self._request_interval if self._last_request_time == 0.0 else self._request_interval - time_since_last
+            wait_time = (
+                self._request_interval
+                if self._last_request_time == 0.0
+                else self._request_interval - time_since_last
+            )
             await asyncio.sleep(max(0, wait_time))
 
         self._last_request_time = time.monotonic()
@@ -715,7 +827,10 @@ class OrderManager:
     async def _get_cached_ticker(self, symbol: str) -> Dict[str, Any]:
         """Get ticker data with caching to reduce API calls."""
         current_time = time.time()
-        if symbol in self._ticker_cache and (current_time - self._cache_timestamps.get(symbol, 0)) < self._cache_ttl:
+        if (
+            symbol in self._ticker_cache
+            and (current_time - self._cache_timestamps.get(symbol, 0)) < self._cache_ttl
+        ):
             return self._ticker_cache[symbol]
 
         if self.mode == TradingMode.LIVE and self.live_executor:
@@ -739,8 +854,10 @@ class OrderManager:
         current_time = time.time()
 
         # Check cache first
-        if (self._balance_cache is not None and
-            (current_time - self._balance_cache_timestamp) < self._balance_cache_ttl):
+        if (
+            self._balance_cache is not None
+            and (current_time - self._balance_cache_timestamp) < self._balance_cache_ttl
+        ):
             return self._balance_cache
 
         # Use strategy pattern for balance retrieval
@@ -749,7 +866,9 @@ class OrderManager:
             if strategy:
                 balance_value = await strategy.get_balance()
             else:
-                logger.warning(f"No balance strategy for mode {self.mode}, using fallback")
+                logger.warning(
+                    f"No balance strategy for mode {self.mode}, using fallback"
+                )
                 balance_value = Decimal(0)
         except Exception as e:
             logger.warning(f"Error getting balance: {e}")
@@ -765,8 +884,10 @@ class OrderManager:
         current_time = time.time()
 
         # Check cache first
-        if (self._equity_cache is not None and
-            (current_time - self._equity_cache_timestamp) < self._equity_cache_ttl):
+        if (
+            self._equity_cache is not None
+            and (current_time - self._equity_cache_timestamp) < self._equity_cache_ttl
+        ):
             return self._equity_cache
 
         balance = await self.get_balance()
@@ -777,7 +898,9 @@ class OrderManager:
             if strategy:
                 equity_value = await strategy.calculate_equity(balance)
             else:
-                logger.warning(f"No equity strategy for mode {self.mode}, using balance as equity")
+                logger.warning(
+                    f"No equity strategy for mode {self.mode}, using balance as equity"
+                )
                 equity_value = balance
         except Exception as e:
             logger.exception(f"Error calculating equity: {e}")
@@ -788,7 +911,12 @@ class OrderManager:
         self._equity_cache_timestamp = current_time
         return equity_value
 
-    async def initialize_portfolio(self, pairs: List[str], portfolio_mode: bool, allocation: Optional[Dict[str, float]] = None) -> None:
+    async def initialize_portfolio(
+        self,
+        pairs: List[str],
+        portfolio_mode: bool,
+        allocation: Optional[Dict[str, float]] = None,
+    ) -> None:
         """
         Initialize per-pair portfolio state. This is an optional hook that BotEngine
         may call to configure per-symbol balances and allocation.
@@ -810,9 +938,13 @@ class OrderManager:
             total_allocation = 0.0
             for symbol, fraction in allocation.items():
                 if not isinstance(fraction, (int, float)):
-                    raise ValueError(f"Allocation fraction for {symbol} must be numeric")
+                    raise ValueError(
+                        f"Allocation fraction for {symbol} must be numeric"
+                    )
                 if fraction < 0:
-                    raise ValueError(f"Allocation fraction for {symbol} cannot be negative")
+                    raise ValueError(
+                        f"Allocation fraction for {symbol} cannot be negative"
+                    )
                 total_allocation += fraction
             if total_allocation > 1.01:  # Allow small floating point tolerance
                 raise ValueError(f"Total allocation ({total_allocation}) exceeds 100%")
@@ -831,8 +963,12 @@ class OrderManager:
 
             # Configure executors and portfolio manager (only if they exist)
             if self.paper_executor:
-                self.paper_executor.set_portfolio_mode(portfolio_mode, pairs, allocation)
-            self.portfolio_manager.initialize_portfolio(pairs, portfolio_mode, allocation)
+                self.paper_executor.set_portfolio_mode(
+                    portfolio_mode, pairs, allocation
+                )
+            self.portfolio_manager.initialize_portfolio(
+                pairs, portfolio_mode, allocation
+            )
         except (ValueError, TypeError, OSError) as e:
             logger.exception(f"Failed to initialize portfolio (recoverable): {e}")
             return

@@ -5,18 +5,18 @@ Detects volume surges using statistical methods or ML classifiers.
 """
 
 import logging
-import numpy as np
-import pandas as pd
-from typing import Dict, Any, Optional, Tuple
-from sklearn.ensemble import RandomForestClassifier
-import xgboost as xgb
-import lightgbm as lgb
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import TimeSeriesSplit
-import joblib
 import os
 from pathlib import Path
-from scipy import stats
+from typing import Any, Dict, Tuple
+
+import joblib
+import lightgbm as lgb
+import numpy as np
+import pandas as pd
+import xgboost as xgb
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +35,14 @@ class VolumePredictor:
         """
         self.config = config
         self.model_type = config.get("type", "zscore")
-        self.threshold = config.get("threshold", 2.5)  # Z-score threshold for statistical method
+        self.threshold = config.get(
+            "threshold", 2.5
+        )  # Z-score threshold for statistical method
         self.lookback = config.get("lookback", 50)
-        self.model_path = config.get("model_path", f"models/volume_{self.model_type}.pkl")
-        self.scaler_path = config.get("scaler_path", f"models/volume_scaler.pkl")
+        self.model_path = config.get(
+            "model_path", f"models/volume_{self.model_type}.pkl"
+        )
+        self.scaler_path = config.get("scaler_path", "models/volume_scaler.pkl")
 
         self.model = None
         self.scaler = StandardScaler()
@@ -57,57 +61,69 @@ class VolumePredictor:
         Returns:
             DataFrame with features
         """
-        if df.empty or 'volume' not in df.columns:
+        if df.empty or "volume" not in df.columns:
             return pd.DataFrame()
 
         # Basic volume features
         df = df.copy()
-        df['volume_ma_5'] = df['volume'].rolling(5).mean()
-        df['volume_ma_10'] = df['volume'].rolling(10).mean()
-        df['volume_ma_20'] = df['volume'].rolling(20).mean()
-        df['volume_ma_50'] = df['volume'].rolling(50).mean()
+        df["volume_ma_5"] = df["volume"].rolling(5).mean()
+        df["volume_ma_10"] = df["volume"].rolling(10).mean()
+        df["volume_ma_20"] = df["volume"].rolling(20).mean()
+        df["volume_ma_50"] = df["volume"].rolling(50).mean()
 
         # Volume ratios
-        df['volume_ratio_5'] = df['volume'] / df['volume_ma_5']
-        df['volume_ratio_10'] = df['volume'] / df['volume_ma_10']
-        df['volume_ratio_20'] = df['volume'] / df['volume_ma_20']
-        df['volume_ratio_50'] = df['volume'] / df['volume_ma_50']
+        df["volume_ratio_5"] = df["volume"] / df["volume_ma_5"]
+        df["volume_ratio_10"] = df["volume"] / df["volume_ma_10"]
+        df["volume_ratio_20"] = df["volume"] / df["volume_ma_20"]
+        df["volume_ratio_50"] = df["volume"] / df["volume_ma_50"]
 
         # Volume changes
-        df['volume_change'] = df['volume'].pct_change()
-        df['volume_change_5'] = df['volume'].pct_change(5)
-        df['volume_change_10'] = df['volume'].pct_change(10)
+        df["volume_change"] = df["volume"].pct_change()
+        df["volume_change_5"] = df["volume"].pct_change(5)
+        df["volume_change_10"] = df["volume"].pct_change(10)
 
         # Volume volatility
-        df['volume_volatility_10'] = df['volume_change'].rolling(10).std()
-        df['volume_volatility_20'] = df['volume_change'].rolling(20).std()
+        df["volume_volatility_10"] = df["volume_change"].rolling(10).std()
+        df["volume_volatility_20"] = df["volume_change"].rolling(20).std()
 
         # Price-volume relationships
-        df['returns'] = df['close'].pct_change()
-        df['price_volume_corr_10'] = df['returns'].rolling(10).corr(df['volume'])
-        df['price_volume_corr_20'] = df['returns'].rolling(20).corr(df['volume'])
+        df["returns"] = df["close"].pct_change()
+        df["price_volume_corr_10"] = df["returns"].rolling(10).corr(df["volume"])
+        df["price_volume_corr_20"] = df["returns"].rolling(20).corr(df["volume"])
 
         # Volume concentration (how much volume is in recent periods)
-        df['volume_concentration_5'] = df['volume'].rolling(5).sum() / df['volume'].rolling(20).sum()
-        df['volume_concentration_10'] = df['volume'].rolling(10).sum() / df['volume'].rolling(40).sum()
+        df["volume_concentration_5"] = (
+            df["volume"].rolling(5).sum() / df["volume"].rolling(20).sum()
+        )
+        df["volume_concentration_10"] = (
+            df["volume"].rolling(10).sum() / df["volume"].rolling(40).sum()
+        )
 
         # Statistical measures
-        df['volume_zscore_20'] = (df['volume'] - df['volume_ma_20']) / df['volume'].rolling(20).std()
-        df['volume_zscore_50'] = (df['volume'] - df['volume_ma_50']) / df['volume'].rolling(50).std()
+        df["volume_zscore_20"] = (df["volume"] - df["volume_ma_20"]) / df[
+            "volume"
+        ].rolling(20).std()
+        df["volume_zscore_50"] = (df["volume"] - df["volume_ma_50"]) / df[
+            "volume"
+        ].rolling(50).std()
 
         # Volume patterns
-        df['volume_above_ma_20'] = (df['volume'] > df['volume_ma_20']).astype(int)
-        df['volume_above_ma_50'] = (df['volume'] > df['volume_ma_50']).astype(int)
+        df["volume_above_ma_20"] = (df["volume"] > df["volume_ma_20"]).astype(int)
+        df["volume_above_ma_50"] = (df["volume"] > df["volume_ma_50"]).astype(int)
 
         # Price action during high volume
-        df['high_volume_price_change'] = df['returns'].where(df['volume'] > df['volume_ma_20'], 0)
-        df['high_volume_price_volatility'] = df['returns'].rolling(5).std().where(df['volume'] > df['volume_ma_20'], 0)
+        df["high_volume_price_change"] = df["returns"].where(
+            df["volume"] > df["volume_ma_20"], 0
+        )
+        df["high_volume_price_volatility"] = (
+            df["returns"].rolling(5).std().where(df["volume"] > df["volume_ma_20"], 0)
+        )
 
         # Drop NaN values
         df = df.dropna()
 
         # Select feature columns
-        exclude_cols = ['open', 'high', 'low', 'close', 'volume', 'timestamp']
+        exclude_cols = ["open", "high", "low", "close", "volume", "timestamp"]
         self.feature_columns = [col for col in df.columns if col not in exclude_cols]
 
         return df[self.feature_columns]
@@ -124,9 +140,9 @@ class VolumePredictor:
             Series with binary labels (1 for surge, 0 for normal)
         """
         # Calculate z-score of volume
-        volume_ma = df['volume'].rolling(50).mean()
-        volume_std = df['volume'].rolling(50).std()
-        volume_zscore = (df['volume'] - volume_ma) / volume_std
+        volume_ma = df["volume"].rolling(50).mean()
+        volume_std = df["volume"].rolling(50).std()
+        volume_zscore = (df["volume"] - volume_ma) / volume_std
 
         # Label surges
         labels = (volume_zscore > threshold).astype(int)
@@ -139,15 +155,11 @@ class VolumePredictor:
             return RandomForestClassifier(n_estimators=100, random_state=42)
         elif self.model_type == "xgboost":
             return xgb.XGBClassifier(
-                objective='binary:logistic',
-                random_state=42,
-                n_estimators=100
+                objective="binary:logistic", random_state=42, n_estimators=100
             )
         elif self.model_type == "lightgbm":
             return lgb.LGBMClassifier(
-                objective='binary',
-                random_state=42,
-                n_estimators=100
+                objective="binary", random_state=42, n_estimators=100
             )
         else:
             raise ValueError(f"Unsupported ML model type: {self.model_type}")
@@ -167,7 +179,7 @@ class VolumePredictor:
             metrics = {
                 "model_type": "zscore",
                 "threshold": self.threshold,
-                "lookback": self.lookback
+                "lookback": self.lookback,
             }
             logger.info(f"Z-score model configured with threshold {self.threshold}")
             return metrics
@@ -226,10 +238,12 @@ class VolumePredictor:
             "final_accuracy": self.model.score(X_scaled, y),
             "n_samples": len(X),
             "n_features": len(self.feature_columns),
-            "surge_ratio": y.mean()  # Ratio of surge events
+            "surge_ratio": y.mean(),  # Ratio of surge events
         }
 
-        logger.info(f"ML model trained. Accuracy: {metrics['final_accuracy']:.3f}, Surge ratio: {metrics['surge_ratio']:.3f}")
+        logger.info(
+            f"ML model trained. Accuracy: {metrics['final_accuracy']:.3f}, Surge ratio: {metrics['surge_ratio']:.3f}"
+        )
         return metrics
 
     def load_model(self) -> bool:
@@ -266,18 +280,18 @@ class VolumePredictor:
             Tuple of (is_surge, confidence)
         """
         try:
-            if 'volume' not in df.columns or df.empty:
+            if "volume" not in df.columns or df.empty:
                 return False, 0.5
 
             # Calculate z-score
             recent_data = df.tail(self.lookback)
-            volume_ma = recent_data['volume'].mean()
-            volume_std = recent_data['volume'].std()
+            volume_ma = recent_data["volume"].mean()
+            volume_std = recent_data["volume"].std()
 
             if volume_std == 0:
                 return False, 0.5
 
-            current_volume = recent_data['volume'].iloc[-1]
+            current_volume = recent_data["volume"].iloc[-1]
             zscore = (current_volume - volume_ma) / volume_std
 
             # Detect surge - ensure native Python bool
@@ -311,7 +325,7 @@ class VolumePredictor:
             features_scaled = self.scaler.transform(latest_features)
 
             # Get predictions
-            if hasattr(self.model, 'predict_proba'):
+            if hasattr(self.model, "predict_proba"):
                 probabilities = self.model.predict_proba(features_scaled)[0]
                 predicted_class = np.argmax(probabilities)
                 confidence = np.max(probabilities)

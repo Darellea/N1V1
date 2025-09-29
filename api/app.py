@@ -3,31 +3,34 @@ FastAPI application for the crypto trading bot.
 Provides REST endpoints for monitoring and controlling the bot.
 """
 
-from fastapi import FastAPI, HTTPException, Request, Depends, Response, APIRouter
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
-from fastapi.exception_handlers import http_exception_handler
-from typing import Dict, List, Any, Optional
 import logging
 import os
 from datetime import datetime
-from sqlalchemy.orm import Session
-from .models import Order, Signal, Equity, get_db
-from .schemas import ErrorResponse
-from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-from slowapi.middleware import SlowAPIMiddleware
-from slowapi.errors import RateLimitExceeded
+from typing import Any, Dict, Optional
+
 import redis
-from .middleware import CustomExceptionMiddleware, RateLimitExceptionMiddleware, RateLimitException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
+from fastapi.exception_handlers import http_exception_handler
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.templating import Jinja2Templates
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
+from sqlalchemy.orm import Session
+
+from .middleware import (
+    CustomExceptionMiddleware,
+    RateLimitException,
+    RateLimitExceptionMiddleware,
+)
+from .models import Equity, Order, Signal, get_db
 
 # Re-export for backward compatibility
 RateLimitJSONMiddleware = RateLimitExceptionMiddleware
-
 
 
 # Global reference to bot engine (will be set when app starts)
@@ -41,6 +44,7 @@ logger = logging.getLogger(__name__)
 # Rate limiting configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
+
 def get_remote_address_exempt(request):
     """Get remote address, but exempt certain endpoints from rate limiting."""
     if request.url.path in ["/", "/dashboard"]:
@@ -50,29 +54,44 @@ def get_remote_address_exempt(request):
     except AttributeError:
         return "127.0.0.1"
 
+
 def on_breach(request):
     """Raise RateLimitExceeded exception to be handled by our custom handler."""
     raise RateLimitExceeded()
+
 
 # Try to connect to Redis, fallback to in-memory if not available
 limiter = None
 if os.environ.get("TESTING") == "1":
     # Use normal limits for tests but with isolated storage
-    limiter = Limiter(key_func=get_remote_address_exempt, default_limits=["60/minute"], headers_enabled=True)
+    limiter = Limiter(
+        key_func=get_remote_address_exempt,
+        default_limits=["60/minute"],
+        headers_enabled=True,
+    )
 else:
     try:
         redis_client = redis.from_url(REDIS_URL)
         redis_client.ping()  # Test connection
-        limiter = Limiter(key_func=get_remote_address_exempt, default_limits=["60/minute"], storage_uri=REDIS_URL, headers_enabled=True)
+        limiter = Limiter(
+            key_func=get_remote_address_exempt,
+            default_limits=["60/minute"],
+            storage_uri=REDIS_URL,
+            headers_enabled=True,
+        )
         logger.info("Rate limiting configured with Redis")
     except (redis.ConnectionError, redis.TimeoutError):
         logger.warning("Redis not available, falling back to in-memory rate limiting")
-        limiter = Limiter(key_func=get_remote_address_exempt, default_limits=["60/minute"], headers_enabled=True)  # In-memory fallback
+        limiter = Limiter(
+            key_func=get_remote_address_exempt,
+            default_limits=["60/minute"],
+            headers_enabled=True,
+        )  # In-memory fallback
 
 app = FastAPI(
     title="Crypto Trading Bot API",
     description="REST API for monitoring and controlling the crypto trading bot",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # Add CORS middleware first
@@ -111,31 +130,25 @@ api_router = APIRouter(prefix="/api/v1")
 
 # Prometheus metrics
 api_requests_total = Counter(
-    'api_requests_total',
-    'Total number of API requests',
-    ['method', 'endpoint', 'status']
+    "api_requests_total",
+    "Total number of API requests",
+    ["method", "endpoint", "status"],
 )
 
 trades_total = Counter(
-    'trades_total',
-    'Total number of trades executed',
-    ['symbol', 'side']
+    "trades_total", "Total number of trades executed", ["symbol", "side"]
 )
 
-wins_total = Counter('wins_total', 'Total number of winning trades')
-losses_total = Counter('losses_total', 'Total number of losing trades')
-open_positions = Counter('open_positions', 'Current number of open positions')
+wins_total = Counter("wins_total", "Total number of winning trades")
+losses_total = Counter("losses_total", "Total number of losing trades")
+open_positions = Counter("open_positions", "Current number of open positions")
 
 
-def format_error(code: int, message: str, details: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def format_error(
+    code: int, message: str, details: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """Centralized error formatting function."""
-    return {
-        "error": {
-            "code": code,
-            "message": message,
-            "details": details
-        }
-    }
+    return {"error": {"code": code, "message": message, "details": details}}
 
 
 @app.exception_handler(RateLimitException)
@@ -150,11 +163,11 @@ async def rate_limit_exception_handler(request: Request, exc: RateLimitException
                 "details": {
                     "limit": 60,
                     "window": "1 minute",
-                    "endpoint": str(request.url.path)
-                }
+                    "endpoint": str(request.url.path),
+                },
             }
         },
-        headers=exc.headers
+        headers=exc.headers,
     )
 
 
@@ -190,11 +203,11 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
                 "details": {
                     "limit": limit,
                     "window": window,
-                    "endpoint": str(request.url.path)
-                }
+                    "endpoint": str(request.url.path),
+                },
             }
         },
-        headers=exc.headers
+        headers=exc.headers,
     )
 
 
@@ -203,22 +216,21 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     """Custom HTTP exception handler to remove 'detail' wrapper."""
     if isinstance(exc.detail, dict) and "error" in exc.detail:
         # Already formatted error
-        return JSONResponse(
-            status_code=exc.status_code,
-            content=exc.detail
-        )
+        return JSONResponse(status_code=exc.status_code, content=exc.detail)
     else:
         # Plain string detail, format it
         return JSONResponse(
             status_code=exc.status_code,
-            content=format_error(exc.status_code, str(exc.detail))
+            content=format_error(exc.status_code, str(exc.detail)),
         )
 
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler for unhandled exceptions."""
-    logger.exception("Unhandled exception in %s %s", request.method, request.url.path, exc_info=exc)
+    logger.exception(
+        "Unhandled exception in %s %s", request.method, request.url.path, exc_info=exc
+    )
 
     return JSONResponse(
         status_code=500,
@@ -226,28 +238,25 @@ async def global_exception_handler(request: Request, exc: Exception):
             "error": {
                 "code": 500,
                 "message": "An unexpected error occurred",
-                "details": {
-                    "path": str(request.url.path),
-                    "method": request.method
-                }
+                "details": {"path": str(request.url.path), "method": request.method},
             }
-        }
+        },
     )
 
 
-async def verify_api_key(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+async def verify_api_key(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+):
     """Verify API key if authentication is enabled."""
     current_api_key = os.getenv("API_KEY")
     if current_api_key and credentials:
         if credentials.credentials != current_api_key:
             raise HTTPException(
-                status_code=401,
-                detail=format_error(401, "Invalid API key")
+                status_code=401, detail=format_error(401, "Invalid API key")
             )
     elif current_api_key and not credentials:
         raise HTTPException(
-            status_code=401,
-            detail=format_error(401, "API key required")
+            status_code=401, detail=format_error(401, "API key required")
         )
     return True
 
@@ -268,17 +277,14 @@ async def root():
 async def get_status(request: Request):
     """Get bot status."""
     if not bot_engine:
-        raise HTTPException(
-            status_code=503,
-            detail="Bot engine not available"
-        )
+        raise HTTPException(status_code=503, detail="Bot engine not available")
 
     return {
         "running": bot_engine.state.running,
         "paused": bot_engine.state.paused,
         "mode": bot_engine.mode.name,
         "pairs": bot_engine.pairs,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
     }
 
 
@@ -290,17 +296,19 @@ async def get_orders(request: Request, db: Session = Depends(get_db)):
 
     orders = []
     for order in orders_query:
-        orders.append({
-            "id": order.id,
-            "symbol": order.symbol,
-            "timestamp": order.timestamp.isoformat() if order.timestamp else None,
-            "side": order.side,
-            "quantity": order.quantity,
-            "price": order.price,
-            "pnl": order.pnl,
-            "equity": order.equity,
-            "cumulative_return": order.cumulative_return
-        })
+        orders.append(
+            {
+                "id": order.id,
+                "symbol": order.symbol,
+                "timestamp": order.timestamp.isoformat() if order.timestamp else None,
+                "side": order.side,
+                "quantity": order.quantity,
+                "price": order.price,
+                "pnl": order.pnl,
+                "equity": order.equity,
+                "cumulative_return": order.cumulative_return,
+            }
+        )
 
     return {"orders": orders}
 
@@ -313,14 +321,16 @@ async def get_signals(request: Request, db: Session = Depends(get_db)):
 
     signals = []
     for signal in signals_query:
-        signals.append({
-            "id": signal.id,
-            "symbol": signal.symbol,
-            "timestamp": signal.timestamp.isoformat() if signal.timestamp else None,
-            "confidence": signal.confidence,
-            "signal_type": signal.signal_type,
-            "strategy": signal.strategy
-        })
+        signals.append(
+            {
+                "id": signal.id,
+                "symbol": signal.symbol,
+                "timestamp": signal.timestamp.isoformat() if signal.timestamp else None,
+                "confidence": signal.confidence,
+                "signal_type": signal.signal_type,
+                "strategy": signal.strategy,
+            }
+        )
 
     return {"signals": signals}
 
@@ -333,12 +343,16 @@ async def get_equity(request: Request, db: Session = Depends(get_db)):
 
     equity_data = []
     for equity_point in equity_query:
-        equity_data.append({
-            "timestamp": equity_point.timestamp.isoformat() if equity_point.timestamp else None,
-            "balance": equity_point.balance,
-            "equity": equity_point.equity,
-            "cumulative_return": equity_point.cumulative_return
-        })
+        equity_data.append(
+            {
+                "timestamp": equity_point.timestamp.isoformat()
+                if equity_point.timestamp
+                else None,
+                "balance": equity_point.balance,
+                "equity": equity_point.equity,
+                "cumulative_return": equity_point.cumulative_return,
+            }
+        )
 
     return {"equity_curve": equity_data}
 
@@ -362,6 +376,7 @@ async def readiness_check(request: Request):
 
     # Return response with appropriate HTTP status
     from fastapi.responses import JSONResponse
+
     return JSONResponse(content=response, status_code=status_code)
 
 
@@ -370,8 +385,7 @@ async def pause_bot(request: Request):
     """Pause the bot."""
     if not bot_engine:
         raise HTTPException(
-            status_code=503,
-            detail=format_error(503, "Bot engine not available")
+            status_code=503, detail=format_error(503, "Bot engine not available")
         )
 
     bot_engine.state.paused = True
@@ -384,8 +398,7 @@ async def resume_bot(request: Request):
     """Resume the bot."""
     if not bot_engine:
         raise HTTPException(
-            status_code=503,
-            detail=format_error(503, "Bot engine not available")
+            status_code=503, detail=format_error(503, "Bot engine not available")
         )
 
     bot_engine.state.paused = False
@@ -398,8 +411,7 @@ async def get_performance(request: Request):
     """Get performance metrics."""
     if not bot_engine:
         raise HTTPException(
-            status_code=503,
-            detail=format_error(503, "Bot engine not available")
+            status_code=503, detail=format_error(503, "Bot engine not available")
         )
 
     return {
@@ -408,7 +420,7 @@ async def get_performance(request: Request):
         "wins": bot_engine.performance_stats.get("wins", 0),
         "losses": bot_engine.performance_stats.get("losses", 0),
         "sharpe_ratio": bot_engine.performance_stats.get("sharpe_ratio", 0.0),
-        "max_drawdown": bot_engine.performance_stats.get("max_drawdown", 0.0)
+        "max_drawdown": bot_engine.performance_stats.get("max_drawdown", 0.0),
     }
 
 
@@ -425,7 +437,9 @@ async def dashboard(request: Request):
         return templates.TemplateResponse("dashboard.html", {"request": request})
     except Exception:
         from fastapi.responses import HTMLResponse
+
         return HTMLResponse("<html><body>Dashboard</body></html>", status_code=200)
+
 
 # Include the API router
 app.include_router(api_router)

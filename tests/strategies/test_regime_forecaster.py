@@ -11,20 +11,16 @@ Tests cover:
 - Model versioning and updates
 """
 
-import pytest
-import numpy as np
-import pandas as pd
-from datetime import datetime, timedelta
-from unittest.mock import Mock, AsyncMock, patch
 import asyncio
-import tempfile
-import os
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
+import pytest
+
+from core.diagnostics import HealthCheckResult, HealthStatus
 from strategies.regime.regime_forecaster import RegimeForecaster
-from strategies.regime.market_regime import MarketRegimeDetector
 from strategies.regime.strategy_selector import StrategySelector
-from core.diagnostics import HealthStatus, HealthCheckResult
 
 
 class TestRegimeForecasterInitialization:
@@ -41,7 +37,9 @@ class TestRegimeForecasterInitialization:
         assert forecaster.enabled == config.get("enabled", True)
         assert forecaster.model_path == temp_dir
         assert forecaster.forecast_horizon == config.get("forecast_horizon", 24)
-        assert forecaster.confidence_threshold == config.get("confidence_threshold", 0.7)
+        assert forecaster.confidence_threshold == config.get(
+            "confidence_threshold", 0.7
+        )
         assert forecaster.is_initialized is False
 
     @pytest.mark.asyncio
@@ -55,7 +53,7 @@ class TestRegimeForecasterInitialization:
 
         assert forecaster.is_initialized is True
         # Model should be loaded or created
-        assert hasattr(forecaster, 'model')
+        assert hasattr(forecaster, "model")
 
     def test_initialization_without_config(self):
         """Test initialization with default configuration."""
@@ -83,7 +81,7 @@ class TestFeatureEngineering:
         assert len(features) > 0
 
         # Should have basic features
-        expected_features = ['returns', 'volatility', 'trend_strength', 'volume_trend']
+        expected_features = ["returns", "volatility", "trend_strength", "volume_trend"]
         for feature in expected_features:
             assert feature in features or any(feature in key for key in features.keys())
 
@@ -115,24 +113,28 @@ class TestFeatureEngineering:
         assert isinstance(features, dict)  # Should handle gracefully
 
         # Single row data
-        single_row = pd.DataFrame({
-            'open': [50000.0],
-            'high': [51000.0],
-            'low': [49000.0],
-            'close': [50500.0],
-            'volume': [1000.0]
-        })
+        single_row = pd.DataFrame(
+            {
+                "open": [50000.0],
+                "high": [51000.0],
+                "low": [49000.0],
+                "close": [50500.0],
+                "volume": [1000.0],
+            }
+        )
         features = forecaster._extract_features(single_row)
         assert isinstance(features, dict)
 
         # Data with NaN values
-        nan_data = pd.DataFrame({
-            'open': [50000.0, np.nan, 51000.0],
-            'high': [51000.0, 52000.0, np.nan],
-            'low': [49000.0, 48000.0, 50000.0],
-            'close': [50500.0, 49500.0, 50500.0],
-            'volume': [1000.0, np.nan, 1200.0]
-        })
+        nan_data = pd.DataFrame(
+            {
+                "open": [50000.0, np.nan, 51000.0],
+                "high": [51000.0, 52000.0, np.nan],
+                "low": [49000.0, 48000.0, 50000.0],
+                "close": [50500.0, 49500.0, 50500.0],
+                "volume": [1000.0, np.nan, 1200.0],
+            }
+        )
         features = forecaster._extract_features(nan_data)
         assert isinstance(features, dict)
 
@@ -143,18 +145,20 @@ class TestFeatureEngineering:
         forecaster = RegimeForecaster({})
 
         # Test RSI calculation
-        rsi = forecaster._calculate_rsi(data['close'], period=14)
+        rsi = forecaster._calculate_rsi(data["close"], period=14)
         assert len(rsi) == len(data)
         assert all(0 <= r <= 100 for r in rsi.dropna())
 
         # Test moving averages
-        sma_20 = forecaster._calculate_sma(data['close'], period=20)
-        sma_50 = forecaster._calculate_sma(data['close'], period=50)
+        sma_20 = forecaster._calculate_sma(data["close"], period=20)
+        sma_50 = forecaster._calculate_sma(data["close"], period=50)
         assert len(sma_20) == len(data)
         assert len(sma_50) == len(data)
 
         # Test Bollinger Bands
-        bb_upper, bb_middle, bb_lower = forecaster._calculate_bollinger_bands(data['close'])
+        bb_upper, bb_middle, bb_lower = forecaster._calculate_bollinger_bands(
+            data["close"]
+        )
         assert len(bb_upper) == len(data)
         assert len(bb_middle) == len(data)
         assert len(bb_lower) == len(data)
@@ -277,13 +281,15 @@ class TestPrediction:
             prediction = await forecaster.predict_regime(data)
 
             assert isinstance(prediction, dict)
-            assert 'predicted_regime' in prediction
-            assert 'confidence' in prediction
-            assert prediction['predicted_regime'] in regimes
-            assert 0.0 <= prediction['confidence'] <= 1.0
+            assert "predicted_regime" in prediction
+            assert "confidence" in prediction
+            assert prediction["predicted_regime"] in regimes
+            assert 0.0 <= prediction["confidence"] <= 1.0
 
     @pytest.mark.asyncio
-    async def test_prediction_confidence_calibration(self, generate_regime_data, temp_dir):
+    async def test_prediction_confidence_calibration(
+        self, generate_regime_data, temp_dir
+    ):
         """Test prediction confidence calibration."""
         # Generate clear bull market data
         bull_data = generate_regime_data("bull_market", n_points=200)
@@ -296,7 +302,7 @@ class TestPrediction:
         training_data = [
             (generate_regime_data("bull_market", 100), "bull_market"),
             (generate_regime_data("bear_market", 100), "bear_market"),
-            (generate_regime_data("sideways", 100), "sideways")
+            (generate_regime_data("sideways", 100), "sideways"),
         ]
         await forecaster._train_model(training_data)
 
@@ -304,7 +310,7 @@ class TestPrediction:
         prediction = await forecaster.predict_regime(bull_data)
 
         # Should have high confidence for clear regime
-        assert prediction['confidence'] > 0.5
+        assert prediction["confidence"] > 0.5
 
     @pytest.mark.asyncio
     async def test_prediction_edge_cases(self, temp_dir):
@@ -319,13 +325,15 @@ class TestPrediction:
         assert isinstance(prediction, dict)
 
         # Single row data
-        single_row = pd.DataFrame({
-            'open': [50000.0],
-            'high': [51000.0],
-            'low': [49000.0],
-            'close': [50500.0],
-            'volume': [1000.0]
-        })
+        single_row = pd.DataFrame(
+            {
+                "open": [50000.0],
+                "high": [51000.0],
+                "low": [49000.0],
+                "close": [50500.0],
+                "volume": [1000.0],
+            }
+        )
         prediction = await forecaster.predict_regime(single_row)
         assert isinstance(prediction, dict)
 
@@ -340,8 +348,8 @@ class TestPrediction:
 
         prediction = await forecaster.predict_regime(data)
 
-        assert 'forecast_horizon' in prediction
-        assert prediction['forecast_horizon'] == 48
+        assert "forecast_horizon" in prediction
+        assert prediction["forecast_horizon"] == 48
 
 
 class TestIntegrationWithStrategySelector:
@@ -358,7 +366,7 @@ class TestIntegrationWithStrategySelector:
         # Train with some data
         training_data = [
             (generate_regime_data("bull_market", 50), "bull_market"),
-            (generate_regime_data("bear_market", 50), "bear_market")
+            (generate_regime_data("bear_market", 50), "bear_market"),
         ]
         await forecaster._train_model(training_data)
 
@@ -374,10 +382,16 @@ class TestIntegrationWithStrategySelector:
         # Strategy selector should use forecast
         # (This would be tested in integration tests with actual strategies)
         assert forecast is not None
-        assert forecast['predicted_regime'] in ['bull_market', 'bear_market', 'sideways']
+        assert forecast["predicted_regime"] in [
+            "bull_market",
+            "bear_market",
+            "sideways",
+        ]
 
     @pytest.mark.asyncio
-    async def test_forecast_driven_strategy_selection(self, generate_regime_data, temp_dir):
+    async def test_forecast_driven_strategy_selection(
+        self, generate_regime_data, temp_dir
+    ):
         """Test forecast-driven strategy selection."""
         # Setup forecaster
         config = {"model_path": temp_dir}
@@ -388,7 +402,7 @@ class TestIntegrationWithStrategySelector:
         training_data = [
             (generate_regime_data("bull_market", 50), "bull_market"),
             (generate_regime_data("bear_market", 50), "bear_market"),
-            (generate_regime_data("sideways", 50), "sideways")
+            (generate_regime_data("sideways", 50), "sideways"),
         ]
         await forecaster._train_model(training_data)
 
@@ -396,7 +410,7 @@ class TestIntegrationWithStrategySelector:
         test_cases = [
             ("bull_market", "bull_market"),
             ("bear_market", "bear_market"),
-            ("sideways", "sideways")
+            ("sideways", "sideways"),
         ]
 
         for regime_type, expected_regime in test_cases:
@@ -404,15 +418,17 @@ class TestIntegrationWithStrategySelector:
             forecast = await forecaster.predict_regime(test_data)
 
             # Forecast should match expected regime for clear cases
-            assert forecast['predicted_regime'] == expected_regime
-            assert forecast['confidence'] > 0.5
+            assert forecast["predicted_regime"] == expected_regime
+            assert forecast["confidence"] > 0.5
 
 
 class TestPerformance:
     """Test performance characteristics."""
 
     @pytest.mark.asyncio
-    async def test_prediction_performance(self, generate_regime_data, temp_dir, performance_timer):
+    async def test_prediction_performance(
+        self, generate_regime_data, temp_dir, performance_timer
+    ):
         """Test prediction performance."""
         data = generate_regime_data("bull_market", n_points=100)
 
@@ -478,7 +494,7 @@ class TestPerformance:
         # All predictions should succeed
         assert len(predictions) == 5
         assert all(isinstance(p, dict) for p in predictions)
-        assert all('predicted_regime' in p for p in predictions)
+        assert all("predicted_regime" in p for p in predictions)
 
 
 class TestModelUpdates:
@@ -500,7 +516,7 @@ class TestModelUpdates:
         # Update with more data
         update_data = [
             (generate_regime_data("bull_market", 30), "bull_market"),
-            (generate_regime_data("bear_market", 30), "bear_market")
+            (generate_regime_data("bear_market", 30), "bear_market"),
         ]
         await forecaster.update_model(update_data)
 
@@ -544,13 +560,15 @@ class TestErrorHandling:
         await forecaster.initialize()
 
         # Data with extreme values
-        corrupted_data = pd.DataFrame({
-            'open': [50000.0, 1e10, 50000.0],  # Extreme value
-            'high': [51000.0, 52000.0, 51000.0],
-            'low': [49000.0, 48000.0, 49000.0],
-            'close': [50500.0, 49500.0, 50500.0],
-            'volume': [1000.0, 1e15, 1200.0]  # Extreme volume
-        })
+        corrupted_data = pd.DataFrame(
+            {
+                "open": [50000.0, 1e10, 50000.0],  # Extreme value
+                "high": [51000.0, 52000.0, 51000.0],
+                "low": [49000.0, 48000.0, 49000.0],
+                "close": [50500.0, 49500.0, 50500.0],
+                "volume": [1000.0, 1e15, 1200.0],  # Extreme volume
+            }
+        )
 
         # Should handle gracefully
         prediction = await forecaster.predict_regime(corrupted_data)
@@ -589,9 +607,18 @@ class TestErrorHandling:
 
         # Very small training dataset
         small_training = [
-            (pd.DataFrame({'open': [50000.0], 'high': [51000.0],
-                          'low': [49000.0], 'close': [50500.0], 'volume': [1000.0]}),
-             "bull_market")
+            (
+                pd.DataFrame(
+                    {
+                        "open": [50000.0],
+                        "high": [51000.0],
+                        "low": [49000.0],
+                        "close": [50500.0],
+                        "volume": [1000.0],
+                    }
+                ),
+                "bull_market",
+            )
         ]
 
         # Should handle gracefully
@@ -626,32 +653,32 @@ class TestHealthMonitoring:
                 status = HealthStatus.HEALTHY if is_trained else HealthStatus.DEGRADED
 
                 return HealthCheckResult(
-                    component='regime_forecaster',
+                    component="regime_forecaster",
                     status=status,
                     latency_ms=10.0,
-                    message=f'Forecaster healthy: trained={is_trained}, accuracy={last_accuracy:.2f}',
+                    message=f"Forecaster healthy: trained={is_trained}, accuracy={last_accuracy:.2f}",
                     details={
-                        'is_trained': is_trained,
-                        'model_age_hours': model_age,
-                        'last_accuracy': last_accuracy
-                    }
+                        "is_trained": is_trained,
+                        "model_age_hours": model_age,
+                        "last_accuracy": last_accuracy,
+                    },
                 )
             except Exception as e:
                 return HealthCheckResult(
-                    component='regime_forecaster',
+                    component="regime_forecaster",
                     status=HealthStatus.CRITICAL,
-                    message=f'Health check failed: {str(e)}',
-                    details={'error': str(e)}
+                    message=f"Health check failed: {str(e)}",
+                    details={"error": str(e)},
                 )
 
-        diagnostics.register_health_check('regime_forecaster', check_regime_forecaster)
+        diagnostics.register_health_check("regime_forecaster", check_regime_forecaster)
 
         # Run health check
         state = await diagnostics.run_health_check()
 
         # Should have forecaster health data
-        assert 'regime_forecaster' in state.component_statuses
-        rf_status = state.component_statuses['regime_forecaster']
+        assert "regime_forecaster" in state.component_statuses
+        rf_status = state.component_statuses["regime_forecaster"]
 
         assert rf_status.status in [HealthStatus.HEALTHY, HealthStatus.DEGRADED]
-        assert 'Forecaster healthy:' in rf_status.message
+        assert "Forecaster healthy:" in rf_status.message

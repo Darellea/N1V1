@@ -1,7 +1,8 @@
 import asyncio
+from unittest.mock import patch
+
 import pytest
-import logging
-from unittest.mock import AsyncMock, MagicMock, patch
+
 from core.management.reliability_manager import ReliabilityManager
 
 
@@ -70,6 +71,7 @@ class TestReliabilityManager:
     @pytest.mark.asyncio
     async def test_retry_async_success_first_try(self, reliability_manager):
         """Test retry_async with successful operation on first try."""
+
         async def successful_operation():
             return "success"
 
@@ -89,8 +91,10 @@ class TestReliabilityManager:
                 raise ValueError("First attempt fails")
             return "success"
 
-        with patch('asyncio.sleep') as mock_sleep:
-            result = await reliability_manager.retry_async(lambda: failing_then_successful_operation())
+        with patch("asyncio.sleep") as mock_sleep:
+            result = await reliability_manager.retry_async(
+                lambda: failing_then_successful_operation()
+            )
 
         assert result == "success"
         assert call_count == 2
@@ -99,12 +103,15 @@ class TestReliabilityManager:
     @pytest.mark.asyncio
     async def test_retry_async_exhaust_retries(self, reliability_manager):
         """Test retry_async when all retries are exhausted."""
+
         async def always_failing_operation():
             raise ValueError("Always fails")
 
-        with patch('asyncio.sleep') as mock_sleep:
+        with patch("asyncio.sleep") as mock_sleep:
             with pytest.raises(ValueError, match="Always fails"):
-                await reliability_manager.retry_async(lambda: always_failing_operation())
+                await reliability_manager.retry_async(
+                    lambda: always_failing_operation()
+                )
 
         # Should have tried 4 times (1 initial + 3 retries)
         assert mock_sleep.call_count == 3
@@ -121,12 +128,9 @@ class TestReliabilityManager:
                 raise ValueError("Fails")
             return "success"
 
-        with patch('asyncio.sleep') as mock_sleep:
+        with patch("asyncio.sleep") as mock_sleep:
             result = await reliability_manager.retry_async(
-                lambda: operation(),
-                retries=2,
-                base_backoff=1.0,
-                max_backoff=5.0
+                lambda: operation(), retries=2, base_backoff=1.0, max_backoff=5.0
             )
 
         assert result == "success"
@@ -136,14 +140,17 @@ class TestReliabilityManager:
     @pytest.mark.asyncio
     async def test_retry_async_specific_exceptions(self, reliability_manager):
         """Test retry_async with specific exception types."""
+
         async def operation():
             raise ConnectionError("Network error")
 
-        with patch('asyncio.sleep') as mock_sleep:
+        with patch("asyncio.sleep") as mock_sleep:
             with pytest.raises(ConnectionError):
                 await reliability_manager.retry_async(
                     lambda: operation(),
-                    exceptions=(ValueError,)  # Only retry ValueError, not ConnectionError
+                    exceptions=(
+                        ValueError,
+                    ),  # Only retry ValueError, not ConnectionError
                 )
 
         # Should not have retried since ConnectionError is not in exceptions tuple
@@ -152,12 +159,15 @@ class TestReliabilityManager:
     @pytest.mark.asyncio
     async def test_retry_async_backoff_calculation(self, reliability_manager):
         """Test that backoff times are calculated correctly with jitter."""
+
         async def always_failing_operation():
             raise ValueError("Fails")
 
-        with patch('asyncio.sleep') as mock_sleep:
+        with patch("asyncio.sleep") as mock_sleep:
             with pytest.raises(ValueError):
-                await reliability_manager.retry_async(lambda: always_failing_operation())
+                await reliability_manager.retry_async(
+                    lambda: always_failing_operation()
+                )
 
         # Check that sleep was called with increasing backoff times
         calls = mock_sleep.call_args_list
@@ -178,12 +188,15 @@ class TestReliabilityManager:
     @pytest.mark.asyncio
     async def test_retry_async_max_backoff_cap(self, reliability_manager_with_config):
         """Test that backoff is capped at max_backoff."""
+
         async def always_failing_operation():
             raise ValueError("Fails")
 
-        with patch('asyncio.sleep') as mock_sleep:
+        with patch("asyncio.sleep") as mock_sleep:
             with pytest.raises(ValueError):
-                await reliability_manager_with_config.retry_async(lambda: always_failing_operation())
+                await reliability_manager_with_config.retry_async(
+                    lambda: always_failing_operation()
+                )
 
         # With custom config: max_retries=5, max_backoff=20.0
         calls = mock_sleep.call_args_list
@@ -218,7 +231,9 @@ class TestReliabilityManager:
         assert reliability_manager.critical_error_count == 5
         assert reliability_manager.safe_mode_active is True
 
-    def test_record_critical_error_with_custom_threshold(self, reliability_manager_with_config):
+    def test_record_critical_error_with_custom_threshold(
+        self, reliability_manager_with_config
+    ):
         """Test record_critical_error with custom threshold."""
         exc = ValueError("Test error")
 
@@ -238,7 +253,7 @@ class TestReliabilityManager:
         exc = ValueError("Test error")
         context = {"symbol": "BTC/USDT", "operation": "buy"}
 
-        with patch('logging.Logger.error') as mock_log:
+        with patch("logging.Logger.error") as mock_log:
             reliability_manager.record_critical_error(exc, context)
 
         # Verify logging was called
@@ -264,6 +279,7 @@ class TestReliabilityManager:
 
     def test_record_critical_error_exception_handling(self, reliability_manager):
         """Test record_critical_error handles exceptions gracefully."""
+
         # Create a mock exception that raises when str() is called
         class BadException(Exception):
             def __str__(self):
@@ -281,7 +297,7 @@ class TestReliabilityManager:
         """Test basic safe mode activation."""
         reason = "Test activation"
 
-        with patch('logging.Logger.critical') as mock_critical:
+        with patch("logging.Logger.critical") as mock_critical:
             reliability_manager.activate_safe_mode(reason)
 
         assert reliability_manager.safe_mode_active is True
@@ -296,25 +312,28 @@ class TestReliabilityManager:
 
         assert reliability_manager.safe_mode_active is True
 
-    def test_activate_safe_mode_close_positions_enabled(self, reliability_manager_with_config):
+    def test_activate_safe_mode_close_positions_enabled(
+        self, reliability_manager_with_config
+    ):
         """Test safe mode activation with close_positions_on_safe enabled."""
         reason = "Test activation"
 
-        with patch('logging.Logger.critical') as mock_critical, \
-             patch('logging.Logger.info') as mock_info, \
-             patch('logging.Logger.warning') as mock_warning:
-
+        with patch("logging.Logger.critical") as mock_critical, patch(
+            "logging.Logger.info"
+        ) as mock_info, patch("logging.Logger.warning") as mock_warning:
             reliability_manager_with_config.activate_safe_mode(reason)
 
         assert reliability_manager_with_config.safe_mode_active is True
         mock_critical.assert_called_once()
         mock_info.assert_called_once_with("Safe mode: closing existing positions")
-        mock_warning.assert_called_once_with("Position closing not implemented; requires order_manager integration")
+        mock_warning.assert_called_once_with(
+            "Position closing not implemented; requires order_manager integration"
+        )
 
     def test_activate_safe_mode_exception_handling(self, reliability_manager):
         """Test activate_safe_mode handles exceptions gracefully."""
         # Mock logger to raise exception
-        with patch('logging.Logger.critical', side_effect=Exception("Log failure")):
+        with patch("logging.Logger.critical", side_effect=Exception("Log failure")):
             # Should not raise, should handle exception internally
             reliability_manager.activate_safe_mode("Test")
 
@@ -334,12 +353,15 @@ class TestReliabilityManager:
         assert reliability_manager.safe_mode_active is True
 
     @pytest.mark.asyncio
-    async def test_retry_async_with_different_exception_types(self, reliability_manager):
+    async def test_retry_async_with_different_exception_types(
+        self, reliability_manager
+    ):
         """Test retry_async with different exception types."""
+
         async def operation():
             raise asyncio.TimeoutError("Timeout")
 
-        with patch('asyncio.sleep') as mock_sleep:
+        with patch("asyncio.sleep") as mock_sleep:
             with pytest.raises(asyncio.TimeoutError):
                 await reliability_manager.retry_async(lambda: operation())
 
@@ -349,10 +371,11 @@ class TestReliabilityManager:
     @pytest.mark.asyncio
     async def test_retry_async_zero_retries(self, reliability_manager):
         """Test retry_async with zero retries."""
+
         async def operation():
             raise ValueError("Fails")
 
-        with patch('asyncio.sleep') as mock_sleep:
+        with patch("asyncio.sleep") as mock_sleep:
             with pytest.raises(ValueError):
                 await reliability_manager.retry_async(lambda: operation(), retries=0)
 

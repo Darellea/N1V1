@@ -8,18 +8,23 @@ Handles configuration loading, validation, and management with support for:
 - Schema validation
 """
 
-import os
+import copy
 import json
 import logging
-from typing import Dict, Any, Optional
+import os
 from pathlib import Path
-import copy
-from dotenv import load_dotenv
-import jsonschema
-from pydantic import BaseModel, ValidationError
-from deepmerge import always_merger
+from typing import Any, Dict, Optional
 
-from utils.security import get_credential_manager, SecurityException, sanitize_error_message
+import jsonschema
+from deepmerge import always_merger
+from dotenv import load_dotenv
+from pydantic import BaseModel, ValidationError
+
+from utils.security import (
+    SecurityException,
+    get_credential_manager,
+    sanitize_error_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -114,15 +119,15 @@ class ConfigLoader:
                 "dynamic_tp": {
                     "enabled": False,
                     "trend_window": "1h",
-                    "trend_lookback": 20
+                    "trend_lookback": 20,
                 },
                 # Profit-based re-entry configuration
                 "reentry": {
                     "enabled": False,
-                    "profit_threshold": 50.0,     # minimum profit (in quote currency) to consider re-entry
-                    "reentry_fraction": 0.5,      # fraction of profit to deploy for re-entry
-                    "max_reentries": 1
-                }
+                    "profit_threshold": 50.0,  # minimum profit (in quote currency) to consider re-entry
+                    "reentry_fraction": 0.5,  # fraction of profit to deploy for re-entry
+                    "max_reentries": 1,
+                },
             },
         },
         "backtesting": {
@@ -166,9 +171,7 @@ class ConfigLoader:
             "track_exit_reasons": True,
             "log_sl_tp_details": True,
         },
-        "portfolio": {
-            "pair_allocations": {}
-        },
+        "portfolio": {"pair_allocations": {}},
         "logging": {
             "file_logging": True,
             "log_file": "logs/crypto_bot.log",
@@ -180,43 +183,25 @@ class ConfigLoader:
             "model_path": "models/ml_filter.pkl",
             "model_type": "logistic_regression",
             "confidence_threshold": 0.6,
-            "fallback_to_raw_signals": True
+            "fallback_to_raw_signals": True,
         },
         "strategy_selector": {
             "enabled": False,
             "mode": "rule_based",
             "ensemble": False,
-            "rules": {
-                "adx_trend_threshold": 25,
-                "adx_sideways_threshold": 20
-            },
-            "ml_config": {
-                "learning_rate": 0.1,
-                "min_trades_for_learning": 10
-            }
+            "rules": {"adx_trend_threshold": 25, "adx_sideways_threshold": 20},
+            "ml_config": {"learning_rate": 0.1, "min_trades_for_learning": 10},
         },
         "ensemble": {
             "enabled": False,
             "mode": "weighted_vote",
             "dynamic_weights": True,
             "strategies": [
-                {
-                    "id": "ema_trend",
-                    "weight": 0.3
-                },
-                {
-                    "id": "bollinger_reversion",
-                    "weight": 0.2
-                },
-                {
-                    "id": "ml_filter",
-                    "weight": 0.5
-                }
+                {"id": "ema_trend", "weight": 0.3},
+                {"id": "bollinger_reversion", "weight": 0.2},
+                {"id": "ml_filter", "weight": 0.5},
             ],
-            "thresholds": {
-                "confidence": 0.6,
-                "vote_ratio": 0.66
-            }
+            "thresholds": {"confidence": 0.6, "vote_ratio": 0.66},
         },
         "market_regime": {
             "enabled": True,
@@ -229,7 +214,7 @@ class ConfigLoader:
             "stability_window": 3,
             "ml_method": "clustering",
             "n_clusters": 3,
-            "lookback_window": 50
+            "lookback_window": 50,
         },
         "predictive_models": {
             "enabled": False,
@@ -241,7 +226,7 @@ class ConfigLoader:
                     "confidence_threshold": 0.6,
                     "lookback": 50,
                     "model_path": "models/price_lightgbm.pkl",
-                    "scaler_path": "models/price_scaler.pkl"
+                    "scaler_path": "models/price_scaler.pkl",
                 },
                 "volatility": {
                     "enabled": True,
@@ -252,7 +237,7 @@ class ConfigLoader:
                     "lookback": 100,
                     "model_path": "models/volatility_garch.pkl",
                     "scaler_path": "models/volatility_scaler.pkl",
-                    "block_high_volatility": False
+                    "block_high_volatility": False,
                 },
                 "volume_surge": {
                     "enabled": True,
@@ -262,9 +247,9 @@ class ConfigLoader:
                     "lookback": 50,
                     "model_path": "models/volume_zscore.pkl",
                     "scaler_path": "models/volume_scaler.pkl",
-                    "require_surge": False
-                }
-            }
+                    "require_surge": False,
+                },
+            },
         },
         "execution": {
             "enabled": True,
@@ -273,23 +258,11 @@ class ConfigLoader:
                 "split_threshold": 5000,
                 "max_parts": 5,
                 "delay_seconds": 2,
-                "fallback_mode": "market"
+                "fallback_mode": "market",
             },
-            "twap": {
-                "duration_minutes": 30,
-                "parts": 10,
-                "fallback_mode": "market"
-            },
-            "vwap": {
-                "lookback_minutes": 60,
-                "parts": 10,
-                "fallback_mode": "market"
-            },
-            "dca": {
-                "interval_minutes": 60,
-                "parts": 5,
-                "fallback_mode": "market"
-            }
+            "twap": {"duration_minutes": 30, "parts": 10, "fallback_mode": "market"},
+            "vwap": {"lookback_minutes": 60, "parts": 10, "fallback_mode": "market"},
+            "dca": {"interval_minutes": 60, "parts": 5, "fallback_mode": "market"},
         },
         "optimization": {
             "enabled": False,
@@ -299,7 +272,7 @@ class ConfigLoader:
                 "test_window_days": 30,
                 "rolling": True,
                 "min_observations": 1000,
-                "improvement_threshold": 0.05
+                "improvement_threshold": 0.05,
             },
             "ga": {
                 "population_size": 20,
@@ -307,7 +280,7 @@ class ConfigLoader:
                 "mutation_rate": 0.1,
                 "crossover_rate": 0.7,
                 "elitism_rate": 0.1,
-                "tournament_size": 3
+                "tournament_size": 3,
             },
             "rl": {
                 "alpha": 0.1,
@@ -315,28 +288,24 @@ class ConfigLoader:
                 "epsilon": 0.1,
                 "episodes": 100,
                 "max_steps_per_episode": 50,
-                "reward_function": "sharpe_ratio"
+                "reward_function": "sharpe_ratio",
             },
             "fitness_metric": "sharpe_ratio",
             "fitness_weights": {
                 "sharpe_ratio": 1.0,
                 "total_return": 0.3,
                 "win_rate": 0.2,
-                "max_drawdown": -0.1
-            }
+                "max_drawdown": -0.1,
+            },
         },
         "portfolio": {
             "enabled": False,
-            "rotation": {
-                "method": "momentum",
-                "lookback_days": 30,
-                "top_n": 5
-            },
+            "rotation": {"method": "momentum", "lookback_days": 30, "top_n": 5},
             "rebalancing": {
                 "mode": "threshold",
                 "threshold": 0.05,
                 "period_days": 7,
-                "scheme": "risk_parity"
+                "scheme": "risk_parity",
             },
             "hedging": {
                 "enabled": False,
@@ -344,15 +313,15 @@ class ConfigLoader:
                 "trigger": {
                     "adx_below": 15,
                     "volatility_above": 0.05,
-                    "drawdown_above": 0.1
-                }
+                    "drawdown_above": 0.1,
+                },
             },
             "allocation": {
                 "min_position_size": 100.0,
                 "max_position_size": 10000.0,
                 "max_assets": 10,
-                "risk_per_asset": 0.02
-            }
+                "risk_per_asset": 0.02,
+            },
         },
     }
 
@@ -406,8 +375,12 @@ class ConfigLoader:
                 "properties": {
                     "enabled": {"type": "boolean"},
                     "model_path": {"type": "string"},
-                    "confidence_threshold": {"type": "number", "minimum": 0.0, "maximum": 1.0}
-                }
+                    "confidence_threshold": {
+                        "type": "number",
+                        "minimum": 0.0,
+                        "maximum": 1.0,
+                    },
+                },
             },
         },
         "required": ["environment", "exchange"],
@@ -590,8 +563,8 @@ class ConfigLoader:
             sandbox = bool(exch.get("sandbox", False))
 
             if not sandbox:
-                api_key = cred_manager.get_credential('exchange_api_key')
-                api_secret = cred_manager.get_credential('exchange_api_secret')
+                api_key = cred_manager.get_credential("exchange_api_key")
+                api_secret = cred_manager.get_credential("exchange_api_secret")
 
                 if not api_key or not api_secret:
                     error_msg = sanitize_error_message(
@@ -605,9 +578,9 @@ class ConfigLoader:
             discord_cfg = notifs.get("discord", {}) or {}
 
             if discord_cfg.get("enabled"):
-                webhook = cred_manager.get_credential('discord_webhook_url')
-                bot_token = cred_manager.get_credential('discord_bot_token')
-                channel_id = cred_manager.get_credential('discord_channel_id')
+                webhook = cred_manager.get_credential("discord_webhook_url")
+                bot_token = cred_manager.get_credential("discord_bot_token")
+                channel_id = cred_manager.get_credential("discord_channel_id")
 
                 if not webhook and not (bot_token and channel_id):
                     error_msg = sanitize_error_message(
@@ -711,14 +684,14 @@ class ConfigLoader:
                     "dynamic_tp": {
                         "enabled": False,
                         "trend_window": "1h",
-                        "trend_lookback": 20
+                        "trend_lookback": 20,
                     },
                     "reentry": {
                         "enabled": False,
                         "profit_threshold": 50.0,
                         "reentry_fraction": 0.5,
-                        "max_reentries": 1
-                    }
+                        "max_reentries": 1,
+                    },
                 },
             },
             "risk_management": {

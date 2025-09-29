@@ -5,21 +5,22 @@ Predicts next N-candle volatility using GARCH models or ML regression.
 """
 
 import logging
-import numpy as np
-import pandas as pd
-from typing import Dict, Any, Optional, Tuple
-from sklearn.ensemble import RandomForestRegressor
-import xgboost as xgb
-import lightgbm as lgb
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import TimeSeriesSplit
-import joblib
 import os
 from pathlib import Path
-from scipy import stats
+from typing import Any, Dict, Tuple
+
+import joblib
+import lightgbm as lgb
+import numpy as np
+import pandas as pd
+import xgboost as xgb
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.preprocessing import StandardScaler
 
 try:
     from arch import arch_model
+
     ARCH_AVAILABLE = True
 except ImportError:
     ARCH_AVAILABLE = False
@@ -43,10 +44,14 @@ class VolatilityPredictor:
         self.config = config
         self.model_type = config.get("type", "garch")
         self.forecast_horizon = config.get("forecast_horizon", 5)
-        self.threshold = config.get("threshold", 0.02)  # Threshold for high/low classification
+        self.threshold = config.get(
+            "threshold", 0.02
+        )  # Threshold for high/low classification
         self.lookback = config.get("lookback", 100)
-        self.model_path = config.get("model_path", f"models/volatility_{self.model_type}.pkl")
-        self.scaler_path = config.get("scaler_path", f"models/volatility_scaler.pkl")
+        self.model_path = config.get(
+            "model_path", f"models/volatility_{self.model_type}.pkl"
+        )
+        self.scaler_path = config.get("scaler_path", "models/volatility_scaler.pkl")
 
         self.model = None
         self.scaler = StandardScaler()
@@ -70,55 +75,57 @@ class VolatilityPredictor:
 
         # Basic price features
         df = df.copy()
-        df['returns'] = df['close'].pct_change()
-        df['log_returns'] = np.log(df['close'] / df['close'].shift(1))
-        df['abs_returns'] = df['returns'].abs()
+        df["returns"] = df["close"].pct_change()
+        df["log_returns"] = np.log(df["close"] / df["close"].shift(1))
+        df["abs_returns"] = df["returns"].abs()
 
         # Historical volatility measures
         for period in [5, 10, 20, 50]:
-            df[f'volatility_{period}'] = df['returns'].rolling(period).std()
-            df[f'high_low_range_{period}'] = (df['high'] - df['low']).rolling(period).mean() / df['close']
+            df[f"volatility_{period}"] = df["returns"].rolling(period).std()
+            df[f"high_low_range_{period}"] = (df["high"] - df["low"]).rolling(
+                period
+            ).mean() / df["close"]
 
         # Realized volatility (sum of squared returns)
-        df['realized_vol_5'] = (df['returns'] ** 2).rolling(5).sum()
-        df['realized_vol_10'] = (df['returns'] ** 2).rolling(10).sum()
-        df['realized_vol_20'] = (df['returns'] ** 2).rolling(20).sum()
+        df["realized_vol_5"] = (df["returns"] ** 2).rolling(5).sum()
+        df["realized_vol_10"] = (df["returns"] ** 2).rolling(10).sum()
+        df["realized_vol_20"] = (df["returns"] ** 2).rolling(20).sum()
 
         # Volume-based volatility
-        if 'volume' in df.columns:
-            df['volume_volatility_10'] = df['volume'].pct_change().rolling(10).std()
-            df['volume_ma_20'] = df['volume'].rolling(20).mean()
-            df['volume_ratio'] = df['volume'] / df['volume_ma_20']
+        if "volume" in df.columns:
+            df["volume_volatility_10"] = df["volume"].pct_change().rolling(10).std()
+            df["volume_ma_20"] = df["volume"].rolling(20).mean()
+            df["volume_ratio"] = df["volume"] / df["volume_ma_20"]
 
         # Price range features
-        df['daily_range'] = (df['high'] - df['low']) / df['close']
-        df['range_volatility_10'] = df['daily_range'].rolling(10).std()
+        df["daily_range"] = (df["high"] - df["low"]) / df["close"]
+        df["range_volatility_10"] = df["daily_range"].rolling(10).std()
 
         # Technical indicators that correlate with volatility
         # ATR (Average True Range)
-        high_low = df['high'] - df['low']
-        high_close = (df['high'] - df['close'].shift(1)).abs()
-        low_close = (df['low'] - df['close'].shift(1)).abs()
+        high_low = df["high"] - df["low"]
+        high_close = (df["high"] - df["close"].shift(1)).abs()
+        low_close = (df["low"] - df["close"].shift(1)).abs()
         true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-        df['atr_14'] = true_range.rolling(14).mean()
+        df["atr_14"] = true_range.rolling(14).mean()
 
         # Bollinger Band width
-        sma_20 = df['close'].rolling(20).mean()
-        std_20 = df['close'].rolling(20).std()
-        df['bb_width'] = (2 * std_20) / sma_20
+        sma_20 = df["close"].rolling(20).mean()
+        std_20 = df["close"].rolling(20).std()
+        df["bb_width"] = (2 * std_20) / sma_20
 
         # RSI for volatility signals
-        delta = df['close'].diff()
+        delta = df["close"].diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rs = gain / loss
-        df['rsi'] = 100 - (100 / (1 + rs))
+        df["rsi"] = 100 - (100 / (1 + rs))
 
         # Drop NaN values
         df = df.dropna()
 
         # Select feature columns
-        exclude_cols = ['open', 'high', 'low', 'close', 'volume', 'timestamp']
+        exclude_cols = ["open", "high", "low", "close", "volume", "timestamp"]
         self.feature_columns = [col for col in df.columns if col not in exclude_cols]
 
         return df[self.feature_columns]
@@ -134,7 +141,7 @@ class VolatilityPredictor:
             Series with future volatility measures
         """
         # Calculate future realized volatility
-        future_returns = df['returns'].shift(-self.forecast_horizon)
+        future_returns = df["returns"].shift(-self.forecast_horizon)
         future_volatility = future_returns.rolling(self.forecast_horizon).std()
 
         return future_volatility.dropna()
@@ -145,15 +152,11 @@ class VolatilityPredictor:
             return RandomForestRegressor(n_estimators=100, random_state=42)
         elif self.model_type == "xgboost":
             return xgb.XGBRegressor(
-                objective='reg:squarederror',
-                random_state=42,
-                n_estimators=100
+                objective="reg:squarederror", random_state=42, n_estimators=100
             )
         elif self.model_type == "lightgbm":
             return lgb.LGBMRegressor(
-                objective='regression',
-                random_state=42,
-                n_estimators=100
+                objective="regression", random_state=42, n_estimators=100
             )
         else:
             raise ValueError(f"Unsupported ML model type: {self.model_type}")
@@ -173,8 +176,8 @@ class VolatilityPredictor:
 
         try:
             # Fit GARCH(1,1) model
-            model = arch_model(returns, vol='Garch', p=1, q=1)
-            result = model.fit(disp='off')
+            model = arch_model(returns, vol="Garch", p=1, q=1)
+            result = model.fit(disp="off")
 
             # Save model
             joblib.dump(result, self.model_path)
@@ -197,10 +200,12 @@ class VolatilityPredictor:
                 "bic": result.bic,
                 "log_likelihood": result.loglikelihood,
                 "correlation": correlation,
-                "n_samples": len(returns)
+                "n_samples": len(returns),
             }
 
-            logger.info(f"GARCH model trained. AIC: {result.aic:.2f}, Correlation: {correlation:.3f}")
+            logger.info(
+                f"GARCH model trained. AIC: {result.aic:.2f}, Correlation: {correlation:.3f}"
+            )
             return metrics
 
         except Exception as e:
@@ -270,7 +275,7 @@ class VolatilityPredictor:
             "val_r2": np.mean(val_scores),
             "final_r2": self.model.score(X_scaled, y),
             "n_samples": len(X),
-            "n_features": len(self.feature_columns)
+            "n_features": len(self.feature_columns),
         }
 
         logger.info(f"ML model trained. R²: {metrics['final_r2']:.3f}")
@@ -287,7 +292,7 @@ class VolatilityPredictor:
             Training metrics
         """
         if self.model_type == "garch":
-            returns = df['close'].pct_change().dropna()
+            returns = df["close"].pct_change().dropna()
             return self._train_garch(returns)
         else:
             return self._train_ml_model(df)
@@ -304,7 +309,9 @@ class VolatilityPredictor:
                 self.model = joblib.load(self.model_path)
                 if self.model_type != "garch" and os.path.exists(self.scaler_path):
                     self.scaler = joblib.load(self.scaler_path)
-                logger.info(f"Loaded volatility prediction model from {self.model_path}")
+                logger.info(
+                    f"Loaded volatility prediction model from {self.model_path}"
+                )
                 return True
             else:
                 logger.warning(f"Model file not found: {self.model_path}")
@@ -327,7 +334,7 @@ class VolatilityPredictor:
             return "low", 0.5
 
         try:
-            returns = df['close'].pct_change().dropna()
+            returns = df["close"].pct_change().dropna()
             if len(returns) < 20:
                 return "low", 0.5
 
@@ -341,7 +348,10 @@ class VolatilityPredictor:
             # Classify regime
             if predicted_volatility > current_volatility * (1 + self.threshold):
                 regime = "high"
-                confidence = min(1.0, (predicted_volatility / current_volatility - 1) / self.threshold)
+                confidence = min(
+                    1.0,
+                    (predicted_volatility / current_volatility - 1) / self.threshold,
+                )
             else:
                 regime = "low"
                 confidence = 0.5
@@ -376,13 +386,18 @@ class VolatilityPredictor:
             predicted_volatility = self.model.predict(features_scaled)[0]
 
             # Get current realized volatility for comparison
-            returns = df['close'].pct_change().dropna()
-            current_volatility = returns.tail(20).std() if len(returns) >= 20 else returns.std()
+            returns = df["close"].pct_change().dropna()
+            current_volatility = (
+                returns.tail(20).std() if len(returns) >= 20 else returns.std()
+            )
 
             # Classify regime
             if predicted_volatility > current_volatility * (1 + self.threshold):
                 regime = "high"
-                confidence = min(1.0, (predicted_volatility / current_volatility - 1) / self.threshold)
+                confidence = min(
+                    1.0,
+                    (predicted_volatility / current_volatility - 1) / self.threshold,
+                )
             else:
                 regime = "low"
                 confidence = 0.5

@@ -15,21 +15,15 @@ Key Features:
 """
 
 import asyncio
-import logging
-import time
 import json
+import logging
 import os
-from typing import Dict, List, Any, Optional, Tuple, Callable
-from datetime import datetime
-from pathlib import Path
-import warnings
+import time
+from typing import Any, Dict, List, Optional
 
 import aiohttp
-import numpy as np
-import pandas as pd
 
 from .config import get_cross_asset_validation_config
-from .validation_criteria import ValidationCriteria
 
 
 class ValidationAsset:
@@ -41,9 +35,15 @@ class ValidationAsset:
     parameters.
     """
 
-    def __init__(self, symbol: str, name: str, weight: float = 1.0,
-                 required_history: int = 1000, timeframe: str = '1h',
-                 market_cap: Optional[float] = None):
+    def __init__(
+        self,
+        symbol: str,
+        name: str,
+        weight: float = 1.0,
+        required_history: int = 1000,
+        timeframe: str = "1h",
+        market_cap: Optional[float] = None,
+    ):
         """
         Initialize validation asset.
 
@@ -65,22 +65,22 @@ class ValidationAsset:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
-            'symbol': self.symbol,
-            'name': self.name,
-            'weight': self.weight,
-            'required_history': self.required_history,
-            'timeframe': self.timeframe
+            "symbol": self.symbol,
+            "name": self.name,
+            "weight": self.weight,
+            "required_history": self.required_history,
+            "timeframe": self.timeframe,
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'ValidationAsset':
+    def from_dict(cls, data: Dict[str, Any]) -> "ValidationAsset":
         """Create from dictionary."""
         return cls(
-            symbol=data['symbol'],
-            name=data['name'],
-            weight=data.get('weight', 1.0),
-            required_history=data.get('required_history', 1000),
-            timeframe=data.get('timeframe', '1h')
+            symbol=data["symbol"],
+            name=data["name"],
+            weight=data.get("weight", 1.0),
+            required_history=data.get("required_history", 1000),
+            timeframe=data.get("timeframe", "1h"),
         )
 
     def __str__(self) -> str:
@@ -116,34 +116,36 @@ class AssetSelector:
         if config is None:
             asset_config = get_cross_asset_validation_config()
             config = {
-                'max_assets': asset_config.asset_selector.max_assets,
-                'asset_weights': asset_config.asset_selector.asset_weights,
-                'correlation_filter': asset_config.asset_selector.correlation_filter,
-                'max_correlation': asset_config.asset_selector.max_correlation,
-                'validation_assets': asset_config.asset_selector.validation_assets,
-                'market_cap_weights': asset_config.asset_selector.market_cap_weights,
-                'coinmarketcap_api_key': asset_config.asset_selector.coinmarketcap_api_key
+                "max_assets": asset_config.asset_selector.max_assets,
+                "asset_weights": asset_config.asset_selector.asset_weights,
+                "correlation_filter": asset_config.asset_selector.correlation_filter,
+                "max_correlation": asset_config.asset_selector.max_correlation,
+                "validation_assets": asset_config.asset_selector.validation_assets,
+                "market_cap_weights": asset_config.asset_selector.market_cap_weights,
+                "coinmarketcap_api_key": asset_config.asset_selector.coinmarketcap_api_key,
             }
 
         self.logger = logging.getLogger(f"{self.__class__.__name__}")
 
         # Core configuration
-        self.max_assets = config.get('max_assets', 3)
-        self.asset_weights = config.get('asset_weights', 'equal')
-        self.correlation_filter = config.get('correlation_filter', False)
-        self.max_correlation = config.get('max_correlation', 0.7)
+        self.max_assets = config.get("max_assets", 3)
+        self.asset_weights = config.get("asset_weights", "equal")
+        self.correlation_filter = config.get("correlation_filter", False)
+        self.max_correlation = config.get("max_correlation", 0.7)
 
         # Asset data
         self.available_assets = self._load_validation_assets(config)
-        self.market_cap_weights = config.get('market_cap_weights', {})
-        self.coinmarketcap_api_key = config.get('coinmarketcap_api_key')
+        self.market_cap_weights = config.get("market_cap_weights", {})
+        self.coinmarketcap_api_key = config.get("coinmarketcap_api_key")
 
         # Caching
         self._market_caps_cache: Optional[Dict[str, float]] = None
         self._cache_timestamp: Optional[float] = None
         self._cache_ttl = 86400  # 24 hours
 
-        self.logger.info(f"AssetSelector initialized with {len(self.available_assets)} available assets")
+        self.logger.info(
+            f"AssetSelector initialized with {len(self.available_assets)} available assets"
+        )
 
     def _load_validation_assets(self, config: Dict[str, Any]) -> List[ValidationAsset]:
         """
@@ -155,49 +157,50 @@ class AssetSelector:
         Returns:
             List of ValidationAsset objects
         """
-        assets_config = config.get('validation_assets', [])
+        assets_config = config.get("validation_assets", [])
 
         if not assets_config:
             # Default validation assets if none provided
             assets_config = [
                 {
-                    'symbol': 'ETH/USDT',
-                    'name': 'Ethereum',
-                    'weight': 1.0,
-                    'required_history': 1000,
-                    'timeframe': '1h'
+                    "symbol": "ETH/USDT",
+                    "name": "Ethereum",
+                    "weight": 1.0,
+                    "required_history": 1000,
+                    "timeframe": "1h",
                 },
                 {
-                    'symbol': 'ADA/USDT',
-                    'name': 'Cardano',
-                    'weight': 0.8,
-                    'required_history': 1000,
-                    'timeframe': '1h'
+                    "symbol": "ADA/USDT",
+                    "name": "Cardano",
+                    "weight": 0.8,
+                    "required_history": 1000,
+                    "timeframe": "1h",
                 },
                 {
-                    'symbol': 'SOL/USDT',
-                    'name': 'Solana',
-                    'weight': 0.6,
-                    'required_history': 1000,
-                    'timeframe': '1h'
-                }
+                    "symbol": "SOL/USDT",
+                    "name": "Solana",
+                    "weight": 0.6,
+                    "required_history": 1000,
+                    "timeframe": "1h",
+                },
             ]
 
         assets = []
         for asset_config in assets_config:
             asset = ValidationAsset(
-                symbol=asset_config['symbol'],
-                name=asset_config['name'],
-                weight=asset_config.get('weight', 1.0),
-                required_history=asset_config.get('required_history', 1000),
-                timeframe=asset_config.get('timeframe', '1h')
+                symbol=asset_config["symbol"],
+                name=asset_config["name"],
+                weight=asset_config.get("weight", 1.0),
+                required_history=asset_config.get("required_history", 1000),
+                timeframe=asset_config.get("timeframe", "1h"),
             )
             assets.append(asset)
 
         return assets
 
-    def select_validation_assets(self, primary_asset: str,
-                               data_fetcher: Optional[Any] = None) -> List[ValidationAsset]:
+    def select_validation_assets(
+        self, primary_asset: str, data_fetcher: Optional[Any] = None
+    ) -> List[ValidationAsset]:
         """
         Select validation assets for cross-asset validation.
 
@@ -213,8 +216,9 @@ class AssetSelector:
             List of selected validation assets
         """
         # Start with all available assets except the primary
-        candidates = [asset for asset in self.available_assets
-                     if asset.symbol != primary_asset]
+        candidates = [
+            asset for asset in self.available_assets if asset.symbol != primary_asset
+        ]
 
         if not candidates:
             self.logger.warning("No validation assets available")
@@ -227,18 +231,21 @@ class AssetSelector:
             )
 
         # Limit to maximum number of assets
-        selected = candidates[:self.max_assets]
+        selected = candidates[: self.max_assets]
 
         # Apply weighting scheme
         selected = self._apply_weighting(selected)
 
-        self.logger.info(f"Selected {len(selected)} validation assets: "
-                        f"{[asset.symbol for asset in selected]}")
+        self.logger.info(
+            f"Selected {len(selected)} validation assets: "
+            f"{[asset.symbol for asset in selected]}"
+        )
 
         return selected
 
-    def _filter_correlated_assets(self, candidates: List[ValidationAsset],
-                                primary_asset: str, data_fetcher: Any) -> List[ValidationAsset]:
+    def _filter_correlated_assets(
+        self, candidates: List[ValidationAsset], primary_asset: str, data_fetcher: Any
+    ) -> List[ValidationAsset]:
         """
         Filter out highly correlated assets.
 
@@ -258,22 +265,29 @@ class AssetSelector:
             # Check if we're already in an event loop
             loop = asyncio.get_running_loop()
             # If we are in an event loop, create a task
-            task = loop.create_task(self._filter_correlated_assets_async(
-                candidates, primary_asset, data_fetcher
-            ))
+            task = loop.create_task(
+                self._filter_correlated_assets_async(
+                    candidates, primary_asset, data_fetcher
+                )
+            )
             return loop.run_until_complete(task)
         except RuntimeError:
             # No running event loop, use asyncio.run
             try:
-                return asyncio.run(self._filter_correlated_assets_async(
-                    candidates, primary_asset, data_fetcher
-                ))
+                return asyncio.run(
+                    self._filter_correlated_assets_async(
+                        candidates, primary_asset, data_fetcher
+                    )
+                )
             except Exception as e:
-                self.logger.warning(f"Async correlation analysis failed, using sync fallback: {e}")
+                self.logger.warning(
+                    f"Async correlation analysis failed, using sync fallback: {e}"
+                )
                 return candidates
 
-    async def _filter_correlated_assets_async(self, candidates: List[ValidationAsset],
-                                           primary_asset: str, data_fetcher: Any) -> List[ValidationAsset]:
+    async def _filter_correlated_assets_async(
+        self, candidates: List[ValidationAsset], primary_asset: str, data_fetcher: Any
+    ) -> List[ValidationAsset]:
         """
         Async implementation of correlation filtering.
 
@@ -289,23 +303,29 @@ class AssetSelector:
 
         try:
             # Get primary asset data for correlation analysis
-            primary_data = await data_fetcher.get_historical_data(primary_asset, '1d', 100)
+            primary_data = await data_fetcher.get_historical_data(
+                primary_asset, "1d", 100
+            )
 
             if primary_data.empty:
-                self.logger.warning("Could not fetch primary asset data for correlation analysis")
+                self.logger.warning(
+                    "Could not fetch primary asset data for correlation analysis"
+                )
                 return candidates
 
-            primary_returns = primary_data['close'].pct_change().dropna()
+            primary_returns = primary_data["close"].pct_change().dropna()
 
             for asset in candidates:
                 try:
                     # Get asset data
-                    asset_data = await data_fetcher.get_historical_data(asset.symbol, '1d', 100)
+                    asset_data = await data_fetcher.get_historical_data(
+                        asset.symbol, "1d", 100
+                    )
 
                     if asset_data.empty:
                         continue
 
-                    asset_returns = asset_data['close'].pct_change().dropna()
+                    asset_returns = asset_data["close"].pct_change().dropna()
 
                     # Calculate correlation if data lengths match
                     if len(primary_returns) == len(asset_returns):
@@ -313,15 +333,21 @@ class AssetSelector:
 
                         if abs(correlation) <= self.max_correlation:
                             filtered.append(asset)
-                            self.logger.debug(f"Asset {asset.symbol} correlation: {correlation:.3f} (accepted)")
+                            self.logger.debug(
+                                f"Asset {asset.symbol} correlation: {correlation:.3f} (accepted)"
+                            )
                         else:
-                            self.logger.debug(f"Asset {asset.symbol} correlation: {correlation:.3f} (filtered out)")
+                            self.logger.debug(
+                                f"Asset {asset.symbol} correlation: {correlation:.3f} (filtered out)"
+                            )
                     else:
                         # If data lengths don't match, include the asset
                         filtered.append(asset)
 
                 except Exception as e:
-                    self.logger.warning(f"Could not analyze correlation for {asset.symbol}: {e}")
+                    self.logger.warning(
+                        f"Could not analyze correlation for {asset.symbol}: {e}"
+                    )
                     # Include asset if correlation analysis fails
                     filtered.append(asset)
 
@@ -344,21 +370,25 @@ class AssetSelector:
         Returns:
             Weighted list of assets
         """
-        if self.asset_weights == 'equal':
+        if self.asset_weights == "equal":
             # Equal weighting
             weight = 1.0 / len(assets) if assets else 1.0
             for asset in assets:
                 asset.weight = weight
 
-        elif self.asset_weights == 'market_cap':
+        elif self.asset_weights == "market_cap":
             # Get market cap data
-            market_caps = self._fetch_market_caps_dynamically([asset.symbol for asset in assets])
+            market_caps = self._fetch_market_caps_dynamically(
+                [asset.symbol for asset in assets]
+            )
             if market_caps:
                 for asset in assets:
                     asset.market_cap = market_caps.get(asset.symbol, 0)
 
                 # Calculate weights
-                total_cap = sum(asset.market_cap for asset in assets if asset.market_cap)
+                total_cap = sum(
+                    asset.market_cap for asset in assets if asset.market_cap
+                )
                 if total_cap > 0:
                     for asset in assets:
                         asset.weight = asset.market_cap / total_cap
@@ -379,7 +409,9 @@ class AssetSelector:
 
         return assets
 
-    def _get_market_cap_weights(self, assets: List[ValidationAsset]) -> Dict[str, float]:
+    def _get_market_cap_weights(
+        self, assets: List[ValidationAsset]
+    ) -> Dict[str, float]:
         """
         Get market capitalization weights for assets.
 
@@ -398,7 +430,9 @@ class AssetSelector:
         market_caps = self._fetch_market_caps_dynamically(asset_symbols)
 
         if market_caps:
-            self.logger.info(f"Successfully fetched market caps for {len(market_caps)} assets")
+            self.logger.info(
+                f"Successfully fetched market caps for {len(market_caps)} assets"
+            )
             return self._calculate_market_cap_weights(market_caps)
 
         # Fallback to configured values
@@ -407,11 +441,15 @@ class AssetSelector:
             return self.market_cap_weights
 
         # Final fallback to equal weights
-        self.logger.warning("No market cap data available, falling back to equal weights")
+        self.logger.warning(
+            "No market cap data available, falling back to equal weights"
+        )
         equal_weight = 1.0 / len(assets) if assets else 1.0
         return {asset.symbol: equal_weight for asset in assets}
 
-    def _fetch_market_caps_dynamically(self, asset_symbols: List[str]) -> Optional[Dict[str, float]]:
+    def _fetch_market_caps_dynamically(
+        self, asset_symbols: List[str]
+    ) -> Optional[Dict[str, float]]:
         """
         Fetch market capitalization data dynamically from external sources.
 
@@ -452,7 +490,9 @@ class AssetSelector:
 
         return None
 
-    def _fetch_from_coingecko(self, asset_symbols: List[str]) -> Optional[Dict[str, float]]:
+    def _fetch_from_coingecko(
+        self, asset_symbols: List[str]
+    ) -> Optional[Dict[str, float]]:
         """
         Fetch market caps from CoinGecko API.
 
@@ -474,7 +514,9 @@ class AssetSelector:
                 self.logger.warning(f"Async CoinGecko fetch failed: {e}")
                 return None
 
-    async def _fetch_from_coingecko_async(self, symbols: List[str]) -> Optional[Dict[str, int]]:
+    async def _fetch_from_coingecko_async(
+        self, symbols: List[str]
+    ) -> Optional[Dict[str, int]]:
         """
         Async implementation of CoinGecko API fetching.
 
@@ -504,16 +546,23 @@ class AssetSelector:
                     if response.status == 200:
                         data = await response.json()
                         return {
-                            f"{id_to_symbol.get(item['id'], item['id'].upper())}/USDT": item["market_cap"]
-                            for item in data if "market_cap" in item
+                            f"{id_to_symbol.get(item['id'], item['id'].upper())}/USDT": item[
+                                "market_cap"
+                            ]
+                            for item in data
+                            if "market_cap" in item
                         }
                     else:
-                        self.logger.warning(f"Failed to fetch from CoinGecko: HTTP {response.status}")
+                        self.logger.warning(
+                            f"Failed to fetch from CoinGecko: HTTP {response.status}"
+                        )
         except Exception as e:
             self.logger.warning(f"Failed to fetch from CoinGecko: {e}")
         return None
 
-    def _fetch_from_coinmarketcap(self, asset_symbols: List[str]) -> Optional[Dict[str, float]]:
+    def _fetch_from_coinmarketcap(
+        self, asset_symbols: List[str]
+    ) -> Optional[Dict[str, float]]:
         """
         Fetch market caps from CoinMarketCap API.
 
@@ -528,14 +577,21 @@ class AssetSelector:
 
             # Map symbols to CMC IDs
             symbol_to_cmc_id = {
-                'BTC': '1', 'ETH': '1027', 'ADA': '2010', 'SOL': '5426',
-                'DOT': '6636', 'LINK': '1975', 'BNB': '1839', 'XRP': '52',
-                'LTC': '2', 'DOGE': '74'
+                "BTC": "1",
+                "ETH": "1027",
+                "ADA": "2010",
+                "SOL": "5426",
+                "DOT": "6636",
+                "LINK": "1975",
+                "BNB": "1839",
+                "XRP": "52",
+                "LTC": "2",
+                "DOGE": "74",
             }
 
             cmc_ids = []
             for symbol in asset_symbols:
-                base_symbol = symbol.split('/')[0].upper()
+                base_symbol = symbol.split("/")[0].upper()
                 if base_symbol in symbol_to_cmc_id:
                     cmc_ids.append(symbol_to_cmc_id[base_symbol])
 
@@ -544,13 +600,10 @@ class AssetSelector:
 
             url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest"
             headers = {
-                'Accepts': 'application/json',
-                'X-CMC_PRO_API_KEY': self.coinmarketcap_api_key,
+                "Accepts": "application/json",
+                "X-CMC_PRO_API_KEY": self.coinmarketcap_api_key,
             }
-            params = {
-                'id': ','.join(cmc_ids),
-                'convert': 'USD'
-            }
+            params = {"id": ",".join(cmc_ids), "convert": "USD"}
 
             response = requests.get(url, headers=headers, params=params)
             response.raise_for_status()
@@ -558,12 +611,12 @@ class AssetSelector:
             data = response.json()
             market_caps = {}
 
-            for cmc_id, coin_data in data['data'].items():
-                market_cap = coin_data['quote']['USD'].get('market_cap', 0)
+            for cmc_id, coin_data in data["data"].items():
+                market_cap = coin_data["quote"]["USD"].get("market_cap", 0)
 
                 # Find original symbol
                 for symbol in asset_symbols:
-                    base_symbol = symbol.split('/')[0].upper()
+                    base_symbol = symbol.split("/")[0].upper()
                     if symbol_to_cmc_id.get(base_symbol) == cmc_id:
                         market_caps[symbol] = market_cap
                         break
@@ -574,7 +627,9 @@ class AssetSelector:
             self.logger.warning(f"Failed to fetch from CoinMarketCap: {str(e)}")
             return None
 
-    def _fetch_from_local_cache(self, asset_symbols: List[str]) -> Optional[Dict[str, float]]:
+    def _fetch_from_local_cache(
+        self, asset_symbols: List[str]
+    ) -> Optional[Dict[str, float]]:
         """
         Fetch market caps from local cache/database.
 
@@ -585,21 +640,26 @@ class AssetSelector:
             Dictionary of market caps or None if failed
         """
         try:
-            cache_file = os.path.join(os.getcwd(), 'data', 'market_caps_cache.json')
+            cache_file = os.path.join(os.getcwd(), "data", "market_caps_cache.json")
 
             if os.path.exists(cache_file):
-                with open(cache_file, 'r') as f:
+                with open(cache_file, "r") as f:
                     cache_data = json.load(f)
 
                 # Check if cache is fresh
-                cache_timestamp = cache_data.get('timestamp', 0)
+                cache_timestamp = cache_data.get("timestamp", 0)
                 if time.time() - cache_timestamp < self._cache_ttl:
-                    market_caps = cache_data.get('market_caps', {})
+                    market_caps = cache_data.get("market_caps", {})
                     # Filter for requested symbols
-                    filtered_caps = {symbol: market_caps.get(symbol)
-                                   for symbol in asset_symbols if symbol in market_caps}
+                    filtered_caps = {
+                        symbol: market_caps.get(symbol)
+                        for symbol in asset_symbols
+                        if symbol in market_caps
+                    }
                     if filtered_caps:
-                        self.logger.info(f"Loaded market caps from local cache for {len(filtered_caps)} assets")
+                        self.logger.info(
+                            f"Loaded market caps from local cache for {len(filtered_caps)} assets"
+                        )
                         return filtered_caps
 
         except Exception as e:
@@ -615,13 +675,23 @@ class AssetSelector:
             Dictionary mapping symbols to CoinGecko IDs
         """
         return {
-            'BTC': 'bitcoin', 'ETH': 'ethereum', 'ADA': 'cardano',
-            'SOL': 'solana', 'DOT': 'polkadot', 'LINK': 'chainlink',
-            'BNB': 'binancecoin', 'XRP': 'ripple', 'LTC': 'litecoin',
-            'DOGE': 'dogecoin', 'MATIC': 'matic-network', 'AVAX': 'avalanche-2'
+            "BTC": "bitcoin",
+            "ETH": "ethereum",
+            "ADA": "cardano",
+            "SOL": "solana",
+            "DOT": "polkadot",
+            "LINK": "chainlink",
+            "BNB": "binancecoin",
+            "XRP": "ripple",
+            "LTC": "litecoin",
+            "DOGE": "dogecoin",
+            "MATIC": "matic-network",
+            "AVAX": "avalanche-2",
         }
 
-    def _calculate_market_cap_weights(self, market_caps: Dict[str, float]) -> Dict[str, float]:
+    def _calculate_market_cap_weights(
+        self, market_caps: Dict[str, float]
+    ) -> Dict[str, float]:
         """
         Calculate normalized weights from market capitalization data.
 
@@ -635,8 +705,9 @@ class AssetSelector:
             return {}
 
         # Filter out zero or invalid market caps
-        valid_caps = {symbol: cap for symbol, cap in market_caps.items()
-                     if cap and cap > 0}
+        valid_caps = {
+            symbol: cap for symbol, cap in market_caps.items() if cap and cap > 0
+        }
 
         if not valid_caps:
             return {}
@@ -663,8 +734,11 @@ class AssetSelector:
         if not self._market_caps_cache:
             return None
 
-        filtered_caps = {symbol: self._market_caps_cache.get(symbol)
-                        for symbol in asset_symbols if symbol in self._market_caps_cache}
+        filtered_caps = {
+            symbol: self._market_caps_cache.get(symbol)
+            for symbol in asset_symbols
+            if symbol in self._market_caps_cache
+        }
         return filtered_caps if filtered_caps else None
 
     def _save_to_cache(self, market_caps: Dict[str, float]) -> None:
@@ -680,12 +754,12 @@ class AssetSelector:
             Dictionary containing asset summary information
         """
         return {
-            'total_assets': len(self.available_assets),
-            'assets': [asset.to_dict() for asset in self.available_assets],
-            'weighting_scheme': self.asset_weights,
-            'correlation_filter_enabled': self.correlation_filter,
-            'max_correlation_threshold': self.max_correlation,
-            'cache_valid': self._is_cache_valid()
+            "total_assets": len(self.available_assets),
+            "assets": [asset.to_dict() for asset in self.available_assets],
+            "weighting_scheme": self.asset_weights,
+            "correlation_filter_enabled": self.correlation_filter,
+            "max_correlation_threshold": self.max_correlation,
+            "cache_valid": self._is_cache_valid(),
         }
 
     def update_asset_weights(self, weights: Dict[str, float]) -> None:

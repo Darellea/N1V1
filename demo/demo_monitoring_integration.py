@@ -19,19 +19,19 @@ The demo shows:
 
 import asyncio
 import time
-import json
-from typing import Dict, Any
-import aiohttp
 
 from core.metrics_collector import (
-    get_metrics_collector, create_metrics_endpoint,
-    collect_trading_metrics, collect_risk_metrics,
-    collect_strategy_metrics, collect_exchange_metrics
+    collect_exchange_metrics,
+    collect_risk_metrics,
+    collect_strategy_metrics,
+    collect_trading_metrics,
+    create_metrics_endpoint,
+    get_metrics_collector,
 )
+from core.self_healing_engine import ComponentType, SelfHealingEngine
 from core.timeframe_manager import TimeframeManager
-from strategies.regime.regime_forecaster import RegimeForecaster
 from optimization.strategy_generator import StrategyGenerator
-from core.self_healing_engine import SelfHealingEngine, ComponentType
+from strategies.regime.regime_forecaster import RegimeForecaster
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -98,7 +98,7 @@ class MonitoringDemo:
             "path": "/metrics",
             "enable_auth": False,  # Disable for demo
             "max_concurrent_requests": 10,
-            "request_timeout": 5.0
+            "request_timeout": 5.0,
         }
 
         self.endpoint = create_metrics_endpoint(endpoint_config)
@@ -123,7 +123,7 @@ class MonitoringDemo:
         strategy_config = {
             "model_path": "./demo_models",
             "population_size": 5,
-            "generations": 2
+            "generations": 2,
         }
         self.strategy_generator = StrategyGenerator(strategy_config)
         await self.strategy_generator.initialize()
@@ -140,13 +140,30 @@ class MonitoringDemo:
 
         # Register components with self-healing engine
         components = [
-            ("timeframe_manager", ComponentType.DATA_FETCHER, self.timeframe_manager, True),
-            ("regime_forecaster", ComponentType.EXTERNAL_SERVICE, self.regime_forecaster, False),
-            ("strategy_generator", ComponentType.EXTERNAL_SERVICE, self.strategy_generator, False),
+            (
+                "timeframe_manager",
+                ComponentType.DATA_FETCHER,
+                self.timeframe_manager,
+                True,
+            ),
+            (
+                "regime_forecaster",
+                ComponentType.EXTERNAL_SERVICE,
+                self.regime_forecaster,
+                False,
+            ),
+            (
+                "strategy_generator",
+                ComponentType.EXTERNAL_SERVICE,
+                self.strategy_generator,
+                False,
+            ),
         ]
 
         for comp_id, comp_type, instance, critical in components:
-            self.self_healing_engine.register_component(comp_id, comp_type, instance, critical)
+            self.self_healing_engine.register_component(
+                comp_id, comp_type, instance, critical
+            )
 
         # Start self-healing engine
         await self.self_healing_engine.start()
@@ -178,7 +195,7 @@ class MonitoringDemo:
             # Record order execution metrics
             await self.metrics_collector.increment_counter(
                 "trading_orders_total",
-                {"account": "demo", "status": "filled", "exchange": "binance"}
+                {"account": "demo", "status": "filled", "exchange": "binance"},
             )
 
             # Record order latency
@@ -186,15 +203,13 @@ class MonitoringDemo:
             await self.metrics_collector.record_metric(
                 "trading_order_latency_seconds",
                 latency,
-                {"account": "demo", "exchange": "binance"}
+                {"account": "demo", "exchange": "binance"},
             )
 
             # Record P&L
             pnl = 1250.75 + (i * 25.5)
             await self.metrics_collector.record_metric(
-                "trading_total_pnl_usd",
-                pnl,
-                {"account": "demo"}
+                "trading_total_pnl_usd", pnl, {"account": "demo"}
             )
 
             # Simulate some slippage
@@ -202,7 +217,7 @@ class MonitoringDemo:
             await self.metrics_collector.record_metric(
                 "trading_slippage_bps",
                 slippage,
-                {"account": "demo", "symbol": "BTC/USDT"}
+                {"account": "demo", "symbol": "BTC/USDT"},
             )
 
             await asyncio.sleep(0.1)
@@ -217,17 +232,25 @@ class MonitoringDemo:
         for i in range(5):
             # CPU usage simulation
             cpu_usage = 45.0 + (i * 5.0)  # Gradual increase
-            await self.metrics_collector.record_metric("system_cpu_usage_percent", cpu_usage)
+            await self.metrics_collector.record_metric(
+                "system_cpu_usage_percent", cpu_usage
+            )
 
             # Memory usage simulation
             memory_usage = 4.2e9 + (i * 1e8)  # ~4.2GB + increasing
-            await self.metrics_collector.record_metric("system_memory_usage_bytes", memory_usage)
+            await self.metrics_collector.record_metric(
+                "system_memory_usage_bytes", memory_usage
+            )
 
             # Network I/O simulation
             network_rx = 1e6 + (i * 5e4)  # 1MB + increasing
             network_tx = 8e5 + (i * 3e4)  # 800KB + increasing
-            await self.metrics_collector.record_metric("system_network_receive_bytes_total", network_rx)
-            await self.metrics_collector.record_metric("system_network_transmit_bytes_total", network_tx)
+            await self.metrics_collector.record_metric(
+                "system_network_receive_bytes_total", network_rx
+            )
+            await self.metrics_collector.record_metric(
+                "system_network_transmit_bytes_total", network_tx
+            )
 
             await asyncio.sleep(0.2)
 
@@ -243,7 +266,7 @@ class MonitoringDemo:
             status="healthy",
             latency_ms=45.0,
             error_count=0,
-            custom_metrics={"symbols_registered": 5}
+            custom_metrics={"symbols_registered": 5},
         )
 
         # Simulate regime forecaster operations
@@ -252,7 +275,7 @@ class MonitoringDemo:
             status="healthy",
             latency_ms=120.0,
             error_count=0,
-            custom_metrics={"forecast_accuracy": 0.85}
+            custom_metrics={"forecast_accuracy": 0.85},
         )
 
         # Simulate strategy generator operations
@@ -261,7 +284,7 @@ class MonitoringDemo:
             status="healthy",
             latency_ms=200.0,
             error_count=0,
-            custom_metrics={"strategies_generated": 3}
+            custom_metrics={"strategies_generated": 3},
         )
 
         logger.info("✅ Component interactions simulation complete")
@@ -274,23 +297,37 @@ class MonitoringDemo:
         metrics_output = self.metrics_collector.get_prometheus_output()
 
         # Display key metrics
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("🎯 N1V1 MONITORING DEMO RESULTS")
-        print("="*60)
+        print("=" * 60)
 
         print("\n📈 Trading Performance Metrics:")
-        print(f"  • Total P&L: ${self.metrics_collector.get_metric_value('trading_total_pnl_usd', {'account': 'demo'}) or 0:.2f}")
-        print(f"  • Orders Executed: {self.metrics_collector.get_metric_value('trading_orders_total', {'account': 'demo', 'status': 'filled', 'exchange': 'binance'}) or 0}")
-        print(f"  • Average Latency: {self.metrics_collector.get_metric_value('trading_order_latency_seconds', {'account': 'demo', 'exchange': 'binance'}) or 0:.3f}s")
+        print(
+            f"  • Total P&L: ${self.metrics_collector.get_metric_value('trading_total_pnl_usd', {'account': 'demo'}) or 0:.2f}"
+        )
+        print(
+            f"  • Orders Executed: {self.metrics_collector.get_metric_value('trading_orders_total', {'account': 'demo', 'status': 'filled', 'exchange': 'binance'}) or 0}"
+        )
+        print(
+            f"  • Average Latency: {self.metrics_collector.get_metric_value('trading_order_latency_seconds', {'account': 'demo', 'exchange': 'binance'}) or 0:.3f}s"
+        )
 
         print("\n💻 System Health Metrics:")
-        print(f"  • CPU Usage: {self.metrics_collector.get_metric_value('system_cpu_usage_percent') or 0:.1f}%")
-        print(f"  • Memory Usage: {(self.metrics_collector.get_metric_value('system_memory_usage_bytes') or 0) / 1e9:.2f} GB")
-        print(f"  • Network RX: {(self.metrics_collector.get_metric_value('system_network_receive_bytes_total') or 0) / 1e6:.1f} MB")
+        print(
+            f"  • CPU Usage: {self.metrics_collector.get_metric_value('system_cpu_usage_percent') or 0:.1f}%"
+        )
+        print(
+            f"  • Memory Usage: {(self.metrics_collector.get_metric_value('system_memory_usage_bytes') or 0) / 1e9:.2f} GB"
+        )
+        print(
+            f"  • Network RX: {(self.metrics_collector.get_metric_value('system_network_receive_bytes_total') or 0) / 1e6:.1f} MB"
+        )
 
         print("\n🔧 Component Health:")
-        dashboard_data = self.self_healing_engine.monitoring_dashboard.get_dashboard_data()
-        system_health = dashboard_data['system_health']
+        dashboard_data = (
+            self.self_healing_engine.monitoring_dashboard.get_dashboard_data()
+        )
+        system_health = dashboard_data["system_health"]
         print(f"  • Components Monitored: {system_health['total_components']}")
         print(f"  • Healthy Components: {system_health['healthy_components']}")
 
@@ -303,16 +340,16 @@ class MonitoringDemo:
         print("\n📋 Sample Prometheus Metrics Output:")
         print("-" * 40)
         # Show first few lines of metrics output
-        lines = metrics_output.split('\n')[:10]
+        lines = metrics_output.split("\n")[:10]
         for line in lines:
             if line.strip():
                 print(f"  {line}")
 
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
         print("✅ Demo completed successfully!")
         print("🔗 Access Grafana dashboards at: http://localhost:3000")
         print("📊 View Prometheus metrics at: http://localhost:9090")
-        print("="*60)
+        print("=" * 60)
 
     async def run_health_check(self):
         """Run a health check on the monitoring system."""
@@ -321,18 +358,26 @@ class MonitoringDemo:
         try:
             # Check metrics endpoint
             endpoint_stats = self.endpoint.get_stats()
-            print(f"✅ Metrics Endpoint: {endpoint_stats['running'] and 'Running' or 'Stopped'}")
+            print(
+                f"✅ Metrics Endpoint: {endpoint_stats['running'] and 'Running' or 'Stopped'}"
+            )
 
             # Check metrics collector
             collector_running = self.metrics_collector._running
-            print(f"✅ Metrics Collector: {collector_running and 'Running' or 'Stopped'}")
+            print(
+                f"✅ Metrics Collector: {collector_running and 'Running' or 'Stopped'}"
+            )
 
             # Check self-healing engine
             healing_running = self.self_healing_engine._running
-            print(f"✅ Self-Healing Engine: {healing_running and 'Running' or 'Stopped'}")
+            print(
+                f"✅ Self-Healing Engine: {healing_running and 'Running' or 'Stopped'}"
+            )
 
             # Check component registrations
-            registry_stats = self.self_healing_engine.component_registry.get_registry_stats()
+            registry_stats = (
+                self.self_healing_engine.component_registry.get_registry_stats()
+            )
             print(f"✅ Components Registered: {registry_stats['total_components']}")
 
             return True

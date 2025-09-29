@@ -5,30 +5,32 @@ Provides standardized health and readiness check functions for HTTP endpoints,
 integrating with the existing diagnostics system.
 """
 
-import asyncio
-import logging
-import time
 import os
-from datetime import datetime
-from typing import Dict, Any, List, Optional, Tuple
+import time
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
+
 import aiohttp
 import redis
+
 try:
     import psycopg2
 except ImportError:
     from utils.logger import get_trade_logger
+
     logger = get_trade_logger()
     psycopg2 = None
-    logger.warning("psycopg2 not installed, skipping DB health check in test/dev environments")
+    logger.warning(
+        "psycopg2 not installed, skipping DB health check in test/dev environments"
+    )
 try:
     import pymongo
 except ImportError:
     pymongo = None
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import SQLAlchemyError
 
-from core.diagnostics import HealthStatus, HealthCheckResult, get_diagnostics_manager
+from core.diagnostics import get_diagnostics_manager
 from utils.logger import get_trade_logger
 
 logger = get_trade_logger()
@@ -37,6 +39,7 @@ logger = get_trade_logger()
 @dataclass
 class ReadinessCheck:
     """Result of a readiness check."""
+
     component: str
     ready: bool
     latency_ms: Optional[float] = None
@@ -85,13 +88,14 @@ class HealthCheckManager:
 
         try:
             # Get basic system info
-            uptime_seconds = time.time() - getattr(self, '_start_time', time.time())
-            if not hasattr(self, '_start_time'):
+            uptime_seconds = time.time() - getattr(self, "_start_time", time.time())
+            if not hasattr(self, "_start_time"):
                 self._start_time = time.time()
                 uptime_seconds = 0
 
             # Check if bot engine is available (lightweight check)
             from api.app import bot_engine
+
             bot_engine_status = "unknown"
             if bot_engine is None:
                 bot_engine_status = "unavailable"
@@ -108,7 +112,7 @@ class HealthCheckManager:
                 "version": "1.0.0",  # Should be read from package version
                 "uptime_seconds": round(uptime_seconds, 2),
                 "bot_engine": bot_engine_status,
-                "correlation_id": correlation_id
+                "correlation_id": correlation_id,
             }
             if detail:
                 response["detail"] = detail
@@ -116,28 +120,34 @@ class HealthCheckManager:
             latency = (time.time() - start_time) * 1000
             response["check_latency_ms"] = round(latency, 2)
 
-            logger.debug("Health check completed", extra={
-                "correlation_id": correlation_id,
-                "latency_ms": latency,
-                "status": "healthy"
-            })
+            logger.debug(
+                "Health check completed",
+                extra={
+                    "correlation_id": correlation_id,
+                    "latency_ms": latency,
+                    "status": "healthy",
+                },
+            )
 
             return response
 
         except Exception as e:
             latency = (time.time() - start_time) * 1000
-            logger.exception("Health check failed", extra={
-                "correlation_id": correlation_id,
-                "latency_ms": latency,
-                "error": str(e)
-            })
+            logger.exception(
+                "Health check failed",
+                extra={
+                    "correlation_id": correlation_id,
+                    "latency_ms": latency,
+                    "error": str(e),
+                },
+            )
 
             return {
                 "status": "unhealthy",
                 "timestamp": datetime.now().isoformat(),
                 "error": str(e),
                 "correlation_id": correlation_id,
-                "check_latency_ms": round(latency, 2)
+                "check_latency_ms": round(latency, 2),
             }
 
     async def perform_readiness_check(self) -> Tuple[Dict[str, Any], int]:
@@ -166,10 +176,10 @@ class HealthCheckManager:
                         "ready": check.ready,
                         "latency_ms": check.latency_ms,
                         "message": check.message,
-                        "details": check.details
+                        "details": check.details,
                     }
                     for check in checks
-                }
+                },
             }
 
             latency = (time.time() - start_time) * 1000
@@ -179,33 +189,42 @@ class HealthCheckManager:
             failed_checks = [check for check in checks if not check.ready]
             if failed_checks:
                 if self._should_log_failure("readiness_overall"):
-                    logger.warning("Readiness check failed", extra={
-                        "correlation_id": correlation_id,
-                        "failed_components": [c.component for c in failed_checks],
-                        "total_checks": len(checks),
-                        "latency_ms": latency
-                    })
+                    logger.warning(
+                        "Readiness check failed",
+                        extra={
+                            "correlation_id": correlation_id,
+                            "failed_components": [c.component for c in failed_checks],
+                            "total_checks": len(checks),
+                            "latency_ms": latency,
+                        },
+                    )
 
                 # Log individual component failures
                 for check in failed_checks:
                     if self._should_log_failure(f"readiness_{check.component}"):
-                        logger.error(f"Readiness check failed for {check.component}", extra={
-                            "correlation_id": correlation_id,
-                            "component": check.component,
-                            "check_message": check.message,
-                            "latency_ms": check.latency_ms,
-                            "details": check.details
-                        })
+                        logger.error(
+                            f"Readiness check failed for {check.component}",
+                            extra={
+                                "correlation_id": correlation_id,
+                                "component": check.component,
+                                "check_message": check.message,
+                                "latency_ms": check.latency_ms,
+                                "details": check.details,
+                            },
+                        )
 
             return response, http_status
 
         except Exception as e:
             latency = (time.time() - start_time) * 1000
-            logger.exception("Readiness check failed", extra={
-                "correlation_id": correlation_id,
-                "latency_ms": latency,
-                "error": str(e)
-            })
+            logger.exception(
+                "Readiness check failed",
+                extra={
+                    "correlation_id": correlation_id,
+                    "latency_ms": latency,
+                    "error": str(e),
+                },
+            )
 
             return {
                 "ready": False,
@@ -213,7 +232,7 @@ class HealthCheckManager:
                 "correlation_id": correlation_id,
                 "error": str(e),
                 "total_latency_ms": round(latency, 2),
-                "checks": {}
+                "checks": {},
             }, 503
 
     async def _run_all_readiness_checks(self) -> List[ReadinessCheck]:
@@ -253,7 +272,7 @@ class HealthCheckManager:
                     component="database",
                     ready=False,
                     message="Database not configured",
-                    details={"configured": False}
+                    details={"configured": False},
                 )
 
             # Try to connect based on database type
@@ -263,7 +282,7 @@ class HealthCheckManager:
                         component="database",
                         ready=True,  # Consider skipped as ready for test/dev
                         message="DB check skipped - psycopg2 not available",
-                        details={"skipped": True, "reason": "psycopg2 not installed"}
+                        details={"skipped": True, "reason": "psycopg2 not installed"},
                     )
                 # PostgreSQL connection
                 conn = psycopg2.connect(db_url)
@@ -277,11 +296,11 @@ class HealthCheckManager:
                         component="database",
                         ready=True,  # Consider skipped as ready for test/dev
                         message="DB check skipped - pymongo not available",
-                        details={"skipped": True, "reason": "pymongo not installed"}
+                        details={"skipped": True, "reason": "pymongo not installed"},
                     )
                 # MongoDB connection
                 client = pymongo.MongoClient(db_url, serverSelectionTimeoutMS=5000)
-                client.admin.command('ping')
+                client.admin.command("ping")
                 client.close()
             else:
                 # SQLAlchemy for other databases
@@ -296,7 +315,7 @@ class HealthCheckManager:
                 ready=True,
                 latency_ms=round(latency, 2),
                 message="Database connection successful",
-                details={"type": "configured"}
+                details={"type": "configured"},
             )
 
         except Exception as e:
@@ -306,7 +325,7 @@ class HealthCheckManager:
                 ready=False,
                 latency_ms=round(latency, 2),
                 message=f"Database connection failed: {str(e)}",
-                details={"error": str(e), "type": type(e).__name__}
+                details={"error": str(e), "type": type(e).__name__},
             )
 
     async def _check_exchange_connectivity(self) -> ReadinessCheck:
@@ -314,7 +333,9 @@ class HealthCheckManager:
         start_time = time.time()
 
         try:
-            exchange_url = os.getenv("EXCHANGE_API_URL", "https://api.binance.com/api/v3/ping")
+            exchange_url = os.getenv(
+                "EXCHANGE_API_URL", "https://api.binance.com/api/v3/ping"
+            )
             timeout = aiohttp.ClientTimeout(total=5)
 
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -326,7 +347,10 @@ class HealthCheckManager:
                             ready=True,
                             latency_ms=round(latency, 2),
                             message="Exchange API responsive",
-                            details={"status_code": response.status, "url": exchange_url}
+                            details={
+                                "status_code": response.status,
+                                "url": exchange_url,
+                            },
                         )
                     else:
                         latency = (time.time() - start_time) * 1000
@@ -335,7 +359,10 @@ class HealthCheckManager:
                             ready=False,
                             latency_ms=round(latency, 2),
                             message=f"Exchange API returned status {response.status}",
-                            details={"status_code": response.status, "url": exchange_url}
+                            details={
+                                "status_code": response.status,
+                                "url": exchange_url,
+                            },
                         )
 
         except Exception as e:
@@ -345,7 +372,7 @@ class HealthCheckManager:
                 ready=False,
                 latency_ms=round(latency, 2),
                 message=f"Exchange connectivity failed: {str(e)}",
-                details={"error": str(e), "url": exchange_url}
+                details={"error": str(e), "url": exchange_url},
             )
 
     async def _check_message_queue_connectivity(self) -> ReadinessCheck:
@@ -359,7 +386,7 @@ class HealthCheckManager:
                     component="message_queue",
                     ready=True,  # Not configured is considered ready (optional dependency)
                     message="Message queue not configured (optional)",
-                    details={"configured": False, "optional": True}
+                    details={"configured": False, "optional": True},
                 )
 
             # For now, just check if it's a valid URL format
@@ -372,7 +399,7 @@ class HealthCheckManager:
                     ready=True,
                     latency_ms=round(latency, 2),
                     message="Message queue URL configured",
-                    details={"type": "rabbitmq", "configured": True}
+                    details={"type": "rabbitmq", "configured": True},
                 )
             elif mq_url.startswith(("kafka://", "kafka+ssl://")):
                 # Kafka check would go here
@@ -382,14 +409,14 @@ class HealthCheckManager:
                     ready=True,
                     latency_ms=round(latency, 2),
                     message="Message queue URL configured",
-                    details={"type": "kafka", "configured": True}
+                    details={"type": "kafka", "configured": True},
                 )
             else:
                 return ReadinessCheck(
                     component="message_queue",
                     ready=False,
                     message="Unsupported message queue URL format",
-                    details={"url": mq_url, "supported": ["amqp", "kafka"]}
+                    details={"url": mq_url, "supported": ["amqp", "kafka"]},
                 )
 
         except Exception as e:
@@ -399,7 +426,7 @@ class HealthCheckManager:
                 ready=False,
                 latency_ms=round(latency, 2),
                 message=f"Message queue check failed: {str(e)}",
-                details={"error": str(e)}
+                details={"error": str(e)},
             )
 
     async def _check_cache_connectivity(self) -> ReadinessCheck:
@@ -420,7 +447,7 @@ class HealthCheckManager:
                 ready=True,
                 latency_ms=round(latency, 2),
                 message="Cache connection successful",
-                details={"type": "redis"}
+                details={"type": "redis"},
             )
 
         except Exception as e:
@@ -430,7 +457,7 @@ class HealthCheckManager:
                 ready=False,
                 latency_ms=round(latency, 2),
                 message=f"Cache connection failed: {str(e)}",
-                details={"error": str(e), "type": "redis"}
+                details={"error": str(e), "type": "redis"},
             )
 
     async def _check_bot_engine_readiness(self) -> ReadinessCheck:
@@ -446,23 +473,25 @@ class HealthCheckManager:
                     component="bot_engine",
                     ready=False,
                     message="Bot engine not initialized",
-                    details={"initialized": False}
+                    details={"initialized": False},
                 )
 
             # Check if bot engine has required components
-            required_attrs = ['state', 'pairs', 'mode']
-            missing_attrs = [attr for attr in required_attrs if not hasattr(bot_engine, attr)]
+            required_attrs = ["state", "pairs", "mode"]
+            missing_attrs = [
+                attr for attr in required_attrs if not hasattr(bot_engine, attr)
+            ]
 
             if missing_attrs:
                 return ReadinessCheck(
                     component="bot_engine",
                     ready=False,
                     message=f"Bot engine missing required attributes: {missing_attrs}",
-                    details={"missing_attributes": missing_attrs}
+                    details={"missing_attributes": missing_attrs},
                 )
 
             # Check if bot is in a runnable state
-            if hasattr(bot_engine.state, 'running'):
+            if hasattr(bot_engine.state, "running"):
                 ready = True
                 message = "Bot engine ready"
                 details = {"running": bot_engine.state.running}
@@ -477,7 +506,7 @@ class HealthCheckManager:
                 ready=ready,
                 latency_ms=round(latency, 2),
                 message=message,
-                details=details
+                details=details,
             )
 
         except Exception as e:
@@ -487,7 +516,7 @@ class HealthCheckManager:
                 ready=False,
                 latency_ms=round(latency, 2),
                 message=f"Bot engine check failed: {str(e)}",
-                details={"error": str(e)}
+                details={"error": str(e)},
             )
 
 

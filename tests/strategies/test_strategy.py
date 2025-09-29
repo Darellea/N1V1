@@ -5,18 +5,17 @@ Unit tests for strategy functionality including signal generation,
 indicator calculation, and strategy lifecycle management.
 """
 
-import pytest
-import pandas as pd
-from unittest.mock import AsyncMock, patch, MagicMock
+from decimal import Decimal
 from typing import List
-import numpy as np
-from datetime import datetime
+from unittest.mock import AsyncMock, patch
 
-from strategies.base_strategy import BaseStrategy, StrategyConfig
-from core.contracts import TradingSignal, SignalType, SignalStrength
+import pandas as pd
+import pytest
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
 from core.types import OrderType
 from data.data_fetcher import DataFetcher
-from decimal import Decimal
+from strategies.base_strategy import BaseStrategy, StrategyConfig
 from strategies.mixins import TrendAnalysisMixin, VolatilityAnalysisMixin
 
 

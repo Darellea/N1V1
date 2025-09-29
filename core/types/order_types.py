@@ -5,8 +5,8 @@ Order-related dataclasses and enums extracted from order_manager.py and types.py
 """
 
 from dataclasses import dataclass
-from enum import Enum
 from decimal import Decimal
+from enum import Enum
 from typing import Dict, Optional
 
 

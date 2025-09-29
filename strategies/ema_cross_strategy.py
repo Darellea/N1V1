@@ -1,10 +1,10 @@
 # strategies/ema_cross_strategy.py
-import numpy as np
-import pandas as pd
-from typing import List, Dict
+from typing import Dict, List
 
-from strategies.base_strategy import BaseStrategy, StrategyConfig
-from core.contracts import TradingSignal, SignalType, SignalStrength
+import pandas as pd
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
+from strategies.base_strategy import BaseStrategy
 
 
 class EMACrossStrategy(BaseStrategy):
@@ -25,7 +25,9 @@ class EMACrossStrategy(BaseStrategy):
             "take_profit_pct": 0.06,  # 6%
         }
         # Handle both StrategyConfig objects and dict configs
-        config_params = config.params if hasattr(config, 'params') else config.get('params', {})
+        config_params = (
+            config.params if hasattr(config, "params") else config.get("params", {})
+        )
         self.params: Dict[str, float] = {**self.default_params, **(config_params or {})}
 
     async def calculate_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -54,7 +56,7 @@ class EMACrossStrategy(BaseStrategy):
             for symbol, df in data.items():
                 if df is not None and not df.empty:
                     signals.extend(await self._generate_signals_for_symbol(symbol, df))
-        elif hasattr(data, 'groupby'):
+        elif hasattr(data, "groupby"):
             # Data is a single DataFrame
             grouped = data.groupby("symbol")
             for symbol, group in grouped:
@@ -62,17 +64,22 @@ class EMACrossStrategy(BaseStrategy):
         else:
             # Fallback: try to convert to DataFrame
             import pandas as pd
+
             try:
                 df = pd.DataFrame(data)
                 grouped = df.groupby("symbol")
                 for symbol, group in grouped:
-                    signals.extend(await self._generate_signals_for_symbol(symbol, group))
+                    signals.extend(
+                        await self._generate_signals_for_symbol(symbol, group)
+                    )
             except Exception:
                 pass
 
         return signals
 
-    async def _generate_signals_for_symbol(self, symbol: str, data) -> List[TradingSignal]:
+    async def _generate_signals_for_symbol(
+        self, symbol: str, data
+    ) -> List[TradingSignal]:
         """Generate signals for a specific symbol's data."""
         signals = []
 
@@ -94,7 +101,9 @@ class EMACrossStrategy(BaseStrategy):
             ):
                 # Extract deterministic timestamp from the data that triggered the signal
                 signal_timestamp = None
-                if not data_with_emas.empty and isinstance(data_with_emas.index, pd.DatetimeIndex):
+                if not data_with_emas.empty and isinstance(
+                    data_with_emas.index, pd.DatetimeIndex
+                ):
                     signal_timestamp = data_with_emas.index[-1].to_pydatetime()
 
                 signals.append(
@@ -106,7 +115,8 @@ class EMACrossStrategy(BaseStrategy):
                         amount=self.params["position_size"],
                         current_price=current_price,
                         stop_loss=current_price * (1 - self.params["stop_loss_pct"]),
-                        take_profit=current_price * (1 + self.params["take_profit_pct"]),
+                        take_profit=current_price
+                        * (1 + self.params["take_profit_pct"]),
                         metadata={
                             "fast_ema": last_row["fast_ema"],
                             "slow_ema": last_row["slow_ema"],
@@ -122,7 +132,9 @@ class EMACrossStrategy(BaseStrategy):
             ):
                 # Extract deterministic timestamp from the data that triggered the signal
                 signal_timestamp = None
-                if not data_with_emas.empty and isinstance(data_with_emas.index, pd.DatetimeIndex):
+                if not data_with_emas.empty and isinstance(
+                    data_with_emas.index, pd.DatetimeIndex
+                ):
                     signal_timestamp = data_with_emas.index[-1].to_pydatetime()
 
                 signals.append(
@@ -134,7 +146,8 @@ class EMACrossStrategy(BaseStrategy):
                         amount=self.params["position_size"],
                         current_price=current_price,
                         stop_loss=current_price * (1 + self.params["stop_loss_pct"]),
-                        take_profit=current_price * (1 - self.params["take_profit_pct"]),
+                        take_profit=current_price
+                        * (1 - self.params["take_profit_pct"]),
                         metadata={
                             "fast_ema": last_row["fast_ema"],
                             "slow_ema": last_row["slow_ema"],
@@ -145,6 +158,7 @@ class EMACrossStrategy(BaseStrategy):
 
         except Exception as e:
             import logging
+
             logger = logging.getLogger(__name__)
             logger.error(f"Error generating signals for {symbol}: {str(e)}")
 

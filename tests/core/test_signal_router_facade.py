@@ -4,9 +4,9 @@ Tests for signal_router facade module.
 Tests the backward compatibility facade that imports from the signal_router package.
 """
 
-import pytest
-from unittest.mock import patch, MagicMock
-from core.signal_router import SignalRouter, JournalWriter
+from unittest.mock import MagicMock
+
+from core.signal_router import JournalWriter, SignalRouter
 
 
 class TestSignalRouterFacade:
@@ -30,10 +30,11 @@ class TestSignalRouterFacade:
 
         # Test that it has the expected interface
         import inspect
+
         sig = inspect.signature(SignalRouter.__init__)
         params = list(sig.parameters.keys())
-        assert 'self' in params
-        assert 'risk_manager' in params
+        assert "self" in params
+        assert "risk_manager" in params
 
     def test_journal_writer_instantiation(self):
         """Test that JournalWriter can be instantiated through the facade."""
@@ -48,8 +49,8 @@ class TestSignalRouterFacade:
         assert writer is not None
 
         # Test that it has the expected interface
-        assert hasattr(writer, 'append')
-        assert hasattr(writer, 'stop')
+        assert hasattr(writer, "append")
+        assert hasattr(writer, "stop")
 
     def test_backward_compatibility(self):
         """Test that the facade maintains backward compatibility."""
@@ -57,8 +58,8 @@ class TestSignalRouterFacade:
         from core import signal_router
 
         # Verify the classes are available
-        assert hasattr(signal_router, 'SignalRouter')
-        assert hasattr(signal_router, 'JournalWriter')
+        assert hasattr(signal_router, "SignalRouter")
+        assert hasattr(signal_router, "JournalWriter")
 
         # Verify they are the same as direct imports
         assert signal_router.SignalRouter is SignalRouter
@@ -71,11 +72,13 @@ class TestSignalRouterFacade:
             content = f.read()
 
         # Check that it imports the expected classes
-        assert "from .signal_router.router import SignalRouter, JournalWriter" in content
+        assert (
+            "from .signal_router.router import SignalRouter, JournalWriter" in content
+        )
         assert '__all__ = ["SignalRouter", "JournalWriter"]' in content
 
         # Check that it has the expected docstring
-        assert 'Facade for the modular signal routing system' in content
+        assert "Facade for the modular signal routing system" in content
 
 
 class TestFacadeIntegration:
@@ -89,13 +92,14 @@ class TestFacadeIntegration:
         # We can't easily instantiate SignalRouter due to complex dependencies,
         # but we can test that JournalWriter works
         from pathlib import Path
+
         path = Path("/tmp/test.jsonl")
         writer = JournalWriter(path)
 
         # Verify writer was created successfully
         assert writer is not None
-        assert hasattr(writer, 'append')
-        assert hasattr(writer, 'stop')
+        assert hasattr(writer, "append")
+        assert hasattr(writer, "stop")
 
     def test_import_error_handling(self):
         """Test that import errors are properly handled."""
@@ -119,9 +123,9 @@ class TestFacadeIntegration:
         import core.signal_router as sr
 
         # Test module has expected attributes
-        assert hasattr(sr, '__file__')
-        assert hasattr(sr, '__name__')
-        assert sr.__name__ == 'core.signal_router'
+        assert hasattr(sr, "__file__")
+        assert hasattr(sr, "__name__")
+        assert sr.__name__ == "core.signal_router"
 
         # Test the module docstring exists
         assert sr.__doc__ is not None

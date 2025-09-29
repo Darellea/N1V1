@@ -13,22 +13,21 @@ Classes:
 - Species: Species for maintaining population diversity
 """
 
-from typing import Dict, List, Any, Optional, Tuple
+import random
 from dataclasses import dataclass, field
 from enum import Enum
-import random
-import json
-from collections import defaultdict
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
 # Type aliases for better code readability
-GeneList = List['StrategyGene']
-GenomeList = List['StrategyGenome']
+GeneList = List["StrategyGene"]
+GenomeList = List["StrategyGenome"]
 
 
 class StrategyComponent(Enum):
     """Types of strategy components that can be genetically combined."""
+
     INDICATOR = "indicator"
     SIGNAL_LOGIC = "signal_logic"
     RISK_MANAGEMENT = "risk_management"
@@ -38,6 +37,7 @@ class StrategyComponent(Enum):
 
 class IndicatorType(Enum):
     """Available technical indicators."""
+
     RSI = "rsi"
     MACD = "macd"
     BOLLINGER_BANDS = "bollinger_bands"
@@ -50,6 +50,7 @@ class IndicatorType(Enum):
 
 class SignalLogic(Enum):
     """Types of signal generation logic."""
+
     CROSSOVER = "crossover"
     THRESHOLD = "threshold"
     PATTERN = "pattern"
@@ -66,6 +67,7 @@ class StrategyGene:
     This class encapsulates a single component of a trading strategy,
     including its type, parameters, and configuration.
     """
+
     component_type: StrategyComponent
     indicator_type: Optional[IndicatorType] = None
     signal_logic: Optional[SignalLogic] = None
@@ -76,24 +78,30 @@ class StrategyGene:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
-            'component_type': self.component_type.value,
-            'indicator_type': self.indicator_type.value if self.indicator_type else None,
-            'signal_logic': self.signal_logic.value if self.signal_logic else None,
-            'parameters': self.parameters,
-            'weight': self.weight,
-            'enabled': self.enabled
+            "component_type": self.component_type.value,
+            "indicator_type": self.indicator_type.value
+            if self.indicator_type
+            else None,
+            "signal_logic": self.signal_logic.value if self.signal_logic else None,
+            "parameters": self.parameters,
+            "weight": self.weight,
+            "enabled": self.enabled,
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'StrategyGene':
+    def from_dict(cls, data: Dict[str, Any]) -> "StrategyGene":
         """Create from dictionary."""
         return cls(
-            component_type=StrategyComponent(data['component_type']),
-            indicator_type=IndicatorType(data['indicator_type']) if data.get('indicator_type') else None,
-            signal_logic=SignalLogic(data['signal_logic']) if data.get('signal_logic') else None,
-            parameters=data.get('parameters', {}),
-            weight=data.get('weight', 1.0),
-            enabled=data.get('enabled', True)
+            component_type=StrategyComponent(data["component_type"]),
+            indicator_type=IndicatorType(data["indicator_type"])
+            if data.get("indicator_type")
+            else None,
+            signal_logic=SignalLogic(data["signal_logic"])
+            if data.get("signal_logic")
+            else None,
+            parameters=data.get("parameters", {}),
+            weight=data.get("weight", 1.0),
+            enabled=data.get("enabled", True),
         )
 
 
@@ -105,6 +113,7 @@ class StrategyGenome:
     This class represents an entire trading strategy as a collection of genes,
     providing methods for genetic operations like mutation and crossover.
     """
+
     genes: GeneList = field(default_factory=list)
     fitness: float = 0.0
     age: int = 0
@@ -122,32 +131,39 @@ class StrategyGenome:
             return
 
         # Ensure we have at least one indicator and signal logic
-        has_indicator = any(g.component_type == StrategyComponent.INDICATOR for g in self.genes)
-        has_signal = any(g.component_type == StrategyComponent.SIGNAL_LOGIC for g in self.genes)
+        has_indicator = any(
+            g.component_type == StrategyComponent.INDICATOR for g in self.genes
+        )
+        has_signal = any(
+            g.component_type == StrategyComponent.SIGNAL_LOGIC for g in self.genes
+        )
 
         if not (has_indicator and has_signal):
             # Log warning instead of raising exception for flexibility
             pass
 
-    def copy(self) -> 'StrategyGenome':
+    def copy(self) -> "StrategyGenome":
         """Create a deep copy of this genome."""
         return StrategyGenome(
-            genes=[StrategyGene(
-                component_type=g.component_type,
-                indicator_type=g.indicator_type,
-                signal_logic=g.signal_logic,
-                parameters=g.parameters.copy(),
-                weight=g.weight,
-                enabled=g.enabled
-            ) for g in self.genes],
+            genes=[
+                StrategyGene(
+                    component_type=g.component_type,
+                    indicator_type=g.indicator_type,
+                    signal_logic=g.signal_logic,
+                    parameters=g.parameters.copy(),
+                    weight=g.weight,
+                    enabled=g.enabled,
+                )
+                for g in self.genes
+            ],
             fitness=self.fitness,
             age=self.age,
             generation=self.generation,
             species_id=self.species_id,
-            metadata=self.metadata.copy()
+            metadata=self.metadata.copy(),
         )
 
-    def mutate(self, mutation_rate: float = 0.1) -> 'StrategyGenome':
+    def mutate(self, mutation_rate: float = 0.1) -> "StrategyGenome":
         """
         Apply mutations to this genome.
 
@@ -213,33 +229,46 @@ class StrategyGenome:
             gene_to_remove = random.choice(self.genes)
             self.genes.remove(gene_to_remove)
 
-    def _get_default_indicator_params(self, indicator_type: IndicatorType) -> Dict[str, Any]:
+    def _get_default_indicator_params(
+        self, indicator_type: IndicatorType
+    ) -> Dict[str, Any]:
         """Get default parameters for an indicator type."""
         defaults = {
-            IndicatorType.RSI: {'period': 14, 'overbought': 70, 'oversold': 30},
-            IndicatorType.MACD: {'fast_period': 12, 'slow_period': 26, 'signal_period': 9},
-            IndicatorType.BOLLINGER_BANDS: {'period': 20, 'std_dev': 2.0},
-            IndicatorType.STOCHASTIC: {'k_period': 14, 'd_period': 3, 'overbought': 80, 'oversold': 20},
-            IndicatorType.MOVING_AVERAGE: {'period': 20, 'type': 'sma'},
-            IndicatorType.ATR: {'period': 14},
-            IndicatorType.VOLUME: {'period': 20},
-            IndicatorType.PRICE_ACTION: {'lookback': 5}
+            IndicatorType.RSI: {"period": 14, "overbought": 70, "oversold": 30},
+            IndicatorType.MACD: {
+                "fast_period": 12,
+                "slow_period": 26,
+                "signal_period": 9,
+            },
+            IndicatorType.BOLLINGER_BANDS: {"period": 20, "std_dev": 2.0},
+            IndicatorType.STOCHASTIC: {
+                "k_period": 14,
+                "d_period": 3,
+                "overbought": 80,
+                "oversold": 20,
+            },
+            IndicatorType.MOVING_AVERAGE: {"period": 20, "type": "sma"},
+            IndicatorType.ATR: {"period": 14},
+            IndicatorType.VOLUME: {"period": 20},
+            IndicatorType.PRICE_ACTION: {"lookback": 5},
         }
         return defaults.get(indicator_type, {})
 
     def _get_default_signal_params(self, signal_logic: SignalLogic) -> Dict[str, Any]:
         """Get default parameters for signal logic."""
         defaults = {
-            SignalLogic.CROSSOVER: {'fast_period': 9, 'slow_period': 21},
-            SignalLogic.THRESHOLD: {'threshold': 0.5, 'direction': 'above'},
-            SignalLogic.PATTERN: {'pattern_type': 'double_bottom', 'tolerance': 0.02},
-            SignalLogic.DIVERGENCE: {'lookback': 10, 'threshold': 0.1},
-            SignalLogic.MOMENTUM: {'period': 10, 'threshold': 0.02},
-            SignalLogic.MEAN_REVERSION: {'mean_period': 20, 'std_threshold': 2.0}
+            SignalLogic.CROSSOVER: {"fast_period": 9, "slow_period": 21},
+            SignalLogic.THRESHOLD: {"threshold": 0.5, "direction": "above"},
+            SignalLogic.PATTERN: {"pattern_type": "double_bottom", "tolerance": 0.02},
+            SignalLogic.DIVERGENCE: {"lookback": 10, "threshold": 0.1},
+            SignalLogic.MOMENTUM: {"period": 10, "threshold": 0.02},
+            SignalLogic.MEAN_REVERSION: {"mean_period": 20, "std_threshold": 2.0},
         }
         return defaults.get(signal_logic, {})
 
-    def crossover(self, other: 'StrategyGenome') -> Tuple['StrategyGenome', 'StrategyGenome']:
+    def crossover(
+        self, other: "StrategyGenome"
+    ) -> Tuple["StrategyGenome", "StrategyGenome"]:
         """
         Perform crossover with another genome.
 
@@ -263,12 +292,10 @@ class StrategyGenome:
         child2_genes = other.genes[:crossover_point] + self.genes[crossover_point:]
 
         child1 = StrategyGenome(
-            genes=child1_genes,
-            generation=max(self.generation, other.generation) + 1
+            genes=child1_genes, generation=max(self.generation, other.generation) + 1
         )
         child2 = StrategyGenome(
-            genes=child2_genes,
-            generation=max(self.generation, other.generation) + 1
+            genes=child2_genes, generation=max(self.generation, other.generation) + 1
         )
 
         return child1, child2
@@ -276,24 +303,24 @@ class StrategyGenome:
     def to_dict(self) -> Dict[str, Any]:
         """Convert genome to dictionary for serialization."""
         return {
-            'genes': [gene.to_dict() for gene in self.genes],
-            'fitness': self.fitness,
-            'age': self.age,
-            'generation': self.generation,
-            'species_id': self.species_id,
-            'metadata': self.metadata
+            "genes": [gene.to_dict() for gene in self.genes],
+            "fitness": self.fitness,
+            "age": self.age,
+            "generation": self.generation,
+            "species_id": self.species_id,
+            "metadata": self.metadata,
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'StrategyGenome':
+    def from_dict(cls, data: Dict[str, Any]) -> "StrategyGenome":
         """Create genome from dictionary."""
         return cls(
-            genes=[StrategyGene.from_dict(g) for g in data.get('genes', [])],
-            fitness=data.get('fitness', float('-inf')),
-            age=data.get('age', 0),
-            generation=data.get('generation', 0),
-            species_id=data.get('species_id'),
-            metadata=data.get('metadata', {})
+            genes=[StrategyGene.from_dict(g) for g in data.get("genes", [])],
+            fitness=data.get("fitness", float("-inf")),
+            age=data.get("age", 0),
+            generation=data.get("generation", 0),
+            species_id=data.get("species_id"),
+            metadata=data.get("metadata", {}),
         )
 
     def __str__(self) -> str:
@@ -320,7 +347,9 @@ class StrategyGenome:
         return sorted_population[:num_to_select]
 
     @staticmethod
-    def tournament_selection(population: GenomeList, tournament_size: int) -> 'StrategyGenome':
+    def tournament_selection(
+        population: GenomeList, tournament_size: int
+    ) -> "StrategyGenome":
         """
         Perform tournament selection to choose a parent.
 
@@ -352,6 +381,7 @@ class Species:
     This class groups similar genomes together to maintain diversity
     in the population during evolution.
     """
+
     species_id: str
     representative: StrategyGenome
     members: GenomeList = field(default_factory=list)
@@ -378,7 +408,7 @@ class Species:
             return 0.0
 
         # Simple diversity based on fitness variance
-        fitness_values = [g.fitness for g in self.members if g.fitness != float('-inf')]
+        fitness_values = [g.fitness for g in self.members if g.fitness != float("-inf")]
         if len(fitness_values) < 2:
             return 0.0
 

@@ -6,16 +6,20 @@ including standardized ATR calculations and helper functions.
 """
 
 import logging
+from decimal import Decimal
+from typing import Any, Dict, Optional, Union
+
 import numpy as np
 import pandas as pd
-from decimal import Decimal, ROUND_HALF_UP
-from typing import Optional, Union, Dict, Any
 
 logger = logging.getLogger(__name__)
 
 
-def safe_divide(numerator: Union[float, Decimal], denominator: Union[float, Decimal],
-                default: Union[float, Decimal] = 0.0) -> Union[float, Decimal]:
+def safe_divide(
+    numerator: Union[float, Decimal],
+    denominator: Union[float, Decimal],
+    default: Union[float, Decimal] = 0.0,
+) -> Union[float, Decimal]:
     """
     Safely divide two numbers, returning a default value if denominator is zero.
 
@@ -30,7 +34,9 @@ def safe_divide(numerator: Union[float, Decimal], denominator: Union[float, Deci
     try:
         if isinstance(denominator, Decimal) and denominator == 0:
             return default
-        elif denominator == 0 or (isinstance(denominator, (int, float)) and abs(denominator) < 1e-10):
+        elif denominator == 0 or (
+            isinstance(denominator, (int, float)) and abs(denominator) < 1e-10
+        ):
             return default
 
         if isinstance(numerator, Decimal) or isinstance(denominator, Decimal):
@@ -41,8 +47,9 @@ def safe_divide(numerator: Union[float, Decimal], denominator: Union[float, Deci
         return default
 
 
-def calculate_atr_ema(high: pd.Series, low: pd.Series, close: pd.Series,
-                      period: int = 14) -> float:
+def calculate_atr_ema(
+    high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14
+) -> float:
     """
     Calculate Average True Range using Exponential Moving Average.
 
@@ -68,8 +75,9 @@ def calculate_atr_ema(high: pd.Series, low: pd.Series, close: pd.Series,
         hc = hc.fillna(0)
         lc = lc.fillna(0)
 
-        tr = pd.Series(np.maximum.reduce([hl.values, hc.values, lc.values]),
-                      index=high.index)
+        tr = pd.Series(
+            np.maximum.reduce([hl.values, hc.values, lc.values]), index=high.index
+        )
 
         # Calculate ATR using EMA
         atr = tr.ewm(span=period).mean().iloc[-1]
@@ -85,8 +93,9 @@ def calculate_atr_ema(high: pd.Series, low: pd.Series, close: pd.Series,
         return 0.0
 
 
-def calculate_atr_sma(high: pd.Series, low: pd.Series, close: pd.Series,
-                      period: int = 14) -> float:
+def calculate_atr_sma(
+    high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14
+) -> float:
     """
     Calculate Average True Range using Simple Moving Average.
 
@@ -112,8 +121,9 @@ def calculate_atr_sma(high: pd.Series, low: pd.Series, close: pd.Series,
         hc = hc.fillna(0)
         lc = lc.fillna(0)
 
-        tr = pd.Series(np.maximum.reduce([hl.values, hc.values, lc.values]),
-                      index=high.index)
+        tr = pd.Series(
+            np.maximum.reduce([hl.values, hc.values, lc.values]), index=high.index
+        )
 
         # Calculate ATR using SMA
         atr = tr.rolling(window=period).mean().iloc[-1]
@@ -129,8 +139,13 @@ def calculate_atr_sma(high: pd.Series, low: pd.Series, close: pd.Series,
         return 0.0
 
 
-def get_atr(high: pd.Series, low: pd.Series, close: pd.Series,
-            period: int = 14, method: str = 'ema') -> float:
+def get_atr(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    period: int = 14,
+    method: str = "ema",
+) -> float:
     """
     Get ATR value using specified method.
 
@@ -144,7 +159,7 @@ def get_atr(high: pd.Series, low: pd.Series, close: pd.Series,
     Returns:
         ATR value as float
     """
-    if method.lower() == 'sma':
+    if method.lower() == "sma":
         return calculate_atr_sma(high, low, close, period)
     else:
         return calculate_atr_ema(high, low, close, period)
@@ -177,7 +192,7 @@ def validate_market_data(data: pd.DataFrame) -> bool:
     if data is None or data.empty:
         return False
 
-    required_columns = ['close']
+    required_columns = ["close"]
     for col in required_columns:
         if col not in data.columns:
             return False
@@ -191,8 +206,9 @@ def validate_market_data(data: pd.DataFrame) -> bool:
     return True
 
 
-def get_config_value(config: Dict[str, Any], key: str, default: Any,
-                    value_type: type = None) -> Any:
+def get_config_value(
+    config: Dict[str, Any], key: str, default: Any, value_type: type = None
+) -> Any:
     """
     Safely get a configuration value with type conversion.
 
@@ -221,8 +237,11 @@ def get_config_value(config: Dict[str, Any], key: str, default: Any,
         return default
 
 
-def clamp_value(value: Union[float, Decimal], min_val: Union[float, Decimal],
-                max_val: Union[float, Decimal]) -> Union[float, Decimal]:
+def clamp_value(
+    value: Union[float, Decimal],
+    min_val: Union[float, Decimal],
+    max_val: Union[float, Decimal],
+) -> Union[float, Decimal]:
     """
     Clamp a value between minimum and maximum values.
 
@@ -241,7 +260,9 @@ def clamp_value(value: Union[float, Decimal], min_val: Union[float, Decimal],
     return value
 
 
-def calculate_z_score(series: pd.Series, lookback_period: int) -> Optional[Dict[str, float]]:
+def calculate_z_score(
+    series: pd.Series, lookback_period: int
+) -> Optional[Dict[str, float]]:
     """
     Calculate z-score for the most recent value in a series.
 
@@ -284,10 +305,10 @@ def calculate_z_score(series: pd.Series, lookback_period: int) -> Optional[Dict[
         z_score = (current_value - mean_val) / std_val
 
         return {
-            'z_score': float(z_score),
-            'current_value': current_value,
-            'mean': mean_val,
-            'std': std_val
+            "z_score": float(z_score),
+            "current_value": current_value,
+            "mean": mean_val,
+            "std": std_val,
         }
 
     except Exception as e:
@@ -324,7 +345,9 @@ def calculate_returns(prices: pd.Series) -> Optional[pd.Series]:
         return None
 
 
-def enhanced_validate_market_data(data: pd.DataFrame, required_columns: Optional[list] = None) -> bool:
+def enhanced_validate_market_data(
+    data: pd.DataFrame, required_columns: Optional[list] = None
+) -> bool:
     """
     Enhanced market data validation with configurable required columns.
 
@@ -344,7 +367,7 @@ def enhanced_validate_market_data(data: pd.DataFrame, required_columns: Optional
 
     # Default required columns
     if required_columns is None:
-        required_columns = ['close']
+        required_columns = ["close"]
 
     # Check for required columns
     for col in required_columns:
@@ -359,7 +382,7 @@ def enhanced_validate_market_data(data: pd.DataFrame, required_columns: Optional
             return False
 
         # Check for non-positive values in price columns
-        if col in ['open', 'high', 'low', 'close']:
+        if col in ["open", "high", "low", "close"]:
             if (data[col] <= 0).any():
                 return False
 

@@ -23,20 +23,25 @@ logger = logging.getLogger(__name__)
 
 class PathTraversalError(Exception):
     """Raised when path traversal is detected in version names."""
+
     pass
 
 
 class DataValidationError(Exception):
     """Raised when DataFrame validation fails."""
+
     pass
 
 
 class MetadataError(Exception):
     """Raised when metadata loading fails and cannot be recovered."""
+
     pass
 
 
-def validate_dataframe(df: pd.DataFrame, schema: Optional[Dict[str, Any]] = None) -> None:
+def validate_dataframe(
+    df: pd.DataFrame, schema: Optional[Dict[str, Any]] = None
+) -> None:
     """
     Validate DataFrame schema and content.
 
@@ -54,75 +59,89 @@ def validate_dataframe(df: pd.DataFrame, schema: Optional[Dict[str, Any]] = None
     # Default schema for OHLCV data
     if schema is None:
         schema = {
-            'required_columns': ['timestamp', 'open', 'high', 'low', 'close', 'volume'],
-            'column_types': {
-                'timestamp': ['datetime64[ns]', 'object'],
-                'open': ['float64', 'int64'],
-                'high': ['float64', 'int64'],
-                'low': ['float64', 'int64'],
-                'close': ['float64', 'int64'],
-                'volume': ['float64', 'int64']
+            "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
+            "column_types": {
+                "timestamp": ["datetime64[ns]", "object"],
+                "open": ["float64", "int64"],
+                "high": ["float64", "int64"],
+                "low": ["float64", "int64"],
+                "close": ["float64", "int64"],
+                "volume": ["float64", "int64"],
             },
-            'constraints': {
-                'no_nan_in_key_columns': ['timestamp', 'open', 'high', 'low', 'close'],
-                'positive_values': ['volume'],
-                'logical_price_order': True  # high >= low, close/open reasonable
-            }
+            "constraints": {
+                "no_nan_in_key_columns": ["timestamp", "open", "high", "low", "close"],
+                "positive_values": ["volume"],
+                "logical_price_order": True,  # high >= low, close/open reasonable
+            },
         }
 
     # Check required columns
-    required_cols = schema.get('required_columns', [])
+    required_cols = schema.get("required_columns", [])
     missing_cols = set(required_cols) - set(df.columns)
     if missing_cols:
         raise DataValidationError(f"Missing required columns: {missing_cols}")
 
     # Check column types
-    column_types = schema.get('column_types', {})
+    column_types = schema.get("column_types", {})
     for col, expected_types in column_types.items():
         if col in df.columns:
             actual_type = str(df[col].dtype)
             if actual_type not in expected_types:
-                logger.warning(f"Column '{col}' has type {actual_type}, expected one of {expected_types}")
+                logger.warning(
+                    f"Column '{col}' has type {actual_type}, expected one of {expected_types}"
+                )
 
     # Check constraints
-    constraints = schema.get('constraints', {})
+    constraints = schema.get("constraints", {})
 
     # No NaN in key columns
-    no_nan_cols = constraints.get('no_nan_in_key_columns', [])
+    no_nan_cols = constraints.get("no_nan_in_key_columns", [])
     for col in no_nan_cols:
         if col in df.columns:
             nan_count = df[col].isna().sum()
             if nan_count > 0:
-                raise DataValidationError(f"Column '{col}' contains {nan_count} NaN values")
+                raise DataValidationError(
+                    f"Column '{col}' contains {nan_count} NaN values"
+                )
 
     # Positive values constraint
-    positive_cols = constraints.get('positive_values', [])
+    positive_cols = constraints.get("positive_values", [])
     for col in positive_cols:
         if col in df.columns:
             negative_count = (df[col] < 0).sum()
             if negative_count > 0:
-                raise DataValidationError(f"Column '{col}' contains {negative_count} negative values")
+                raise DataValidationError(
+                    f"Column '{col}' contains {negative_count} negative values"
+                )
 
     # Logical price order constraint
-    if constraints.get('logical_price_order', False):
-        if all(col in df.columns for col in ['high', 'low', 'open', 'close']):
-            invalid_high_low = (df['high'] < df['low']).sum()
+    if constraints.get("logical_price_order", False):
+        if all(col in df.columns for col in ["high", "low", "open", "close"]):
+            invalid_high_low = (df["high"] < df["low"]).sum()
             if invalid_high_low > 0:
-                raise DataValidationError(f"Found {invalid_high_low} rows where high < low")
+                raise DataValidationError(
+                    f"Found {invalid_high_low} rows where high < low"
+                )
 
             # Check for extreme price deviations (optional, can be made configurable)
             extreme_deviations = 0
-            for col in ['open', 'high', 'low', 'close']:
+            for col in ["open", "high", "low", "close"]:
                 if col in df.columns:
                     # Flag prices that deviate more than 50% from median in a rolling window
-                    median_price = df[col].rolling(window=min(100, len(df)), center=True).median()
+                    median_price = (
+                        df[col].rolling(window=min(100, len(df)), center=True).median()
+                    )
                     deviation = abs(df[col] - median_price) / median_price
                     extreme_deviations += (deviation > 0.5).sum()
 
             if extreme_deviations > len(df) * 0.01:  # More than 1% extreme deviations
-                logger.warning(f"Found {extreme_deviations} extreme price deviations, may indicate data quality issues")
+                logger.warning(
+                    f"Found {extreme_deviations} extreme price deviations, may indicate data quality issues"
+                )
 
-    logger.debug(f"DataFrame validation passed for {len(df)} rows, {len(df.columns)} columns")
+    logger.debug(
+        f"DataFrame validation passed for {len(df)} rows, {len(df.columns)} columns"
+    )
 
 
 class DatasetVersionManager:
@@ -130,7 +149,7 @@ class DatasetVersionManager:
     Manages dataset versioning and maintains clean history of dataset changes.
     """
 
-    def __init__(self, base_path = "data/versions", legacy_mode: bool = False):
+    def __init__(self, base_path="data/versions", legacy_mode: bool = False):
         """
         Initialize the dataset version manager.
 
@@ -141,7 +160,7 @@ class DatasetVersionManager:
         if isinstance(base_path, str):
             self.base_path = Path(base_path)
         else:
-            self.base_path = Path(base_path['versioning']['base_dir'])
+            self.base_path = Path(base_path["versioning"]["base_dir"])
         self.base_path.mkdir(parents=True, exist_ok=True)
         self.metadata_file = self.base_path / "version_metadata.json"
         self.legacy_mode = legacy_mode
@@ -157,26 +176,36 @@ class DatasetVersionManager:
         - Other exceptions: Log error and re-raise as MetadataError
         """
         if not self.metadata_file.exists():
-            logger.warning(f"Metadata file not found: {self.metadata_file}. Initializing with default metadata.")
+            logger.warning(
+                f"Metadata file not found: {self.metadata_file}. Initializing with default metadata."
+            )
             self.metadata = {}
             return
 
         try:
-            with open(self.metadata_file, 'r') as f:
+            with open(self.metadata_file, "r") as f:
                 self.metadata = json.load(f)
-            logger.info(f"Successfully loaded metadata with {len(self.metadata)} versions from {self.metadata_file}")
+            logger.info(
+                f"Successfully loaded metadata with {len(self.metadata)} versions from {self.metadata_file}"
+            )
         except FileNotFoundError as e:
-            logger.warning(f"Metadata file not found during loading: {self.metadata_file}. Initializing with default metadata.")
+            logger.warning(
+                f"Metadata file not found during loading: {self.metadata_file}. Initializing with default metadata."
+            )
             self.metadata = {}
         except json.JSONDecodeError as e:
-            logger.error(f"Corrupted metadata file detected: {self.metadata_file}. Error: {str(e)}")
+            logger.error(
+                f"Corrupted metadata file detected: {self.metadata_file}. Error: {str(e)}"
+            )
             # Attempt backup recovery
             if not self._attempt_backup_recovery():
                 error_msg = f"Metadata corruption unrecoverable: {self.metadata_file}. Error: {str(e)}"
                 logger.error(error_msg)
                 raise MetadataError(error_msg)
         except Exception as e:
-            logger.error(f"Unexpected error loading metadata from {self.metadata_file}: {str(e)}")
+            logger.error(
+                f"Unexpected error loading metadata from {self.metadata_file}: {str(e)}"
+            )
             raise MetadataError(f"Failed to load metadata: {str(e)}")
 
     def _attempt_backup_recovery(self) -> bool:
@@ -186,13 +215,13 @@ class DatasetVersionManager:
         Returns:
             True if recovery successful, False otherwise
         """
-        backup_file = self.metadata_file.with_suffix('.bak')
+        backup_file = self.metadata_file.with_suffix(".bak")
         if not backup_file.exists():
             logger.warning(f"No backup metadata file found: {backup_file}")
             return False
 
         try:
-            with open(backup_file, 'r') as f:
+            with open(backup_file, "r") as f:
                 self.metadata = json.load(f)
             logger.info(f"Successfully recovered metadata from backup: {backup_file}")
             # Save the recovered metadata as the main file
@@ -205,7 +234,7 @@ class DatasetVersionManager:
     def _save_metadata(self):
         """Save version metadata to disk."""
         try:
-            with open(self.metadata_file, 'w') as f:
+            with open(self.metadata_file, "w") as f:
                 json.dump(self.metadata, f, indent=2, default=str)
         except Exception as e:
             logger.error(f"Failed to save version metadata: {e}")
@@ -227,42 +256,59 @@ class DatasetVersionManager:
             raise PathTraversalError("Version name must be a non-empty string")
 
         # Check for absolute path patterns (Windows and Unix)
-        if name.startswith('/') or name.startswith('\\') or (len(name) >= 3 and name[1:3] == ':\\'):
+        if (
+            name.startswith("/")
+            or name.startswith("\\")
+            or (len(name) >= 3 and name[1:3] == ":\\")
+        ):
             logger.error(f"Absolute path detected in version name: {name}")
             raise PathTraversalError("Absolute path detected")
 
         # Check for path traversal patterns
-        if '..' in name:
+        if ".." in name:
             logger.error(f"Path traversal detected in version name: {name}")
             raise PathTraversalError(f"Path traversal detected in version name: {name}")
 
-        if '/' in name or '\\' in name:
+        if "/" in name or "\\" in name:
             logger.error(f"Path separators not allowed in version name: {name}")
-            raise PathTraversalError(f"Path separators not allowed in version name: {name}")
+            raise PathTraversalError(
+                f"Path separators not allowed in version name: {name}"
+            )
 
         # Allow only alphanumeric characters, underscores, and hyphens
-        if not re.match(r'^[a-zA-Z0-9_-]+$', name):
+        if not re.match(r"^[a-zA-Z0-9_-]+$", name):
             logger.error(f"Invalid characters in version name: {name}")
             raise PathTraversalError("Invalid characters in version name")
 
         # Ensure name is not too long (prevent filesystem issues)
         if len(name) > 100:
             logger.error(f"Version name too long: {name}")
-            raise PathTraversalError(f"Version name too long (max 100 characters): {name}")
+            raise PathTraversalError(
+                f"Version name too long (max 100 characters): {name}"
+            )
 
         logger.debug(f"Version name sanitized successfully: {name}")
         return name
 
-    def create_version(self, df, version_name: str, description: str, metadata: Optional[Dict[str, Any]] = None) -> Union[str, bool]:
-        logger.info("Starting dataset version creation", extra={
-            "version_name": version_name,
-            "description": description,
-            "data_shape": df.shape if hasattr(df, 'shape') else None
-        })
+    def create_version(
+        self,
+        df,
+        version_name: str,
+        description: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Union[str, bool]:
+        logger.info(
+            "Starting dataset version creation",
+            extra={
+                "version_name": version_name,
+                "description": description,
+                "data_shape": df.shape if hasattr(df, "shape") else None,
+            },
+        )
 
         # Validate DataFrame
         df_to_validate = df.reset_index()
-        if 'timestamp' not in df_to_validate.columns:
+        if "timestamp" not in df_to_validate.columns:
             raise DataValidationError("DataFrame must contain 'timestamp' column")
 
         # Sanitize version name to prevent path traversal
@@ -274,7 +320,9 @@ class DatasetVersionManager:
         version_dir.mkdir(parents=True, exist_ok=True)
 
         # Save dataset (reset index to ensure consistent structure)
-        df.reset_index().to_json(version_dir / "data.json", orient="records", date_format="iso")
+        df.reset_index().to_json(
+            version_dir / "data.json", orient="records", date_format="iso"
+        )
 
         # Save metadata
         version_metadata = {
@@ -283,16 +331,19 @@ class DatasetVersionManager:
             "description": description,
             "created_at": datetime.now().isoformat(),
             "validation_passed": True,
-            "metadata": metadata or {}
+            "metadata": metadata or {},
         }
         self.metadata[version_id] = version_metadata
         self._save_metadata()
 
-        logger.info("Dataset version created successfully", extra={
-            "version_name": version_name,
-            "version_id": version_id,
-            "version_dir": str(version_dir)
-        })
+        logger.info(
+            "Dataset version created successfully",
+            extra={
+                "version_name": version_name,
+                "version_id": version_id,
+                "version_dir": str(version_dir),
+            },
+        )
 
         # Return True for legacy compatibility, version_id for new code
         return True if self.legacy_mode else version_id
@@ -308,7 +359,7 @@ class DatasetVersionManager:
             DataFrame if version exists, None otherwise
         """
         # Extract version name from version_id (format: "name_uuid")
-        version_parts = version_id.rsplit('_', 1)
+        version_parts = version_id.rsplit("_", 1)
         if len(version_parts) != 2:
             logger.error(f"Invalid version_id format: {version_id}")
             return None
@@ -324,12 +375,12 @@ class DatasetVersionManager:
         try:
             df = pd.read_json(dataset_file, orient="records")
             # Drop the index column if it exists (artifact from reset_index())
-            if 'index' in df.columns:
-                df = df.drop('index', axis=1)
+            if "index" in df.columns:
+                df = df.drop("index", axis=1)
             # Convert timestamp strings back to datetime if needed
-            if 'timestamp' in df.columns:
-                df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
-                df.set_index('timestamp', inplace=True)
+            if "timestamp" in df.columns:
+                df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+                df.set_index("timestamp", inplace=True)
             logger.info(f"Loaded dataset version: {version_id}")
             return df
         except Exception as e:
@@ -404,18 +455,20 @@ class DatasetVersionManager:
             "version2": version_id2,
             "shape_diff": {
                 "rows": info2["shape"][0] - info1["shape"][0],
-                "cols": info2["shape"][1] - info1["shape"][1]
+                "cols": info2["shape"][1] - info1["shape"][1],
             },
             "column_changes": {
                 "added": list(set(info2["columns"]) - set(info1["columns"])),
-                "removed": list(set(info1["columns"]) - set(info2["columns"]))
+                "removed": list(set(info1["columns"]) - set(info2["columns"])),
             },
-            "hash_changed": info1["hash"] != info2["hash"]
+            "hash_changed": info1["hash"] != info2["hash"],
         }
 
         return comparison
 
-    def _calculate_dataframe_hash(self, df: pd.DataFrame, use_full_hash: bool = False) -> str:
+    def _calculate_dataframe_hash(
+        self, df: pd.DataFrame, use_full_hash: bool = False
+    ) -> str:
         """
         Calculate a hash of the DataFrame for change detection.
 
@@ -440,7 +493,9 @@ class DatasetVersionManager:
             sample_indices = list(range(0, len(df), step))[:sample_size]
             sample = df.iloc[sample_indices]
 
-            logger.debug(f"Using deterministic sampling: {len(sample)} rows from {len(df)} total rows (step={step})")
+            logger.debug(
+                f"Using deterministic sampling: {len(sample)} rows from {len(df)} total rows (step={step})"
+            )
 
         # Convert to string representation for hashing
         data_str = sample.to_string()
@@ -470,6 +525,7 @@ class DatasetVersionManager:
             version_path = self.base_path / version_id
             try:
                 import shutil
+
                 shutil.rmtree(version_path)
                 del self.metadata[version_id]
                 logger.info(f"Removed old version: {version_id}")
@@ -479,12 +535,17 @@ class DatasetVersionManager:
         # Save updated metadata
         self._save_metadata()
 
-    def migrate_legacy_dataset(self, legacy_path: str, new_name: str, description: str) -> Union[str, bool]:
-        logger.info("Starting legacy dataset migration", extra={
-            "legacy_path": legacy_path,
-            "new_name": new_name,
-            "description": description
-        })
+    def migrate_legacy_dataset(
+        self, legacy_path: str, new_name: str, description: str
+    ) -> Union[str, bool]:
+        logger.info(
+            "Starting legacy dataset migration",
+            extra={
+                "legacy_path": legacy_path,
+                "new_name": new_name,
+                "description": description,
+            },
+        )
 
         try:
             with open(legacy_path, "r") as f:
@@ -503,12 +564,12 @@ class DatasetVersionManager:
                 df=df,
                 version_name=new_name,
                 description=description,
-                metadata={"migrated_from": legacy_path}
+                metadata={"migrated_from": legacy_path},
             )
 
-            logger.info("Legacy dataset migration completed", extra={
-                "version_id": version_id
-            })
+            logger.info(
+                "Legacy dataset migration completed", extra={"version_id": version_id}
+            )
 
             # Return True for legacy compatibility, version_id for new code
             return True if self.legacy_mode else version_id
@@ -517,9 +578,14 @@ class DatasetVersionManager:
             raise
 
 
-def create_binary_target_dataset(df: pd.DataFrame, version_manager: DatasetVersionManager,
-                               horizon: int = 5, profit_threshold: float = 0.005,
-                               include_fees: bool = True, fee_rate: float = 0.001) -> str:
+def create_binary_target_dataset(
+    df: pd.DataFrame,
+    version_manager: DatasetVersionManager,
+    horizon: int = 5,
+    profit_threshold: float = 0.005,
+    include_fees: bool = True,
+    fee_rate: float = 0.001,
+) -> str:
     """
     Create a new dataset version with binary labels for trading decisions.
 
@@ -542,7 +608,7 @@ def create_binary_target_dataset(df: pd.DataFrame, version_manager: DatasetVersi
         horizon=horizon,
         profit_threshold=profit_threshold,
         include_fees=include_fees,
-        fee_rate=fee_rate
+        fee_rate=fee_rate,
     )
 
     # Create version metadata
@@ -552,7 +618,7 @@ def create_binary_target_dataset(df: pd.DataFrame, version_manager: DatasetVersi
         "profit_threshold": profit_threshold,
         "include_fees": include_fees,
         "fee_rate": fee_rate,
-        "label_distribution": df_with_labels['label_binary'].value_counts().to_dict()
+        "label_distribution": df_with_labels["label_binary"].value_counts().to_dict(),
     }
 
     # Create version
@@ -560,14 +626,17 @@ def create_binary_target_dataset(df: pd.DataFrame, version_manager: DatasetVersi
         df=df_with_labels,
         version_name="binary_labels_v2",
         description="Dataset with binary trading decision labels (1=trade, 0=skip)",
-        metadata=metadata
+        metadata=metadata,
     )
 
     return version_id
 
 
-def migrate_legacy_dataset(df: pd.DataFrame, version_manager: DatasetVersionManager,
-                          schema: Optional[Dict[str, Any]] = None) -> str:
+def migrate_legacy_dataset(
+    df: pd.DataFrame,
+    version_manager: DatasetVersionManager,
+    schema: Optional[Dict[str, Any]] = None,
+) -> str:
     """
     Migrate a legacy dataset to the new binary labeling system.
 
@@ -583,41 +652,60 @@ def migrate_legacy_dataset(df: pd.DataFrame, version_manager: DatasetVersionMana
         DataValidationError: If DataFrame validation fails
     """
     start_time = time.time()
-    logger.info(f"Starting legacy dataset migration: shape={df.shape}, columns={list(df.columns)}")
+    logger.info(
+        f"Starting legacy dataset migration: shape={df.shape}, columns={list(df.columns)}"
+    )
 
     try:
         # Ensure DataFrame has timestamp column for validation (reset index if necessary)
         df_for_validation = df.copy()
-        if 'timestamp' not in df_for_validation.columns:
-            if isinstance(df_for_validation.index, pd.DatetimeIndex) or pd.api.types.is_datetime64_any_dtype(df_for_validation.index):
+        if "timestamp" not in df_for_validation.columns:
+            if isinstance(
+                df_for_validation.index, pd.DatetimeIndex
+            ) or pd.api.types.is_datetime64_any_dtype(df_for_validation.index):
                 df_for_validation = df_for_validation.reset_index()
-                if df_for_validation.columns[0] != 'timestamp':
-                    df_for_validation.rename(columns={df_for_validation.columns[0]: 'timestamp'}, inplace=True)
+                if df_for_validation.columns[0] != "timestamp":
+                    df_for_validation.rename(
+                        columns={df_for_validation.columns[0]: "timestamp"},
+                        inplace=True,
+                    )
             else:
-                raise DataValidationError("DataFrame must have a 'timestamp' column or DatetimeIndex")
+                raise DataValidationError(
+                    "DataFrame must have a 'timestamp' column or DatetimeIndex"
+                )
 
         # Validate input DataFrame
         try:
             validate_dataframe(df_for_validation, schema)
             logger.debug("Input DataFrame validation passed for migration")
         except DataValidationError as e:
-            logger.error(f"DataFrame validation failed for legacy dataset migration: {str(e)}")
+            logger.error(
+                f"DataFrame validation failed for legacy dataset migration: {str(e)}"
+            )
             raise
 
         # Keep the original data but add binary labels
         df_migrated = df.copy()
 
         # If binary labels don't exist, create them
-        if 'label_binary' not in df_migrated.columns:
+        if "label_binary" not in df_migrated.columns:
             logger.info("Adding binary labels to legacy dataset")
             from ml.trainer import create_binary_labels
+
             df_migrated = create_binary_labels(df_migrated)
-            logger.debug(f"Binary labels added: {df_migrated['label_binary'].value_counts().to_dict()}")
+            logger.debug(
+                f"Binary labels added: {df_migrated['label_binary'].value_counts().to_dict()}"
+            )
         else:
             logger.debug("Binary labels already present in legacy dataset")
 
         # Reset index so that timestamp is included as a column for schema validation
-        df_migrated = df_migrated.reset_index() if 'timestamp' not in df_migrated.columns and df_migrated.index.name == 'timestamp' else df_migrated
+        df_migrated = (
+            df_migrated.reset_index()
+            if "timestamp" not in df_migrated.columns
+            and df_migrated.index.name == "timestamp"
+            else df_migrated
+        )
 
         # Validate migrated DataFrame as well
         try:
@@ -631,8 +719,8 @@ def migrate_legacy_dataset(df: pd.DataFrame, version_manager: DatasetVersionMana
         metadata = {
             "migration_type": "legacy_to_binary",
             "original_columns": list(df.columns),
-            "has_binary_labels": 'label_binary' in df_migrated.columns,
-            "validation_passed": True
+            "has_binary_labels": "label_binary" in df_migrated.columns,
+            "validation_passed": True,
         }
 
         # Create version
@@ -640,17 +728,21 @@ def migrate_legacy_dataset(df: pd.DataFrame, version_manager: DatasetVersionMana
             df=df_migrated,
             version_name="migrated_v2",
             description="Migrated legacy dataset with binary labels",
-            metadata=metadata
+            metadata=metadata,
         )
 
         duration = time.time() - start_time
-        logger.info(f"Legacy dataset migration completed: {version_id}, duration={duration:.2f}s")
+        logger.info(
+            f"Legacy dataset migration completed: {version_id}, duration={duration:.2f}s"
+        )
 
         return version_id
 
     except Exception as e:
         duration = time.time() - start_time
-        logger.error(f"Legacy dataset migration failed: {str(e)}, duration={duration:.2f}s")
+        logger.error(
+            f"Legacy dataset migration failed: {str(e)}, duration={duration:.2f}s"
+        )
         raise
 
 
@@ -669,8 +761,12 @@ class DatasetDriftDetector:
         self.version_manager = version_manager
         self.reference_datasets = {}  # Cache for loaded reference datasets
 
-    def detect_drift(self, current_df: pd.DataFrame, reference_version_id: str,
-                    features_to_check: Optional[List[str]] = None) -> Dict[str, Any]:
+    def detect_drift(
+        self,
+        current_df: pd.DataFrame,
+        reference_version_id: str,
+        features_to_check: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         """
         Detect drift between current data and a reference dataset version.
 
@@ -712,6 +808,7 @@ class DatasetDriftDetector:
                 # Kolmogorov-Smirnov test
                 try:
                     from scipy.stats import ks_2samp
+
                     ks_stat, ks_pvalue = ks_2samp(ref_values, curr_values)
                 except ImportError:
                     ks_stat, ks_pvalue = None, None
@@ -721,51 +818,60 @@ class DatasetDriftDetector:
 
                 # Distribution statistics
                 ref_stats = {
-                    'mean': float(np.mean(ref_values)),
-                    'std': float(np.std(ref_values)),
-                    'min': float(np.min(ref_values)),
-                    'max': float(np.max(ref_values))
+                    "mean": float(np.mean(ref_values)),
+                    "std": float(np.std(ref_values)),
+                    "min": float(np.min(ref_values)),
+                    "max": float(np.max(ref_values)),
                 }
 
                 curr_stats = {
-                    'mean': float(np.mean(curr_values)),
-                    'std': float(np.std(curr_values)),
-                    'min': float(np.min(curr_values)),
-                    'max': float(np.max(curr_values))
+                    "mean": float(np.mean(curr_values)),
+                    "std": float(np.std(curr_values)),
+                    "min": float(np.min(curr_values)),
+                    "max": float(np.max(curr_values)),
                 }
 
                 # Drift detection
                 drift_detected = (
-                    (ks_pvalue is not None and ks_pvalue < 0.05) or
-                    psi_score > 0.25
-                )
+                    ks_pvalue is not None and ks_pvalue < 0.05
+                ) or psi_score > 0.25
 
                 drift_results[feature] = {
-                    'drift_detected': drift_detected,
-                    'ks_statistic': ks_stat,
-                    'ks_pvalue': ks_pvalue,
-                    'psi_score': float(psi_score),
-                    'reference_stats': ref_stats,
-                    'current_stats': curr_stats,
-                    'distribution_change': self._analyze_distribution_change(ref_stats, curr_stats)
+                    "drift_detected": drift_detected,
+                    "ks_statistic": ks_stat,
+                    "ks_pvalue": ks_pvalue,
+                    "psi_score": float(psi_score),
+                    "reference_stats": ref_stats,
+                    "current_stats": curr_stats,
+                    "distribution_change": self._analyze_distribution_change(
+                        ref_stats, curr_stats
+                    ),
                 }
 
         # Overall drift assessment
         total_features = len(drift_results)
-        drifted_features = sum(1 for r in drift_results.values()
-                             if isinstance(r, dict) and r.get('drift_detected', False))
+        drifted_features = sum(
+            1
+            for r in drift_results.values()
+            if isinstance(r, dict) and r.get("drift_detected", False)
+        )
 
         overall_assessment = {
-            'total_features_checked': total_features,
-            'drifted_features': drifted_features,
-            'drift_percentage': drifted_features / total_features if total_features > 0 else 0,
-            'overall_drift_detected': drifted_features > total_features * 0.1,  # >10% features drifted
-            'feature_results': drift_results
+            "total_features_checked": total_features,
+            "drifted_features": drifted_features,
+            "drift_percentage": drifted_features / total_features
+            if total_features > 0
+            else 0,
+            "overall_drift_detected": drifted_features
+            > total_features * 0.1,  # >10% features drifted
+            "feature_results": drift_results,
         }
 
         return overall_assessment
 
-    def _calculate_psi(self, reference: np.ndarray, current: np.ndarray, bins: int = 10) -> float:
+    def _calculate_psi(
+        self, reference: np.ndarray, current: np.ndarray, bins: int = 10
+    ) -> float:
         """Calculate Population Stability Index."""
         try:
             ref_hist, bin_edges = np.histogram(reference, bins=bins, density=True)
@@ -782,8 +888,16 @@ class DatasetDriftDetector:
 
     def _analyze_distribution_change(self, ref_stats: Dict, curr_stats: Dict) -> str:
         """Analyze the type of distribution change."""
-        mean_change = abs(curr_stats['mean'] - ref_stats['mean']) / abs(ref_stats['mean']) if ref_stats['mean'] != 0 else 0
-        std_change = abs(curr_stats['std'] - ref_stats['std']) / abs(ref_stats['std']) if ref_stats['std'] != 0 else 0
+        mean_change = (
+            abs(curr_stats["mean"] - ref_stats["mean"]) / abs(ref_stats["mean"])
+            if ref_stats["mean"] != 0
+            else 0
+        )
+        std_change = (
+            abs(curr_stats["std"] - ref_stats["std"]) / abs(ref_stats["std"])
+            if ref_stats["std"] != 0
+            else 0
+        )
 
         if mean_change > 0.1 and std_change < 0.1:
             return "mean_shift"
@@ -813,7 +927,9 @@ def create_binary_labels(df: pd.DataFrame, **kwargs) -> pd.DataFrame:
     return df
 
 
-def create_dataset_drift_detector(version_manager: DatasetVersionManager) -> DatasetDriftDetector:
+def create_dataset_drift_detector(
+    version_manager: DatasetVersionManager,
+) -> DatasetDriftDetector:
     """
     Create a dataset drift detector instance.
 

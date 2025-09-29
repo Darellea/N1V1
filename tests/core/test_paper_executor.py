@@ -1,10 +1,11 @@
-import pytest
-import asyncio
 from decimal import Decimal
 from unittest.mock import MagicMock
+
+import pytest
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
 from core.execution.paper_executor import PaperOrderExecutor
-from core.contracts import TradingSignal, SignalType, SignalStrength
-from core.types.order_types import OrderType, OrderStatus
+from core.types.order_types import OrderStatus, OrderType
 
 
 class TestPaperOrderExecutor:
@@ -32,7 +33,9 @@ class TestPaperOrderExecutor:
     @pytest.fixture
     def paper_executor_with_balance(self, paper_executor):
         """Create a PaperOrderExecutor with default balance."""
-        paper_executor.set_initial_balance(Decimal("1000000"))  # Much higher balance for testing
+        paper_executor.set_initial_balance(
+            Decimal("1000000")
+        )  # Much higher balance for testing
         return paper_executor
 
     @pytest.fixture
@@ -105,9 +108,15 @@ class TestPaperOrderExecutor:
         # Check equal allocation: 10000 / 3 = 3333.33... each
         # The _safe_quantize function rounds to appropriate decimal places
         expected_balance = Decimal("3333.333333")  # This will be quantized
-        assert abs(paper_executor.paper_balances["BTC/USDT"] - expected_balance) < Decimal("0.01")
-        assert abs(paper_executor.paper_balances["ETH/USDT"] - expected_balance) < Decimal("0.01")
-        assert abs(paper_executor.paper_balances["ADA/USDT"] - expected_balance) < Decimal("0.01")
+        assert abs(
+            paper_executor.paper_balances["BTC/USDT"] - expected_balance
+        ) < Decimal("0.01")
+        assert abs(
+            paper_executor.paper_balances["ETH/USDT"] - expected_balance
+        ) < Decimal("0.01")
+        assert abs(
+            paper_executor.paper_balances["ADA/USDT"] - expected_balance
+        ) < Decimal("0.01")
 
     def test_set_portfolio_mode_with_custom_allocation(self, paper_executor):
         """Test setting portfolio mode with custom allocation."""
@@ -122,8 +131,12 @@ class TestPaperOrderExecutor:
         assert paper_executor.pair_allocation == allocation
 
         # Check custom allocation
-        assert paper_executor.paper_balances["BTC/USDT"] == Decimal("7000")  # 10000 * 0.7
-        assert paper_executor.paper_balances["ETH/USDT"] == Decimal("3000")  # 10000 * 0.3
+        assert paper_executor.paper_balances["BTC/USDT"] == Decimal(
+            "7000"
+        )  # 10000 * 0.7
+        assert paper_executor.paper_balances["ETH/USDT"] == Decimal(
+            "3000"
+        )  # 10000 * 0.3
 
     def test_set_portfolio_mode_with_missing_allocation(self, paper_executor):
         """Test setting portfolio mode with allocation missing some pairs."""
@@ -134,12 +147,18 @@ class TestPaperOrderExecutor:
         paper_executor.set_portfolio_mode(True, pairs, allocation)
 
         # ADA should get 0 allocation
-        assert paper_executor.paper_balances["BTC/USDT"] == Decimal("5000")  # 10000 * 0.5
-        assert paper_executor.paper_balances["ETH/USDT"] == Decimal("3000")  # 10000 * 0.3
-        assert paper_executor.paper_balances["ADA/USDT"] == Decimal("0")     # 10000 * 0
+        assert paper_executor.paper_balances["BTC/USDT"] == Decimal(
+            "5000"
+        )  # 10000 * 0.5
+        assert paper_executor.paper_balances["ETH/USDT"] == Decimal(
+            "3000"
+        )  # 10000 * 0.3
+        assert paper_executor.paper_balances["ADA/USDT"] == Decimal("0")  # 10000 * 0
 
     @pytest.mark.asyncio
-    async def test_execute_paper_order_buy_signal(self, paper_executor_with_balance, sample_signal):
+    async def test_execute_paper_order_buy_signal(
+        self, paper_executor_with_balance, sample_signal
+    ):
         """Test executing a buy order in paper mode."""
         result = await paper_executor_with_balance.execute_paper_order(sample_signal)
 
@@ -160,7 +179,9 @@ class TestPaperOrderExecutor:
         # Total cost: 50025 + 50.025 = 50075.025
         # Balance: 1000000 - 50075.025 = 949924.975, quantized to 949925.00
         expected_balance = Decimal("949925")
-        assert abs(paper_executor_with_balance.paper_balance - expected_balance) < Decimal("0.1")
+        assert abs(
+            paper_executor_with_balance.paper_balance - expected_balance
+        ) < Decimal("0.1")
 
     @pytest.mark.asyncio
     async def test_execute_paper_order_sell_signal(self, paper_executor_with_balance):
@@ -191,10 +212,14 @@ class TestPaperOrderExecutor:
         # Total credit: 5997 - 5.997 = 5991.003
         # Balance: 1000000 + 5991.003 = 1005991.003, quantized to 1005991.00
         expected_balance = Decimal("1005991")
-        assert abs(paper_executor_with_balance.paper_balance - expected_balance) < Decimal("0.1")
+        assert abs(
+            paper_executor_with_balance.paper_balance - expected_balance
+        ) < Decimal("0.1")
 
     @pytest.mark.asyncio
-    async def test_execute_paper_order_insufficient_balance(self, paper_executor, sample_signal):
+    async def test_execute_paper_order_insufficient_balance(
+        self, paper_executor, sample_signal
+    ):
         """Test executing order with insufficient balance."""
         paper_executor.set_initial_balance(Decimal("100"))  # Very low balance
 
@@ -224,7 +249,9 @@ class TestPaperOrderExecutor:
         assert result.amount == Decimal("0.5")
 
     @pytest.mark.asyncio
-    async def test_execute_paper_order_with_fee_calculation(self, paper_executor_with_balance):
+    async def test_execute_paper_order_with_fee_calculation(
+        self, paper_executor_with_balance
+    ):
         """Test that fees are calculated and included in the order."""
 
         signal = TradingSignal(
@@ -264,7 +291,9 @@ class TestPaperOrderExecutor:
         assert result.params == {"test_param": "value", "stop_loss": "49000"}
 
     @pytest.mark.asyncio
-    async def test_execute_paper_order_with_trailing_stop(self, paper_executor_with_balance):
+    async def test_execute_paper_order_with_trailing_stop(
+        self, paper_executor_with_balance
+    ):
         """Test executing order with trailing stop configuration."""
 
         signal = TradingSignal(
@@ -284,7 +313,9 @@ class TestPaperOrderExecutor:
         assert result.trailing_stop == Decimal("49500")
 
     @pytest.mark.asyncio
-    async def test_execute_paper_order_portfolio_mode_buy(self, paper_executor_with_balance):
+    async def test_execute_paper_order_portfolio_mode_buy(
+        self, paper_executor_with_balance
+    ):
         """Test executing buy order in portfolio mode."""
         pairs = ["BTC/USDT", "ETH/USDT"]
         paper_executor_with_balance.set_portfolio_mode(True, pairs)
@@ -309,13 +340,20 @@ class TestPaperOrderExecutor:
         # Fee: 2501.25 * 0.001 = 2.50125
         # Total cost: 2501.25 + 2.50125 = 2503.75125
         expected_btc_balance = initial_btc_balance - Decimal("2503.75")
-        assert abs(paper_executor_with_balance.paper_balances["BTC/USDT"] - expected_btc_balance) < Decimal("0.1")
+        assert abs(
+            paper_executor_with_balance.paper_balances["BTC/USDT"]
+            - expected_btc_balance
+        ) < Decimal("0.1")
 
         # ETH balance should remain unchanged
-        assert paper_executor_with_balance.paper_balances["ETH/USDT"] == Decimal("500000")
+        assert paper_executor_with_balance.paper_balances["ETH/USDT"] == Decimal(
+            "500000"
+        )
 
     @pytest.mark.asyncio
-    async def test_execute_paper_order_portfolio_mode_sell(self, paper_executor_with_balance):
+    async def test_execute_paper_order_portfolio_mode_sell(
+        self, paper_executor_with_balance
+    ):
         """Test executing sell order in portfolio mode."""
         pairs = ["BTC/USDT", "ETH/USDT"]
         paper_executor_with_balance.set_portfolio_mode(True, pairs)
@@ -340,13 +378,20 @@ class TestPaperOrderExecutor:
         # Total credit: 5997 - 5.997 = 5991.003
         # Balance: 500000 + 5991.003 = 505991.003, quantized to 505991.00
         expected_eth_balance = Decimal("505991")
-        assert abs(paper_executor_with_balance.paper_balances["ETH/USDT"] - expected_eth_balance) < Decimal("0.1")
+        assert abs(
+            paper_executor_with_balance.paper_balances["ETH/USDT"]
+            - expected_eth_balance
+        ) < Decimal("0.1")
 
         # BTC balance should remain unchanged
-        assert paper_executor_with_balance.paper_balances["BTC/USDT"] == Decimal("500000")
+        assert paper_executor_with_balance.paper_balances["BTC/USDT"] == Decimal(
+            "500000"
+        )
 
     @pytest.mark.asyncio
-    async def test_execute_paper_order_portfolio_mode_new_symbol(self, paper_executor_with_balance):
+    async def test_execute_paper_order_portfolio_mode_new_symbol(
+        self, paper_executor_with_balance
+    ):
         """Test executing order for symbol not in initial pairs."""
         pairs = ["BTC/USDT"]
         paper_executor_with_balance.set_portfolio_mode(True, pairs)
@@ -370,7 +415,10 @@ class TestPaperOrderExecutor:
         # Fee: 3001.5 * 0.001 = 3.0015
         # Total cost: 3001.5 + 3.0015 = 3004.5015
         expected_eth_balance = initial_eth_balance - Decimal("3004.5")
-        assert abs(paper_executor_with_balance.paper_balances["ETH/USDT"] - expected_eth_balance) < Decimal("2")
+        assert abs(
+            paper_executor_with_balance.paper_balances["ETH/USDT"]
+            - expected_eth_balance
+        ) < Decimal("2")
 
     def test_calculate_fee_with_signal_object(self, paper_executor):
         """Test fee calculation with signal object."""
@@ -463,7 +511,7 @@ class TestPaperOrderExecutor:
         # Manually set some balances
         paper_executor.paper_balances = {
             "BTC/USDT": Decimal("4000"),
-            "ETH/USDT": Decimal("3500")
+            "ETH/USDT": Decimal("3500"),
         }
 
         balance = paper_executor.get_balance()
@@ -486,7 +534,9 @@ class TestPaperOrderExecutor:
         assert balance == Decimal("0")
 
     @pytest.mark.asyncio
-    async def test_execute_paper_order_multiple_orders(self, paper_executor_with_balance):
+    async def test_execute_paper_order_multiple_orders(
+        self, paper_executor_with_balance
+    ):
         """Test executing multiple orders and trade count increment."""
 
         signal1 = TradingSignal(
@@ -522,7 +572,9 @@ class TestPaperOrderExecutor:
         assert paper_executor_with_balance.trade_count == 2
 
     @pytest.mark.asyncio
-    async def test_execute_paper_order_different_order_types(self, paper_executor_with_balance):
+    async def test_execute_paper_order_different_order_types(
+        self, paper_executor_with_balance
+    ):
         """Test executing orders with different order types."""
 
         limit_signal = TradingSignal(
@@ -539,10 +591,14 @@ class TestPaperOrderExecutor:
         result = await paper_executor_with_balance.execute_paper_order(limit_signal)
 
         assert result.type == OrderType.LIMIT
-        assert abs(result.price - Decimal("50025")) < Decimal("0.01")  # With slippage applied
+        assert abs(result.price - Decimal("50025")) < Decimal(
+            "0.01"
+        )  # With slippage applied
 
     @pytest.mark.asyncio
-    async def test_execute_paper_order_fallback_signal_type(self, paper_executor_with_balance):
+    async def test_execute_paper_order_fallback_signal_type(
+        self, paper_executor_with_balance
+    ):
         """Test fallback to buy side when signal type is not ENTRY_LONG or ENTRY_SHORT."""
 
         signal = TradingSignal(
@@ -562,7 +618,9 @@ class TestPaperOrderExecutor:
         assert result.side == "buy"
 
     @pytest.mark.asyncio
-    async def test_execute_paper_order_with_none_params(self, paper_executor_with_balance):
+    async def test_execute_paper_order_with_none_params(
+        self, paper_executor_with_balance
+    ):
         """Test executing order when signal has None params."""
 
         signal = TradingSignal(
@@ -584,7 +642,9 @@ class TestPaperOrderExecutor:
         assert result.params == {"stop_loss": "49000"}
 
     @pytest.mark.asyncio
-    async def test_execute_paper_order_with_none_trailing_stop(self, paper_executor_with_balance):
+    async def test_execute_paper_order_with_none_trailing_stop(
+        self, paper_executor_with_balance
+    ):
         """Test executing order when signal has None trailing_stop."""
 
         signal = TradingSignal(

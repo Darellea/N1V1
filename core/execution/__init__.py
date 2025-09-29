@@ -11,15 +11,15 @@ All executors inherit from BaseExecutor and provide consistent interfaces.
 """
 
 from .base_executor import BaseExecutor
+from .dca_executor import DCAExecutor
 from .smart_order_executor import SmartOrderExecutor
 from .twap_executor import TWAPExecutor
 from .vwap_executor import VWAPExecutor
-from .dca_executor import DCAExecutor
 
 __all__ = [
-    'BaseExecutor',
-    'SmartOrderExecutor',
-    'TWAPExecutor',
-    'VWAPExecutor',
-    'DCAExecutor'
+    "BaseExecutor",
+    "SmartOrderExecutor",
+    "TWAPExecutor",
+    "VWAPExecutor",
+    "DCAExecutor",
 ]

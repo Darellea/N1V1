@@ -6,26 +6,27 @@ and portfolio-level risk constraints. Validates all trading signals against risk
 """
 
 import logging
-import asyncio
-import random
-from typing import Dict, Optional, Tuple, List, Any, Callable, Union
-from decimal import Decimal, getcontext, ROUND_HALF_UP
-import math
+import time
+from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal, getcontext
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
-import time
-from utils.time import now_ms, to_ms
-from datetime import datetime, timedelta
-from enum import Enum
 
 from core.contracts import TradingSignal
-from utils.config_loader import ConfigLoader
-from utils.logger import get_trade_logger
+from risk.adaptive_policy import get_risk_multiplier
+from risk.anomaly_detector import AnomalyResponse, get_anomaly_detector
+from risk.utils import (
+    get_atr,
+    get_config_value,
+    safe_divide,
+    validate_market_data,
+)
+from strategies.regime.market_regime import MarketRegime, get_market_regime_detector
 from utils.adapter import signal_to_dict
-from strategies.regime.market_regime import get_market_regime_detector, MarketRegime
-from risk.anomaly_detector import get_anomaly_detector, AnomalyResponse
-from risk.adaptive_policy import get_adaptive_risk_policy, get_risk_multiplier
-from risk.utils import safe_divide, get_atr, validate_market_data, get_config_value, clamp_value, calculate_z_score, calculate_returns, enhanced_validate_market_data
+from utils.logger import get_trade_logger
+from utils.time import now_ms, to_ms
 
 logger = logging.getLogger(__name__)
 trade_logger = get_trade_logger()
@@ -41,8 +42,12 @@ class CircuitBreaker:
     when failure thresholds are exceeded.
     """
 
-    def __init__(self, failure_threshold: int = 5, recovery_timeout: int = 60,
-                 expected_exception: Exception = Exception):
+    def __init__(
+        self,
+        failure_threshold: int = 5,
+        recovery_timeout: int = 60,
+        expected_exception: Exception = Exception,
+    ):
         """
         Initialize the circuit breaker.
 
@@ -124,7 +129,9 @@ class CircuitBreaker:
 
         if self.failure_count >= self.failure_threshold:
             self.state = "OPEN"
-            logger.warning(f"Circuit breaker opened after {self.failure_count} consecutive failures")
+            logger.warning(
+                f"Circuit breaker opened after {self.failure_count} consecutive failures"
+            )
 
     def get_stats(self) -> Dict[str, Any]:
         """Get circuit breaker statistics."""
@@ -134,13 +141,16 @@ class CircuitBreaker:
             "total_calls": self.total_calls,
             "total_failures": self.total_failures,
             "total_successes": self.total_successes,
-            "failure_rate": self.total_failures / self.total_calls if self.total_calls > 0 else 0.0,
-            "last_failure_time": self.last_failure_time
+            "failure_rate": self.total_failures / self.total_calls
+            if self.total_calls > 0
+            else 0.0,
+            "last_failure_time": self.last_failure_time,
         }
 
 
 class CircuitBreakerOpen(Exception):
     """Exception raised when circuit breaker is open."""
+
     pass
 
 
@@ -197,53 +207,107 @@ class RiskManager:
         self.config = config
 
         # Initialize logger - use provided logger or fall back to module logger
-        self.logger = config.get("logger") if config.get("logger") else logging.getLogger(__name__)
+        self.logger = (
+            config.get("logger")
+            if config.get("logger")
+            else logging.getLogger(__name__)
+        )
         # Make thresholds configurable with safe defaults
-        self.require_stop_loss = get_config_value(config, "require_stop_loss", True, bool)
-        self.max_position_size = get_config_value(config, "max_position_size", Decimal("0.3"), Decimal)
-        self.max_daily_loss = get_config_value(config, "max_daily_drawdown", Decimal("0.1"), Decimal)
-        self.risk_reward_ratio = get_config_value(config, "risk_reward_ratio", Decimal("2.0"), Decimal)
+        self.require_stop_loss = get_config_value(
+            config, "require_stop_loss", True, bool
+        )
+        self.max_position_size = get_config_value(
+            config, "max_position_size", Decimal("0.3"), Decimal
+        )
+        self.max_daily_loss = get_config_value(
+            config, "max_daily_drawdown", Decimal("0.1"), Decimal
+        )
+        self.risk_reward_ratio = get_config_value(
+            config, "risk_reward_ratio", Decimal("2.0"), Decimal
+        )
         self.today_pnl = Decimal(0)
         self.today_start_balance = None
-        self.position_sizing_method = get_config_value(config, "position_sizing_method", "fixed", str)
+        self.position_sizing_method = get_config_value(
+            config, "position_sizing_method", "fixed", str
+        )
         # Fixed percent sizing (fraction of account balance)
-        self.fixed_percent = get_config_value(config, "fixed_percent", Decimal("0.1"), Decimal)
+        self.fixed_percent = get_config_value(
+            config, "fixed_percent", Decimal("0.1"), Decimal
+        )
         # Kelly criterion fallback assumptions
-        self.kelly_assumed_win_rate = get_config_value(config, "kelly_assumed_win_rate", 0.55, float)
+        self.kelly_assumed_win_rate = get_config_value(
+            config, "kelly_assumed_win_rate", 0.55, float
+        )
 
         # Adaptive position sizing parameters
-        self.risk_per_trade = get_config_value(config, "risk_per_trade", Decimal("0.02"), Decimal)
-        self.atr_k_factor = get_config_value(config, "atr_k_factor", Decimal("2.0"), Decimal)
+        self.risk_per_trade = get_config_value(
+            config, "risk_per_trade", Decimal("0.02"), Decimal
+        )
+        self.atr_k_factor = get_config_value(
+            config, "atr_k_factor", Decimal("2.0"), Decimal
+        )
 
         # Dynamic stop loss parameters
         self.stop_loss_method = get_config_value(config, "stop_loss_method", "atr", str)
-        self.atr_sl_multiplier = get_config_value(config, "atr_sl_multiplier", Decimal("2.0"), Decimal)
-        self.stop_loss_percentage = get_config_value(config, "stop_loss_percentage", Decimal("0.02"), Decimal)
+        self.atr_sl_multiplier = get_config_value(
+            config, "atr_sl_multiplier", Decimal("2.0"), Decimal
+        )
+        self.stop_loss_percentage = get_config_value(
+            config, "stop_loss_percentage", Decimal("0.02"), Decimal
+        )
 
         # Adaptive take profit parameters
-        self.tp_base_multiplier = get_config_value(config, "tp_base_multiplier", Decimal("2.0"), Decimal)
-        self.enable_adaptive_tp = get_config_value(config, "enable_adaptive_tp", True, bool)
+        self.tp_base_multiplier = get_config_value(
+            config, "tp_base_multiplier", Decimal("2.0"), Decimal
+        )
+        self.enable_adaptive_tp = get_config_value(
+            config, "enable_adaptive_tp", True, bool
+        )
 
         # Trailing stop parameters
-        self.enable_trailing_stop = get_config_value(config, "enable_trailing_stop", True, bool)
-        self.trailing_stop_method = get_config_value(config, "trailing_stop_method", "percentage", str)
-        self.trailing_distance = get_config_value(config, "trailing_distance", Decimal("0.02"), Decimal)
-        self.trailing_atr_multiplier = get_config_value(config, "trailing_atr_multiplier", Decimal("1.5"), Decimal)
-        self.trailing_step_size = get_config_value(config, "trailing_step_size", Decimal("0.005"), Decimal)
+        self.enable_trailing_stop = get_config_value(
+            config, "enable_trailing_stop", True, bool
+        )
+        self.trailing_stop_method = get_config_value(
+            config, "trailing_stop_method", "percentage", str
+        )
+        self.trailing_distance = get_config_value(
+            config, "trailing_distance", Decimal("0.02"), Decimal
+        )
+        self.trailing_atr_multiplier = get_config_value(
+            config, "trailing_atr_multiplier", Decimal("1.5"), Decimal
+        )
+        self.trailing_step_size = get_config_value(
+            config, "trailing_step_size", Decimal("0.005"), Decimal
+        )
 
         # Time-based exit parameters
-        self.enable_time_based_exit = get_config_value(config, "ENABLE_TIME_EXIT", True, bool)
-        self.max_holding_candles = get_config_value(config, "MAX_BARS_IN_TRADE", 50, int)
+        self.enable_time_based_exit = get_config_value(
+            config, "ENABLE_TIME_EXIT", True, bool
+        )
+        self.max_holding_candles = get_config_value(
+            config, "MAX_BARS_IN_TRADE", 50, int
+        )
         self.timeframe = get_config_value(config, "timeframe", "1h", str)
 
         # Regime-based exit parameters
-        self.enable_regime_based_exit = get_config_value(config, "enable_regime_based_exit", True, bool)
-        self.exit_on_regime_change = get_config_value(config, "exit_on_regime_change", True, bool)
+        self.enable_regime_based_exit = get_config_value(
+            config, "enable_regime_based_exit", True, bool
+        )
+        self.exit_on_regime_change = get_config_value(
+            config, "exit_on_regime_change", True, bool
+        )
 
         # Enhanced logging parameters
-        self.enhanced_trade_logging = get_config_value(config, "enhanced_trade_logging", True, bool)
-        self.track_exit_reasons = get_config_value(config, "track_exit_reasons", True, bool)
-        self.log_sl_tp_details = get_config_value(config, "log_sl_tp_details", True, bool)
+        self.enhanced_trade_logging = get_config_value(
+            config, "enhanced_trade_logging", True, bool
+        )
+        self.track_exit_reasons = get_config_value(
+            config, "track_exit_reasons", True, bool
+        )
+        self.log_sl_tp_details = get_config_value(
+            config, "log_sl_tp_details", True, bool
+        )
 
         # Initialize volatility tracker
         self.symbol_volatility = {}
@@ -261,7 +325,7 @@ class RiskManager:
             "tp_hit": {"wins": 0, "losses": 0},
             "time_limit": {"wins": 0, "losses": 0},
             "regime_change": {"wins": 0, "losses": 0},
-            "manual": {"wins": 0, "losses": 0}
+            "manual": {"wins": 0, "losses": 0},
         }
 
         # Reliability / retry defaults (can be overridden via config["reliability"])
@@ -281,22 +345,22 @@ class RiskManager:
         self._position_size_circuit_breaker = CircuitBreaker(
             failure_threshold=5,
             recovery_timeout=120,  # 2 minutes
-            expected_exception=Exception
+            expected_exception=Exception,
         )
         self._stop_loss_circuit_breaker = CircuitBreaker(
             failure_threshold=3,
             recovery_timeout=60,  # 1 minute
-            expected_exception=Exception
+            expected_exception=Exception,
         )
         self._take_profit_circuit_breaker = CircuitBreaker(
             failure_threshold=3,
             recovery_timeout=60,  # 1 minute
-            expected_exception=Exception
+            expected_exception=Exception,
         )
         self._adaptive_risk_circuit_breaker = CircuitBreaker(
             failure_threshold=5,
             recovery_timeout=180,  # 3 minutes
-            expected_exception=Exception
+            expected_exception=Exception,
         )
 
     async def evaluate_signal(
@@ -329,7 +393,9 @@ class RiskManager:
             if not hasattr(signal, "amount") or signal.amount <= 0:
                 signal.amount = await self.calculate_position_size(signal, market_data)
                 if signal.amount <= 0:
-                    trade_logger.log_rejected_signal(signal_to_dict(signal), "zero_position_size")
+                    trade_logger.log_rejected_signal(
+                        signal_to_dict(signal), "zero_position_size"
+                    )
                     return False
 
                 # Enforce a cap based on max_position_size (as a fraction of account balance).
@@ -345,7 +411,9 @@ class RiskManager:
 
                     # Additional sanity check: cap at a reasonable maximum to prevent overflow
                     # This prevents extreme position sizes from very tight stop losses
-                    sanity_max = min(account_balance * Decimal("10"), Decimal("10000000"))  # Max 10x account balance or 10M
+                    sanity_max = min(
+                        account_balance * Decimal("10"), Decimal("10000000")
+                    )  # Max 10x account balance or 10M
                     if signal.amount > sanity_max:
                         signal.amount = sanity_max
                 except Exception:
@@ -358,11 +426,15 @@ class RiskManager:
 
             # Calculate stop loss if not provided
             if not signal.stop_loss:
-                signal.stop_loss = await self.calculate_dynamic_stop_loss(signal, market_data)
+                signal.stop_loss = await self.calculate_dynamic_stop_loss(
+                    signal, market_data
+                )
 
             # Validate stop loss if required
             if self.require_stop_loss and not signal.stop_loss:
-                trade_logger.log_rejected_signal(signal_to_dict(signal), "missing_stop_loss")
+                trade_logger.log_rejected_signal(
+                    signal_to_dict(signal), "missing_stop_loss"
+                )
                 return False
 
             # Calculate take profit if not provided
@@ -370,7 +442,9 @@ class RiskManager:
                 signal.take_profit = await self.calculate_take_profit(signal)
 
             # Update volatility tracking
-            if market_data is not None and "close" in getattr(market_data, "columns", []):
+            if market_data is not None and "close" in getattr(
+                market_data, "columns", []
+            ):
                 await self._update_volatility(signal.symbol, market_data["close"])
 
             return True
@@ -407,9 +481,13 @@ class RiskManager:
         # Calculate base position size using selected method
         method = str(self.position_sizing_method).lower()
         if method == "adaptive_atr":
-            base_position = await self.calculate_adaptive_position_size(signal, market_data)
+            base_position = await self.calculate_adaptive_position_size(
+                signal, market_data
+            )
         elif method == "volatility" or method == "volatility_based":
-            base_position = await self._volatility_based_position_size(signal, market_data)
+            base_position = await self._volatility_based_position_size(
+                signal, market_data
+            )
         elif method == "martingale":
             base_position = await self._martingale_position_size(signal)
         elif method == "kelly" or method == "kelly_criterion":
@@ -430,7 +508,9 @@ class RiskManager:
             else:
                 raise ValueError("Invalid multiplier format")
         except Exception as e:
-            self.logger.warning(f"Adaptive policy error: {e}, defaulting to multiplier=1.0")
+            self.logger.warning(
+                f"Adaptive policy error: {e}, defaulting to multiplier=1.0"
+            )
             multiplier, reason = Decimal("1.0"), "Fallback default"
         risk_multiplier = Decimal(str(multiplier))
 
@@ -462,12 +542,16 @@ class RiskManager:
             Position size in base currency
         """
         account_balance = await self._get_current_balance()
-        risk_percent = get_config_value(self.config, "position_size", Decimal("0.1"), Decimal)
+        risk_percent = get_config_value(
+            self.config, "position_size", Decimal("0.1"), Decimal
+        )
 
         if signal.stop_loss and signal.current_price:
             entry_price = Decimal(str(signal.current_price))
             stop_loss = Decimal(str(signal.stop_loss))
-            stop_loss_pct = safe_divide(abs(entry_price - stop_loss), entry_price, Decimal("0.02"))
+            stop_loss_pct = safe_divide(
+                abs(entry_price - stop_loss), entry_price, Decimal("0.02")
+            )
             risk_amount = account_balance * risk_percent
             position_size = safe_divide(risk_amount, stop_loss_pct, risk_amount)
         else:
@@ -504,14 +588,18 @@ class RiskManager:
         if not validate_market_data(data_df):
             return await self._fixed_fractional_position_size(signal)
 
-        atr = get_atr(data_df['high'], data_df['low'], data_df['close'], period=14, method='sma')
+        atr = get_atr(
+            data_df["high"], data_df["low"], data_df["close"], period=14, method="sma"
+        )
 
         # Handle zero ATR with safe division
         if atr <= 0:
             return await self._fixed_fractional_position_size(signal)
 
         account_balance = await self._get_current_balance()
-        risk_amount = account_balance * get_config_value(self.config, "position_size", Decimal("0.1"), Decimal)
+        risk_amount = account_balance * get_config_value(
+            self.config, "position_size", Decimal("0.1"), Decimal
+        )
 
         # Use safe_divide to prevent division by zero
         position_size = safe_divide(risk_amount, Decimal(str(atr)), risk_amount)
@@ -609,7 +697,9 @@ class RiskManager:
 
         return True
 
-    async def _check_anomalies(self, signal: TradingSignal, market_data: Optional[Dict] = None) -> bool:
+    async def _check_anomalies(
+        self, signal: TradingSignal, market_data: Optional[Dict] = None
+    ) -> bool:
         """
         Check for market anomalies that should prevent trade execution.
 
@@ -641,17 +731,25 @@ class RiskManager:
 
             if not should_proceed:
                 # Log the rejection reason
-                reason = f"anomaly_{anomaly.anomaly_type.value}_{anomaly.severity.value}" if anomaly else "anomaly_detected"
+                reason = (
+                    f"anomaly_{anomaly.anomaly_type.value}_{anomaly.severity.value}"
+                    if anomaly
+                    else "anomaly_detected"
+                )
                 trade_logger.log_rejected_signal(signal_to_dict(signal), reason)
 
                 # Apply response mechanism
                 if response == AnomalyResponse.SCALE_DOWN:
                     # Scale down position size
-                    if hasattr(signal, 'amount') and signal.amount:
+                    if hasattr(signal, "amount") and signal.amount:
                         original_amount = signal.amount
                         scale_factor = anomaly_detector.scale_down_factor
-                        signal.amount = Decimal(str(signal.amount)) * Decimal(str(scale_factor))
-                        logger.info(f"Scaled down position size from {original_amount} to {signal.amount} due to anomaly")
+                        signal.amount = Decimal(str(signal.amount)) * Decimal(
+                            str(scale_factor)
+                        )
+                        logger.info(
+                            f"Scaled down position size from {original_amount} to {signal.amount} due to anomaly"
+                        )
 
                 return should_proceed
 
@@ -668,7 +766,9 @@ class RiskManager:
         if self.today_start_balance and self.today_pnl < 0:
             drawdown_pct = abs(self.today_pnl) / self.today_start_balance
             if drawdown_pct >= self.max_daily_loss:
-                trade_logger.log_rejected_signal(signal_to_dict(signal), "daily_loss_limit")
+                trade_logger.log_rejected_signal(
+                    signal_to_dict(signal), "daily_loss_limit"
+                )
                 return False
 
         # Check maximum concurrent positions
@@ -686,7 +786,9 @@ class RiskManager:
         position_size_pct = Decimal(str(signal.amount)) / account_balance
 
         if position_size_pct > self.max_position_size:
-            trade_logger.log_rejected_signal(signal_to_dict(signal), "position_too_large")
+            trade_logger.log_rejected_signal(
+                signal_to_dict(signal), "position_too_large"
+            )
             return False
 
         return True
@@ -878,17 +980,22 @@ class RiskManager:
         try:
             # Use circuit breaker to protect position size calculations
             result = await self._position_size_circuit_breaker.call(
-                self._calculate_adaptive_position_size_protected,
-                signal, market_data
+                self._calculate_adaptive_position_size_protected, signal, market_data
             )
             return _safe_quantize(result)
         except CircuitBreakerOpen:
-            logger.warning("Position size circuit breaker is OPEN - using conservative fallback")
+            logger.warning(
+                "Position size circuit breaker is OPEN - using conservative fallback"
+            )
             # Fallback to conservative fixed percentage when circuit is open
             account_balance = await self._get_current_balance()
-            return _safe_quantize(account_balance * self.risk_per_trade * Decimal("0.5"))  # 50% of normal risk
+            return _safe_quantize(
+                account_balance * self.risk_per_trade * Decimal("0.5")
+            )  # 50% of normal risk
         except Exception as e:
-            logger.warning(f"Error in circuit breaker protected position size calculation: {e}")
+            logger.warning(
+                f"Error in circuit breaker protected position size calculation: {e}"
+            )
             # Final fallback
             account_balance = await self._get_current_balance()
             return _safe_quantize(account_balance * self.risk_per_trade)
@@ -926,7 +1033,9 @@ class RiskManager:
         if not validate_market_data(data_df):
             return _safe_quantize(account_balance * risk_per_trade)
 
-        atr = get_atr(data_df['high'], data_df['low'], data_df['close'], period=14, method='ema')
+        atr = get_atr(
+            data_df["high"], data_df["low"], data_df["close"], period=14, method="ema"
+        )
 
         if atr <= 0:
             return _safe_quantize(account_balance * risk_per_trade)
@@ -979,7 +1088,13 @@ class RiskManager:
                 if not validate_market_data(data_df):
                     return None
 
-                atr = get_atr(data_df['high'], data_df['low'], data_df['close'], period=14, method='ema')
+                atr = get_atr(
+                    data_df["high"],
+                    data_df["low"],
+                    data_df["close"],
+                    period=14,
+                    method="ema",
+                )
 
                 if atr <= 0:
                     return None
@@ -1050,9 +1165,12 @@ class RiskManager:
         return _safe_quantize(take_profit)
 
     async def calculate_trailing_stop(
-        self, signal: TradingSignal, current_price: Decimal,
-        highest_price: Optional[Decimal] = None, lowest_price: Optional[Decimal] = None,
-        market_data: Optional[Dict[str, Any]] = None
+        self,
+        signal: TradingSignal,
+        current_price: Decimal,
+        highest_price: Optional[Decimal] = None,
+        lowest_price: Optional[Decimal] = None,
+        market_data: Optional[Dict[str, Any]] = None,
     ) -> Optional[Decimal]:
         """
         Calculate trailing stop loss based on ATR or percentage.
@@ -1085,7 +1203,13 @@ class RiskManager:
                 if not validate_market_data(data_df):
                     return None
 
-                atr = get_atr(data_df['high'], data_df['low'], data_df['close'], period=14, method='ema')
+                atr = get_atr(
+                    data_df["high"],
+                    data_df["low"],
+                    data_df["close"],
+                    period=14,
+                    method="ema",
+                )
 
                 if atr <= 0:
                     return None
@@ -1100,7 +1224,9 @@ class RiskManager:
                     trailing_stop = highest_price * (1 - trail_distance)
                     # Don't move stop loss up, only down
                     if signal.stop_loss:
-                        trailing_stop = max(trailing_stop, Decimal(str(signal.stop_loss)))
+                        trailing_stop = max(
+                            trailing_stop, Decimal(str(signal.stop_loss))
+                        )
                     return _safe_quantize(trailing_stop)
             else:  # SHORT
                 if lowest_price:
@@ -1108,7 +1234,9 @@ class RiskManager:
                     trailing_stop = lowest_price * (1 + trail_distance)
                     # Don't move stop loss down, only up
                     if signal.stop_loss:
-                        trailing_stop = min(trailing_stop, Decimal(str(signal.stop_loss)))
+                        trailing_stop = min(
+                            trailing_stop, Decimal(str(signal.stop_loss))
+                        )
                     return _safe_quantize(trailing_stop)
 
             return None
@@ -1118,8 +1246,11 @@ class RiskManager:
             return None
 
     async def should_exit_time_based(
-        self, entry_timestamp: Union[int, datetime], current_timestamp: Union[int, datetime],
-        timeframe: str = "1h", max_candles: int = 72
+        self,
+        entry_timestamp: Union[int, datetime],
+        current_timestamp: Union[int, datetime],
+        timeframe: str = "1h",
+        max_candles: int = 72,
     ) -> Tuple[bool, str]:
         """
         Check if position should be closed based on time criteria.
@@ -1185,12 +1316,17 @@ class RiskManager:
             regime_result = regime_detector.detect_regime(pd.DataFrame(market_data))
 
             # Exit trend positions when regime switches to sideways
-            if signal.signal_type.name.endswith("LONG") or signal.signal_type.name.endswith("SHORT"):
+            if signal.signal_type.name.endswith(
+                "LONG"
+            ) or signal.signal_type.name.endswith("SHORT"):
                 if regime_result.regime == MarketRegime.SIDEWAYS:
                     # Check if we were previously in trending regime
                     previous_regime = regime_result.previous_regime
                     if previous_regime == MarketRegime.TRENDING:
-                        return True, f"regime_change_{previous_regime.value}_to_{regime_result.regime.value}"
+                        return (
+                            True,
+                            f"regime_change_{previous_regime.value}_to_{regime_result.regime.value}",
+                        )
 
             return False, ""
 
@@ -1199,8 +1335,11 @@ class RiskManager:
             return False, ""
 
     async def update_position_tracking(
-        self, signal: TradingSignal, current_price: Decimal,
-        highest_price: Optional[Decimal] = None, lowest_price: Optional[Decimal] = None
+        self,
+        signal: TradingSignal,
+        current_price: Decimal,
+        highest_price: Optional[Decimal] = None,
+        lowest_price: Optional[Decimal] = None,
     ) -> Dict[str, Any]:
         """
         Update position tracking for trailing stops and exit conditions.
@@ -1237,7 +1376,7 @@ class RiskManager:
                 "lowest_price": lowest_price,
                 "trailing_stop": trailing_stop,
                 "current_price": current_price,
-                "last_updated": now_ms()
+                "last_updated": now_ms(),
             }
 
         except Exception as e:
@@ -1245,9 +1384,14 @@ class RiskManager:
             return {}
 
     async def log_trade_with_exit_details(
-        self, signal: TradingSignal, exit_price: Decimal, exit_reason: str,
-        pnl: Decimal, entry_price: Decimal, stop_loss: Optional[Decimal] = None,
-        take_profit: Optional[Decimal] = None
+        self,
+        signal: TradingSignal,
+        exit_price: Decimal,
+        exit_reason: str,
+        pnl: Decimal,
+        entry_price: Decimal,
+        stop_loss: Optional[Decimal] = None,
+        take_profit: Optional[Decimal] = None,
     ) -> None:
         """
         Enhanced trade logging with SL/TP details and exit reason tracking.
@@ -1264,7 +1408,9 @@ class RiskManager:
         try:
             trade_details = {
                 "symbol": signal.symbol,
-                "signal_type": signal.signal_type.name if signal.signal_type else "UNKNOWN",
+                "signal_type": signal.signal_type.name
+                if signal.signal_type
+                else "UNKNOWN",
                 "entry_price": float(entry_price),
                 "exit_price": float(exit_price),
                 "pnl": float(pnl),
@@ -1272,7 +1418,9 @@ class RiskManager:
                 "stop_loss": float(stop_loss) if stop_loss else None,
                 "take_profit": float(take_profit) if take_profit else None,
                 "timestamp": now_ms(),
-                "position_size": float(signal.amount) if hasattr(signal, 'amount') else None
+                "position_size": float(signal.amount)
+                if hasattr(signal, "amount")
+                else None,
             }
 
             trade_logger.performance("Trade closed", trade_details)
@@ -1280,12 +1428,14 @@ class RiskManager:
             # Update win rate by exit type
             await self._update_exit_type_stats(exit_reason, pnl > 0)
 
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to log trade with exit details")
 
     # ===== HELPER METHODS =====
 
-    async def _calculate_atr(self, market_data: Dict[str, Any], period: int = 14) -> Decimal:
+    async def _calculate_atr(
+        self, market_data: Dict[str, Any], period: int = 14
+    ) -> Decimal:
         """Calculate Average True Range from market data using standardized function."""
         try:
             # Convert dict to DataFrame if needed
@@ -1298,7 +1448,13 @@ class RiskManager:
             if not validate_market_data(data_df):
                 return Decimal("0")
 
-            atr = get_atr(data_df['high'], data_df['low'], data_df['close'], period=period, method='ema')
+            atr = get_atr(
+                data_df["high"],
+                data_df["low"],
+                data_df["close"],
+                period=period,
+                method="ema",
+            )
 
             if atr <= 0:
                 return Decimal("0")
@@ -1309,7 +1465,9 @@ class RiskManager:
             logger.warning(f"Error calculating ATR: {e}")
             return Decimal("0")
 
-    async def _calculate_trend_multiplier(self, market_data: Optional[Dict[str, Any]] = None) -> Decimal:
+    async def _calculate_trend_multiplier(
+        self, market_data: Optional[Dict[str, Any]] = None
+    ) -> Decimal:
         """Calculate trend strength multiplier based on ADX."""
         try:
             if not market_data:
@@ -1329,7 +1487,9 @@ class RiskManager:
         except Exception:
             return Decimal("1.0")
 
-    async def _calculate_fixed_stop_loss(self, signal: TradingSignal) -> Optional[Decimal]:
+    async def _calculate_fixed_stop_loss(
+        self, signal: TradingSignal
+    ) -> Optional[Decimal]:
         """Calculate fixed stop loss as fallback."""
         if not signal.current_price:
             return None
@@ -1342,7 +1502,9 @@ class RiskManager:
         else:  # SHORT
             return _safe_quantize(entry_price * (1 + sl_percentage))
 
-    def _normalize_timestamp_to_ms(self, timestamp: Union[int, datetime]) -> Optional[int]:
+    def _normalize_timestamp_to_ms(
+        self, timestamp: Union[int, datetime]
+    ) -> Optional[int]:
         """
         Normalize a timestamp to milliseconds.
 
@@ -1398,9 +1560,14 @@ class RiskManager:
                     self.exit_type_stats[exit_reason]["losses"] += 1
             else:
                 # Initialize new exit reason
-                self.exit_type_stats[exit_reason] = {"wins": 1 if is_win else 0, "losses": 0 if is_win else 1}
+                self.exit_type_stats[exit_reason] = {
+                    "wins": 1 if is_win else 0,
+                    "losses": 0 if is_win else 1,
+                }
 
-            logger.info(f"Exit type '{exit_reason}' resulted in {'win' if is_win else 'loss'}")
+            logger.info(
+                f"Exit type '{exit_reason}' resulted in {'win' if is_win else 'loss'}"
+            )
         except Exception:
             logger.exception("Failed to update exit type statistics")
 
@@ -1423,15 +1590,18 @@ class RiskManager:
         try:
             # Use circuit breaker to protect adaptive risk calculations
             return self._adaptive_risk_circuit_breaker.call(
-                self._get_adaptive_risk_multiplier_protected,
-                symbol, market_data
+                self._get_adaptive_risk_multiplier_protected, symbol, market_data
             )
         except CircuitBreakerOpen:
-            logger.warning("Adaptive risk circuit breaker is OPEN - using conservative fallback")
+            logger.warning(
+                "Adaptive risk circuit breaker is OPEN - using conservative fallback"
+            )
             # Return conservative multiplier when circuit is open
             return 0.5  # 50% of normal risk
         except Exception as e:
-            logger.warning(f"Error in circuit breaker protected adaptive risk calculation: {e}")
+            logger.warning(
+                f"Error in circuit breaker protected adaptive risk calculation: {e}"
+            )
             # Return neutral multiplier on error
             return 1.0
 
@@ -1470,7 +1640,9 @@ class RiskManager:
         multiplier, reasoning = get_risk_multiplier(symbol, data_df)
 
         # Log the multiplier decision
-        logger.info(f"Adaptive risk multiplier for {symbol}: {multiplier:.2f} - {reasoning}")
+        logger.info(
+            f"Adaptive risk multiplier for {symbol}: {multiplier:.2f} - {reasoning}"
+        )
 
         return multiplier
 
@@ -1488,5 +1660,5 @@ class RiskManager:
             "position_size_circuit_breaker": self._position_size_circuit_breaker.get_stats(),
             "stop_loss_circuit_breaker": self._stop_loss_circuit_breaker.get_stats(),
             "take_profit_circuit_breaker": self._take_profit_circuit_breaker.get_stats(),
-            "adaptive_risk_circuit_breaker": self._adaptive_risk_circuit_breaker.get_stats()
+            "adaptive_risk_circuit_breaker": self._adaptive_risk_circuit_breaker.get_stats(),
         }

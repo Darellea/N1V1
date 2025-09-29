@@ -17,29 +17,31 @@ Enhancements added:
 
 from __future__ import annotations
 
-import logging
-import sys
-from logging.handlers import RotatingFileHandler
-from typing import Dict, Optional, Any, List
-from datetime import datetime
-from pathlib import Path
-import json
 import csv
-import uuid
-import errno
+import json
+import logging
 import os
+import sys
+import uuid
+from datetime import datetime
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-from utils.time import now_ms, to_ms, to_iso
-
-from colorama import Fore, Back, Style, init as colorama_init
+from colorama import Back, Fore, Style
+from colorama import init as colorama_init
 
 from utils.adapter import signal_to_dict
 from utils.security import SecurityFormatter
+from utils.time import now_ms, to_iso, to_ms
+
 
 # Lazy import to avoid circular dependency
 def _get_default_enhanced_event_bus():
     from core.signal_router.event_bus import get_default_enhanced_event_bus
+
     return get_default_enhanced_event_bus
+
 
 # Module-level logger for internal library errors (avoid using TradeLogger for internal errors)
 logger = logging.getLogger(__name__)
@@ -80,20 +82,39 @@ class JSONFormatter(logging.Formatter):
         log_entry = {
             "timestamp": datetime.utcnow().isoformat() + "Z",  # UTC ISO8601
             "level": record.levelname,
-            "module": getattr(record, 'name', 'unknown'),
+            "module": getattr(record, "name", "unknown"),
             "message": record.getMessage(),
-            "correlation_id": getattr(record, 'correlation_id', None),
-            "request_id": getattr(record, 'request_id', None),
-            "strategy_id": getattr(record, 'strategy_id', None),
+            "correlation_id": getattr(record, "correlation_id", None),
+            "request_id": getattr(record, "request_id", None),
+            "strategy_id": getattr(record, "strategy_id", None),
         }
 
         # Add any extra fields from the record
-        if hasattr(record, '__dict__'):
+        if hasattr(record, "__dict__"):
             for key, value in record.__dict__.items():
-                if key not in ['name', 'msg', 'args', 'levelname', 'levelno', 'pathname',
-                              'filename', 'module', 'exc_info', 'exc_text', 'stack_info',
-                              'lineno', 'funcName', 'created', 'msecs', 'relativeCreated',
-                              'thread', 'threadName', 'processName', 'process', 'getMessage']:
+                if key not in [
+                    "name",
+                    "msg",
+                    "args",
+                    "levelname",
+                    "levelno",
+                    "pathname",
+                    "filename",
+                    "module",
+                    "exc_info",
+                    "exc_text",
+                    "stack_info",
+                    "lineno",
+                    "funcName",
+                    "created",
+                    "msecs",
+                    "relativeCreated",
+                    "thread",
+                    "threadName",
+                    "processName",
+                    "process",
+                    "getMessage",
+                ]:
                     if value is not None:
                         log_entry[key] = value
 
@@ -115,13 +136,13 @@ class PrettyFormatter(logging.Formatter):
         """Format with context information."""
         # Add context info to message
         context_parts = []
-        if hasattr(record, 'correlation_id') and record.correlation_id:
+        if hasattr(record, "correlation_id") and record.correlation_id:
             context_parts.append(f"corr_id={record.correlation_id}")
-        if hasattr(record, 'request_id') and record.request_id:
+        if hasattr(record, "request_id") and record.request_id:
             context_parts.append(f"req_id={record.request_id}")
-        if hasattr(record, 'strategy_id') and record.strategy_id:
+        if hasattr(record, "strategy_id") and record.strategy_id:
             context_parts.append(f"strategy={record.strategy_id}")
-        if hasattr(record, 'component') and record.component:
+        if hasattr(record, "component") and record.component:
             context_parts.append(f"component={record.component}")
 
         if context_parts:
@@ -166,7 +187,9 @@ class TradeLogger(logging.Logger):
             # Default console handler; real setup likely done in setup_logging
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setFormatter(
-                SecurityFormatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+                SecurityFormatter(
+                    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+                )
             )
             self.addHandler(console_handler)
 
@@ -197,12 +220,21 @@ class TradeLogger(logging.Logger):
             logger.exception("Unexpected error during trade CSV initialization")
             raise
 
-    def trade(self, msg: str, trade_data: Dict[str, Any], extra: Optional[Dict[str, Any]] = None, *args, **kwargs) -> None:
+    def trade(
+        self,
+        msg: str,
+        trade_data: Dict[str, Any],
+        extra: Optional[Dict[str, Any]] = None,
+        *args,
+        **kwargs,
+    ) -> None:
         """Log a trade with structured data. Accepts optional extra context."""
         if self.isEnabledFor(logging.INFO):
             extra = extra or {}
             try:
-                self.log(21, msg, *args, extra=extra, **kwargs)  # 21 = TRADE custom level
+                self.log(
+                    21, msg, *args, extra=extra, **kwargs
+                )  # 21 = TRADE custom level
             except TypeError:
                 # Older Python logging may not accept extra in this position with custom levels; fallback:
                 self.log(21, msg, *args, **kwargs)
@@ -210,7 +242,14 @@ class TradeLogger(logging.Logger):
             # but I/O write failures will be handled inside _record_trade.
             self._record_trade({**(trade_data or {}), **extra})
 
-    def performance(self, msg: str, metrics: Dict[str, Any], extra: Optional[Dict[str, Any]] = None, *args, **kwargs) -> None:
+    def performance(
+        self,
+        msg: str,
+        metrics: Dict[str, Any],
+        extra: Optional[Dict[str, Any]] = None,
+        *args,
+        **kwargs,
+    ) -> None:
         """Log performance metrics with optional extra context."""
         if self.isEnabledFor(22):
             extra = extra or {}
@@ -225,7 +264,7 @@ class TradeLogger(logging.Logger):
         try:
             sig = signal if isinstance(signal, dict) else signal_to_dict(signal)
             self.trade("New trading signal", {"signal": sig}, extra=extra)
-        except (TypeError, AttributeError, ValueError) as e:
+        except (TypeError, AttributeError, ValueError):
             # Likely a conversion or unexpected signal object; surface for debugging.
             logger.exception("Failed to convert or log signal")
             raise
@@ -233,45 +272,64 @@ class TradeLogger(logging.Logger):
             logger.exception("Unexpected error while logging signal")
             raise
 
-    def log_order(self, order: Dict[str, Any], mode: str, extra: Optional[Dict[str, Any]] = None) -> None:
+    def log_order(
+        self, order: Dict[str, Any], mode: str, extra: Optional[Dict[str, Any]] = None
+    ) -> None:
         """Log an order execution in structured form with optional context."""
         try:
             od = order.copy() if isinstance(order, dict) else {"order": str(order)}
             od["mode"] = mode
             self.trade(f"Order executed: {od.get('id', 'n/a')}", od, extra=extra)
-        except (TypeError, AttributeError, ValueError) as e:
+        except (TypeError, AttributeError, ValueError):
             logger.exception("Failed to convert or log order")
             raise
         except Exception:
             logger.exception("Unexpected error while logging order")
             raise
 
-    def log_rejected_signal(self, signal: Any, reason: str, extra: Optional[Dict[str, Any]] = None) -> None:
+    def log_rejected_signal(
+        self, signal: Any, reason: str, extra: Optional[Dict[str, Any]] = None
+    ) -> None:
         """Convenience for rejected signal logging. Accepts objects and dicts."""
         try:
             sig = signal if isinstance(signal, dict) else signal_to_dict(signal)
-            self.trade(f"Signal rejected: {reason}", {"signal": sig, "reason": reason}, extra=extra)
-        except (TypeError, AttributeError, ValueError) as e:
+            self.trade(
+                f"Signal rejected: {reason}",
+                {"signal": sig, "reason": reason},
+                extra=extra,
+            )
+        except (TypeError, AttributeError, ValueError):
             logger.exception("Failed to convert or log rejected signal")
             raise
         except Exception:
             logger.exception("Unexpected error while logging rejected signal")
             raise
 
-    def log_failed_order(self, signal: Any, error: str, extra: Optional[Dict[str, Any]] = None) -> None:
+    def log_failed_order(
+        self, signal: Any, error: str, extra: Optional[Dict[str, Any]] = None
+    ) -> None:
         """Convenience for failed order logging. Accepts objects and dicts."""
         try:
             sig = signal if isinstance(signal, dict) else signal_to_dict(signal)
-            self.trade(f"Order failed: {error}", {"signal": sig, "error": error}, extra=extra)
-        except (TypeError, AttributeError, ValueError) as e:
+            self.trade(
+                f"Order failed: {error}", {"signal": sig, "error": error}, extra=extra
+            )
+        except (TypeError, AttributeError, ValueError):
             logger.exception("Failed to convert or log failed order")
             raise
         except Exception:
             logger.exception("Unexpected error while logging failed order")
             raise
 
-    def log_binary_prediction(self, symbol: str, probability: float, threshold: float,
-                             regime: str, features: Dict[str, float], extra: Optional[Dict[str, Any]] = None) -> None:
+    def log_binary_prediction(
+        self,
+        symbol: str,
+        probability: float,
+        threshold: float,
+        regime: str,
+        features: Dict[str, float],
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Log binary model prediction with structured data."""
         try:
             prediction_data = {
@@ -281,21 +339,32 @@ class TradeLogger(logging.Logger):
                 "regime": regime,
                 "features": features,
                 "decision": "trade" if probability >= threshold else "skip",
-                "confidence": abs(probability - 0.5) * 2  # Scale to 0-1 confidence
+                "confidence": abs(probability - 0.5) * 2,  # Scale to 0-1 confidence
             }
 
             combined_extra = extra or {}
             combined_extra.update({"binary_prediction": prediction_data})
 
-            self.log(PERF_LEVEL, f"Binary prediction: {symbol} p={probability:.3f} ({regime})",
-                    extra=combined_extra)
+            self.log(
+                PERF_LEVEL,
+                f"Binary prediction: {symbol} p={probability:.3f} ({regime})",
+                extra=combined_extra,
+            )
 
         except Exception as e:
             logger.exception(f"Failed to log binary prediction for {symbol}: {e}")
 
-    def log_binary_decision(self, symbol: str, decision: str, outcome: str, pnl: float,
-                           regime: str, strategy: str, probability: float,
-                           extra: Optional[Dict[str, Any]] = None) -> None:
+    def log_binary_decision(
+        self,
+        symbol: str,
+        decision: str,
+        outcome: str,
+        pnl: float,
+        regime: str,
+        strategy: str,
+        probability: float,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Log binary model decision outcome with comprehensive details."""
         try:
             decision_data = {
@@ -306,22 +375,27 @@ class TradeLogger(logging.Logger):
                 "regime": regime,
                 "strategy": strategy,
                 "probability": probability,
-                "was_correct": (decision == "trade" and outcome == "profit") or
-                              (decision == "skip" and outcome != "profit"),
-                "timestamp": now_ms()
+                "was_correct": (decision == "trade" and outcome == "profit")
+                or (decision == "skip" and outcome != "profit"),
+                "timestamp": now_ms(),
             }
 
             combined_extra = extra or {}
             combined_extra.update({"binary_decision": decision_data})
 
             outcome_emoji = "✅" if decision_data["was_correct"] else "❌"
-            self.log(TRADE_LEVEL, f"{outcome_emoji} Binary decision: {symbol} {decision} -> {outcome} (PnL: {pnl:.2f})",
-                    extra=combined_extra)
+            self.log(
+                TRADE_LEVEL,
+                f"{outcome_emoji} Binary decision: {symbol} {decision} -> {outcome} (PnL: {pnl:.2f})",
+                extra=combined_extra,
+            )
 
         except Exception as e:
             logger.exception(f"Failed to log binary decision for {symbol}: {e}")
 
-    def log_binary_model_health(self, metrics: Dict[str, Any], extra: Optional[Dict[str, Any]] = None) -> None:
+    def log_binary_model_health(
+        self, metrics: Dict[str, Any], extra: Optional[Dict[str, Any]] = None
+    ) -> None:
         """Log binary model health metrics."""
         try:
             health_data = {
@@ -331,17 +405,27 @@ class TradeLogger(logging.Logger):
                 "calibration_error": metrics.get("calibration_error", 0),
                 "prediction_stability": metrics.get("prediction_stability", 0),
                 "trade_decision_ratio": metrics.get("trade_decision_ratio", 0),
-                "timestamp": now_ms()
+                "timestamp": now_ms(),
             }
 
-            self.log(PERF_LEVEL, f"Binary model health: acc={health_data['accuracy']:.3f}, calib_err={health_data['calibration_error']:.3f}",
-                    extra=extra or {}, **{"binary_health": health_data})
+            self.log(
+                PERF_LEVEL,
+                f"Binary model health: acc={health_data['accuracy']:.3f}, calib_err={health_data['calibration_error']:.3f}",
+                extra=extra or {},
+                **{"binary_health": health_data},
+            )
 
         except Exception as e:
             logger.exception(f"Failed to log binary model health: {e}")
 
-    def log_binary_drift_alert(self, alert_type: str, value: float, threshold: float,
-                              description: str, extra: Optional[Dict[str, Any]] = None) -> None:
+    def log_binary_drift_alert(
+        self,
+        alert_type: str,
+        value: float,
+        threshold: float,
+        description: str,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Log binary model drift detection alerts."""
         try:
             alert_data = {
@@ -350,13 +434,18 @@ class TradeLogger(logging.Logger):
                 "threshold": threshold,
                 "description": description,
                 "severity": "critical" if alert_type == "accuracy_drop" else "warning",
-                "timestamp": now_ms()
+                "timestamp": now_ms(),
             }
 
             severity_emoji = "🚨" if alert_data["severity"] == "critical" else "⚠️"
-            self.log(logging.WARNING if alert_data["severity"] == "warning" else logging.CRITICAL,
-                    f"{severity_emoji} Binary model alert: {alert_type} - {description}",
-                    extra=extra or {}, **{"binary_alert": alert_data})
+            self.log(
+                logging.WARNING
+                if alert_data["severity"] == "warning"
+                else logging.CRITICAL,
+                f"{severity_emoji} Binary model alert: {alert_type} - {description}",
+                extra=extra or {},
+                **{"binary_alert": alert_data},
+            )
 
         except Exception as e:
             logger.exception(f"Failed to log binary drift alert: {e}")
@@ -424,13 +513,15 @@ class TradeLogger(logging.Logger):
                     writer.writerow(row)
             except (OSError, IOError) as e:
                 # I/O error while writing CSV should not crash the application; log and continue.
-                logger.exception(f"Failed to write trade to CSV at {self.trade_csv}: {e}")
+                logger.exception(
+                    f"Failed to write trade to CSV at {self.trade_csv}: {e}"
+                )
             except Exception:
                 # Unexpected error during write — log and re-raise.
                 logger.exception("Unexpected error while writing trade to CSV")
                 raise
 
-        except (TypeError, ValueError) as e:
+        except (TypeError, ValueError):
             # Likely a data formatting bug; surface it for debugging.
             logger.exception("Failed to record trade due to data error")
             raise
@@ -446,8 +537,10 @@ class TradeLogger(logging.Logger):
                     self.performance_stats[k] = float(
                         self.performance_stats.get(k, 0.0)
                     ) + float(v)
-        except (TypeError, ValueError) as e:
-            logger.exception("Failed to update performance stats due to bad metric types")
+        except (TypeError, ValueError):
+            logger.exception(
+                "Failed to update performance stats due to bad metric types"
+            )
             raise
         except Exception:
             logger.exception("Unexpected error updating performance stats")
@@ -467,7 +560,7 @@ class TradeLogger(logging.Logger):
                 return list(self.trades[:])
             # return most recent trades first
             return list(reversed(self.trades))[:limit]
-        except (TypeError, IndexError) as e:
+        except (TypeError, IndexError):
             logger.exception("Failed to get trade history due to bad arguments")
             raise
         except Exception:
@@ -492,7 +585,7 @@ class TradeLogger(logging.Logger):
             event: The event to handle
         """
         # Lazy import to avoid circular dependency
-        from core.signal_router.events import BaseEvent, EventType
+        from core.signal_router.events import EventType
 
         try:
             if event.event_type == EventType.TRADE_EXECUTED:
@@ -511,7 +604,10 @@ class TradeLogger(logging.Logger):
                 await self._handle_system_status_update_event(event)
             else:
                 # Log other events at debug level
-                self.debug(f"Event received: {event.event_type.value}", extra={"event_data": event.to_dict()})
+                self.debug(
+                    f"Event received: {event.event_type.value}",
+                    extra={"event_data": event.to_dict()},
+                )
 
         except Exception as e:
             logger.exception(f"Error handling event {event.event_type.value}: {e}")
@@ -529,14 +625,18 @@ class TradeLogger(logging.Logger):
             "strategy": payload.get("strategy", ""),
             "trade_id": payload.get("trade_id", ""),
             "slippage": payload.get("slippage", ""),
-            "commission": payload.get("commission", "")
+            "commission": payload.get("commission", ""),
         }
 
-        self.trade("Trade executed", trade_data, extra={
-            "symbol": payload.get("symbol"),
-            "component": event.source,
-            "correlation_id": generate_correlation_id()
-        })
+        self.trade(
+            "Trade executed",
+            trade_data,
+            extra={
+                "symbol": payload.get("symbol"),
+                "component": event.source,
+                "correlation_id": generate_correlation_id(),
+            },
+        )
 
     async def _handle_strategy_switch_event(self, event) -> None:
         """Handle strategy switch events."""
@@ -546,13 +646,17 @@ class TradeLogger(logging.Logger):
             "new_strategy": payload.get("new_strategy"),
             "rationale": payload.get("rationale"),
             "confidence": payload.get("confidence"),
-            "market_conditions": payload.get("market_conditions")
+            "market_conditions": payload.get("market_conditions"),
         }
 
-        self.performance("Strategy switched", strategy_data, extra={
-            "component": event.source,
-            "correlation_id": generate_correlation_id()
-        })
+        self.performance(
+            "Strategy switched",
+            strategy_data,
+            extra={
+                "component": event.source,
+                "correlation_id": generate_correlation_id(),
+            },
+        )
 
     async def _handle_risk_limit_triggered_event(self, event) -> None:
         """Handle risk limit triggered events."""
@@ -563,15 +667,18 @@ class TradeLogger(logging.Logger):
             "current_value": payload.get("current_value"),
             "threshold_value": payload.get("threshold_value"),
             "defensive_action": payload.get("defensive_action"),
-            "symbol": payload.get("symbol")
+            "symbol": payload.get("symbol"),
         }
 
-        self.warning("Risk limit triggered", extra={
-            "symbol": payload.get("symbol"),
-            "component": event.source,
-            "correlation_id": generate_correlation_id(),
-            "risk_data": risk_data
-        })
+        self.warning(
+            "Risk limit triggered",
+            extra={
+                "symbol": payload.get("symbol"),
+                "component": event.source,
+                "correlation_id": generate_correlation_id(),
+                "risk_data": risk_data,
+            },
+        )
 
     async def _handle_diagnostic_alert_event(self, event) -> None:
         """Handle diagnostic alert events."""
@@ -581,23 +688,32 @@ class TradeLogger(logging.Logger):
         message = payload.get("message", "")
 
         if alert_type == "error":
-            self.error(f"Diagnostic alert from {component}: {message}", extra={
-                "component": event.source,
-                "correlation_id": generate_correlation_id(),
-                "alert_details": payload.get("details")
-            })
+            self.error(
+                f"Diagnostic alert from {component}: {message}",
+                extra={
+                    "component": event.source,
+                    "correlation_id": generate_correlation_id(),
+                    "alert_details": payload.get("details"),
+                },
+            )
         elif alert_type == "warning":
-            self.warning(f"Diagnostic alert from {component}: {message}", extra={
-                "component": event.source,
-                "correlation_id": generate_correlation_id(),
-                "alert_details": payload.get("details")
-            })
+            self.warning(
+                f"Diagnostic alert from {component}: {message}",
+                extra={
+                    "component": event.source,
+                    "correlation_id": generate_correlation_id(),
+                    "alert_details": payload.get("details"),
+                },
+            )
         else:
-            self.info(f"Diagnostic alert from {component}: {message}", extra={
-                "component": event.source,
-                "correlation_id": generate_correlation_id(),
-                "alert_details": payload.get("details")
-            })
+            self.info(
+                f"Diagnostic alert from {component}: {message}",
+                extra={
+                    "component": event.source,
+                    "correlation_id": generate_correlation_id(),
+                    "alert_details": payload.get("details"),
+                },
+            )
 
     async def _handle_knowledge_entry_created_event(self, event) -> None:
         """Handle knowledge entry created events."""
@@ -607,15 +723,19 @@ class TradeLogger(logging.Logger):
             "regime": payload.get("regime"),
             "strategy": payload.get("strategy"),
             "outcome": payload.get("outcome"),
-            "performance_metrics": payload.get("performance_metrics")
+            "performance_metrics": payload.get("performance_metrics"),
         }
 
         # Use custom KNOWLEDGE level
-        self.log(KNOWLEDGE_LEVEL, "Knowledge entry created", extra={
-            "component": event.source,
-            "correlation_id": generate_correlation_id(),
-            "knowledge_data": knowledge_data
-        })
+        self.log(
+            KNOWLEDGE_LEVEL,
+            "Knowledge entry created",
+            extra={
+                "component": event.source,
+                "correlation_id": generate_correlation_id(),
+                "knowledge_data": knowledge_data,
+            },
+        )
 
     async def _handle_regime_change_event(self, event) -> None:
         """Handle regime change events."""
@@ -623,14 +743,17 @@ class TradeLogger(logging.Logger):
         regime_data = {
             "old_regime": payload.get("old_regime"),
             "new_regime": payload.get("new_regime"),
-            "confidence": payload.get("confidence")
+            "confidence": payload.get("confidence"),
         }
 
-        self.info("Market regime changed", extra={
-            "component": event.source,
-            "correlation_id": generate_correlation_id(),
-            "regime_data": regime_data
-        })
+        self.info(
+            "Market regime changed",
+            extra={
+                "component": event.source,
+                "correlation_id": generate_correlation_id(),
+                "regime_data": regime_data,
+            },
+        )
 
     async def _handle_system_status_update_event(self, event) -> None:
         """Handle system status update events."""
@@ -638,14 +761,17 @@ class TradeLogger(logging.Logger):
         status_data = {
             "component": payload.get("component"),
             "status": payload.get("status"),
-            "details": payload.get("details")
+            "details": payload.get("details"),
         }
 
-        self.info(f"System status update: {payload.get('component')} is {payload.get('status')}", extra={
-            "component": event.source,
-            "correlation_id": generate_correlation_id(),
-            "status_data": status_data
-        })
+        self.info(
+            f"System status update: {payload.get('component')} is {payload.get('status')}",
+            extra={
+                "component": event.source,
+                "correlation_id": generate_correlation_id(),
+                "status_data": status_data,
+            },
+        )
 
 
 # Register custom log levels for TRADE, PERF, and KNOWLEDGE
@@ -741,7 +867,7 @@ def setup_logging(config: Optional[Dict[str, Any]] = None) -> TradeLogger:
                 def emit(self, record):
                     try:
                         msg = self.format(record)
-                        sys.stdout.write(msg + '\n')
+                        sys.stdout.write(msg + "\n")
                         sys.stdout.flush()
                     except Exception:
                         self.handleError(record)
@@ -826,9 +952,13 @@ def generate_request_id() -> str:
     return f"req_{uuid.uuid4().hex[:17]}"
 
 
-def get_logger_with_context(symbol: Optional[str] = None, component: Optional[str] = None,
-                           correlation_id: Optional[str] = None, request_id: Optional[str] = None,
-                           strategy_id: Optional[str] = None) -> logging.LoggerAdapter:
+def get_logger_with_context(
+    symbol: Optional[str] = None,
+    component: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+    strategy_id: Optional[str] = None,
+) -> logging.LoggerAdapter:
     """
     Return a LoggerAdapter that will attach structured context fields to all log records.
 
@@ -879,7 +1009,9 @@ def log_to_file(data: Dict[str, Any], filename: str) -> None:
         logger.exception(f"Failed to log to file (I/O error): {filepath}: {e}")
     except TypeError as e:
         # Data not serializable - programming/data error: surface it
-        logger.exception(f"Failed to serialize data for logging to file {filepath}: {e}")
+        logger.exception(
+            f"Failed to serialize data for logging to file {filepath}: {e}"
+        )
         raise
     except Exception:
         logger.exception(f"Unexpected error while logging to file: {filepath}")

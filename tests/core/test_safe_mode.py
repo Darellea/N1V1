@@ -1,7 +1,9 @@
-import pytest
-import asyncio
 from unittest.mock import AsyncMock
+
+import pytest
+
 from core.bot_engine import BotEngine
+
 
 @pytest.mark.asyncio
 async def test_botengine_respects_order_manager_safe_mode(tmp_path):
@@ -23,18 +25,30 @@ async def test_botengine_respects_order_manager_safe_mode(tmp_path):
     # minimal initialization state
     bot.data_fetcher = AsyncMock()
     bot.strategies = []
+
     # OrderManager stub with safe_mode_active True
     class OMStub:
         safe_mode_active = True
-        async def get_balance(self): return 1000
-        async def get_equity(self): return 1000
-        async def get_active_order_count(self): return 0
-        async def get_open_position_count(self): return 0
+
+        async def get_balance(self):
+            return 1000
+
+        async def get_equity(self):
+            return 1000
+
+        async def get_active_order_count(self):
+            return 0
+
+        async def get_open_position_count(self):
+            return 0
+
     bot.order_manager = OMStub()
 
     # Risk manager stub
     class RMStub:
-        async def evaluate_signal(self, *args, **kwargs): return True
+        async def evaluate_signal(self, *args, **kwargs):
+            return True
+
     bot.risk_manager = RMStub()
 
     # Run one trading cycle; it should return early due to safe mode and not raise

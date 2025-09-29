@@ -19,12 +19,14 @@ class RetryManager:
     Manages retry logic with exponential backoff and jitter for async operations.
     """
 
-    def __init__(self,
-                 max_retries: int = 2,
-                 base_backoff: float = 0.5,
-                 max_backoff: float = 5.0,
-                 backoff_multiplier: float = 2.0,
-                 jitter_factor: float = 0.1):
+    def __init__(
+        self,
+        max_retries: int = 2,
+        base_backoff: float = 0.5,
+        max_backoff: float = 5.0,
+        backoff_multiplier: float = 2.0,
+        jitter_factor: float = 0.1,
+    ):
         """
         Initialize the retry manager.
 
@@ -41,9 +43,11 @@ class RetryManager:
         self.backoff_multiplier = backoff_multiplier
         self.jitter_factor = jitter_factor
 
-    async def retry_async_call(self,
-                              call_fn: Callable[[], Coroutine[Any, Any, Any]],
-                              context: str = "operation") -> Any:
+    async def retry_async_call(
+        self,
+        call_fn: Callable[[], Coroutine[Any, Any, Any]],
+        context: str = "operation",
+    ) -> Any:
         """
         Retry an async callable with exponential backoff and jitter.
 
@@ -66,13 +70,15 @@ class RetryManager:
                 last_exception = e
 
                 if attempt > self.max_retries:
-                    logger.error(f"Retry exhausted for {context} after {attempt-1} retries: {str(e)}")
+                    logger.error(
+                        f"Retry exhausted for {context} after {attempt-1} retries: {str(e)}"
+                    )
                     raise
 
                 # Calculate backoff with jitter
                 backoff = min(
                     self.max_backoff,
-                    self.base_backoff * (self.backoff_multiplier ** (attempt - 1))
+                    self.base_backoff * (self.backoff_multiplier ** (attempt - 1)),
                 )
 
                 # Add jitter
@@ -90,9 +96,9 @@ class RetryManager:
         # This should never be reached, but just in case
         raise last_exception
 
-    def retry_sync_call(self,
-                       call_fn: Callable[[], Any],
-                       context: str = "operation") -> Any:
+    def retry_sync_call(
+        self, call_fn: Callable[[], Any], context: str = "operation"
+    ) -> Any:
         """
         Retry a synchronous callable with exponential backoff and jitter.
 
@@ -115,13 +121,15 @@ class RetryManager:
                 last_exception = e
 
                 if attempt > self.max_retries:
-                    logger.error(f"Retry exhausted for {context} after {attempt-1} retries: {str(e)}")
+                    logger.error(
+                        f"Retry exhausted for {context} after {attempt-1} retries: {str(e)}"
+                    )
                     raise
 
                 # Calculate backoff with jitter
                 backoff = min(
                     self.max_backoff,
-                    self.base_backoff * (self.backoff_multiplier ** (attempt - 1))
+                    self.base_backoff * (self.backoff_multiplier ** (attempt - 1)),
                 )
 
                 # Add jitter
@@ -157,9 +165,9 @@ class ErrorHandler:
         self.block_processing = False
         self._lock = asyncio.Lock()
 
-    async def record_critical_error(self,
-                                  error: Exception,
-                                  context: Optional[Dict[str, Any]] = None) -> None:
+    async def record_critical_error(
+        self, error: Exception, context: Optional[Dict[str, Any]] = None
+    ) -> None:
         """
         Record a critical error and potentially enter safe mode.
 
@@ -171,9 +179,14 @@ class ErrorHandler:
             self.critical_errors += 1
 
             context_str = f" (context: {context})" if context else ""
-            logger.error(f"Critical error #{self.critical_errors}: {str(error)}{context_str}")
+            logger.error(
+                f"Critical error #{self.critical_errors}: {str(error)}{context_str}"
+            )
 
-            if self.critical_errors >= self.safe_mode_threshold and not self.block_processing:
+            if (
+                self.critical_errors >= self.safe_mode_threshold
+                and not self.block_processing
+            ):
                 self.block_processing = True
                 logger.critical(
                     f"Entering safe mode after {self.critical_errors} critical errors. "
@@ -207,7 +220,7 @@ class ErrorHandler:
         return {
             "critical_errors": self.critical_errors,
             "safe_mode_threshold": self.safe_mode_threshold,
-            "block_processing": self.block_processing
+            "block_processing": self.block_processing,
         }
 
 
@@ -216,9 +229,11 @@ default_retry_manager = RetryManager()
 default_error_handler = ErrorHandler()
 
 
-async def with_retry_async(call_fn: Callable[[], Coroutine[Any, Any, Any]],
-                          context: str = "operation",
-                          max_retries: int = 2) -> Any:
+async def with_retry_async(
+    call_fn: Callable[[], Coroutine[Any, Any, Any]],
+    context: str = "operation",
+    max_retries: int = 2,
+) -> Any:
     """
     Convenience function to retry an async call with default settings.
 
@@ -234,9 +249,9 @@ async def with_retry_async(call_fn: Callable[[], Coroutine[Any, Any, Any]],
     return await retry_mgr.retry_async_call(call_fn, context)
 
 
-def with_retry_sync(call_fn: Callable[[], Any],
-                   context: str = "operation",
-                   max_retries: int = 2) -> Any:
+def with_retry_sync(
+    call_fn: Callable[[], Any], context: str = "operation", max_retries: int = 2
+) -> Any:
     """
     Convenience function to retry a sync call with default settings.
 
@@ -252,9 +267,11 @@ def with_retry_sync(call_fn: Callable[[], Any],
     return retry_mgr.retry_sync_call(call_fn, context)
 
 
-async def safe_async_call(call_fn: Callable[[], Coroutine[Any, Any, Any]],
-                         context: str = "operation",
-                         error_handler: Optional[ErrorHandler] = None) -> Any:
+async def safe_async_call(
+    call_fn: Callable[[], Coroutine[Any, Any, Any]],
+    context: str = "operation",
+    error_handler: Optional[ErrorHandler] = None,
+) -> Any:
     """
     Safely execute an async call with error handling.
 
@@ -279,9 +296,11 @@ async def safe_async_call(call_fn: Callable[[], Coroutine[Any, Any, Any]],
         return None
 
 
-def safe_sync_call(call_fn: Callable[[], Any],
-                  context: str = "operation",
-                  error_handler: Optional[ErrorHandler] = None) -> Any:
+def safe_sync_call(
+    call_fn: Callable[[], Any],
+    context: str = "operation",
+    error_handler: Optional[ErrorHandler] = None,
+) -> Any:
     """
     Safely execute a sync call with error handling.
 

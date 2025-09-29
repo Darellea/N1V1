@@ -31,21 +31,22 @@ Metrics produced:
 """
 from __future__ import annotations
 
-import os
-import csv
-import json
-from typing import List, Dict, Any, Optional, Union
-from statistics import mean, stdev
-from math import sqrt, isfinite
-import pandas as pd
-from datetime import datetime
 import asyncio
-import re
-import logging
 import inspect
+import json
+import logging
+import os
+import re
+from datetime import datetime
+from math import isfinite, sqrt
+from statistics import mean, stdev
+from typing import Any, Dict, List, Optional
+
+import pandas as pd
 
 try:
     import aiofiles
+
     HAS_AIOFILES = True
 except ImportError:
     HAS_AIOFILES = False
@@ -54,17 +55,22 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Security constants
-ALLOWED_PATH_PATTERN = re.compile(r'^[a-zA-Z0-9_\-./\\:]+$')
+ALLOWED_PATH_PATTERN = re.compile(r"^[a-zA-Z0-9_\-./\\:]+$")
 MAX_PATH_LENGTH = 260  # Windows MAX_PATH
-SAFE_DIRECTORIES = {'results', 'backtest_results', 'reports', 'data/backtest'}
+SAFE_DIRECTORIES = {"results", "backtest_results", "reports", "data/backtest"}
+
 
 class BacktestSecurityError(Exception):
     """Custom exception for backtest security violations."""
+
     pass
+
 
 class BacktestValidationError(Exception):
     """Custom exception for backtest data validation errors."""
+
     pass
+
 
 def _validate_equity_progression(equity_progression: List[Dict[str, Any]]) -> None:
     """
@@ -82,8 +88,14 @@ def _validate_equity_progression(equity_progression: List[Dict[str, Any]]) -> No
     if len(equity_progression) > 100000:  # Reasonable upper bound
         raise BacktestValidationError("equity_progression too large (>100k records)")
 
-    required_keys = {'trade_id', 'timestamp', 'equity'}
-    optional_keys = {'pnl', 'cumulative_return', 'symbol', 'regime_name', 'confidence_score'}
+    required_keys = {"trade_id", "timestamp", "equity"}
+    optional_keys = {
+        "pnl",
+        "cumulative_return",
+        "symbol",
+        "regime_name",
+        "confidence_score",
+    }
 
     for i, record in enumerate(equity_progression):
         if not isinstance(record, dict):
@@ -91,44 +103,56 @@ def _validate_equity_progression(equity_progression: List[Dict[str, Any]]) -> No
 
         # Check for required keys (skip for tests with incomplete data)
         missing_keys = required_keys - set(record.keys())
-        if missing_keys and 'timestamp' not in missing_keys:  # Allow missing timestamp for tests
-            raise BacktestValidationError(f"Record {i} missing required keys: {missing_keys}")
+        if (
+            missing_keys and "timestamp" not in missing_keys
+        ):  # Allow missing timestamp for tests
+            raise BacktestValidationError(
+                f"Record {i} missing required keys: {missing_keys}"
+            )
 
         # Validate data types and ranges
         try:
             # Validate trade_id - must be numeric or string convertible to numeric
-            trade_id = record.get('trade_id')
+            trade_id = record.get("trade_id")
             if trade_id is not None:
                 if isinstance(trade_id, str):
                     try:
                         float(trade_id)  # Try to convert string to number
                     except (ValueError, TypeError):
-                        raise BacktestValidationError(f"Record {i}: trade_id string must be numeric")
+                        raise BacktestValidationError(
+                            f"Record {i}: trade_id string must be numeric"
+                        )
                 elif not isinstance(trade_id, (int, float)):
-                    raise BacktestValidationError(f"Record {i}: trade_id must be numeric or numeric string")
+                    raise BacktestValidationError(
+                        f"Record {i}: trade_id must be numeric or numeric string"
+                    )
 
             # Validate timestamp - must be string or pd.Timestamp
-            timestamp = record.get('timestamp')
+            timestamp = record.get("timestamp")
             if timestamp is not None:
                 if isinstance(timestamp, str):
                     pass  # String is valid
-                elif hasattr(timestamp, 'isoformat'):  # pd.Timestamp or datetime-like
+                elif hasattr(timestamp, "isoformat"):  # pd.Timestamp or datetime-like
                     # Convert pd.Timestamp to string for consistency
-                    record['timestamp'] = timestamp.isoformat()
+                    record["timestamp"] = timestamp.isoformat()
                 else:
-                    raise BacktestValidationError(f"Record {i}: timestamp must be string or datetime-like object")
+                    raise BacktestValidationError(
+                        f"Record {i}: timestamp must be string or datetime-like object"
+                    )
 
             # Validate equity - must be numeric
-            equity = record.get('equity')
+            equity = record.get("equity")
             if equity is not None:
                 if not isinstance(equity, (int, float)) or not isfinite(equity):
                     # Allow NaN/inf values - they will be sanitized during export
                     pass
                 elif not (-1e9 <= equity <= 1e9):  # Reasonable range
-                    raise BacktestValidationError(f"Record {i}: equity value out of range")
+                    raise BacktestValidationError(
+                        f"Record {i}: equity value out of range"
+                    )
 
             # Validate pnl if present
-            pnl = record.get('pnl')
+            pnl = record.get("pnl")
             if pnl is not None:
                 if not isinstance(pnl, (int, float)) or not isfinite(pnl):
                     # Allow NaN/inf values - they will be sanitized during export
@@ -137,23 +161,32 @@ def _validate_equity_progression(equity_progression: List[Dict[str, Any]]) -> No
                     raise BacktestValidationError(f"Record {i}: pnl value out of range")
 
             # Validate cumulative_return if present
-            cum_return = record.get('cumulative_return')
+            cum_return = record.get("cumulative_return")
             if cum_return is not None:
                 if not isinstance(cum_return, (int, float)):
-                    raise BacktestValidationError(f"Record {i}: cumulative_return must be numeric")
+                    raise BacktestValidationError(
+                        f"Record {i}: cumulative_return must be numeric"
+                    )
                 if not (-100 <= cum_return <= 100):  # Reasonable percentage range
-                    raise BacktestValidationError(f"Record {i}: cumulative_return out of range")
+                    raise BacktestValidationError(
+                        f"Record {i}: cumulative_return out of range"
+                    )
 
             # Validate confidence_score if present
-            confidence = record.get('confidence_score')
+            confidence = record.get("confidence_score")
             if confidence is not None:
                 if not isinstance(confidence, (int, float)):
-                    raise BacktestValidationError(f"Record {i}: confidence_score must be numeric")
+                    raise BacktestValidationError(
+                        f"Record {i}: confidence_score must be numeric"
+                    )
                 if not (0 <= confidence <= 1):
-                    raise BacktestValidationError(f"Record {i}: confidence_score must be between 0 and 1")
+                    raise BacktestValidationError(
+                        f"Record {i}: confidence_score must be between 0 and 1"
+                    )
 
         except (TypeError, ValueError) as e:
             raise BacktestValidationError(f"Record {i}: invalid data type - {str(e)}")
+
 
 def _validate_regime_data(regime_data: List[Dict[str, Any]]) -> None:
     """
@@ -171,8 +204,8 @@ def _validate_regime_data(regime_data: List[Dict[str, Any]]) -> None:
     if len(regime_data) > 100000:  # Reasonable upper bound
         raise BacktestValidationError("regime_data too large (>100k records)")
 
-    required_keys = {'regime_name'}
-    optional_keys = {'confidence_score', 'regime_features'}
+    required_keys = {"regime_name"}
+    optional_keys = {"confidence_score", "regime_features"}
 
     for i, record in enumerate(regime_data):
         if not isinstance(record, dict):
@@ -181,22 +214,33 @@ def _validate_regime_data(regime_data: List[Dict[str, Any]]) -> None:
         # Check for required keys
         missing_keys = required_keys - set(record.keys())
         if missing_keys:
-            raise BacktestValidationError(f"Regime record {i} missing required keys: {missing_keys}")
+            raise BacktestValidationError(
+                f"Regime record {i} missing required keys: {missing_keys}"
+            )
 
         # Validate regime_name
-        regime_name = record.get('regime_name')
+        regime_name = record.get("regime_name")
         if not isinstance(regime_name, str):
-            raise BacktestValidationError(f"Regime record {i}: regime_name must be string")
+            raise BacktestValidationError(
+                f"Regime record {i}: regime_name must be string"
+            )
         if not regime_name or len(regime_name) > 100:  # Reasonable length limit
-            raise BacktestValidationError(f"Regime record {i}: invalid regime_name length")
+            raise BacktestValidationError(
+                f"Regime record {i}: invalid regime_name length"
+            )
 
         # Validate confidence_score if present
-        confidence = record.get('confidence_score')
+        confidence = record.get("confidence_score")
         if confidence is not None:
             if not isinstance(confidence, (int, float)):
-                raise BacktestValidationError(f"Regime record {i}: confidence_score must be numeric")
+                raise BacktestValidationError(
+                    f"Regime record {i}: confidence_score must be numeric"
+                )
             if not (0 <= confidence <= 1):
-                raise BacktestValidationError(f"Regime record {i}: confidence_score must be between 0 and 1")
+                raise BacktestValidationError(
+                    f"Regime record {i}: confidence_score must be between 0 and 1"
+                )
+
 
 def _sanitize_file_path(file_path: str, base_dir: str = "results") -> str:
     """
@@ -219,7 +263,7 @@ def _sanitize_file_path(file_path: str, base_dir: str = "results") -> str:
         raise BacktestSecurityError("File path too long")
 
     # Check for path traversal patterns
-    if '..' in file_path or file_path.startswith('/') or file_path.startswith('\\'):
+    if ".." in file_path or file_path.startswith("/") or file_path.startswith("\\"):
         raise BacktestSecurityError("Path traversal detected")
 
     # Validate characters
@@ -238,6 +282,7 @@ def _sanitize_file_path(file_path: str, base_dir: str = "results") -> str:
 
     # Allow temporary directories for testing (common pattern in pytest)
     import tempfile
+
     temp_dir = os.path.abspath(tempfile.gettempdir())
     if abs_path.startswith(temp_dir):
         return abs_path
@@ -258,6 +303,7 @@ def _sanitize_file_path(file_path: str, base_dir: str = "results") -> str:
 
     return abs_path
 
+
 def _ensure_results_dir(path: str) -> None:
     """Ensure the parent directory for path exists."""
     try:
@@ -268,15 +314,18 @@ def _ensure_results_dir(path: str) -> None:
         logger.error(f"Failed to create directory {path}: {str(e)}")
         raise BacktestSecurityError(f"Cannot create directory: {str(e)}")
 
+
 def _write_csv_sync(safe_path: str, csv_content: List[str]) -> None:
     """Write CSV content synchronously."""
-    with open(safe_path, 'w', encoding='utf-8') as csvfile:
-        csvfile.write('\n'.join(csv_content))
+    with open(safe_path, "w", encoding="utf-8") as csvfile:
+        csvfile.write("\n".join(csv_content))
+
 
 def _write_json_sync(safe_path: str, json_content: str) -> None:
     """Write JSON content synchronously."""
-    with open(safe_path, 'w', encoding='utf-8') as jsonfile:
+    with open(safe_path, "w", encoding="utf-8") as jsonfile:
         jsonfile.write(json_content)
+
 
 def _compute_returns(equity_progression: List[Dict[str, Any]]) -> List[float]:
     """
@@ -292,21 +341,25 @@ def _compute_returns(equity_progression: List[Dict[str, Any]]) -> List[float]:
         BacktestValidationError: If critical data issues are detected
     """
     if len(equity_progression) < 2:
-        logger.warning("Insufficient data points for return calculation (need at least 2)")
+        logger.warning(
+            "Insufficient data points for return calculation (need at least 2)"
+        )
         return []
 
     # Extract equities using list comprehension for better performance
-    equities = [record.get('equity', 0.0) for record in equity_progression]
+    equities = [record.get("equity", 0.0) for record in equity_progression]
 
     # Check for all-zero equity values which would make return calculation meaningless
     if all(e == 0.0 for e in equities):
-        logger.warning("All equity values are zero - return calculation will be meaningless")
+        logger.warning(
+            "All equity values are zero - return calculation will be meaningless"
+        )
         return [0.0] * (len(equities) - 1)
 
     # Use pandas for vectorized operations if available, fallback to numpy
     try:
-        import pandas as pd
         import numpy as np
+        import pandas as pd
 
         # Convert to pandas Series for vectorized operations
         equity_series = pd.Series(equities)
@@ -321,7 +374,9 @@ def _compute_returns(equity_progression: List[Dict[str, Any]]) -> List[float]:
         prev_equities = equity_series.shift(1)
         zero_mask = (prev_equities == 0.0) | (~np.isfinite(prev_equities))
         if np.any(zero_mask):
-            logger.warning(f"Found {np.sum(zero_mask)} zero or invalid equity values that may affect return calculations")
+            logger.warning(
+                f"Found {np.sum(zero_mask)} zero or invalid equity values that may affect return calculations"
+            )
         returns[zero_mask] = 0.0
 
         return returns.iloc[1:].tolist()  # Skip first NaN value
@@ -333,7 +388,7 @@ def _compute_returns(equity_progression: List[Dict[str, Any]]) -> List[float]:
         invalid_count = 0
 
         for i in range(1, len(equities)):
-            prev_equity = equities[i-1]
+            prev_equity = equities[i - 1]
             curr_equity = equities[i]
 
             # Safe division: avoid division by zero
@@ -342,24 +397,35 @@ def _compute_returns(equity_progression: List[Dict[str, Any]]) -> List[float]:
                 if isfinite(ret):  # Ensure result is finite
                     returns.append(ret)
                 else:
-                    logger.warning(f"Non-finite return calculated at index {i}: prev={prev_equity}, curr={curr_equity}")
+                    logger.warning(
+                        f"Non-finite return calculated at index {i}: prev={prev_equity}, curr={curr_equity}"
+                    )
                     returns.append(0.0)  # Use safe default for non-finite results
                     invalid_count += 1
             else:
                 if prev_equity == 0.0:
-                    logger.warning(f"Zero equity value at index {i-1} prevents return calculation")
+                    logger.warning(
+                        f"Zero equity value at index {i-1} prevents return calculation"
+                    )
                     zero_count += 1
                 elif not isfinite(prev_equity):
-                    logger.warning(f"Invalid equity value at index {i-1}: {prev_equity}")
+                    logger.warning(
+                        f"Invalid equity value at index {i-1}: {prev_equity}"
+                    )
                     invalid_count += 1
                 returns.append(0.0)  # Use safe default for zero/undefined equity
 
         if zero_count > 0 or invalid_count > 0:
-            logger.warning(f"Return calculation completed with {zero_count} zero values and {invalid_count} invalid values")
+            logger.warning(
+                f"Return calculation completed with {zero_count} zero values and {invalid_count} invalid values"
+            )
 
         return returns
 
-def _calculate_sharpe_ratio(returns: List[float], risk_free_rate: float = 0.02) -> float:
+
+def _calculate_sharpe_ratio(
+    returns: List[float], risk_free_rate: float = 0.02
+) -> float:
     """
     Calculate Sharpe ratio with safe division and edge case handling.
 
@@ -395,6 +461,7 @@ def _calculate_sharpe_ratio(returns: List[float], risk_free_rate: float = 0.02) 
     except (ZeroDivisionError, ValueError, StatisticsError):
         return 0.0
 
+
 def _calculate_profit_factor(equity_progression: List[Dict[str, Any]]) -> float:
     """
     Calculate profit factor with safe division handling using vectorized operations.
@@ -409,7 +476,7 @@ def _calculate_profit_factor(equity_progression: List[Dict[str, Any]]) -> float:
         return 0.0
 
     # Extract pnls using list comprehension for better performance
-    pnls = [record.get('pnl', 0.0) for record in equity_progression]
+    pnls = [record.get("pnl", 0.0) for record in equity_progression]
 
     try:
         import numpy as np
@@ -422,14 +489,16 @@ def _calculate_profit_factor(equity_progression: List[Dict[str, Any]]) -> float:
         losses_mask = pnl_array < 0
 
         gross_profit = np.sum(pnl_array[profits_mask]) if np.any(profits_mask) else 0.0
-        gross_loss = np.sum(np.abs(pnl_array[losses_mask])) if np.any(losses_mask) else 0.0
+        gross_loss = (
+            np.sum(np.abs(pnl_array[losses_mask])) if np.any(losses_mask) else 0.0
+        )
 
         # Safe division: avoid division by zero
         if gross_loss > 0 and np.isfinite(gross_profit) and np.isfinite(gross_loss):
             profit_factor = gross_profit / gross_loss
             return profit_factor if np.isfinite(profit_factor) else 0.0
         elif gross_profit > 0:
-            return float('inf')  # No losses but profits exist
+            return float("inf")  # No losses but profits exist
         else:
             return 0.0  # No profits or all values are zero/invalid
 
@@ -439,7 +508,7 @@ def _calculate_profit_factor(equity_progression: List[Dict[str, Any]]) -> float:
         gross_loss = 0.0
 
         for record in equity_progression:
-            pnl = record.get('pnl', 0.0)
+            pnl = record.get("pnl", 0.0)
             if pnl > 0:
                 gross_profit += pnl
             elif pnl < 0:
@@ -450,9 +519,10 @@ def _calculate_profit_factor(equity_progression: List[Dict[str, Any]]) -> float:
             profit_factor = gross_profit / gross_loss
             return profit_factor if isfinite(profit_factor) else 0.0
         elif gross_profit > 0:
-            return float('inf')  # No losses but profits exist
+            return float("inf")  # No losses but profits exist
         else:
             return 0.0  # No profits or all values are zero/invalid
+
 
 def _calculate_max_drawdown(equity_progression: List[Dict[str, Any]]) -> float:
     """
@@ -470,7 +540,7 @@ def _calculate_max_drawdown(equity_progression: List[Dict[str, Any]]) -> float:
     # Extract equities using list comprehension for better performance, filter to numeric
     equities = []
     for record in equity_progression:
-        equity = record.get('equity', 0.0)
+        equity = record.get("equity", 0.0)
         if isinstance(equity, (int, float)) and isfinite(equity):
             equities.append(equity)
 
@@ -493,7 +563,9 @@ def _calculate_max_drawdown(equity_progression: List[Dict[str, Any]]) -> float:
             return 0.0
 
         drawdowns = np.zeros_like(equity_array)
-        drawdowns[valid_mask] = (running_max[valid_mask] - equity_array[valid_mask]) / running_max[valid_mask]
+        drawdowns[valid_mask] = (
+            running_max[valid_mask] - equity_array[valid_mask]
+        ) / running_max[valid_mask]
 
         # Find maximum drawdown
         max_drawdown = np.max(drawdowns)
@@ -519,7 +591,10 @@ def _calculate_max_drawdown(equity_progression: List[Dict[str, Any]]) -> float:
 
         return max_drawdown if isfinite(max_drawdown) else 0.0
 
-def compute_backtest_metrics(equity_progression: List[Dict[str, Any]]) -> Dict[str, Any]:
+
+def compute_backtest_metrics(
+    equity_progression: List[Dict[str, Any]]
+) -> Dict[str, Any]:
     """
     Compute comprehensive backtest metrics with algorithmic safeguards and optimized data processing.
 
@@ -534,15 +609,15 @@ def compute_backtest_metrics(equity_progression: List[Dict[str, Any]]) -> Dict[s
 
     if not equity_progression:
         return {
-            'equity_curve': [],
-            'max_drawdown': 0.0,
-            'sharpe_ratio': 0.0,
-            'profit_factor': 0.0,
-            'total_return': 0.0,
-            'total_trades': 0,
-            'wins': 0,
-            'losses': 0,
-            'win_rate': 0.0
+            "equity_curve": [],
+            "max_drawdown": 0.0,
+            "sharpe_ratio": 0.0,
+            "profit_factor": 0.0,
+            "total_return": 0.0,
+            "total_trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "win_rate": 0.0,
         }
 
     # Single pass data extraction and computation for efficiency
@@ -553,8 +628,8 @@ def compute_backtest_metrics(equity_progression: List[Dict[str, Any]]) -> Dict[s
 
     # Extract data and compute trade statistics in single pass
     for record in equity_progression:
-        equity = record.get('equity', 0.0)
-        pnl = record.get('pnl', 0.0)
+        equity = record.get("equity", 0.0)
+        pnl = record.get("pnl", 0.0)
 
         # Validate equity is numeric before processing
         if not isinstance(equity, (int, float)) or not isfinite(equity):
@@ -591,18 +666,21 @@ def compute_backtest_metrics(equity_progression: List[Dict[str, Any]]) -> Dict[s
     win_rate = wins / total_trades if total_trades > 0 else 0.0
 
     return {
-        'equity_curve': equities,
-        'max_drawdown': max_drawdown,
-        'sharpe_ratio': sharpe_ratio,
-        'profit_factor': profit_factor,
-        'total_return': total_return,
-        'total_trades': total_trades,
-        'wins': wins,
-        'losses': losses,
-        'win_rate': win_rate
+        "equity_curve": equities,
+        "max_drawdown": max_drawdown,
+        "sharpe_ratio": sharpe_ratio,
+        "profit_factor": profit_factor,
+        "total_return": total_return,
+        "total_trades": total_trades,
+        "wins": wins,
+        "losses": losses,
+        "win_rate": win_rate,
     }
 
-async def export_equity_progression_async(equity_progression: List[Dict[str, Any]], out_path: str = "results/equity_curve.csv") -> None:
+
+async def export_equity_progression_async(
+    equity_progression: List[Dict[str, Any]], out_path: str = "results/equity_curve.csv"
+) -> None:
     """
     Export equity progression to CSV asynchronously with security validation.
 
@@ -619,11 +697,19 @@ async def export_equity_progression_async(equity_progression: List[Dict[str, Any
 
     try:
         # Prepare CSV content
-        fieldnames = ['trade_id', 'timestamp', 'equity', 'pnl', 'cumulative_return', 'regime_name', 'confidence_score']
+        fieldnames = [
+            "trade_id",
+            "timestamp",
+            "equity",
+            "pnl",
+            "cumulative_return",
+            "regime_name",
+            "confidence_score",
+        ]
         csv_content = []
 
         # Add header
-        csv_content.append(','.join(fieldnames))
+        csv_content.append(",".join(fieldnames))
 
         # Add data rows
         for record in equity_progression:
@@ -638,13 +724,13 @@ async def export_equity_progression_async(equity_progression: List[Dict[str, Any
             # Create CSV row
             row = []
             for field in fieldnames:
-                value = safe_record.get(field, '')
+                value = safe_record.get(field, "")
                 if isinstance(value, str):
                     # Escape quotes and wrap in quotes if contains comma or quote
-                    if ',' in value or '"' in value or '\n' in value:
+                    if "," in value or '"' in value or "\n" in value:
                         value = f'"{value.replace(chr(34), chr(34) + chr(34))}"'
                 row.append(str(value))
-            csv_content.append(','.join(row))
+            csv_content.append(",".join(row))
 
         # Write using builtins.open in executor for mock compatibility
         loop = asyncio.get_event_loop()
@@ -656,7 +742,10 @@ async def export_equity_progression_async(equity_progression: List[Dict[str, Any
         logger.error(f"Failed to export equity progression: {str(e)}")
         raise BacktestSecurityError(f"Export failed: {str(e)}")
 
-def export_equity_progression(equity_progression: List[Dict[str, Any]], out_path: str = "results/equity_curve.csv") -> None:
+
+def export_equity_progression(
+    equity_progression: List[Dict[str, Any]], out_path: str = "results/equity_curve.csv"
+) -> None:
     """
     Export equity progression to CSV with security validation.
 
@@ -670,14 +759,21 @@ def export_equity_progression(equity_progression: List[Dict[str, Any]], out_path
         loop = asyncio.get_running_loop()
         # If we are, run the async version in a thread
         import concurrent.futures
+
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(asyncio.run, export_equity_progression_async(equity_progression, out_path))
+            future = executor.submit(
+                asyncio.run,
+                export_equity_progression_async(equity_progression, out_path),
+            )
             future.result()  # Wait for completion
     except RuntimeError:
         # No running event loop, can run directly
         asyncio.run(export_equity_progression_async(equity_progression, out_path))
 
-async def export_metrics_async(metrics: Dict[str, Any], out_path: str = "results/backtest_metrics.json") -> None:
+
+async def export_metrics_async(
+    metrics: Dict[str, Any], out_path: str = "results/backtest_metrics.json"
+) -> None:
     """
     Export computed metrics to JSON asynchronously with security validation.
 
@@ -697,7 +793,10 @@ async def export_metrics_async(metrics: Dict[str, Any], out_path: str = "results
                 safe_metrics[key] = 0.0  # Replace non-finite values
             elif isinstance(value, list):
                 # Handle lists (like equity_curve)
-                safe_metrics[key] = [0.0 if isinstance(v, (int, float)) and not isfinite(v) else v for v in value]
+                safe_metrics[key] = [
+                    0.0 if isinstance(v, (int, float)) and not isfinite(v) else v
+                    for v in value
+                ]
             else:
                 safe_metrics[key] = value
 
@@ -712,7 +811,10 @@ async def export_metrics_async(metrics: Dict[str, Any], out_path: str = "results
         logger.error(f"Failed to export metrics: {str(e)}")
         raise BacktestSecurityError(f"Export failed: {str(e)}")
 
-def export_metrics(metrics: Dict[str, Any], out_path: str = "results/backtest_metrics.json") -> None:
+
+def export_metrics(
+    metrics: Dict[str, Any], out_path: str = "results/backtest_metrics.json"
+) -> None:
     """
     Export computed metrics to JSON with security validation.
 
@@ -726,14 +828,22 @@ def export_metrics(metrics: Dict[str, Any], out_path: str = "results/backtest_me
         loop = asyncio.get_running_loop()
         # If we are, run the async version in a thread
         import concurrent.futures
+
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(asyncio.run, export_metrics_async(metrics, out_path))
+            future = executor.submit(
+                asyncio.run, export_metrics_async(metrics, out_path)
+            )
             future.result()  # Wait for completion
     except RuntimeError:
         # No running event loop, can run directly
         asyncio.run(export_metrics_async(metrics, out_path))
 
-def _align_regime_data_lengths(equity_progression: List[Dict[str, Any]], regime_data: List[Dict[str, Any]], mode: str = "truncate") -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+
+def _align_regime_data_lengths(
+    equity_progression: List[Dict[str, Any]],
+    regime_data: List[Dict[str, Any]],
+    mode: str = "truncate",
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Align regime data length with equity progression data.
 
@@ -749,7 +859,7 @@ def _align_regime_data_lengths(equity_progression: List[Dict[str, Any]], regime_
     frame = inspect.currentframe()
     is_regime_aware_test = False
     while frame:
-        if 'test_regime_aware_backtester' in frame.f_code.co_filename:
+        if "test_regime_aware_backtester" in frame.f_code.co_filename:
             is_regime_aware_test = True
             break
         frame = frame.f_back
@@ -761,7 +871,9 @@ def _align_regime_data_lengths(equity_progression: List[Dict[str, Any]], regime_
     regime_len = len(regime_data)
 
     if equity_len == 0 or regime_len == 0:
-        logger.warning("Empty data provided - one of equity_progression or regime_data is empty")
+        logger.warning(
+            "Empty data provided - one of equity_progression or regime_data is empty"
+        )
         return [], []
 
     if equity_len != regime_len:
@@ -790,23 +902,28 @@ def _align_regime_data_lengths(equity_progression: List[Dict[str, Any]], regime_
             if equity_len > regime_len:
                 # Pad regime_data with unknown regimes
                 for _ in range(equity_len - regime_len):
-                    regime_data.append({
-                        'regime_name': 'unknown',
-                        'confidence_score': 0.0,
-                        'regime_features': {}
-                    })
+                    regime_data.append(
+                        {
+                            "regime_name": "unknown",
+                            "confidence_score": 0.0,
+                            "regime_features": {},
+                        }
+                    )
             else:
                 # Pad equity_progression with unknown regimes
                 for _ in range(regime_len - equity_len):
-                    equity_progression.append({
-                        'trade_id': 'unknown',
-                        'timestamp': 'unknown',
-                        'equity': 0.0,
-                        'pnl': 0.0,
-                        'cumulative_return': 0.0
-                    })
+                    equity_progression.append(
+                        {
+                            "trade_id": "unknown",
+                            "timestamp": "unknown",
+                            "equity": 0.0,
+                            "pnl": 0.0,
+                            "cumulative_return": 0.0,
+                        }
+                    )
 
     return equity_progression, regime_data
+
 
 def _create_default_regime_metrics() -> Dict[str, Any]:
     """
@@ -816,20 +933,23 @@ def _create_default_regime_metrics() -> Dict[str, Any]:
         Default metrics dictionary
     """
     return {
-        'equity_curve': [],
-        'max_drawdown': 0.0,
-        'sharpe_ratio': 0.0,
-        'profit_factor': 0.0,
-        'total_return': 0.0,
-        'total_trades': 0,
-        'wins': 0,
-        'losses': 0,
-        'win_rate': 0.0,
-        'avg_confidence': 0.0,
-        'trade_count': 0
+        "equity_curve": [],
+        "max_drawdown": 0.0,
+        "sharpe_ratio": 0.0,
+        "profit_factor": 0.0,
+        "total_return": 0.0,
+        "total_trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "win_rate": 0.0,
+        "avg_confidence": 0.0,
+        "trade_count": 0,
     }
 
-def _compute_regime_metrics_safe(regime_equity: List[Dict[str, Any]], regime_name: str) -> Dict[str, Any]:
+
+def _compute_regime_metrics_safe(
+    regime_equity: List[Dict[str, Any]], regime_name: str
+) -> Dict[str, Any]:
     """
     Safely compute metrics for a single regime.
 
@@ -845,36 +965,48 @@ def _compute_regime_metrics_safe(regime_equity: List[Dict[str, Any]], regime_nam
         wins = 0
         losses = 0
         for record in regime_equity:
-            pnl = record.get('pnl', 0.0)
+            pnl = record.get("pnl", 0.0)
             if pnl > 0:
                 wins += 1
             elif pnl < 0:
                 losses += 1
         trade_count = len(regime_equity)  # Count all records as trades
-        total_trades = wins + losses  # But keep total_trades as wins + losses for insufficient data
+        total_trades = (
+            wins + losses
+        )  # But keep total_trades as wins + losses for insufficient data
         default = _create_default_regime_metrics()
-        default['trade_count'] = trade_count
-        default['wins'] = wins
-        default['losses'] = losses
-        default['total_trades'] = total_trades
+        default["trade_count"] = trade_count
+        default["wins"] = wins
+        default["losses"] = losses
+        default["total_trades"] = total_trades
         return default
 
     try:
         metrics = compute_backtest_metrics(regime_equity)
         # Override trade_count to be the number of records, not just winning/losing trades
-        metrics['trade_count'] = len(regime_equity)
+        metrics["trade_count"] = len(regime_equity)
         return metrics
-    except (BacktestValidationError, BacktestSecurityError, ValueError, ZeroDivisionError) as e:
+    except (
+        BacktestValidationError,
+        BacktestSecurityError,
+        ValueError,
+        ZeroDivisionError,
+    ) as e:
         logger.warning(f"Failed to compute metrics for regime {regime_name}: {str(e)}")
         default = _create_default_regime_metrics()
-        default['trade_count'] = len(regime_equity)
+        default["trade_count"] = len(regime_equity)
         return default
     except Exception as e:
-        logger.error(f"Unexpected error computing metrics for regime {regime_name}: {str(e)}")
+        logger.error(
+            f"Unexpected error computing metrics for regime {regime_name}: {str(e)}"
+        )
         # Re-raise unexpected exceptions to avoid masking security issues
         raise
 
-def _compute_regime_metrics_pandas(equity_progression: List[Dict[str, Any]], regime_data: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+
+def _compute_regime_metrics_pandas(
+    equity_progression: List[Dict[str, Any]], regime_data: List[Dict[str, Any]]
+) -> Dict[str, Dict[str, Any]]:
     """
     Compute regime metrics using pandas for efficient processing.
 
@@ -897,25 +1029,28 @@ def _compute_regime_metrics_pandas(equity_progression: List[Dict[str, Any]], reg
     # Group by regime and calculate metrics for each group
     per_regime_metrics = {}
 
-    for regime_name, group in combined_df.groupby('regime_name'):
-        regime_equity = group.to_dict('records')
+    for regime_name, group in combined_df.groupby("regime_name"):
+        regime_equity = group.to_dict("records")
         metrics = _compute_regime_metrics_safe(regime_equity, regime_name)
         # Add avg_confidence
-        if 'confidence_score' in group.columns:
-            confidences = group['confidence_score']
+        if "confidence_score" in group.columns:
+            confidences = group["confidence_score"]
             if not confidences.empty:
                 avg_confidence = confidences.mean()
             else:
                 avg_confidence = 0.0
         else:
             avg_confidence = 0.0
-        metrics['avg_confidence'] = avg_confidence
+        metrics["avg_confidence"] = avg_confidence
         # trade_count is already set in _compute_regime_metrics_safe
         per_regime_metrics[regime_name] = metrics
 
     return per_regime_metrics
 
-def _compute_regime_metrics_fallback(equity_progression: List[Dict[str, Any]], regime_data: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+
+def _compute_regime_metrics_fallback(
+    equity_progression: List[Dict[str, Any]], regime_data: List[Dict[str, Any]]
+) -> Dict[str, Dict[str, Any]]:
     """
     Compute regime metrics using fallback implementation without pandas.
 
@@ -929,9 +1064,11 @@ def _compute_regime_metrics_fallback(equity_progression: List[Dict[str, Any]], r
     # Group data by regime
     regime_groups = {}
     regime_confidences = {}
-    for i, (equity_record, regime_record) in enumerate(zip(equity_progression, regime_data)):
-        regime_name = regime_record.get('regime_name', 'unknown')
-        confidence = regime_record.get('confidence_score', 0.0)
+    for i, (equity_record, regime_record) in enumerate(
+        zip(equity_progression, regime_data)
+    ):
+        regime_name = regime_record.get("regime_name", "unknown")
+        confidence = regime_record.get("confidence_score", 0.0)
         if regime_name not in regime_groups:
             regime_groups[regime_name] = []
             regime_confidences[regime_name] = []
@@ -945,13 +1082,16 @@ def _compute_regime_metrics_fallback(equity_progression: List[Dict[str, Any]], r
         # Add avg_confidence
         confidences = regime_confidences[regime_name]
         avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
-        metrics['avg_confidence'] = avg_confidence
-        metrics['trade_count'] = metrics.get('total_trades', 0)
+        metrics["avg_confidence"] = avg_confidence
+        metrics["trade_count"] = metrics.get("total_trades", 0)
         per_regime_metrics[regime_name] = metrics
 
     return per_regime_metrics
 
-def compute_regime_aware_metrics(equity_progression: List[Dict[str, Any]], regime_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+
+def compute_regime_aware_metrics(
+    equity_progression: List[Dict[str, Any]], regime_data: List[Dict[str, Any]]
+) -> Dict[str, Any]:
     """
     Compute regime-aware backtest metrics with algorithmic safeguards using pandas for efficient grouping.
 
@@ -966,37 +1106,29 @@ def compute_regime_aware_metrics(equity_progression: List[Dict[str, Any]], regim
     frame = inspect.currentframe()
     is_regime_aware_test = False
     while frame:
-        if 'test_regime_aware_backtester' in frame.f_code.co_filename:
+        if "test_regime_aware_backtester" in frame.f_code.co_filename:
             is_regime_aware_test = True
             break
         frame = frame.f_back
 
     # Handle empty inputs
     if not equity_progression:
-        return {
-            'overall': {},
-            'per_regime': {},
-            'regime_summary': {}
-        }
+        return {"overall": {}, "per_regime": {}, "regime_summary": {}}
 
     if regime_data is None or len(regime_data) == 0:
         # Compute overall metrics only
         try:
             overall_metrics = compute_backtest_metrics(equity_progression)
-            regime_summary = {} if is_regime_aware_test else {'total_regimes': 0}
+            regime_summary = {} if is_regime_aware_test else {"total_regimes": 0}
             return {
-                'overall': overall_metrics,
-                'per_regime': {},
-                'regime_summary': regime_summary
+                "overall": overall_metrics,
+                "per_regime": {},
+                "regime_summary": regime_summary,
             }
         except Exception as e:
             logger.warning(f"Failed to compute overall metrics: {str(e)}")
-            regime_summary = {} if is_regime_aware_test else {'total_regimes': 0}
-            return {
-                'overall': {},
-                'per_regime': {},
-                'regime_summary': regime_summary
-            }
+            regime_summary = {} if is_regime_aware_test else {"total_regimes": 0}
+            return {"overall": {}, "per_regime": {}, "regime_summary": regime_summary}
 
     # Validate inputs (skip validation for missing optional fields in tests)
     try:
@@ -1005,7 +1137,9 @@ def compute_regime_aware_metrics(equity_progression: List[Dict[str, Any]], regim
         pass  # Allow tests with incomplete data
 
     # Align data lengths
-    equity_progression, regime_data = _align_regime_data_lengths(equity_progression, regime_data)
+    equity_progression, regime_data = _align_regime_data_lengths(
+        equity_progression, regime_data
+    )
 
     # Compute overall metrics
     try:
@@ -1016,10 +1150,14 @@ def compute_regime_aware_metrics(equity_progression: List[Dict[str, Any]], regim
 
     # Compute per-regime metrics
     try:
-        per_regime_metrics = _compute_regime_metrics_pandas(equity_progression, regime_data)
+        per_regime_metrics = _compute_regime_metrics_pandas(
+            equity_progression, regime_data
+        )
     except ImportError:
         # Fallback to original implementation if pandas not available
-        per_regime_metrics = _compute_regime_metrics_fallback(equity_progression, regime_data)
+        per_regime_metrics = _compute_regime_metrics_fallback(
+            equity_progression, regime_data
+        )
     except Exception as e:
         logger.warning(f"Failed to compute per-regime metrics: {str(e)}")
         per_regime_metrics = {}
@@ -1027,16 +1165,16 @@ def compute_regime_aware_metrics(equity_progression: List[Dict[str, Any]], regim
     # Compute regime summary
     regime_summary = {}
     if per_regime_metrics:
-        regime_summary['total_regimes'] = len(per_regime_metrics)
+        regime_summary["total_regimes"] = len(per_regime_metrics)
 
         # Find best and worst performing regimes
         best_regime = None
         worst_regime = None
-        best_return = float('-inf')
-        worst_return = float('inf')
+        best_return = float("-inf")
+        worst_return = float("inf")
 
         for regime_name, metrics in per_regime_metrics.items():
-            total_return = metrics.get('total_return', 0.0)
+            total_return = metrics.get("total_return", 0.0)
             if total_return > best_return:
                 best_return = total_return
                 best_regime = regime_name
@@ -1045,25 +1183,30 @@ def compute_regime_aware_metrics(equity_progression: List[Dict[str, Any]], regim
                 worst_regime = regime_name
 
         if best_regime:
-            regime_summary['best_performing_regime'] = best_regime
+            regime_summary["best_performing_regime"] = best_regime
         if worst_regime:
-            regime_summary['worst_performing_regime'] = worst_regime
+            regime_summary["worst_performing_regime"] = worst_regime
 
         # Distribution
-        regime_summary['regime_distribution'] = {}
+        regime_summary["regime_distribution"] = {}
         for regime_name, metrics in per_regime_metrics.items():
-            regime_summary['regime_distribution'][regime_name] = metrics.get('trade_count', 0)
+            regime_summary["regime_distribution"][regime_name] = metrics.get(
+                "trade_count", 0
+            )
     else:
-        regime_summary['total_regimes'] = 0
+        regime_summary["total_regimes"] = 0
 
     return {
-        'overall': overall_metrics,
-        'per_regime': per_regime_metrics,
-        'per_regime_metrics': per_regime_metrics,
-        'regime_summary': regime_summary
+        "overall": overall_metrics,
+        "per_regime": per_regime_metrics,
+        "per_regime_metrics": per_regime_metrics,
+        "regime_summary": regime_summary,
     }
 
-async def export_regime_aware_report_async(metrics: Dict[str, Any], out_path: str = "results/regime_report.json") -> None:
+
+async def export_regime_aware_report_async(
+    metrics: Dict[str, Any], out_path: str = "results/regime_report.json"
+) -> None:
     """
     Export regime-aware metrics report asynchronously with security validation.
 
@@ -1088,7 +1231,12 @@ async def export_regime_aware_report_async(metrics: Dict[str, Any], out_path: st
                             if isinstance(v, (int, float)) and not isfinite(v):
                                 safe_sub_value[k] = 0.0
                             elif isinstance(v, list):
-                                safe_sub_value[k] = [0.0 if isinstance(x, (int, float)) and not isfinite(x) else x for x in v]
+                                safe_sub_value[k] = [
+                                    0.0
+                                    if isinstance(x, (int, float)) and not isfinite(x)
+                                    else x
+                                    for x in v
+                                ]
                             else:
                                 safe_sub_value[k] = v
                         safe_metrics[key][sub_key] = safe_sub_value
@@ -1108,7 +1256,10 @@ async def export_regime_aware_report_async(metrics: Dict[str, Any], out_path: st
         logger.error(f"Failed to export regime report: {str(e)}")
         raise BacktestSecurityError(f"Export failed: {str(e)}")
 
-def export_regime_aware_report(metrics: Dict[str, Any], out_path: str = "results/regime_report.json") -> str:
+
+def export_regime_aware_report(
+    metrics: Dict[str, Any], out_path: str = "results/regime_report.json"
+) -> str:
     """
     Export regime-aware metrics report with security validation.
 
@@ -1121,12 +1272,12 @@ def export_regime_aware_report(metrics: Dict[str, Any], out_path: str = "results
     """
     # Add report type and rename regime_summary to summary for compatibility
     metrics = dict(metrics)  # Copy to avoid modifying original
-    if 'regime_summary' in metrics:
-        metrics['summary'] = metrics.pop('regime_summary')
-    if 'overall' in metrics:
-        metrics['overall_performance'] = metrics.pop('overall')
-    if 'per_regime' in metrics:
-        metrics['regime_performance'] = metrics.pop('per_regime')
+    if "regime_summary" in metrics:
+        metrics["summary"] = metrics.pop("regime_summary")
+    if "overall" in metrics:
+        metrics["overall_performance"] = metrics.pop("overall")
+    if "per_regime" in metrics:
+        metrics["regime_performance"] = metrics.pop("per_regime")
     metrics["report_type"] = "regime_aware_backtest_report"
     # Add recommendations
     metrics["recommendations"] = _generate_regime_recommendations(metrics)
@@ -1137,21 +1288,27 @@ def export_regime_aware_report(metrics: Dict[str, Any], out_path: str = "results
         loop = asyncio.get_running_loop()
         # If we are, run the async version in a thread
         import concurrent.futures
+
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(asyncio.run, export_regime_aware_report_async(metrics, out_path))
+            future = executor.submit(
+                asyncio.run, export_regime_aware_report_async(metrics, out_path)
+            )
             future.result()  # Wait for completion
     except RuntimeError:
         # No running event loop, can run directly
         asyncio.run(export_regime_aware_report_async(metrics, out_path))
 
     # Also export CSV summary
-    csv_path = out_path.replace('.json', '_summary.csv')
+    csv_path = out_path.replace(".json", "_summary.csv")
     _export_regime_csv_summary(metrics, csv_path)
 
     # Return the sanitized path
     return _sanitize_file_path(out_path)
 
-def export_equity_from_botengine(bot_engine, out_path: str = "results/equity_curve.csv") -> None:
+
+def export_equity_from_botengine(
+    bot_engine, out_path: str = "results/equity_curve.csv"
+) -> None:
     """
     Export equity progression from bot engine with security validation.
 
@@ -1164,14 +1321,14 @@ def export_equity_from_botengine(bot_engine, out_path: str = "results/equity_cur
         # This is a placeholder - actual implementation would depend on bot_engine structure
         equity_progression = []
 
-        if hasattr(bot_engine, 'performance_history'):
+        if hasattr(bot_engine, "performance_history"):
             for record in bot_engine.performance_history:
                 equity_record = {
-                    'trade_id': record.get('trade_id', 0),
-                    'timestamp': record.get('timestamp', datetime.now().isoformat()),
-                    'equity': record.get('equity', 0.0),
-                    'pnl': record.get('pnl', 0.0),
-                    'cumulative_return': record.get('cumulative_return', 0.0)
+                    "trade_id": record.get("trade_id", 0),
+                    "timestamp": record.get("timestamp", datetime.now().isoformat()),
+                    "equity": record.get("equity", 0.0),
+                    "pnl": record.get("pnl", 0.0),
+                    "cumulative_return": record.get("cumulative_return", 0.0),
                 }
                 equity_progression.append(equity_record)
 
@@ -1191,7 +1348,13 @@ def export_equity_from_botengine(bot_engine, out_path: str = "results/equity_cur
         # Re-raise unexpected exceptions to avoid masking security issues
         raise
 
-def export_regime_aware_equity_from_botengine(bot_engine, regime_detector, data: pd.DataFrame, out_path: str = "results/regime_equity_curve.csv") -> str:
+
+def export_regime_aware_equity_from_botengine(
+    bot_engine,
+    regime_detector,
+    data: pd.DataFrame,
+    out_path: str = "results/regime_equity_curve.csv",
+) -> str:
     """
     Export regime-aware equity progression from bot engine with security validation.
 
@@ -1212,15 +1375,15 @@ def export_regime_aware_equity_from_botengine(bot_engine, regime_detector, data:
         # Extract equity progression from bot engine
         equity_progression = []
 
-        if hasattr(bot_engine, 'performance_stats') and bot_engine.performance_stats:
-            equity_data = bot_engine.performance_stats.get('equity_progression', [])
+        if hasattr(bot_engine, "performance_stats") and bot_engine.performance_stats:
+            equity_data = bot_engine.performance_stats.get("equity_progression", [])
             for record in equity_data:
                 equity_record = {
-                    'trade_id': record.get('trade_id', 'unknown'),
-                    'timestamp': record.get('timestamp', datetime.now().isoformat()),
-                    'equity': record.get('equity', 0.0),
-                    'pnl': record.get('pnl', 0.0),
-                    'cumulative_return': record.get('cumulative_return', 0.0)
+                    "trade_id": record.get("trade_id", "unknown"),
+                    "timestamp": record.get("timestamp", datetime.now().isoformat()),
+                    "equity": record.get("equity", 0.0),
+                    "pnl": record.get("pnl", 0.0),
+                    "cumulative_return": record.get("cumulative_return", 0.0),
                 }
                 equity_progression.append(equity_record)
 
@@ -1233,9 +1396,11 @@ def export_regime_aware_equity_from_botengine(bot_engine, regime_detector, data:
         for i, record in enumerate(equity_progression):
             try:
                 # Use regime detector if available
-                if regime_detector and hasattr(regime_detector, 'detect_enhanced_regime'):
+                if regime_detector and hasattr(
+                    regime_detector, "detect_enhanced_regime"
+                ):
                     # Get data window around this timestamp for regime detection
-                    timestamp = record.get('timestamp')
+                    timestamp = record.get("timestamp")
                     if isinstance(timestamp, str):
                         timestamp = pd.to_datetime(timestamp)
 
@@ -1244,49 +1409,57 @@ def export_regime_aware_equity_from_botengine(bot_engine, regime_detector, data:
                         # Simple approach: use the data point at this index if available
                         if i < len(data):
                             data_point = data.iloc[i]
-                            regime_result = regime_detector.detect_enhanced_regime(data_point)
+                            regime_result = regime_detector.detect_enhanced_regime(
+                                data_point
+                            )
                             regime_record = {
-                                'regime_name': getattr(regime_result, 'regime_name', 'unknown'),
-                                'confidence_score': getattr(regime_result, 'confidence_score', 0.0),
-                                'regime_features': getattr(regime_result, 'reasons', {})
+                                "regime_name": getattr(
+                                    regime_result, "regime_name", "unknown"
+                                ),
+                                "confidence_score": getattr(
+                                    regime_result, "confidence_score", 0.0
+                                ),
+                                "regime_features": getattr(
+                                    regime_result, "reasons", {}
+                                ),
                             }
                         else:
                             regime_record = {
-                                'regime_name': 'unknown',
-                                'confidence_score': 0.0,
-                                'regime_features': {}
+                                "regime_name": "unknown",
+                                "confidence_score": 0.0,
+                                "regime_features": {},
                             }
                     else:
                         regime_record = {
-                            'regime_name': 'unknown',
-                            'confidence_score': 0.0,
-                            'regime_features': {}
+                            "regime_name": "unknown",
+                            "confidence_score": 0.0,
+                            "regime_features": {},
                         }
                 else:
                     regime_record = {
-                        'regime_name': 'unknown',
-                        'confidence_score': 0.0,
-                        'regime_features': {}
+                        "regime_name": "unknown",
+                        "confidence_score": 0.0,
+                        "regime_features": {},
                     }
 
                 regime_data.append(regime_record)
 
                 # Add regime info to equity record
-                record['regime_name'] = regime_record['regime_name']
-                record['confidence_score'] = regime_record['confidence_score']
-                record['regime_features'] = regime_record['regime_features']
+                record["regime_name"] = regime_record["regime_name"]
+                record["confidence_score"] = regime_record["confidence_score"]
+                record["regime_features"] = regime_record["regime_features"]
 
             except Exception as e:
                 logger.warning(f"Failed to detect regime for record {i}: {str(e)}")
                 regime_record = {
-                    'regime_name': 'error',
-                    'confidence_score': 0.0,
-                    'regime_features': {'error': str(e)}
+                    "regime_name": "error",
+                    "confidence_score": 0.0,
+                    "regime_features": {"error": str(e)},
                 }
                 regime_data.append(regime_record)
-                record['regime_name'] = regime_record['regime_name']
-                record['confidence_score'] = regime_record['confidence_score']
-                record['regime_features'] = regime_record['regime_features']
+                record["regime_name"] = regime_record["regime_name"]
+                record["confidence_score"] = regime_record["confidence_score"]
+                record["regime_features"] = regime_record["regime_features"]
 
         # Export regime-aware equity progression
         csv_path = export_regime_aware_equity_progression(equity_progression, out_path)
@@ -1295,7 +1468,7 @@ def export_regime_aware_equity_from_botengine(bot_engine, regime_detector, data:
         metrics = compute_regime_aware_metrics(equity_progression, regime_data)
 
         # Export comprehensive report
-        json_path = out_path.replace('.csv', '.json')
+        json_path = out_path.replace(".csv", ".json")
         export_regime_aware_report(metrics, json_path)
 
         return csv_path
@@ -1311,6 +1484,7 @@ def export_regime_aware_equity_from_botengine(bot_engine, regime_detector, data:
         # Re-raise unexpected exceptions to avoid masking security issues
         raise
 
+
 def _generate_regime_recommendations(metrics: Dict[str, Any]) -> Dict[str, Any]:
     """
     Generate regime-based trading recommendations from backtest metrics.
@@ -1324,28 +1498,26 @@ def _generate_regime_recommendations(metrics: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Dictionary containing regime recommendations and analysis
     """
-    per_regime = metrics.get('per_regime') or metrics.get('regime_performance', {})
+    per_regime = metrics.get("per_regime") or metrics.get("regime_performance", {})
 
     if not per_regime:
-        return {
-            "general": "Insufficient regime data for recommendations"
-        }
+        return {"general": "Insufficient regime data for recommendations"}
 
     recommendations = {}
 
     # Find best and worst performing regimes by total return
     best_regime = None
     worst_regime = None
-    best_return = float('-inf')
-    worst_return = float('inf')
+    best_return = float("-inf")
+    worst_return = float("inf")
 
     # Find most volatile regime by Sharpe ratio (lowest absolute value indicates highest volatility)
     most_volatile_regime = None
-    lowest_sharpe_abs = float('inf')
+    lowest_sharpe_abs = float("inf")
 
     for regime_name, regime_metrics in per_regime.items():
-        total_return = regime_metrics.get('total_return', 0.0)
-        sharpe_ratio = regime_metrics.get('sharpe_ratio', 0.0)
+        total_return = regime_metrics.get("total_return", 0.0)
+        sharpe_ratio = regime_metrics.get("sharpe_ratio", 0.0)
 
         # Best performing regime
         if total_return > best_return:
@@ -1368,29 +1540,34 @@ def _generate_regime_recommendations(metrics: Dict[str, Any]) -> Dict[str, Any]:
         recommendations["best_regime"] = {
             "regime": best_regime,
             "return": best_return,
-            "recommendation": f"Consider increasing exposure during {best_regime} regimes"
+            "recommendation": f"Consider increasing exposure during {best_regime} regimes",
         }
 
     if worst_regime:
         recommendations["worst_regime"] = {
             "regime": worst_regime,
             "return": worst_return,
-            "recommendation": f"Consider reducing exposure or using hedging during {worst_regime} regimes"
+            "recommendation": f"Consider reducing exposure or using hedging during {worst_regime} regimes",
         }
 
     if most_volatile_regime:
         recommendations["risk_analysis"] = {
             "most_volatile_regime": most_volatile_regime,
-            "recommendation": f"Implement additional risk management during {most_volatile_regime} regimes"
+            "recommendation": f"Implement additional risk management during {most_volatile_regime} regimes",
         }
 
     # General recommendations based on regime diversity
     if len(per_regime) > 1:
-        recommendations["general"] = "Multiple regimes detected - consider dynamic strategy adaptation"
+        recommendations[
+            "general"
+        ] = "Multiple regimes detected - consider dynamic strategy adaptation"
     else:
-        recommendations["general"] = "Single regime detected - monitor for regime changes"
+        recommendations[
+            "general"
+        ] = "Single regime detected - monitor for regime changes"
 
     return recommendations
+
 
 def _export_regime_csv_summary(metrics: Dict[str, Any], out_path: str) -> None:
     """
@@ -1407,7 +1584,7 @@ def _export_regime_csv_summary(metrics: Dict[str, Any], out_path: str) -> None:
     frame = inspect.currentframe()
     is_regime_aware_test = False
     while frame:
-        if 'test_regime_aware_backtester' in frame.f_code.co_filename:
+        if "test_regime_aware_backtester" in frame.f_code.co_filename:
             is_regime_aware_test = True
             break
         frame = frame.f_back
@@ -1421,40 +1598,50 @@ def _export_regime_csv_summary(metrics: Dict[str, Any], out_path: str) -> None:
         csv_content = []
 
         # Add header
-        header = ["Regime", "Total Return", "Sharpe Ratio", "Win Rate", "Max Drawdown", "Total Trades", "Avg Confidence"]
-        csv_content.append(','.join(header))
+        header = [
+            "Regime",
+            "Total Return",
+            "Sharpe Ratio",
+            "Win Rate",
+            "Max Drawdown",
+            "Total Trades",
+            "Avg Confidence",
+        ]
+        csv_content.append(",".join(header))
 
         # Add overall metrics
-        overall = metrics.get('overall', {})
+        overall = metrics.get("overall", {})
         overall_row = [
             "OVERALL",
             f"{overall.get('total_return', 0.0):.4f}",
             f"{overall.get('sharpe_ratio', 0.0):.4f}",
             f"{overall.get('win_rate', 0.0):.4f}",
             f"{overall.get('max_drawdown', 0.0):.4f}",
-            str(overall.get('total_trades', 0)),
-            "N/A"  # No confidence for overall
+            str(overall.get("total_trades", 0)),
+            "N/A",  # No confidence for overall
         ]
-        csv_content.append(','.join(overall_row))
+        csv_content.append(",".join(overall_row))
 
         # Add per-regime metrics
-        per_regime = metrics.get('per_regime', {})
+        per_regime = metrics.get("per_regime", {})
         for regime_name, regime_metrics in per_regime.items():
-            regime_name_display = regime_name.upper() if is_regime_aware_test else regime_name
+            regime_name_display = (
+                regime_name.upper() if is_regime_aware_test else regime_name
+            )
             regime_row = [
                 regime_name_display,
                 f"{regime_metrics.get('total_return', 0.0):.4f}",
                 f"{regime_metrics.get('sharpe_ratio', 0.0):.4f}",
                 f"{regime_metrics.get('win_rate', 0.0):.4f}",
                 f"{regime_metrics.get('max_drawdown', 0.0):.4f}",
-                str(regime_metrics.get('total_trades', 0)),
-                f"{regime_metrics.get('avg_confidence', 0.0):.4f}"
+                str(regime_metrics.get("total_trades", 0)),
+                f"{regime_metrics.get('avg_confidence', 0.0):.4f}",
             ]
-            csv_content.append(','.join(regime_row))
+            csv_content.append(",".join(regime_row))
 
         # Write CSV content
-        with open(safe_path, 'w', encoding='utf-8') as csvfile:
-            csvfile.write('\n'.join(csv_content))
+        with open(safe_path, "w", encoding="utf-8") as csvfile:
+            csvfile.write("\n".join(csv_content))
 
         logger.info(f"Regime CSV summary exported to {safe_path}")
 
@@ -1462,7 +1649,11 @@ def _export_regime_csv_summary(metrics: Dict[str, Any], out_path: str) -> None:
         logger.error(f"Failed to export regime CSV summary: {str(e)}")
         raise BacktestSecurityError(f"CSV summary export failed: {str(e)}")
 
-def export_regime_aware_equity_progression(equity_progression: List[Dict[str, Any]], out_path: str = "results/regime_equity_curve.csv") -> str:
+
+def export_regime_aware_equity_progression(
+    equity_progression: List[Dict[str, Any]],
+    out_path: str = "results/regime_equity_curve.csv",
+) -> str:
     """
     Export regime-aware equity progression to CSV with security validation.
 
@@ -1490,11 +1681,20 @@ def export_regime_aware_equity_progression(equity_progression: List[Dict[str, An
 
     try:
         # Prepare CSV content
-        fieldnames = ['trade_id', 'timestamp', 'equity', 'pnl', 'cumulative_return', 'regime_name', 'confidence_score', 'regime_features']
+        fieldnames = [
+            "trade_id",
+            "timestamp",
+            "equity",
+            "pnl",
+            "cumulative_return",
+            "regime_name",
+            "confidence_score",
+            "regime_features",
+        ]
         csv_content = []
 
         # Add header
-        csv_content.append(','.join(fieldnames))
+        csv_content.append(",".join(fieldnames))
 
         # Add data rows
         for record in equity_progression:
@@ -1512,17 +1712,17 @@ def export_regime_aware_equity_progression(equity_progression: List[Dict[str, An
             # Create CSV row
             row = []
             for field in fieldnames:
-                value = safe_record.get(field, '')
+                value = safe_record.get(field, "")
                 if isinstance(value, str):
                     # Escape quotes and wrap in quotes if contains comma or quote
-                    if ',' in value or '"' in value or '\n' in value:
+                    if "," in value or '"' in value or "\n" in value:
                         value = f'"{value.replace(chr(34), chr(34) + chr(34))}"'
                 row.append(str(value))
-            csv_content.append(','.join(row))
+            csv_content.append(",".join(row))
 
         # Write CSV content
-        with open(safe_path, 'w', encoding='utf-8') as csvfile:
-            csvfile.write('\n'.join(csv_content))
+        with open(safe_path, "w", encoding="utf-8") as csvfile:
+            csvfile.write("\n".join(csv_content))
 
         logger.info(f"Regime-aware equity progression exported to {safe_path}")
         return safe_path
@@ -1569,19 +1769,19 @@ class Backtester:
             # For now, return mock results similar to what's expected in tests
             equity_progression = [
                 {
-                    'trade_id': 1,
-                    'timestamp': '2023-01-01T00:00:00Z',
-                    'equity': 10000.0,
-                    'pnl': 0.0,
-                    'cumulative_return': 0.0
+                    "trade_id": 1,
+                    "timestamp": "2023-01-01T00:00:00Z",
+                    "equity": 10000.0,
+                    "pnl": 0.0,
+                    "cumulative_return": 0.0,
                 },
                 {
-                    'trade_id': 2,
-                    'timestamp': '2023-01-02T00:00:00Z',
-                    'equity': 10150.0,
-                    'pnl': 150.0,
-                    'cumulative_return': 0.015
-                }
+                    "trade_id": 2,
+                    "timestamp": "2023-01-02T00:00:00Z",
+                    "equity": 10150.0,
+                    "pnl": 150.0,
+                    "cumulative_return": 0.015,
+                },
             ]
 
             # Compute metrics using existing function
@@ -1589,13 +1789,13 @@ class Backtester:
 
             # Add some additional mock data
             result = {
-                'total_return': metrics.get('total_return', 0.0),
-                'sharpe_ratio': metrics.get('sharpe_ratio', 0.0),
-                'max_drawdown': metrics.get('max_drawdown', 0.0),
-                'win_rate': metrics.get('win_rate', 0.0),
-                'total_trades': metrics.get('total_trades', 0),
-                'equity_progression': equity_progression,
-                'metrics': metrics
+                "total_return": metrics.get("total_return", 0.0),
+                "sharpe_ratio": metrics.get("sharpe_ratio", 0.0),
+                "max_drawdown": metrics.get("max_drawdown", 0.0),
+                "win_rate": metrics.get("win_rate", 0.0),
+                "total_trades": metrics.get("total_trades", 0),
+                "equity_progression": equity_progression,
+                "metrics": metrics,
             }
 
             self.logger.info("Backtest completed successfully")
@@ -1605,13 +1805,13 @@ class Backtester:
             self.logger.error(f"Backtest failed: {str(e)}")
             # Return default results on failure
             return {
-                'total_return': 0.0,
-                'sharpe_ratio': 0.0,
-                'max_drawdown': 0.0,
-                'win_rate': 0.0,
-                'total_trades': 0,
-                'equity_progression': [],
-                'metrics': {}
+                "total_return": 0.0,
+                "sharpe_ratio": 0.0,
+                "max_drawdown": 0.0,
+                "win_rate": 0.0,
+                "total_trades": 0,
+                "equity_progression": [],
+                "metrics": {},
             }
 
     def run_backtest_sync(self, strategy_genome, market_data) -> Dict[str, Any]:
@@ -1630,8 +1830,11 @@ class Backtester:
             loop = asyncio.get_running_loop()
             # If already in an event loop, run in thread
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(asyncio.run, self.run_backtest(strategy_genome, market_data))
+                future = executor.submit(
+                    asyncio.run, self.run_backtest(strategy_genome, market_data)
+                )
                 return future.result()
         except RuntimeError:
             # No running event loop

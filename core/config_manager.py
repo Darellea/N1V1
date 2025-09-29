@@ -5,25 +5,24 @@ This module provides a unified configuration system that replaces
 hardcoded values throughout the codebase with configurable parameters.
 """
 
-import os
 import json
 import logging
-import asyncio
-from typing import Dict, Any, Optional, Union, List
+import os
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from dataclasses import dataclass, asdict
-from pydantic import BaseModel, ValidationError, Field
-from pydantic_core import PydanticCustomError
-import jsonschema
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field, ValidationError
+
+from utils.security import SecurityException, get_secret
 
 from .interfaces import (
     CacheConfig,
-    MemoryConfig,
     DataManagerConfig,
+    MemoryConfig,
     PerformanceTrackerConfig,
-    TradingCoordinatorConfig
+    TradingCoordinatorConfig,
 )
-from utils.security import get_secret, SecurityException
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +30,17 @@ logger = logging.getLogger(__name__)
 # Pydantic models for strict validation
 class EnvironmentConfig(BaseModel):
     """Environment configuration with strict validation."""
-    mode: str = Field(..., pattern="^(live|paper|backtest)$", description="Trading mode")
+
+    mode: str = Field(
+        ..., pattern="^(live|paper|backtest)$", description="Trading mode"
+    )
     debug: bool = False
     log_level: str = Field("INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
 
 
 class ExchangeConfig(BaseModel):
     """Exchange configuration with strict validation."""
+
     name: str = Field(..., min_length=1, description="Exchange name")
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
@@ -49,33 +52,53 @@ class ExchangeConfig(BaseModel):
 
 class RiskManagementConfig(BaseModel):
     """Risk management configuration with strict validation."""
+
     stop_loss: float = Field(0.02, ge=0.001, le=0.5, description="Stop loss percentage")
-    take_profit: float = Field(0.04, ge=0.001, le=0.5, description="Take profit percentage")
+    take_profit: float = Field(
+        0.04, ge=0.001, le=0.5, description="Take profit percentage"
+    )
     trailing_stop: bool = True
-    position_size: float = Field(0.1, ge=0.01, le=1.0, description="Position size percentage")
-    max_position_size: float = Field(0.3, ge=0.01, le=1.0, description="Max position size percentage")
-    risk_reward_ratio: float = Field(2.0, ge=1.0, le=10.0, description="Risk-reward ratio")
-    max_daily_drawdown: float = Field(0.1, ge=0.01, le=1.0, description="Max daily drawdown")
+    position_size: float = Field(
+        0.1, ge=0.01, le=1.0, description="Position size percentage"
+    )
+    max_position_size: float = Field(
+        0.3, ge=0.01, le=1.0, description="Max position size percentage"
+    )
+    risk_reward_ratio: float = Field(
+        2.0, ge=1.0, le=10.0, description="Risk-reward ratio"
+    )
+    max_daily_drawdown: float = Field(
+        0.1, ge=0.01, le=1.0, description="Max daily drawdown"
+    )
     circuit_breaker_enabled: bool = Field(True, description="Circuit breaker enabled")
 
 
 class MonitoringConfig(BaseModel):
     """Monitoring configuration with strict validation."""
+
     enabled: bool = True
-    update_interval: int = Field(5, ge=1, le=300, description="Update interval in seconds")
+    update_interval: int = Field(
+        5, ge=1, le=300, description="Update interval in seconds"
+    )
     alert_on_errors: bool = True
     log_level: str = Field("INFO", pattern="^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
 
 
 class StrategiesConfig(BaseModel):
     """Strategies configuration with strict validation."""
+
     default: str = Field("RSIStrategy", min_length=1, description="Default strategy")
-    active_strategies: List[str] = Field(default_factory=list, description="Active strategies list")
-    max_concurrent_strategies: int = Field(3, ge=1, le=10, description="Max concurrent strategies")
+    active_strategies: List[str] = Field(
+        default_factory=list, description="Active strategies list"
+    )
+    max_concurrent_strategies: int = Field(
+        3, ge=1, le=10, description="Max concurrent strategies"
+    )
 
 
 class MainConfig(BaseModel):
     """Main configuration model with strict validation."""
+
     environment: EnvironmentConfig
     exchange: ExchangeConfig
     risk_management: RiskManagementConfig
@@ -113,17 +136,8 @@ class MainConfig(BaseModel):
 
 # Safe defaults for missing configuration
 SAFE_DEFAULTS = {
-    "environment": {
-        "mode": "paper",
-        "debug": False,
-        "log_level": "INFO"
-    },
-    "exchange": {
-        "name": "kucoin",
-        "sandbox": True,
-        "timeout": 30000,
-        "rate_limit": 10
-    },
+    "environment": {"mode": "paper", "debug": False, "log_level": "INFO"},
+    "exchange": {"name": "kucoin", "sandbox": True, "timeout": 30000, "rate_limit": 10},
     "risk_management": {
         "stop_loss": 0.02,
         "take_profit": 0.04,
@@ -132,19 +146,19 @@ SAFE_DEFAULTS = {
         "max_position_size": 0.3,
         "risk_reward_ratio": 2.0,
         "max_daily_drawdown": 0.1,
-        "circuit_breaker_enabled": True
+        "circuit_breaker_enabled": True,
     },
     "monitoring": {
         "enabled": True,
         "update_interval": 5,
         "alert_on_errors": True,
-        "log_level": "INFO"
+        "log_level": "INFO",
     },
     "strategies": {
         "default": "RSIStrategy",
         "active_strategies": ["RSIStrategy"],
-        "max_concurrent_strategies": 3
-    }
+        "max_concurrent_strategies": 3,
+    },
 }
 
 
@@ -212,7 +226,7 @@ class ConfigManager:
             "config.json",
             "config/config.json",
             "../config.json",
-            "core/config.json"
+            "core/config.json",
         ]
 
         for path in search_paths:
@@ -229,12 +243,14 @@ class ConfigManager:
         # Load from file if it exists
         if os.path.exists(self.config_file):
             try:
-                with open(self.config_file, 'r') as f:
+                with open(self.config_file, "r") as f:
                     file_config = json.load(f)
                 config_dict.update(file_config)
                 logger.info(f"Loaded configuration from {self.config_file}")
             except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON in configuration file {self.config_file}: {e}")
+                logger.error(
+                    f"Invalid JSON in configuration file {self.config_file}: {e}"
+                )
                 raise ValueError(f"Invalid JSON in configuration file: {e}")
             except Exception as e:
                 logger.warning(f"Failed to load config from {self.config_file}: {e}")
@@ -246,7 +262,9 @@ class ConfigManager:
         # Validate main configuration schema
         validation_errors = self.validate_main_config(config_dict)
         if validation_errors:
-            error_msg = f"Configuration validation failed: {'; '.join(validation_errors)}"
+            error_msg = (
+                f"Configuration validation failed: {'; '.join(validation_errors)}"
+            )
             logger.error(error_msg)
             raise ValueError(error_msg)
 
@@ -321,19 +339,27 @@ class ConfigManager:
         if os.getenv("MAX_MEMORY_MB"):
             self._config.memory.max_memory_mb = float(os.getenv("MAX_MEMORY_MB"))
         if os.getenv("MEMORY_WARNING_MB"):
-            self._config.memory.warning_memory_mb = float(os.getenv("MEMORY_WARNING_MB"))
+            self._config.memory.warning_memory_mb = float(
+                os.getenv("MEMORY_WARNING_MB")
+            )
         if os.getenv("MEMORY_CLEANUP_MB"):
-            self._config.memory.cleanup_memory_mb = float(os.getenv("MEMORY_CLEANUP_MB"))
+            self._config.memory.cleanup_memory_mb = float(
+                os.getenv("MEMORY_CLEANUP_MB")
+            )
 
         # Data manager configuration from environment
         if os.getenv("CACHE_ENABLED"):
-            self._config.data_manager.cache_enabled = os.getenv("CACHE_ENABLED").lower() == "true"
+            self._config.data_manager.cache_enabled = (
+                os.getenv("CACHE_ENABLED").lower() == "true"
+            )
         if os.getenv("CACHE_TTL"):
             self._config.data_manager.cache_ttl = int(os.getenv("CACHE_TTL"))
 
         # Performance tracker configuration from environment
         if os.getenv("STARTING_BALANCE"):
-            self._config.performance_tracker.starting_balance = float(os.getenv("STARTING_BALANCE"))
+            self._config.performance_tracker.starting_balance = float(
+                os.getenv("STARTING_BALANCE")
+            )
 
         # Load secrets securely (async operation) - always defer during sync initialization
         logger.info("Deferring secure secret loading during sync initialization")
@@ -386,7 +412,9 @@ class ConfigManager:
                 logger.error(f"Failed to load required secrets in production mode: {e}")
                 raise
             else:
-                logger.warning(f"Failed to load secrets securely, will use environment fallback: {e}")
+                logger.warning(
+                    f"Failed to load secrets securely, will use environment fallback: {e}"
+                )
         except Exception as e:
             logger.warning(f"Unexpected error loading secrets securely: {e}")
 
@@ -408,7 +436,9 @@ class ConfigManager:
             else:
                 setattr(obj, keys[0], value)
             return
-        next_obj = obj.get(keys[0]) if isinstance(obj, dict) else getattr(obj, keys[0], None)
+        next_obj = (
+            obj.get(keys[0]) if isinstance(obj, dict) else getattr(obj, keys[0], None)
+        )
         if next_obj is None:
             next_obj = {}
             if isinstance(obj, dict):
@@ -464,7 +494,7 @@ class ConfigManager:
         """
         try:
             section_obj = getattr(self._config, section)
-            if hasattr(section_obj, '__dict__'):
+            if hasattr(section_obj, "__dict__"):
                 return asdict(section_obj)
             elif isinstance(section_obj, dict):
                 return section_obj.copy()
@@ -492,14 +522,14 @@ class ConfigManager:
                 "data_manager": asdict(self._config.data_manager),
                 "performance_tracker": asdict(self._config.performance_tracker),
                 "trading_coordinator": asdict(self._config.trading_coordinator),
-                "bot_engine": self._config.bot_engine
+                "bot_engine": self._config.bot_engine,
             }
 
             # Create directory if it doesn't exist
             Path(save_path).parent.mkdir(parents=True, exist_ok=True)
 
             # Save to file
-            with open(save_path, 'w') as f:
+            with open(save_path, "w") as f:
                 json.dump(config_dict, f, indent=2)
 
             logger.info(f"Configuration saved to {save_path}")
@@ -604,8 +634,12 @@ class ConfigManager:
             # Check circuit breaker
             risk_config = config_dict.get("risk_management", {})
             if not risk_config.get("circuit_breaker_enabled", False):
-                errors.append("Live mode requires risk_management.circuit_breaker_enabled = true")
-                logger.error("Live mode validation failed: circuit_breaker_enabled must be true")
+                errors.append(
+                    "Live mode requires risk_management.circuit_breaker_enabled = true"
+                )
+                logger.error(
+                    "Live mode validation failed: circuit_breaker_enabled must be true"
+                )
 
             # Check sandbox mode
             if exchange_config.get("sandbox", False):
@@ -665,7 +699,9 @@ class ConfigManager:
                     for key, default_value in defaults.items():
                         if key not in section_config:
                             section_config[key] = default_value
-                            logger.info(f"Applied safe default for {section}.{key}: {default_value}")
+                            logger.info(
+                                f"Applied safe default for {section}.{key}: {default_value}"
+                            )
 
             # Special handling for performance tracker starting balance only when incomplete
             if "performance_tracker" not in updated_config:
@@ -696,7 +732,10 @@ class ConfigManager:
         if self._config.memory.warning_memory_mb >= self._config.memory.max_memory_mb:
             errors.append("Warning memory must be less than max memory")
 
-        if self._config.memory.cleanup_memory_mb >= self._config.memory.warning_memory_mb:
+        if (
+            self._config.memory.cleanup_memory_mb
+            >= self._config.memory.warning_memory_mb
+        ):
             errors.append("Cleanup memory must be less than warning memory")
 
         # Validate performance tracker configuration
@@ -713,12 +752,13 @@ class ConfigManager:
             "memory_monitoring_enabled": self._config.memory.enable_monitoring,
             "data_cache_enabled": self._config.data_manager.cache_enabled,
             "performance_tracking_enabled": self._config.performance_tracker.enable_detailed_tracking,
-            "validation_errors": self.validate_config()
+            "validation_errors": self.validate_config(),
         }
 
 
 # Global configuration manager instance
 _config_manager: Optional[ConfigManager] = None
+
 
 def get_config_manager() -> ConfigManager:
     """Get the global configuration manager instance."""
@@ -727,9 +767,11 @@ def get_config_manager() -> ConfigManager:
         _config_manager = ConfigManager()
     return _config_manager
 
+
 def get_config_value(key: str, default: Any = None) -> Any:
     """Get configuration value by key (convenience function)."""
     return get_config_manager().get(key, default)
+
 
 def set_config_value(key: str, value: Any) -> None:
     """Set configuration value by key (convenience function)."""

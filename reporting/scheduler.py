@@ -6,17 +6,18 @@ Integrates with the framework's event system and cron-like scheduling.
 """
 
 import logging
-import asyncio
-import time
-from typing import Dict, Any, Optional, Callable, List
-from datetime import datetime, timedelta
-from dataclasses import dataclass
 import threading
+import time
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
 import schedule
 
-from .metrics import MetricsEngine, MetricsResult, get_metrics_engine
-from .sync import get_dashboard_sync, sync_metrics_to_dashboards
 from utils.logger import get_trade_logger
+
+from .metrics import MetricsResult, get_metrics_engine
+from .sync import get_dashboard_sync
 
 logger = logging.getLogger(__name__)
 trade_logger = get_trade_logger()
@@ -25,6 +26,7 @@ trade_logger = get_trade_logger()
 @dataclass
 class ScheduledTask:
     """Represents a scheduled metrics task."""
+
     task_id: str
     name: str
     schedule_type: str  # 'session_end', 'daily', 'weekly', 'monthly'
@@ -58,10 +60,10 @@ class MetricsScheduler:
         self.dashboard_sync = get_dashboard_sync()
 
         # Configuration
-        self.enabled = self.config.get('enabled', True)
-        self.session_end_enabled = self.config.get('session_end_enabled', True)
-        self.daily_enabled = self.config.get('daily_enabled', True)
-        self.weekly_enabled = self.config.get('weekly_enabled', True)
+        self.enabled = self.config.get("enabled", True)
+        self.session_end_enabled = self.config.get("session_end_enabled", True)
+        self.daily_enabled = self.config.get("daily_enabled", True)
+        self.weekly_enabled = self.config.get("weekly_enabled", True)
 
         # Task management
         self.scheduled_tasks: Dict[str, ScheduledTask] = {}
@@ -79,15 +81,15 @@ class MetricsScheduler:
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration."""
         return {
-            'enabled': True,
-            'session_end_enabled': True,
-            'daily_enabled': True,
-            'weekly_enabled': True,
-            'daily_time': '02:00',  # 2 AM
-            'weekly_day': 'monday',
-            'weekly_time': '03:00',  # 3 AM on Mondays
-            'session_timeout_minutes': 30,
-            'max_concurrent_sessions': 10
+            "enabled": True,
+            "session_end_enabled": True,
+            "daily_enabled": True,
+            "weekly_enabled": True,
+            "daily_time": "02:00",  # 2 AM
+            "weekly_day": "monday",
+            "weekly_time": "03:00",  # 3 AM on Mondays
+            "session_timeout_minutes": 30,
+            "max_concurrent_sessions": 10,
         }
 
     def _initialize_default_tasks(self) -> None:
@@ -100,9 +102,9 @@ class MetricsScheduler:
                 schedule_type="daily",
                 strategy_ids=["all"],
                 config={
-                    'time': self.config.get('daily_time', '02:00'),
-                    'period_days': 1
-                }
+                    "time": self.config.get("daily_time", "02:00"),
+                    "period_days": 1,
+                },
             )
 
         # Weekly metrics aggregation
@@ -113,14 +115,20 @@ class MetricsScheduler:
                 schedule_type="weekly",
                 strategy_ids=["all"],
                 config={
-                    'day': self.config.get('weekly_day', 'monday'),
-                    'time': self.config.get('weekly_time', '03:00'),
-                    'period_days': 7
-                }
+                    "day": self.config.get("weekly_day", "monday"),
+                    "time": self.config.get("weekly_time", "03:00"),
+                    "period_days": 7,
+                },
             )
 
-    def add_task(self, task_id: str, name: str, schedule_type: str,
-                strategy_ids: List[str], config: Optional[Dict[str, Any]] = None) -> bool:
+    def add_task(
+        self,
+        task_id: str,
+        name: str,
+        schedule_type: str,
+        strategy_ids: List[str],
+        config: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         """
         Add a scheduled task.
 
@@ -143,7 +151,7 @@ class MetricsScheduler:
             name=name,
             schedule_type=schedule_type,
             strategy_ids=strategy_ids,
-            config=config or {}
+            config=config or {},
         )
 
         self.scheduled_tasks[task_id] = task
@@ -166,8 +174,12 @@ class MetricsScheduler:
             return True
         return False
 
-    def start_session(self, session_id: str, strategy_ids: List[str],
-                     metadata: Optional[Dict[str, Any]] = None) -> bool:
+    def start_session(
+        self,
+        session_id: str,
+        strategy_ids: List[str],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         """
         Start a trading session for metrics tracking.
 
@@ -187,27 +199,33 @@ class MetricsScheduler:
             return False
 
         # Check session limit
-        max_sessions = self.config.get('max_concurrent_sessions', 10)
+        max_sessions = self.config.get("max_concurrent_sessions", 10)
         if len(self.active_sessions) >= max_sessions:
             self.logger.warning(f"Maximum concurrent sessions ({max_sessions}) reached")
             return False
 
         session_data = {
-            'session_id': session_id,
-            'strategy_ids': strategy_ids,
-            'start_time': datetime.now(),
-            'metadata': metadata or {},
-            'returns': {strategy_id: [] for strategy_id in strategy_ids},
-            'trade_logs': {strategy_id: [] for strategy_id in strategy_ids}
+            "session_id": session_id,
+            "strategy_ids": strategy_ids,
+            "start_time": datetime.now(),
+            "metadata": metadata or {},
+            "returns": {strategy_id: [] for strategy_id in strategy_ids},
+            "trade_logs": {strategy_id: [] for strategy_id in strategy_ids},
         }
 
         self.active_sessions[session_id] = session_data
-        self.logger.info(f"Started metrics session: {session_id} with strategies: {strategy_ids}")
+        self.logger.info(
+            f"Started metrics session: {session_id} with strategies: {strategy_ids}"
+        )
         return True
 
-    def update_session_data(self, session_id: str, strategy_id: str,
-                           returns: Optional[List[float]] = None,
-                           trade_log: Optional[List[Dict[str, Any]]] = None) -> bool:
+    def update_session_data(
+        self,
+        session_id: str,
+        strategy_id: str,
+        returns: Optional[List[float]] = None,
+        trade_log: Optional[List[Dict[str, Any]]] = None,
+    ) -> bool:
         """
         Update session data with new returns or trades.
 
@@ -226,15 +244,15 @@ class MetricsScheduler:
 
         session = self.active_sessions[session_id]
 
-        if strategy_id not in session['strategy_ids']:
+        if strategy_id not in session["strategy_ids"]:
             self.logger.warning(f"Strategy {strategy_id} not in session {session_id}")
             return False
 
         if returns:
-            session['returns'][strategy_id].extend(returns)
+            session["returns"][strategy_id].extend(returns)
 
         if trade_log:
-            session['trade_logs'][strategy_id].extend(trade_log)
+            session["trade_logs"][strategy_id].extend(trade_log)
 
         return True
 
@@ -253,24 +271,24 @@ class MetricsScheduler:
             return False
 
         session = self.active_sessions[session_id]
-        session['end_time'] = datetime.now()
+        session["end_time"] = datetime.now()
 
         try:
             # Generate metrics for each strategy in the session
             results = []
-            for strategy_id in session['strategy_ids']:
-                returns = session['returns'][strategy_id]
-                trade_log = session['trade_logs'][strategy_id]
+            for strategy_id in session["strategy_ids"]:
+                returns = session["returns"][strategy_id]
+                trade_log = session["trade_logs"][strategy_id]
 
                 if not returns:
-                    self.logger.warning(f"No returns data for strategy {strategy_id} in session {session_id}")
+                    self.logger.warning(
+                        f"No returns data for strategy {strategy_id} in session {session_id}"
+                    )
                     continue
 
                 # Generate session metrics
                 result = self.metrics_engine.generate_session_report(
-                    returns=returns,
-                    strategy_id=strategy_id,
-                    trade_log=trade_log
+                    returns=returns, strategy_id=strategy_id, trade_log=trade_log
                 )
 
                 results.append(result)
@@ -279,7 +297,9 @@ class MetricsScheduler:
                 if self.dashboard_sync.enabled:
                     sync_success = self.dashboard_sync.sync_metrics(result)
                     if not sync_success:
-                        self.logger.warning(f"Failed to sync metrics for {strategy_id} to dashboards")
+                        self.logger.warning(
+                            f"Failed to sync metrics for {strategy_id} to dashboards"
+                        )
 
             # Publish session summary event
             self._publish_session_summary_event(session, results)
@@ -287,7 +307,9 @@ class MetricsScheduler:
             # Clean up session
             del self.active_sessions[session_id]
 
-            self.logger.info(f"Ended metrics session: {session_id} with {len(results)} strategy reports")
+            self.logger.info(
+                f"Ended metrics session: {session_id} with {len(results)} strategy reports"
+            )
             return True
 
         except Exception as e:
@@ -311,24 +333,24 @@ class MetricsScheduler:
 
             # Schedule daily tasks
             if self.daily_enabled:
-                schedule.every().day.at(self.config.get('daily_time', '02:00')).do(
+                schedule.every().day.at(self.config.get("daily_time", "02:00")).do(
                     self._run_daily_tasks
                 )
 
             # Schedule weekly tasks
             if self.weekly_enabled:
-                weekly_day = self.config.get('weekly_day', 'monday')
-                weekly_time = self.config.get('weekly_time', '03:00')
+                weekly_day = self.config.get("weekly_day", "monday")
+                weekly_time = self.config.get("weekly_time", "03:00")
 
                 # Map day names to schedule attributes
                 day_map = {
-                    'monday': schedule.every().monday,
-                    'tuesday': schedule.every().tuesday,
-                    'wednesday': schedule.every().wednesday,
-                    'thursday': schedule.every().thursday,
-                    'friday': schedule.every().friday,
-                    'saturday': schedule.every().saturday,
-                    'sunday': schedule.every().sunday
+                    "monday": schedule.every().monday,
+                    "tuesday": schedule.every().tuesday,
+                    "wednesday": schedule.every().wednesday,
+                    "thursday": schedule.every().thursday,
+                    "friday": schedule.every().friday,
+                    "saturday": schedule.every().saturday,
+                    "sunday": schedule.every().sunday,
                 }
 
                 if weekly_day in day_map:
@@ -376,8 +398,11 @@ class MetricsScheduler:
 
         try:
             # Find daily tasks
-            daily_tasks = [task for task in self.scheduled_tasks.values()
-                          if task.schedule_type == 'daily' and task.enabled]
+            daily_tasks = [
+                task
+                for task in self.scheduled_tasks.values()
+                if task.schedule_type == "daily" and task.enabled
+            ]
 
             for task in daily_tasks:
                 self._execute_task(task)
@@ -391,8 +416,11 @@ class MetricsScheduler:
 
         try:
             # Find weekly tasks
-            weekly_tasks = [task for task in self.scheduled_tasks.values()
-                           if task.schedule_type == 'weekly' and task.enabled]
+            weekly_tasks = [
+                task
+                for task in self.scheduled_tasks.values()
+                if task.schedule_type == "weekly" and task.enabled
+            ]
 
             for task in weekly_tasks:
                 self._execute_task(task)
@@ -420,7 +448,7 @@ class MetricsScheduler:
                 strategy_ids = task.strategy_ids
 
             # Generate metrics for each strategy
-            period_days = task.config.get('period_days', 1)
+            period_days = task.config.get("period_days", 1)
 
             for strategy_id in strategy_ids:
                 try:
@@ -428,14 +456,16 @@ class MetricsScheduler:
                     returns = self._get_strategy_returns(strategy_id, period_days)
 
                     if not returns:
-                        self.logger.warning(f"No returns data for strategy {strategy_id}")
+                        self.logger.warning(
+                            f"No returns data for strategy {strategy_id}"
+                        )
                         continue
 
                     # Generate periodic report
                     result = self.metrics_engine.generate_periodic_report(
                         returns=returns,
                         strategy_id=strategy_id,
-                        period_days=period_days
+                        period_days=period_days,
                     )
 
                     # Sync to dashboards
@@ -443,7 +473,9 @@ class MetricsScheduler:
                         self.dashboard_sync.sync_metrics(result)
 
                 except Exception as e:
-                    self.logger.error(f"Error processing strategy {strategy_id} in task {task.task_id}: {e}")
+                    self.logger.error(
+                        f"Error processing strategy {strategy_id} in task {task.task_id}: {e}"
+                    )
 
             task.next_run = self._calculate_next_run(task)
 
@@ -465,7 +497,9 @@ class MetricsScheduler:
             self.logger.error(f"Error getting strategies: {e}")
             return []
 
-    def _get_strategy_returns(self, strategy_id: str, period_days: int) -> Optional[List[float]]:
+    def _get_strategy_returns(
+        self, strategy_id: str, period_days: int
+    ) -> Optional[List[float]]:
         """
         Get returns data for a strategy over the specified period.
 
@@ -480,6 +514,7 @@ class MetricsScheduler:
             # This would query your trading data storage
             # For now, return mock data
             import numpy as np
+
             np.random.seed(42)  # For reproducible results
 
             # Generate mock daily returns
@@ -504,28 +539,33 @@ class MetricsScheduler:
         """
         now = datetime.now()
 
-        if task.schedule_type == 'daily':
+        if task.schedule_type == "daily":
             # Next day at the specified time
-            time_str = task.config.get('time', '02:00')
-            hour, minute = map(int, time_str.split(':'))
+            time_str = task.config.get("time", "02:00")
+            hour, minute = map(int, time_str.split(":"))
 
             next_run = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
             if next_run <= now:
                 next_run += timedelta(days=1)
 
-        elif task.schedule_type == 'weekly':
+        elif task.schedule_type == "weekly":
             # Next occurrence of the specified day and time
-            day_name = task.config.get('day', 'monday')
-            time_str = task.config.get('time', '03:00')
+            day_name = task.config.get("day", "monday")
+            time_str = task.config.get("time", "03:00")
 
             # Map day names to weekday numbers (0=Monday, 6=Sunday)
             day_map = {
-                'monday': 0, 'tuesday': 1, 'wednesday': 2, 'thursday': 3,
-                'friday': 4, 'saturday': 5, 'sunday': 6
+                "monday": 0,
+                "tuesday": 1,
+                "wednesday": 2,
+                "thursday": 3,
+                "friday": 4,
+                "saturday": 5,
+                "sunday": 6,
             }
 
             target_weekday = day_map.get(day_name, 0)
-            hour, minute = map(int, time_str.split(':'))
+            hour, minute = map(int, time_str.split(":"))
 
             next_run = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
@@ -542,7 +582,9 @@ class MetricsScheduler:
 
         return next_run
 
-    def _publish_session_summary_event(self, session: Dict[str, Any], results: List[MetricsResult]) -> None:
+    def _publish_session_summary_event(
+        self, session: Dict[str, Any], results: List[MetricsResult]
+    ) -> None:
         """
         Publish session summary event.
 
@@ -551,14 +593,17 @@ class MetricsScheduler:
             results: List of metrics results
         """
         event_data = {
-            'event_type': 'METRICS_SESSION_SUMMARY',
-            'session_id': session['session_id'],
-            'start_time': session['start_time'].isoformat(),
-            'end_time': session.get('end_time', datetime.now()).isoformat(),
-            'duration_minutes': (session.get('end_time', datetime.now()) - session['start_time']).total_seconds() / 60,
-            'strategies_processed': len(session['strategy_ids']),
-            'metrics_generated': len(results),
-            'strategies': session['strategy_ids']
+            "event_type": "METRICS_SESSION_SUMMARY",
+            "session_id": session["session_id"],
+            "start_time": session["start_time"].isoformat(),
+            "end_time": session.get("end_time", datetime.now()).isoformat(),
+            "duration_minutes": (
+                session.get("end_time", datetime.now()) - session["start_time"]
+            ).total_seconds()
+            / 60,
+            "strategies_processed": len(session["strategy_ids"]),
+            "metrics_generated": len(results),
+            "strategies": session["strategy_ids"],
         }
 
         self.logger.info(f"Published session summary event: {event_data}")
@@ -571,24 +616,24 @@ class MetricsScheduler:
             Status information
         """
         return {
-            'enabled': self.enabled,
-            'running': self.running,
-            'active_sessions': len(self.active_sessions),
-            'scheduled_tasks': len(self.scheduled_tasks),
-            'session_end_enabled': self.session_end_enabled,
-            'daily_enabled': self.daily_enabled,
-            'weekly_enabled': self.weekly_enabled,
-            'tasks': [
+            "enabled": self.enabled,
+            "running": self.running,
+            "active_sessions": len(self.active_sessions),
+            "scheduled_tasks": len(self.scheduled_tasks),
+            "session_end_enabled": self.session_end_enabled,
+            "daily_enabled": self.daily_enabled,
+            "weekly_enabled": self.weekly_enabled,
+            "tasks": [
                 {
-                    'task_id': task.task_id,
-                    'name': task.name,
-                    'schedule_type': task.schedule_type,
-                    'enabled': task.enabled,
-                    'last_run': task.last_run.isoformat() if task.last_run else None,
-                    'next_run': task.next_run.isoformat() if task.next_run else None
+                    "task_id": task.task_id,
+                    "name": task.name,
+                    "schedule_type": task.schedule_type,
+                    "enabled": task.enabled,
+                    "last_run": task.last_run.isoformat() if task.last_run else None,
+                    "next_run": task.next_run.isoformat() if task.next_run else None,
                 }
                 for task in self.scheduled_tasks.values()
-            ]
+            ],
         }
 
     def get_active_sessions(self) -> List[Dict[str, Any]]:
@@ -600,14 +645,25 @@ class MetricsScheduler:
         """
         sessions = []
         for session_id, session_data in self.active_sessions.items():
-            sessions.append({
-                'session_id': session_id,
-                'strategy_ids': session_data['strategy_ids'],
-                'start_time': session_data['start_time'].isoformat(),
-                'duration_minutes': (datetime.now() - session_data['start_time']).total_seconds() / 60,
-                'returns_count': {sid: len(returns) for sid, returns in session_data['returns'].items()},
-                'trades_count': {sid: len(trades) for sid, trades in session_data['trade_logs'].items()}
-            })
+            sessions.append(
+                {
+                    "session_id": session_id,
+                    "strategy_ids": session_data["strategy_ids"],
+                    "start_time": session_data["start_time"].isoformat(),
+                    "duration_minutes": (
+                        datetime.now() - session_data["start_time"]
+                    ).total_seconds()
+                    / 60,
+                    "returns_count": {
+                        sid: len(returns)
+                        for sid, returns in session_data["returns"].items()
+                    },
+                    "trades_count": {
+                        sid: len(trades)
+                        for sid, trades in session_data["trade_logs"].items()
+                    },
+                }
+            )
 
         return sessions
 
@@ -622,13 +678,13 @@ class MetricsScheduler:
             Number of sessions cleaned up
         """
         if timeout_minutes is None:
-            timeout_minutes = self.config.get('session_timeout_minutes', 30)
+            timeout_minutes = self.config.get("session_timeout_minutes", 30)
 
         cutoff_time = datetime.now() - timedelta(minutes=timeout_minutes)
         expired_sessions = []
 
         for session_id, session_data in self.active_sessions.items():
-            if session_data['start_time'] < cutoff_time:
+            if session_data["start_time"] < cutoff_time:
                 expired_sessions.append(session_id)
 
         # End expired sessions
@@ -648,13 +704,15 @@ def get_metrics_scheduler() -> MetricsScheduler:
     global _metrics_scheduler
     if _metrics_scheduler is None:
         from utils.config_loader import get_config
-        config = get_config('metrics_scheduler', {})
+
+        config = get_config("metrics_scheduler", {})
         _metrics_scheduler = MetricsScheduler(config)
     return _metrics_scheduler
 
 
-def start_session(session_id: str, strategy_ids: List[str],
-                 metadata: Optional[Dict[str, Any]] = None) -> bool:
+def start_session(
+    session_id: str, strategy_ids: List[str], metadata: Optional[Dict[str, Any]] = None
+) -> bool:
     """
     Convenience function to start a metrics session.
 
@@ -684,9 +742,12 @@ def end_session(session_id: str) -> bool:
     return scheduler.end_session(session_id)
 
 
-def update_session_data(session_id: str, strategy_id: str,
-                       returns: Optional[List[float]] = None,
-                       trade_log: Optional[List[Dict[str, Any]]] = None) -> bool:
+def update_session_data(
+    session_id: str,
+    strategy_id: str,
+    returns: Optional[List[float]] = None,
+    trade_log: Optional[List[Dict[str, Any]]] = None,
+) -> bool:
     """
     Convenience function to update session data.
 

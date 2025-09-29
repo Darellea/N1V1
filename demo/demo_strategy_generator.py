@@ -17,30 +17,37 @@ Usage:
 """
 
 import asyncio
+import json
 import logging
-import pandas as pd
-import numpy as np
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
-import json
-import time
+
+import numpy as np
+import pandas as pd
 
 # Import N1V1 components
 from optimization.strategy_generator import (
-    get_strategy_generator, create_strategy_generator,
-    StrategyGenome, StrategyGene, StrategyComponent,
-    IndicatorType, SignalLogic
-)
-from strategies.generated import (
-    get_strategy_runtime, create_generated_strategy,
-    load_generated_strategy, list_generated_strategies
+    IndicatorType,
+    SignalLogic,
+    StrategyComponent,
+    StrategyGene,
+    StrategyGenome,
+    create_strategy_generator,
 )
 from strategies.base_strategy import BaseStrategy
-from backtest.backtester import compute_backtest_metrics
+from strategies.generated import (
+    create_generated_strategy,
+    get_strategy_runtime,
+    list_generated_strategies,
+    load_generated_strategy,
+)
 from utils.logger import get_logger
 
 # Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 logger = get_logger(__name__)
 
 
@@ -60,14 +67,14 @@ class StrategyGeneratorDemo:
 
         # Initialize strategy generator
         config = {
-            'population_size': 30,  # Smaller for demo
-            'generations': 10,      # Fewer generations for demo
-            'mutation_rate': 0.15,
-            'crossover_rate': 0.8,
-            'elitism_rate': 0.1,
-            'bayesian_enabled': True,
-            'distributed_enabled': False,  # Disable for demo simplicity
-            'max_workers': 2
+            "population_size": 30,  # Smaller for demo
+            "generations": 10,  # Fewer generations for demo
+            "mutation_rate": 0.15,
+            "crossover_rate": 0.8,
+            "elitism_rate": 0.1,
+            "bayesian_enabled": True,
+            "distributed_enabled": False,  # Disable for demo simplicity
+            "max_workers": 2,
         }
 
         self.generator = await create_strategy_generator(config)
@@ -75,8 +82,9 @@ class StrategyGeneratorDemo:
 
         logger.info("✅ All components initialized successfully")
 
-    async def generate_synthetic_data(self, symbol: str = "BTC/USDT",
-                                    days: int = 90) -> pd.DataFrame:
+    async def generate_synthetic_data(
+        self, symbol: str = "BTC/USDT", days: int = 90
+    ) -> pd.DataFrame:
         """
         Generate synthetic OHLCV data for strategy testing.
 
@@ -92,7 +100,7 @@ class StrategyGeneratorDemo:
         # Generate timestamps (1-hour intervals)
         end_time = datetime.now()
         start_time = end_time - timedelta(days=days)
-        timestamps = pd.date_range(start=start_time, end=end_time, freq='1h')
+        timestamps = pd.date_range(start=start_time, end=end_time, freq="1h")
 
         np.random.seed(42)  # For reproducible results
 
@@ -107,7 +115,7 @@ class StrategyGeneratorDemo:
         volatility = 0.025  # 2.5% daily volatility
 
         # Create price series
-        price_changes = np.random.normal(drift, volatility/np.sqrt(24), n_points)
+        price_changes = np.random.normal(drift, volatility / np.sqrt(24), n_points)
         prices = base_price * np.exp(np.cumsum(price_changes))
 
         # Add regime-like behavior
@@ -116,7 +124,9 @@ class StrategyGeneratorDemo:
                 trend_length = np.random.randint(48, 120)  # 2-5 days
                 trend_strength = np.random.normal(0.001, 0.0005)
                 end_idx = min(i + trend_length, n_points)
-                trend_changes = np.linspace(0, trend_strength * trend_length, end_idx - i)
+                trend_changes = np.linspace(
+                    0, trend_strength * trend_length, end_idx - i
+                )
                 prices[i:end_idx] *= np.exp(trend_changes)
 
         # Create OHLCV data
@@ -133,17 +143,19 @@ class StrategyGeneratorDemo:
             # Volume (simulated)
             volume = np.random.uniform(200, 2000)
 
-            data.append({
-                'timestamp': timestamps[i],
-                'open': open_price,
-                'high': high_price,
-                'low': low_price,
-                'close': close_price,
-                'volume': volume
-            })
+            data.append(
+                {
+                    "timestamp": timestamps[i],
+                    "open": open_price,
+                    "high": high_price,
+                    "low": low_price,
+                    "close": close_price,
+                    "volume": volume,
+                }
+            )
 
         df = pd.DataFrame(data)
-        df.set_index('timestamp', inplace=True)
+        df.set_index("timestamp", inplace=True)
 
         logger.info(f"✅ Generated {len(df)} data points")
         return df
@@ -160,7 +172,7 @@ class StrategyGeneratorDemo:
         rsi_gene = StrategyGene(
             component_type=StrategyComponent.INDICATOR,
             indicator_type=IndicatorType.RSI,
-            parameters={'period': 14, 'overbought': 70, 'oversold': 30}
+            parameters={"period": 14, "overbought": 70, "oversold": 30},
         )
         genome.genes.append(rsi_gene)
 
@@ -168,14 +180,14 @@ class StrategyGeneratorDemo:
         signal_gene = StrategyGene(
             component_type=StrategyComponent.SIGNAL_LOGIC,
             signal_logic=SignalLogic.THRESHOLD,
-            parameters={'threshold': 0.5, 'direction': 'below'}
+            parameters={"threshold": 0.5, "direction": "below"},
         )
         genome.genes.append(signal_gene)
 
         # Add risk management gene
         risk_gene = StrategyGene(
             component_type=StrategyComponent.RISK_MANAGEMENT,
-            parameters={'stop_loss': 0.02, 'take_profit': 0.04}
+            parameters={"stop_loss": 0.02, "take_profit": 0.04},
         )
         genome.genes.append(risk_gene)
 
@@ -211,8 +223,8 @@ class StrategyGeneratorDemo:
 
         optimization_time = time.time() - start_time
 
-        if result and 'genome' in result:
-            genome_data = result['genome']
+        if result and "genome" in result:
+            genome_data = result["genome"]
             self.best_genome = StrategyGenome.from_dict(genome_data)
 
             logger.info("🎯 Optimization completed successfully!")
@@ -226,17 +238,21 @@ class StrategyGeneratorDemo:
             if gen_stats:
                 logger.info("📈 Generation Statistics:")
                 for stat in gen_stats[-3:]:  # Last 3 generations
-                    logger.info(f"  Gen {stat['generation']}: Best={stat['best_fitness']:.4f}, "
-                              f"Avg={stat['avg_fitness']:.4f}")
+                    logger.info(
+                        f"  Gen {stat['generation']}: Best={stat['best_fitness']:.4f}, "
+                        f"Avg={stat['avg_fitness']:.4f}"
+                    )
 
             # Show species information
             species_info = self.generator.get_species_info()
             if species_info:
                 logger.info("🧬 Species Information:")
                 for species in species_info[:3]:  # Top 3 species
-                    logger.info(f"  Species {species['species_id']}: "
-                              f"{species['member_count']} members, "
-                              f"Best fitness: {species['best_fitness']:.4f}")
+                    logger.info(
+                        f"  Species {species['species_id']}: "
+                        f"{species['member_count']} members, "
+                        f"Best fitness: {species['best_fitness']:.4f}"
+                    )
 
         else:
             logger.warning("❌ Optimization did not return expected results")
@@ -253,17 +269,19 @@ class StrategyGeneratorDemo:
             return
 
         # Create strategy from best genome
-        strategy_class = create_generated_strategy(self.best_genome, "OptimizedStrategy")
+        strategy_class = create_generated_strategy(
+            self.best_genome, "OptimizedStrategy"
+        )
 
         # Generate test data
         test_data = await self.generate_synthetic_data(days=7)
 
         # Create strategy instance
         strategy_config = {
-            'name': 'optimized_strategy_demo',
-            'symbols': ['BTC/USDT'],
-            'timeframe': '1h',
-            'required_history': 50
+            "name": "optimized_strategy_demo",
+            "symbols": ["BTC/USDT"],
+            "timeframe": "1h",
+            "required_history": 50,
         }
 
         strategy_instance = strategy_class(strategy_config)
@@ -276,11 +294,15 @@ class StrategyGeneratorDemo:
         if signals:
             logger.info("📊 Sample signals:")
             for i, signal in enumerate(signals[:5]):  # Show first 5 signals
-                logger.info(f"  Signal {i+1}: {signal['signal_type']} at "
-                          f"{signal['price']:.2f} on {signal['timestamp']}")
+                logger.info(
+                    f"  Signal {i+1}: {signal['signal_type']} at "
+                    f"{signal['price']:.2f} on {signal['timestamp']}"
+                )
 
         # Register with runtime
-        strategy_id = load_generated_strategy(self.best_genome, {"source": "optimization"})
+        strategy_id = load_generated_strategy(
+            self.best_genome, {"source": "optimization"}
+        )
         logger.info(f"✅ Strategy deployed with ID: {strategy_id}")
 
         # Show all registered strategies
@@ -299,25 +321,31 @@ class StrategyGeneratorDemo:
 
         logger.info("🎯 Strategy Generator Summary:")
         logger.info(f"  Population Size: {summary.get('population_size', 'N/A')}")
-        logger.info(f"  Generations Completed: {summary.get('generations_completed', 'N/A')}")
+        logger.info(
+            f"  Generations Completed: {summary.get('generations_completed', 'N/A')}"
+        )
         logger.info(f"  Best Fitness: {summary.get('best_fitness', 'N/A')}")
         logger.info(f"  Species Count: {summary.get('species_count', 'N/A')}")
         logger.info(f"  Total Evaluations: {summary.get('total_evaluations', 'N/A')}")
 
         # Show generation stats
-        gen_stats = summary.get('generation_stats', [])
+        gen_stats = summary.get("generation_stats", [])
         if gen_stats:
             logger.info("📈 Recent Generation Performance:")
             for stat in gen_stats:
-                logger.info(f"  Gen {stat['generation']}: Best={stat['best_fitness']:.4f}")
+                logger.info(
+                    f"  Gen {stat['generation']}: Best={stat['best_fitness']:.4f}"
+                )
 
         # Show species info
-        species_info = summary.get('species_info', [])
+        species_info = summary.get("species_info", [])
         if species_info:
             logger.info("🧬 Top Species:")
             for species in species_info[:3]:
-                logger.info(f"  Species {species['species_id']}: "
-                          f"{species['member_count']} members")
+                logger.info(
+                    f"  Species {species['species_id']}: "
+                    f"{species['member_count']} members"
+                )
 
     async def demonstrate_population_diversity(self):
         """Demonstrate population diversity analysis."""
@@ -327,15 +355,21 @@ class StrategyGeneratorDemo:
         # This would normally show diversity metrics
         # For demo purposes, we'll show basic population info
 
-        population_size = len(self.generator.population) if hasattr(self.generator, 'population') else 0
+        population_size = (
+            len(self.generator.population)
+            if hasattr(self.generator, "population")
+            else 0
+        )
         logger.info(f"Current population size: {population_size}")
 
         if population_size > 0:
             # Show sample genomes
             logger.info("🧬 Sample Genomes from Population:")
             for i, genome in enumerate(self.generator.population[:3]):
-                logger.info(f"  Genome {i+1}: {len(genome.genes)} genes, "
-                          f"fitness={genome.fitness:.4f}")
+                logger.info(
+                    f"  Genome {i+1}: {len(genome.genes)} genes, "
+                    f"fitness={genome.fitness:.4f}"
+                )
 
     async def save_results(self):
         """Save optimization results and strategies."""
@@ -346,12 +380,14 @@ class StrategyGeneratorDemo:
         self.generator.save_population("models/demo_strategy_generator/population.json")
 
         # Save runtime state
-        self.runtime.save_runtime_state("models/demo_strategy_generator/runtime_state.json")
+        self.runtime.save_runtime_state(
+            "models/demo_strategy_generator/runtime_state.json"
+        )
 
         # Save best genome separately
         if self.best_genome:
             best_genome_path = "models/demo_strategy_generator/best_genome.json"
-            with open(best_genome_path, 'w') as f:
+            with open(best_genome_path, "w") as f:
                 json.dump(self.best_genome.to_dict(), f, indent=2)
             logger.info(f"✅ Best genome saved to {best_genome_path}")
 
@@ -398,6 +434,7 @@ class StrategyGeneratorDemo:
         except Exception as e:
             logger.error(f"Demo failed: {e}")
             import traceback
+
             logger.debug(traceback.format_exc())
 
         finally:

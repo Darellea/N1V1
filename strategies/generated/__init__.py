@@ -13,17 +13,17 @@ Key Features:
 - Integration with existing strategy framework
 """
 
-import logging
-from typing import Dict, List, Any, Optional, Type
-from pathlib import Path
-from datetime import datetime
 import json
-import importlib
-import sys
-import os
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Type
 
+from optimization.strategy_generator import (
+    IndicatorType,
+    StrategyComponent,
+    StrategyGenome,
+)
 from strategies.base_strategy import BaseStrategy
-from optimization.strategy_generator import StrategyGenome, StrategyGene, StrategyComponent, IndicatorType, SignalLogic
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -37,9 +37,12 @@ class GeneratedStrategyRegistry:
         self.strategy_metadata: Dict[str, Dict[str, Any]] = {}
         self.generation_history: List[Dict[str, Any]] = []
 
-    def register_strategy(self, strategy_class: Type[BaseStrategy],
-                         genome: StrategyGenome,
-                         metadata: Optional[Dict[str, Any]] = None) -> str:
+    def register_strategy(
+        self,
+        strategy_class: Type[BaseStrategy],
+        genome: StrategyGenome,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
         """
         Register a generated strategy.
 
@@ -55,12 +58,12 @@ class GeneratedStrategyRegistry:
 
         self.strategies[strategy_id] = strategy_class
         self.strategy_metadata[strategy_id] = {
-            'genome': genome.to_dict(),
-            'created_at': datetime.now().isoformat(),
-            'fitness': genome.fitness,
-            'generation': genome.generation,
-            'species_id': genome.species_id,
-            'metadata': metadata or {}
+            "genome": genome.to_dict(),
+            "created_at": datetime.now().isoformat(),
+            "fitness": genome.fitness,
+            "generation": genome.generation,
+            "species_id": genome.species_id,
+            "metadata": metadata or {},
         }
 
         logger.info(f"Registered generated strategy: {strategy_id}")
@@ -81,13 +84,13 @@ class GeneratedStrategyRegistry:
     def save_registry(self, path: str) -> None:
         """Save registry to disk."""
         registry_data = {
-            'timestamp': datetime.now().isoformat(),
-            'strategies': self.strategy_metadata,
-            'generation_history': self.generation_history
+            "timestamp": datetime.now().isoformat(),
+            "strategies": self.strategy_metadata,
+            "generation_history": self.generation_history,
         }
 
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             json.dump(registry_data, f, indent=2, default=str)
 
         logger.info(f"Registry saved to {path}")
@@ -98,11 +101,11 @@ class GeneratedStrategyRegistry:
             logger.warning(f"Registry file not found: {path}")
             return
 
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             data = json.load(f)
 
-        self.strategy_metadata = data.get('strategies', {})
-        self.generation_history = data.get('generation_history', [])
+        self.strategy_metadata = data.get("strategies", {})
+        self.generation_history = data.get("generation_history", [])
 
         logger.info(f"Registry loaded from {path}")
 
@@ -115,8 +118,9 @@ class StrategyRuntime:
         self.active_strategies: Dict[str, BaseStrategy] = {}
         self.performance_monitor = StrategyPerformanceMonitor()
 
-    def create_strategy_from_genome(self, genome: StrategyGenome,
-                                   strategy_name: Optional[str] = None) -> Type[BaseStrategy]:
+    def create_strategy_from_genome(
+        self, genome: StrategyGenome, strategy_name: Optional[str] = None
+    ) -> Type[BaseStrategy]:
         """
         Create a strategy class from a genome definition.
 
@@ -171,7 +175,9 @@ class StrategyRuntime:
                     # Apply genome-based signal generation
                     signals = self._apply_genome_logic(data)
                 except Exception as e:
-                    logger.error(f"Error generating signals for {self.strategy_id}: {e}")
+                    logger.error(
+                        f"Error generating signals for {self.strategy_id}: {e}"
+                    )
 
                 return signals
 
@@ -183,11 +189,15 @@ class StrategyRuntime:
                 # In practice, this would be much more sophisticated
 
                 # Check for indicator-based signals
-                if IndicatorType.RSI in [IndicatorType(k) for k in self.indicators.keys()]:
+                if IndicatorType.RSI in [
+                    IndicatorType(k) for k in self.indicators.keys()
+                ]:
                     rsi_signals = self._generate_rsi_signals(data)
                     signals.extend(rsi_signals)
 
-                if IndicatorType.MACD in [IndicatorType(k) for k in self.indicators.keys()]:
+                if IndicatorType.MACD in [
+                    IndicatorType(k) for k in self.indicators.keys()
+                ]:
                     macd_signals = self._generate_macd_signals(data)
                     signals.extend(macd_signals)
 
@@ -200,24 +210,26 @@ class StrategyRuntime:
             def _generate_rsi_signals(self, data):
                 """Generate RSI-based signals."""
                 signals = []
-                rsi_params = self.indicators.get('rsi', {})
-                overbought = rsi_params.get('overbought', 70)
-                oversold = rsi_params.get('oversold', 30)
+                rsi_params = self.indicators.get("rsi", {})
+                overbought = rsi_params.get("overbought", 70)
+                oversold = rsi_params.get("oversold", 30)
 
                 # Mock RSI calculation and signal generation
                 for i in range(20, len(data)):
                     if i % 15 == 0:  # Generate signal every 15 bars
                         signal_type = "BUY" if i % 30 == 0 else "SELL"
-                        signals.append({
-                            'timestamp': data.index[i],
-                            'signal_type': signal_type,
-                            'symbol': self.config.get('symbols', ['BTC/USDT'])[0],
-                            'price': data.iloc[i]['close'],
-                            'metadata': {
-                                'strategy_id': self.strategy_id,
-                                'indicator': 'rsi'
+                        signals.append(
+                            {
+                                "timestamp": data.index[i],
+                                "signal_type": signal_type,
+                                "symbol": self.config.get("symbols", ["BTC/USDT"])[0],
+                                "price": data.iloc[i]["close"],
+                                "metadata": {
+                                    "strategy_id": self.strategy_id,
+                                    "indicator": "rsi",
+                                },
                             }
-                        })
+                        )
 
                 return signals
 
@@ -229,16 +241,18 @@ class StrategyRuntime:
                 for i in range(30, len(data)):
                     if i % 20 == 0:  # Generate signal every 20 bars
                         signal_type = "BUY" if i % 40 == 0 else "SELL"
-                        signals.append({
-                            'timestamp': data.index[i],
-                            'signal_type': signal_type,
-                            'symbol': self.config.get('symbols', ['BTC/USDT'])[0],
-                            'price': data.iloc[i]['close'],
-                            'metadata': {
-                                'strategy_id': self.strategy_id,
-                                'indicator': 'macd'
+                        signals.append(
+                            {
+                                "timestamp": data.index[i],
+                                "signal_type": signal_type,
+                                "symbol": self.config.get("symbols", ["BTC/USDT"])[0],
+                                "price": data.iloc[i]["close"],
+                                "metadata": {
+                                    "strategy_id": self.strategy_id,
+                                    "indicator": "macd",
+                                },
                             }
-                        })
+                        )
 
                 return signals
 
@@ -248,13 +262,18 @@ class StrategyRuntime:
 
                 for signal in signals:
                     # Apply volume filter if defined
-                    volume_threshold = self.filters.get('volume_threshold')
+                    volume_threshold = self.filters.get("volume_threshold")
                     if volume_threshold:
-                        signal_idx = data.index.get_loc(signal['timestamp'])
+                        signal_idx = data.index.get_loc(signal["timestamp"])
                         if signal_idx < len(data):
-                            volume = data.iloc[signal_idx]['volume']
-                            avg_volume = data['volume'].rolling(20).mean().iloc[signal_idx]
-                            if avg_volume > 0 and (volume / avg_volume) < volume_threshold:
+                            volume = data.iloc[signal_idx]["volume"]
+                            avg_volume = (
+                                data["volume"].rolling(20).mean().iloc[signal_idx]
+                            )
+                            if (
+                                avg_volume > 0
+                                and (volume / avg_volume) < volume_threshold
+                            ):
                                 continue  # Filter out signal
 
                     filtered_signals.append(signal)
@@ -267,8 +286,9 @@ class StrategyRuntime:
 
         return GeneratedStrategy
 
-    def load_strategy_from_genome(self, genome: StrategyGenome,
-                                 metadata: Optional[Dict[str, Any]] = None) -> str:
+    def load_strategy_from_genome(
+        self, genome: StrategyGenome, metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
         """
         Load a strategy from genome and register it.
 
@@ -285,7 +305,9 @@ class StrategyRuntime:
         logger.info(f"Loaded strategy {strategy_id} from genome")
         return strategy_id
 
-    def instantiate_strategy(self, strategy_id: str, config: Dict[str, Any]) -> Optional[BaseStrategy]:
+    def instantiate_strategy(
+        self, strategy_id: str, config: Dict[str, Any]
+    ) -> Optional[BaseStrategy]:
         """
         Instantiate a strategy for execution.
 
@@ -325,13 +347,13 @@ class StrategyRuntime:
     def save_runtime_state(self, path: str) -> None:
         """Save runtime state to disk."""
         state_data = {
-            'timestamp': datetime.now().isoformat(),
-            'active_strategies': list(self.active_strategies.keys()),
-            'performance_data': self.performance_monitor.get_performance_summary()
+            "timestamp": datetime.now().isoformat(),
+            "active_strategies": list(self.active_strategies.keys()),
+            "performance_data": self.performance_monitor.get_performance_summary(),
         }
 
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             json.dump(state_data, f, indent=2, default=str)
 
         # Also save registry
@@ -346,7 +368,7 @@ class StrategyRuntime:
             logger.warning(f"Runtime state file not found: {path}")
             return
 
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             data = json.load(f)
 
         # Load registry
@@ -369,16 +391,17 @@ class StrategyPerformanceMonitor:
         if strategy_id not in self.performance_data:
             self.performance_data[strategy_id] = []
 
-        self.performance_data[strategy_id].append({
-            'timestamp': datetime.now().isoformat(),
-            'trade_data': trade_data
-        })
+        self.performance_data[strategy_id].append(
+            {"timestamp": datetime.now().isoformat(), "trade_data": trade_data}
+        )
 
-    def update_health_check(self, strategy_id: str, health_data: Dict[str, Any]) -> None:
+    def update_health_check(
+        self, strategy_id: str, health_data: Dict[str, Any]
+    ) -> None:
         """Update health check data for a strategy."""
         self.health_checks[strategy_id] = {
-            'timestamp': datetime.now().isoformat(),
-            'health_data': health_data
+            "timestamp": datetime.now().isoformat(),
+            "health_data": health_data,
         }
 
     def get_performance_summary(self) -> Dict[str, Any]:
@@ -391,15 +414,15 @@ class StrategyPerformanceMonitor:
 
             # Calculate basic metrics
             total_trades = len(trades)
-            winning_trades = sum(1 for t in trades if t['trade_data'].get('pnl', 0) > 0)
-            total_pnl = sum(t['trade_data'].get('pnl', 0) for t in trades)
+            winning_trades = sum(1 for t in trades if t["trade_data"].get("pnl", 0) > 0)
+            total_pnl = sum(t["trade_data"].get("pnl", 0) for t in trades)
 
             summary[strategy_id] = {
-                'total_trades': total_trades,
-                'winning_trades': winning_trades,
-                'win_rate': winning_trades / total_trades if total_trades > 0 else 0,
-                'total_pnl': total_pnl,
-                'last_updated': datetime.now().isoformat()
+                "total_trades": total_trades,
+                "winning_trades": winning_trades,
+                "win_rate": winning_trades / total_trades if total_trades > 0 else 0,
+                "total_pnl": total_pnl,
+                "last_updated": datetime.now().isoformat(),
             }
 
         return summary
@@ -409,7 +432,7 @@ class StrategyPerformanceMonitor:
         unhealthy = []
 
         for strategy_id, summary in self.get_performance_summary().items():
-            if summary['win_rate'] < threshold:
+            if summary["win_rate"] < threshold:
                 unhealthy.append(strategy_id)
 
         return unhealthy
@@ -427,8 +450,9 @@ def get_strategy_runtime() -> StrategyRuntime:
     return _strategy_runtime
 
 
-def create_generated_strategy(genome: StrategyGenome,
-                             strategy_name: Optional[str] = None) -> Type[BaseStrategy]:
+def create_generated_strategy(
+    genome: StrategyGenome, strategy_name: Optional[str] = None
+) -> Type[BaseStrategy]:
     """
     Create a generated strategy from genome.
 
@@ -443,8 +467,9 @@ def create_generated_strategy(genome: StrategyGenome,
     return runtime.create_strategy_from_genome(genome, strategy_name)
 
 
-def load_generated_strategy(genome: StrategyGenome,
-                           metadata: Optional[Dict[str, Any]] = None) -> str:
+def load_generated_strategy(
+    genome: StrategyGenome, metadata: Optional[Dict[str, Any]] = None
+) -> str:
     """
     Load and register a generated strategy.
 
@@ -514,13 +539,13 @@ class GeneratedStrategy(BaseStrategy):
 
 # Export key classes and functions
 __all__ = [
-    'StrategyRuntime',
-    'GeneratedStrategyRegistry',
-    'StrategyPerformanceMonitor',
-    'GeneratedStrategy',
-    'get_strategy_runtime',
-    'create_generated_strategy',
-    'load_generated_strategy',
-    'get_generated_strategy',
-    'list_generated_strategies'
+    "StrategyRuntime",
+    "GeneratedStrategyRegistry",
+    "StrategyPerformanceMonitor",
+    "GeneratedStrategy",
+    "get_strategy_runtime",
+    "create_generated_strategy",
+    "load_generated_strategy",
+    "get_generated_strategy",
+    "list_generated_strategies",
 ]

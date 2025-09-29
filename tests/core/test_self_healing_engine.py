@@ -12,26 +12,32 @@ Tests cover:
 - Edge cases and error handling
 """
 
-import pytest
 import asyncio
 import time
 from datetime import datetime, timedelta
-from unittest.mock import Mock, AsyncMock, patch
-import psutil
-import os
+from unittest.mock import AsyncMock, Mock
 
+import pytest
+
+from core.diagnostics import HealthStatus
 from core.self_healing_engine import (
-    SelfHealingEngine, ComponentType, ComponentStatus,
-    ComponentRegistry, HealingOrchestrator, EmergencyProcedures,
-    MonitoringDashboard
+    ComponentRegistry,
+    ComponentStatus,
+    ComponentType,
+    EmergencyProcedures,
+    HealingOrchestrator,
+    MonitoringDashboard,
+    SelfHealingEngine,
 )
 from core.watchdog import (
-    WatchdogService, HeartbeatProtocol, FailureDetector,
-    RecoveryOrchestrator, StateManager, ComponentStatus as WatchdogStatus,
-    FailureSeverity, FailureType, HeartbeatMessage
+    FailureDetector,
+    FailureSeverity,
+    FailureType,
+    HeartbeatMessage,
+    HeartbeatProtocol,
+    StateManager,
+    WatchdogService,
 )
-from core.diagnostics import HealthStatus
-from core.signal_router.event_bus import get_default_enhanced_event_bus
 
 
 class TestComponentRegistry:
@@ -56,7 +62,7 @@ class TestComponentRegistry:
             ComponentType.BOT_ENGINE,
             mock_component,
             critical=True,
-            dependencies=["dep1", "dep2"]
+            dependencies=["dep1", "dep2"],
         )
 
         assert info.component_id == "test_component"
@@ -70,7 +76,9 @@ class TestComponentRegistry:
         registry = ComponentRegistry()
 
         mock_component = Mock()
-        registry.register_component("test_comp", ComponentType.BOT_ENGINE, mock_component)
+        registry.register_component(
+            "test_comp", ComponentType.BOT_ENGINE, mock_component
+        )
 
         # Unregister
         registry.unregister_component("test_comp")
@@ -82,7 +90,9 @@ class TestComponentRegistry:
         registry = ComponentRegistry()
 
         mock_component = Mock()
-        registry.register_component("test_comp", ComponentType.BOT_ENGINE, mock_component)
+        registry.register_component(
+            "test_comp", ComponentType.BOT_ENGINE, mock_component
+        )
 
         info = registry.get_component("test_comp")
         assert info is not None
@@ -113,9 +123,15 @@ class TestComponentRegistry:
         registry = ComponentRegistry()
 
         # Register critical and non-critical components
-        registry.register_component("critical1", ComponentType.BOT_ENGINE, Mock(), critical=True)
-        registry.register_component("critical2", ComponentType.DATABASE, Mock(), critical=True)
-        registry.register_component("normal1", ComponentType.STRATEGY, Mock(), critical=False)
+        registry.register_component(
+            "critical1", ComponentType.BOT_ENGINE, Mock(), critical=True
+        )
+        registry.register_component(
+            "critical2", ComponentType.DATABASE, Mock(), critical=True
+        )
+        registry.register_component(
+            "normal1", ComponentType.STRATEGY, Mock(), critical=False
+        )
 
         critical_components = registry.get_critical_components()
         assert len(critical_components) == 2
@@ -126,7 +142,9 @@ class TestComponentRegistry:
         registry = ComponentRegistry()
 
         mock_component = Mock()
-        registry.register_component("test_comp", ComponentType.BOT_ENGINE, mock_component)
+        registry.register_component(
+            "test_comp", ComponentType.BOT_ENGINE, mock_component
+        )
 
         # Update status
         registry.update_component_status("test_comp", healthy=True)
@@ -143,16 +161,22 @@ class TestComponentRegistry:
         registry = ComponentRegistry()
 
         # Register components
-        registry.register_component("comp1", ComponentType.BOT_ENGINE, Mock(), critical=True)
-        registry.register_component("comp2", ComponentType.STRATEGY, Mock(), critical=False)
-        registry.register_component("comp3", ComponentType.STRATEGY, Mock(), critical=False)
+        registry.register_component(
+            "comp1", ComponentType.BOT_ENGINE, Mock(), critical=True
+        )
+        registry.register_component(
+            "comp2", ComponentType.STRATEGY, Mock(), critical=False
+        )
+        registry.register_component(
+            "comp3", ComponentType.STRATEGY, Mock(), critical=False
+        )
 
         stats = registry.get_registry_stats()
 
-        assert stats['total_components'] == 3
-        assert stats['critical_components'] == 1
-        assert stats['healthy_components'] == 3  # All healthy initially
-        assert stats['failing_components'] == 0
+        assert stats["total_components"] == 3
+        assert stats["critical_components"] == 1
+        assert stats["healthy_components"] == 3  # All healthy initially
+        assert stats["failing_components"] == 0
 
 
 class TestHeartbeatProtocol:
@@ -172,9 +196,7 @@ class TestHeartbeatProtocol:
         protocol = HeartbeatProtocol("test_comp", "test_type")
 
         heartbeat = protocol.create_heartbeat(
-            status=ComponentStatus.HEALTHY,
-            latency_ms=45.2,
-            error_count=0
+            status=ComponentStatus.HEALTHY, latency_ms=45.2, error_count=0
         )
 
         assert heartbeat.component_id == "test_comp"
@@ -205,6 +227,7 @@ class TestHeartbeatProtocol:
 
         # Wait for overdue
         import time
+
         time.sleep(2)
 
         assert protocol.is_heartbeat_overdue() is True
@@ -247,7 +270,7 @@ class TestFailureDetector:
             version="1.0",
             timestamp=datetime.now(),
             status=ComponentStatus.HEALTHY,
-            latency_ms=50.0
+            latency_ms=50.0,
         )
 
         diagnosis = detector.process_heartbeat(heartbeat)
@@ -271,7 +294,7 @@ class TestFailureDetector:
                 version="1.0",
                 timestamp=datetime.now(),
                 status=ComponentStatus.HEALTHY,
-                latency_ms=50.0  # Normal latency
+                latency_ms=50.0,  # Normal latency
             )
             detector.process_heartbeat(heartbeat)
 
@@ -282,7 +305,7 @@ class TestFailureDetector:
             version="1.0",
             timestamp=datetime.now(),
             status=ComponentStatus.HEALTHY,
-            latency_ms=200.0  # High latency (anomaly)
+            latency_ms=200.0,  # High latency (anomaly)
         )
 
         diagnosis = detector.process_heartbeat(anomalous_heartbeat)
@@ -305,7 +328,7 @@ class TestFailureDetector:
                 timestamp=datetime.now(),
                 status=ComponentStatus.HEALTHY,
                 latency_ms=50.0 + i,  # Varying latency
-                memory_mb=100.0
+                memory_mb=100.0,
             )
             detector.process_heartbeat(heartbeat)
 
@@ -326,7 +349,7 @@ class TestFailureDetector:
             ("latency_spike", FailureType.PERFORMANCE),
             ("memory_leak", FailureType.RESOURCE),
             ("error_rate_spike", FailureType.LOGIC),
-            ("status_degradation", FailureType.CONNECTIVITY)
+            ("status_degradation", FailureType.CONNECTIVITY),
         ]
 
         for anomaly_type, expected_type in test_cases:
@@ -355,7 +378,9 @@ class TestRecoveryOrchestrator:
 
         # Mock component
         mock_component = Mock()
-        registry.register_component("test_comp", ComponentType.BOT_ENGINE, mock_component)
+        registry.register_component(
+            "test_comp", ComponentType.BOT_ENGINE, mock_component
+        )
 
         # Mock diagnosis
         diagnosis = Mock()
@@ -364,8 +389,12 @@ class TestRecoveryOrchestrator:
         diagnosis.severity = FailureSeverity.HIGH
         diagnosis.estimated_recovery_time = 60
 
-        action = await orchestrator.initiate_healing("test_comp", FailureType.CONNECTIVITY,
-                                                   FailureSeverity.HIGH, diagnosis.to_dict())
+        action = await orchestrator.initiate_healing(
+            "test_comp",
+            FailureType.CONNECTIVITY,
+            FailureSeverity.HIGH,
+            diagnosis.to_dict(),
+        )
 
         assert action is not None
         assert action.component_id == "test_comp"
@@ -390,10 +419,14 @@ class TestRecoveryOrchestrator:
         orchestrator = HealingOrchestrator({}, ComponentRegistry())
 
         # Test different combinations
-        timeout = orchestrator._calculate_timeout(FailureSeverity.CRITICAL, FailureType.CONNECTIVITY)
+        timeout = orchestrator._calculate_timeout(
+            FailureSeverity.CRITICAL, FailureType.CONNECTIVITY
+        )
         assert timeout == 60  # Reduced for connectivity
 
-        timeout = orchestrator._calculate_timeout(FailureSeverity.HIGH, FailureType.RESOURCE)
+        timeout = orchestrator._calculate_timeout(
+            FailureSeverity.HIGH, FailureType.RESOURCE
+        )
         assert timeout == 480  # Increased for resource issues
 
     def test_recovery_stats(self):
@@ -406,9 +439,9 @@ class TestRecoveryOrchestrator:
 
         stats = orchestrator.get_healing_stats()
 
-        assert stats['completed_actions'] == 5
-        assert stats['failed_actions'] == 2
-        assert stats['success_rate'] == 5 / 7  # 5/7 ≈ 0.714
+        assert stats["completed_actions"] == 5
+        assert stats["failed_actions"] == 2
+        assert stats["success_rate"] == 5 / 7  # 5/7 ≈ 0.714
 
 
 class TestStateManager:
@@ -430,7 +463,7 @@ class TestStateManager:
 
         assert snapshot_id.startswith("test_comp_")
         assert snapshot_id in manager.state_snapshots
-        assert manager.state_snapshots[snapshot_id]['data'] == state_data
+        assert manager.state_snapshots[snapshot_id]["data"] == state_data
 
     def test_snapshot_restoration(self):
         """Test state snapshot restoration."""
@@ -511,7 +544,7 @@ class TestWatchdogService:
             component_type="test_type",
             version="1.0",
             timestamp=datetime.now(),
-            status=ComponentStatus.HEALTHY
+            status=ComponentStatus.HEALTHY,
         )
 
         # Process heartbeat
@@ -548,10 +581,10 @@ class TestWatchdogService:
 
         stats = watchdog.get_watchdog_stats()
 
-        assert stats['heartbeats_received'] == 100
-        assert stats['failures_detected'] == 5
-        assert stats['recoveries_initiated'] == 3
-        assert stats['recoveries_successful'] == 2
+        assert stats["heartbeats_received"] == 100
+        assert stats["failures_detected"] == 5
+        assert stats["recoveries_initiated"] == 3
+        assert stats["recoveries_successful"] == 2
 
     def test_component_status(self):
         """Test component status retrieval."""
@@ -563,8 +596,8 @@ class TestWatchdogService:
         status = watchdog.get_component_status("test_comp")
 
         assert status is not None
-        assert status['component_id'] == "test_comp"
-        assert status['component_type'] == "test_type"
+        assert status["component_id"] == "test_comp"
+        assert status["component_type"] == "test_type"
 
         # Non-existent component
         status = watchdog.get_component_status("nonexistent")
@@ -643,23 +676,20 @@ class TestMonitoringDashboard:
 
         # Directly set dashboard data to simulate the mocked data
         dashboard.dashboard_data = {
-            'registry_stats': {
-                'total_components': 10,
-                'healthy_components': 8,
-                'failing_components': 2
+            "registry_stats": {
+                "total_components": 10,
+                "healthy_components": 8,
+                "failing_components": 2,
             },
-            'watchdog_stats': {
-                'heartbeats_received': 100,
-                'failures_detected': 2
-            },
-            'diagnostic_status': {}
+            "watchdog_stats": {"heartbeats_received": 100, "failures_detected": 2},
+            "diagnostic_status": {},
         }
 
         data = dashboard.get_dashboard_data()
-        system_health = data['system_health']
+        system_health = data["system_health"]
 
-        assert system_health['overall_health'] == "DEGRADED"  # 20% failing
-        assert system_health['health_score'] == 75  # 75% healthy
+        assert system_health["overall_health"] == "DEGRADED"  # 20% failing
+        assert system_health["health_score"] == 75  # 75% healthy
 
     def test_component_status_summary(self):
         """Test component status summary."""
@@ -668,15 +698,19 @@ class TestMonitoringDashboard:
         dashboard = MonitoringDashboard({}, registry, watchdog)
 
         # Register components
-        registry.register_component("comp1", ComponentType.BOT_ENGINE, Mock(), critical=True)
-        registry.register_component("comp2", ComponentType.STRATEGY, Mock(), critical=False)
+        registry.register_component(
+            "comp1", ComponentType.BOT_ENGINE, Mock(), critical=True
+        )
+        registry.register_component(
+            "comp2", ComponentType.STRATEGY, Mock(), critical=False
+        )
 
         data = dashboard.get_dashboard_data()
-        component_status = data['component_status']
+        component_status = data["component_status"]
 
         assert len(component_status) == 2
-        assert component_status[0]['component_id'] == "comp1"
-        assert component_status[1]['component_id'] == "comp2"
+        assert component_status[0]["component_id"] == "comp1"
+        assert component_status[1]["component_id"] == "comp2"
 
     def test_failure_statistics(self):
         """Test failure statistics calculation."""
@@ -686,27 +720,27 @@ class TestMonitoringDashboard:
 
         # Directly set dashboard data to simulate the mocked data
         dashboard.dashboard_data = {
-            'registry_stats': {
-                'total_components': 10,
-                'healthy_components': 8,
-                'failing_components': 2
+            "registry_stats": {
+                "total_components": 10,
+                "healthy_components": 8,
+                "failing_components": 2,
             },
-            'watchdog_stats': {
-                'heartbeats_received': 100,
-                'failures_detected': 5,
-                'recoveries_initiated': 5,
-                'recoveries_successful': 4
+            "watchdog_stats": {
+                "heartbeats_received": 100,
+                "failures_detected": 5,
+                "recoveries_initiated": 5,
+                "recoveries_successful": 4,
             },
-            'diagnostic_status': {}
+            "diagnostic_status": {},
         }
 
         data = dashboard.get_dashboard_data()
-        failure_stats = data['failure_stats']
+        failure_stats = data["failure_stats"]
 
-        assert failure_stats['total_failures'] == 5
-        assert failure_stats['recovery_attempts'] == 5
-        assert failure_stats['successful_recoveries'] == 4
-        assert failure_stats['recovery_success_rate'] == 80.0
+        assert failure_stats["total_failures"] == 5
+        assert failure_stats["recovery_attempts"] == 5
+        assert failure_stats["successful_recoveries"] == 4
+        assert failure_stats["recovery_success_rate"] == 80.0
 
 
 class TestSelfHealingEngine:
@@ -730,10 +764,7 @@ class TestSelfHealingEngine:
 
         mock_component = Mock()
         engine.register_component(
-            "test_comp",
-            ComponentType.BOT_ENGINE,
-            mock_component,
-            critical=True
+            "test_comp", ComponentType.BOT_ENGINE, mock_component, critical=True
         )
 
         # Should be registered in component registry
@@ -759,7 +790,7 @@ class TestSelfHealingEngine:
             component_id="test_comp",
             status=ComponentStatus.HEALTHY,
             latency_ms=45.0,
-            error_count=0
+            error_count=0,
         )
 
         # Should have updated component status
@@ -776,11 +807,11 @@ class TestSelfHealingEngine:
 
         stats = engine.get_engine_stats()
 
-        assert stats['total_failures_handled'] == 10
-        assert stats['total_recoveries_successful'] == 8
-        assert 'registry_stats' in stats
-        assert 'healing_stats' in stats
-        assert 'watchdog_stats' in stats
+        assert stats["total_failures_handled"] == 10
+        assert stats["total_recoveries_successful"] == 8
+        assert "registry_stats" in stats
+        assert "healing_stats" in stats
+        assert "watchdog_stats" in stats
 
     def test_component_status_retrieval(self):
         """Test component status retrieval."""
@@ -793,8 +824,8 @@ class TestSelfHealingEngine:
         status = engine.get_component_status("test_comp")
 
         assert status is not None
-        assert status['component_id'] == "test_comp"
-        assert status['component_type'] == "BOT_ENGINE"
+        assert status["component_id"] == "test_comp"
+        assert status["component_type"] == "BOT_ENGINE"
 
         # Non-existent component
         status = engine.get_component_status("nonexistent")
@@ -808,6 +839,7 @@ class TestIntegrationWithN1V1:
     async def test_bot_engine_integration(self):
         """Test integration with BotEngine."""
         from unittest.mock import Mock
+
         mock_bot_engine = Mock()
 
         # Create a fresh engine instance to avoid counter accumulation
@@ -819,10 +851,7 @@ class TestIntegrationWithN1V1:
 
         # Register bot engine
         engine.register_component(
-            "bot_engine_main",
-            ComponentType.BOT_ENGINE,
-            mock_bot_engine,
-            critical=True
+            "bot_engine_main", ComponentType.BOT_ENGINE, mock_bot_engine, critical=True
         )
 
         # Send heartbeat
@@ -832,10 +861,10 @@ class TestIntegrationWithN1V1:
             latency_ms=50.0,
             error_count=0,
             custom_metrics={
-                'active_orders': 5,
-                'open_positions': 2,
-                'total_pnl': 150.0
-            }
+                "active_orders": 5,
+                "open_positions": 2,
+                "total_pnl": 150.0,
+            },
         )
 
         # Should have processed heartbeat
@@ -852,26 +881,31 @@ class TestIntegrationWithN1V1:
         # Register health check
         async def check_self_healing_engine():
             from core.diagnostics import HealthCheckResult
+
             stats = engine.get_engine_stats()
-            total_components = stats['registry_stats']['total_components']
+            total_components = stats["registry_stats"]["total_components"]
 
-            status = HealthStatus.HEALTHY if total_components >= 0 else HealthStatus.DEGRADED
-
-            return HealthCheckResult(
-                component='self_healing_engine',
-                status=status,
-                latency_ms=10.0,
-                message=f'Engine healthy: {total_components} components monitored',
-                details={'monitored_components': total_components}
+            status = (
+                HealthStatus.HEALTHY if total_components >= 0 else HealthStatus.DEGRADED
             )
 
-        diagnostics.register_health_check('self_healing_engine', check_self_healing_engine)
+            return HealthCheckResult(
+                component="self_healing_engine",
+                status=status,
+                latency_ms=10.0,
+                message=f"Engine healthy: {total_components} components monitored",
+                details={"monitored_components": total_components},
+            )
+
+        diagnostics.register_health_check(
+            "self_healing_engine", check_self_healing_engine
+        )
 
         # Run health check
         state = await diagnostics.run_health_check()
 
         # Should have self-healing engine health data
-        assert 'self_healing_engine' in state.component_statuses
+        assert "self_healing_engine" in state.component_statuses
 
     @pytest.mark.asyncio
     async def test_event_bus_integration(self):
@@ -890,7 +924,7 @@ class TestIntegrationWithN1V1:
             component_id="test_comp",
             status=ComponentStatus.CRITICAL,
             latency_ms=1000.0,
-            error_count=10
+            error_count=10,
         )
 
         # Should have published failure event
@@ -917,7 +951,7 @@ class TestPerformance:
                 component_id="test_comp",
                 status=ComponentStatus.HEALTHY,
                 latency_ms=50.0 + i * 0.1,
-                error_count=0
+                error_count=0,
             )
 
         performance_timer.stop()
@@ -940,7 +974,9 @@ class TestPerformance:
         # Register multiple components
         for i in range(10):
             mock_component = Mock()
-            engine.register_component(f"comp_{i}", ComponentType.STRATEGY, mock_component)
+            engine.register_component(
+                f"comp_{i}", ComponentType.STRATEGY, mock_component
+            )
 
         # Send heartbeats concurrently
         tasks = []
@@ -949,7 +985,7 @@ class TestPerformance:
                 component_id=f"comp_{i}",
                 status=ComponentStatus.HEALTHY,
                 latency_ms=50.0,
-                error_count=0
+                error_count=0,
             )
             tasks.append(task)
 
@@ -968,13 +1004,15 @@ class TestPerformance:
         # Register components and send heartbeats
         for i in range(50):
             mock_component = Mock()
-            engine.register_component(f"comp_{i}", ComponentType.STRATEGY, mock_component)
+            engine.register_component(
+                f"comp_{i}", ComponentType.STRATEGY, mock_component
+            )
 
             await engine.send_heartbeat(
                 component_id=f"comp_{i}",
                 status=ComponentStatus.HEALTHY,
                 latency_ms=50.0,
-                error_count=0
+                error_count=0,
             )
 
         memory_delta = memory_monitor.get_memory_delta()
@@ -1002,8 +1040,7 @@ class TestErrorHandling:
 
         # Should handle gracefully
         await engine.send_heartbeat(
-            component_id="nonexistent",
-            status=ComponentStatus.HEALTHY
+            component_id="nonexistent", status=ComponentStatus.HEALTHY
         )
 
         # No errors should occur
@@ -1022,8 +1059,7 @@ class TestErrorHandling:
 
         # Send failing heartbeat
         await engine.send_heartbeat(
-            component_id="test_comp",
-            status=ComponentStatus.CRITICAL
+            component_id="test_comp", status=ComponentStatus.CRITICAL
         )
 
         # Should handle failure gracefully
@@ -1038,17 +1074,13 @@ class TestErrorHandling:
         for i in range(20):
             mock_component = Mock()
             engine.register_component(
-                f"critical_{i}",
-                ComponentType.BOT_ENGINE,
-                mock_component,
-                critical=True
+                f"critical_{i}", ComponentType.BOT_ENGINE, mock_component, critical=True
             )
 
         # Fail many critical components
         for i in range(12):  # More than 50%
             await engine.send_heartbeat(
-                component_id=f"critical_{i}",
-                status=ComponentStatus.CRITICAL
+                component_id=f"critical_{i}", status=ComponentStatus.CRITICAL
             )
 
         # Should potentially trigger emergency mode
@@ -1080,7 +1112,7 @@ class TestReliability:
                 component_id="test_comp",
                 status=ComponentStatus.HEALTHY,
                 latency_ms=50.0,
-                error_count=0
+                error_count=0,
             )
             await asyncio.sleep(0.01)  # Small delay
 

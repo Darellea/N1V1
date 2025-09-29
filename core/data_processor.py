@@ -5,17 +5,14 @@ Implements vectorized operations, caching, and batch processing
 for efficient market data analysis and signal generation.
 """
 
-import asyncio
+import hashlib
 import logging
 import time
-from typing import Dict, Any, Optional, List, Tuple
-from functools import lru_cache
-import weakref
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 from numba import jit
-import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +51,9 @@ class DataProcessor:
         self._cache_hits = 0
         self._cache_misses = 0
 
-    def _get_cache_key(self, operation: str, data_hash: str, params: Dict[str, Any]) -> str:
+    def _get_cache_key(
+        self, operation: str, data_hash: str, params: Dict[str, Any]
+    ) -> str:
         """Generate a unique cache key for an operation."""
         params_str = str(sorted(params.items()))
         key_str = f"{operation}:{data_hash}:{params_str}"
@@ -75,7 +74,7 @@ class DataProcessor:
             return False
 
         metadata = self._cache_metadata[cache_key]
-        age = time.time() - metadata['timestamp']
+        age = time.time() - metadata["timestamp"]
         return age < self.cache_ttl
 
     def _get_cached_result(self, cache_key: str) -> Optional[pd.DataFrame]:
@@ -87,7 +86,7 @@ class DataProcessor:
             return None
 
         self._cache_hits += 1
-        self._cache_metadata[cache_key]['timestamp'] = time.time()
+        self._cache_metadata[cache_key]["timestamp"] = time.time()
         return self._indicator_cache[cache_key]
 
     def _cache_result(self, cache_key: str, result: pd.DataFrame):
@@ -97,8 +96,9 @@ class DataProcessor:
         # Clean up expired entries if cache is full
         if len(self._indicator_cache) >= self.cache_size:
             expired_keys = [
-                k for k, metadata in self._cache_metadata.items()
-                if current_time - metadata['timestamp'] > self.cache_ttl
+                k
+                for k, metadata in self._cache_metadata.items()
+                if current_time - metadata["timestamp"] > self.cache_ttl
             ]
             for k in expired_keys:
                 if k in self._indicator_cache:
@@ -110,7 +110,7 @@ class DataProcessor:
             # Sort by access time and remove oldest 10
             oldest_keys = sorted(
                 self._cache_metadata.keys(),
-                key=lambda k: self._cache_metadata[k]['timestamp']
+                key=lambda k: self._cache_metadata[k]["timestamp"],
             )[:10]
 
             for k in oldest_keys:
@@ -121,8 +121,10 @@ class DataProcessor:
         # Store the result
         self._indicator_cache[cache_key] = result
         self._cache_metadata[cache_key] = {
-            'timestamp': current_time,
-            'size': result.memory_usage(deep=True).sum() if hasattr(result, 'memory_usage') else 0
+            "timestamp": current_time,
+            "size": result.memory_usage(deep=True).sum()
+            if hasattr(result, "memory_usage")
+            else 0,
         }
         self._cache_misses += 1
 
@@ -145,8 +147,8 @@ class DataProcessor:
         losses = np.where(delta < 0, -delta, 0)
 
         # Calculate initial averages
-        avg_gain = np.mean(gains[1:period+1])
-        avg_loss = np.mean(losses[1:period+1])
+        avg_gain = np.mean(gains[1 : period + 1])
+        avg_loss = np.mean(losses[1 : period + 1])
 
         if avg_loss == 0:
             rsi_values[period] = 100.0
@@ -167,8 +169,9 @@ class DataProcessor:
 
         return rsi_values
 
-    def calculate_rsi_batch(self, data_dict: Dict[str, pd.DataFrame],
-                           period: int = 14) -> Dict[str, pd.DataFrame]:
+    def calculate_rsi_batch(
+        self, data_dict: Dict[str, pd.DataFrame], period: int = 14
+    ) -> Dict[str, pd.DataFrame]:
         """Calculate RSI for multiple symbols in batch."""
         # Input validation
         if not isinstance(data_dict, dict):
@@ -186,22 +189,28 @@ class DataProcessor:
                 logger.warning("Invalid symbol: %s, skipping", symbol)
                 continue
             if not isinstance(data, pd.DataFrame):
-                logger.warning("Invalid data type for %s: expected DataFrame, got %s", symbol, type(data))
+                logger.warning(
+                    "Invalid data type for %s: expected DataFrame, got %s",
+                    symbol,
+                    type(data),
+                )
                 continue
             if data.empty:
                 logger.warning("Empty DataFrame for %s, skipping", symbol)
                 continue
-            if 'close' not in data.columns:
+            if "close" not in data.columns:
                 logger.warning("Missing 'close' column for %s, skipping", symbol)
                 continue
             if len(data) < period:
-                logger.warning("Insufficient data for %s: %d < %d", symbol, len(data), period)
+                logger.warning(
+                    "Insufficient data for %s: %d < %d", symbol, len(data), period
+                )
                 results[symbol] = data.copy()
                 continue
 
             # Check cache first
             data_hash = self._get_data_hash(data)
-            cache_key = self._get_cache_key('rsi', data_hash, {'period': period})
+            cache_key = self._get_cache_key("rsi", data_hash, {"period": period})
             cached_result = self._get_cached_result(cache_key)
 
             if cached_result is not None:
@@ -209,12 +218,12 @@ class DataProcessor:
                 continue
 
             # Calculate RSI using vectorized approach
-            prices = data['close'].values
+            prices = data["close"].values
             rsi_values = self._vectorized_rsi(prices, period)
 
             # Create result DataFrame
             result_df = data.copy()
-            result_df['rsi'] = rsi_values
+            result_df["rsi"] = rsi_values
 
             # Cache the result
             self._cache_result(cache_key, result_df)
@@ -234,7 +243,9 @@ class DataProcessor:
 
         # Calculate cumulative sum for efficient moving average
         cumsum = np.cumsum(values)
-        sma_values[period-1:] = (cumsum[period-1:] - np.roll(cumsum, period)[period-1:]) / period
+        sma_values[period - 1 :] = (
+            cumsum[period - 1 :] - np.roll(cumsum, period)[period - 1 :]
+        ) / period
 
         return sma_values
 
@@ -252,17 +263,22 @@ class DataProcessor:
         multiplier = 2 / (period + 1)
 
         # Calculate initial SMA
-        ema_values[period-1] = np.mean(values[:period])
+        ema_values[period - 1] = np.mean(values[:period])
 
         # Calculate subsequent EMA values
         for i in range(period, n):
-            ema_values[i] = (values[i] - ema_values[i-1]) * multiplier + ema_values[i-1]
+            ema_values[i] = (values[i] - ema_values[i - 1]) * multiplier + ema_values[
+                i - 1
+            ]
 
         return ema_values
 
-    def calculate_moving_averages_batch(self, data_dict: Dict[str, pd.DataFrame],
-                                       periods: List[int] = None,
-                                       ma_type: str = 'sma') -> Dict[str, pd.DataFrame]:
+    def calculate_moving_averages_batch(
+        self,
+        data_dict: Dict[str, pd.DataFrame],
+        periods: List[int] = None,
+        ma_type: str = "sma",
+    ) -> Dict[str, pd.DataFrame]:
         """Calculate moving averages for multiple symbols in batch."""
         if periods is None:
             periods = [10, 20, 50]
@@ -282,24 +298,24 @@ class DataProcessor:
 
                 # Check cache
                 data_hash = self._get_data_hash(data)
-                cache_key = self._get_cache_key(f'{ma_type}_{period}', data_hash, {})
+                cache_key = self._get_cache_key(f"{ma_type}_{period}", data_hash, {})
                 cached_result = self._get_cached_result(cache_key)
 
                 if cached_result is not None:
-                    result_df[f'{ma_type}_{period}'] = cached_result
+                    result_df[f"{ma_type}_{period}"] = cached_result
                     continue
 
                 # Calculate moving average
-                prices = data['close'].values
+                prices = data["close"].values
 
-                if ma_type == 'sma':
+                if ma_type == "sma":
                     ma_values = self._vectorized_sma(prices, period)
-                elif ma_type == 'ema':
+                elif ma_type == "ema":
                     ma_values = self._vectorized_ema(prices, period)
                 else:
                     continue
 
-                result_df[f'{ma_type}_{period}'] = ma_values
+                result_df[f"{ma_type}_{period}"] = ma_values
 
                 # Cache individual MA calculation
                 self._cache_result(cache_key, ma_values)
@@ -310,7 +326,9 @@ class DataProcessor:
 
     @staticmethod
     @jit(nopython=True)
-    def _vectorized_bollinger_bands(prices: np.ndarray, period: int, std_dev: float = 2.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def _vectorized_bollinger_bands(
+        prices: np.ndarray, period: int, std_dev: float = 2.0
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Vectorized Bollinger Bands calculation."""
         n = len(prices)
         upper = np.full(n, np.nan)
@@ -321,7 +339,7 @@ class DataProcessor:
             return upper, middle, lower
 
         for i in range(period - 1, n):
-            window = prices[max(0, i - period + 1):i + 1]
+            window = prices[max(0, i - period + 1) : i + 1]
             mean = np.mean(window)
             std = np.std(window)
 
@@ -331,11 +349,12 @@ class DataProcessor:
 
         return upper, middle, lower
 
-    def calculate_technical_indicators_batch(self, data_dict: Dict[str, pd.DataFrame],
-                                           indicators: List[str] = None) -> Dict[str, pd.DataFrame]:
+    def calculate_technical_indicators_batch(
+        self, data_dict: Dict[str, pd.DataFrame], indicators: List[str] = None
+    ) -> Dict[str, pd.DataFrame]:
         """Calculate multiple technical indicators in batch for performance."""
         if indicators is None:
-            indicators = ['rsi', 'sma', 'bb']
+            indicators = ["rsi", "sma", "bb"]
 
         results = {}
 
@@ -347,37 +366,42 @@ class DataProcessor:
             result_df = data.copy()
 
             # RSI
-            if 'rsi' in indicators:
+            if "rsi" in indicators:
                 rsi_data = self.calculate_rsi_batch({symbol: data}, period=14)
-                if symbol in rsi_data and 'rsi' in rsi_data[symbol].columns:
-                    result_df['rsi'] = rsi_data[symbol]['rsi']
+                if symbol in rsi_data and "rsi" in rsi_data[symbol].columns:
+                    result_df["rsi"] = rsi_data[symbol]["rsi"]
 
             # Moving Averages
-            if 'sma' in indicators:
-                sma_data = self.calculate_moving_averages_batch({symbol: data},
-                                                              periods=[10, 20, 50],
-                                                              ma_type='sma')
+            if "sma" in indicators:
+                sma_data = self.calculate_moving_averages_batch(
+                    {symbol: data}, periods=[10, 20, 50], ma_type="sma"
+                )
                 if symbol in sma_data:
                     for col in sma_data[symbol].columns:
-                        if col.startswith('sma_'):
+                        if col.startswith("sma_"):
                             result_df[col] = sma_data[symbol][col]
 
             # Bollinger Bands
-            if 'bb' in indicators and len(data) >= 20:
-                prices = data['close'].values
+            if "bb" in indicators and len(data) >= 20:
+                prices = data["close"].values
                 upper, middle, lower = self._vectorized_bollinger_bands(prices, 20)
 
-                result_df['bb_upper'] = upper
-                result_df['bb_middle'] = middle
-                result_df['bb_lower'] = lower
+                result_df["bb_upper"] = upper
+                result_df["bb_middle"] = middle
+                result_df["bb_lower"] = lower
 
             results[symbol] = result_df
 
         return results
 
-    def add_binary_labels_batch(self, data_dict: Dict[str, pd.DataFrame],
-                               horizon: int = 5, profit_threshold: float = 0.005,
-                               include_fees: bool = True, fee_rate: float = 0.001) -> Dict[str, pd.DataFrame]:
+    def add_binary_labels_batch(
+        self,
+        data_dict: Dict[str, pd.DataFrame],
+        horizon: int = 5,
+        profit_threshold: float = 0.005,
+        include_fees: bool = True,
+        fee_rate: float = 0.001,
+    ) -> Dict[str, pd.DataFrame]:
         """
         Add binary labels to multiple datasets in batch.
 
@@ -407,7 +431,7 @@ class DataProcessor:
                     horizon=horizon,
                     profit_threshold=profit_threshold,
                     include_fees=include_fees,
-                    fee_rate=fee_rate
+                    fee_rate=fee_rate,
                 )
                 results[symbol] = labeled_data
                 logger.info(f"Added binary labels to {symbol} dataset")
@@ -418,8 +442,9 @@ class DataProcessor:
 
         return results
 
-    def batch_process_signals(self, data_dict: Dict[str, pd.DataFrame],
-                            signal_functions: List[callable]) -> Dict[str, List[Any]]:
+    def batch_process_signals(
+        self, data_dict: Dict[str, pd.DataFrame], signal_functions: List[callable]
+    ) -> Dict[str, List[Any]]:
         """Process signals for multiple symbols in batch."""
         results = {}
 
@@ -441,7 +466,9 @@ class DataProcessor:
 
         return results
 
-    def get_object_from_pool(self, object_type: str, factory_func: callable, *args, **kwargs):
+    def get_object_from_pool(
+        self, object_type: str, factory_func: callable, *args, **kwargs
+    ):
         """Get an object from the pool or create a new one."""
         if object_type not in self._object_pool:
             self._object_pool[object_type] = []
@@ -450,7 +477,7 @@ class DataProcessor:
 
         # Try to find an available object
         for obj in pool:
-            if hasattr(obj, '_in_use') and not obj._in_use:
+            if hasattr(obj, "_in_use") and not obj._in_use:
                 obj._in_use = True
                 return obj
 
@@ -466,7 +493,7 @@ class DataProcessor:
 
     def return_object_to_pool(self, object_type: str, obj: Any):
         """Return an object to the pool."""
-        if hasattr(obj, '_in_use'):
+        if hasattr(obj, "_in_use"):
             obj._in_use = False
 
     def cleanup_pool(self, object_type: str = None):
@@ -475,7 +502,7 @@ class DataProcessor:
             if object_type in self._object_pool:
                 # Clean up objects that have been in the pool too long
                 pool = self._object_pool[object_type]
-                active_objects = [obj for obj in pool if getattr(obj, '_in_use', False)]
+                active_objects = [obj for obj in pool if getattr(obj, "_in_use", False)]
 
                 # Keep only active objects
                 self._object_pool[object_type] = active_objects
@@ -487,7 +514,9 @@ class DataProcessor:
     def get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics for the data processor."""
         total_operations = self._cache_hits + self._cache_misses
-        cache_hit_rate = self._cache_hits / total_operations if total_operations > 0 else 0
+        cache_hit_rate = (
+            self._cache_hits / total_operations if total_operations > 0 else 0
+        )
 
         return {
             "cache_size": len(self._indicator_cache),
@@ -496,14 +525,16 @@ class DataProcessor:
             "cache_misses": self._cache_misses,
             "total_operations": total_operations,
             "object_pools": {k: len(v) for k, v in self._object_pool.items()},
-            "memory_usage_estimate": self._estimate_memory_usage()
+            "memory_usage_estimate": self._estimate_memory_usage(),
         }
 
     def _estimate_memory_usage(self) -> int:
         """Estimate memory usage of cached data."""
         # Rough estimation
         cache_memory = len(self._indicator_cache) * 1024  # ~1KB per cached item
-        pool_memory = sum(len(pool) * 512 for pool in self._object_pool.values())  # ~512B per pooled object
+        pool_memory = sum(
+            len(pool) * 512 for pool in self._object_pool.values()
+        )  # ~512B per pooled object
 
         return cache_memory + pool_memory
 
@@ -515,8 +546,13 @@ class DataProcessor:
         self._cache_misses = 0
         logger.info("Data processor cache cleared")
 
-    async def lazy_load_data(self, symbol: str, data_fetcher, timeframe: str = '1h',
-                           required_length: int = 100) -> Optional[pd.DataFrame]:
+    async def lazy_load_data(
+        self,
+        symbol: str,
+        data_fetcher,
+        timeframe: str = "1h",
+        required_length: int = 100,
+    ) -> Optional[pd.DataFrame]:
         """Lazily load data only when needed."""
         # Check if we have sufficient data in cache
         cache_key = f"lazy_{symbol}_{timeframe}_{required_length}"
@@ -530,7 +566,7 @@ class DataProcessor:
             data = await data_fetcher.get_historical_data(
                 symbol=symbol,
                 timeframe=timeframe,
-                limit=max(required_length, 1000)  # Load extra for future use
+                limit=max(required_length, 1000),  # Load extra for future use
             )
 
             if not data.empty and len(data) >= required_length:
@@ -545,6 +581,7 @@ class DataProcessor:
 
 # Global data processor instance
 _data_processor = None
+
 
 def get_data_processor() -> DataProcessor:
     """Get the global data processor instance."""

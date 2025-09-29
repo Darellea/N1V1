@@ -5,17 +5,16 @@ Tests metrics collection, performance tracking, calibration monitoring, drift de
 alert generation, and health monitoring for the binary entry model.
 """
 
-import pytest
 import asyncio
-import numpy as np
-from unittest.mock import Mock, AsyncMock, patch
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
 
 from core.binary_model_metrics import (
     BinaryModelMetricsCollector,
+    create_binary_model_metrics_collector,
     get_binary_model_metrics_collector,
-    create_binary_model_metrics_collector
 )
 from core.metrics_collector import MetricsCollector
 
@@ -43,11 +42,11 @@ class TestBinaryModelMetricsCollectorInitialization:
             "drift_detection": {
                 "trade_frequency_change": 0.3,
                 "accuracy_drop": 0.15,
-                "calibration_error": 0.25
+                "calibration_error": 0.25,
             },
             "metrics_window_hours": 48,
             "max_history_size": 5000,
-            "alert_cooldown_minutes": 30
+            "alert_cooldown_minutes": 30,
         }
 
         collector = BinaryModelMetricsCollector(config)
@@ -67,7 +66,7 @@ class TestBinaryModelMetricsCollectorInitialization:
         expected_thresholds = {
             "trade_frequency_change": 0.5,
             "accuracy_drop": 0.1,
-            "calibration_error": 0.2
+            "calibration_error": 0.2,
         }
 
         assert collector.drift_thresholds == expected_thresholds
@@ -90,7 +89,7 @@ class TestPredictionRecording:
             probability=0.75,
             threshold=0.6,
             regime="bullish",
-            features=features
+            features=features,
         )
 
         assert len(collector.prediction_history) == 1
@@ -114,7 +113,7 @@ class TestPredictionRecording:
             probability=0.75,
             threshold=0.6,
             regime="bullish",
-            features={"RSI": 65.0}
+            features={"RSI": 65.0},
         )
 
         assert len(collector.prediction_history) == 0
@@ -126,7 +125,7 @@ class TestPredictionRecording:
             probability=0.45,
             threshold=0.6,
             regime="bearish",
-            features={"RSI": 30.0}
+            features={"RSI": 30.0},
         )
 
         assert len(collector.prediction_history) == 1
@@ -146,7 +145,7 @@ class TestPredictionRecording:
                 probability=0.6 + i * 0.1,
                 threshold=0.6,
                 regime="bullish",
-                features={"RSI": 50.0 + i}
+                features={"RSI": 50.0 + i},
             )
 
         assert len(collector.prediction_history) == 3
@@ -171,7 +170,7 @@ class TestDecisionOutcomeRecording:
             outcome="profit",
             pnl=150.0,
             regime="bullish",
-            strategy="RSIStrategy"
+            strategy="RSIStrategy",
         )
 
         assert len(collector.decision_history) == 1
@@ -197,7 +196,7 @@ class TestDecisionOutcomeRecording:
             outcome="profit",
             pnl=150.0,
             regime="bullish",
-            strategy="RSIStrategy"
+            strategy="RSIStrategy",
         )
 
         assert len(collector.decision_history) == 0
@@ -210,7 +209,7 @@ class TestDecisionOutcomeRecording:
             outcome="loss",
             pnl=-100.0,
             regime="bullish",
-            strategy="RSIStrategy"
+            strategy="RSIStrategy",
         )
 
         assert len(collector.decision_history) == 1
@@ -227,13 +226,15 @@ class TestDecisionOutcomeRecording:
             outcome="loss",
             pnl=0.0,
             regime="bearish",
-            strategy="none"
+            strategy="none",
         )
 
         assert len(collector.decision_history) == 1
         decision = collector.decision_history[0]
 
-        assert decision["was_correct"] == True  # Skip was correct since outcome was loss
+        assert (
+            decision["was_correct"] == True
+        )  # Skip was correct since outcome was loss
 
     def test_decision_history_size_limit(self, collector):
         """Test decision history respects size limit."""
@@ -247,7 +248,7 @@ class TestDecisionOutcomeRecording:
                 outcome="profit",
                 pnl=100.0,
                 regime="bullish",
-                strategy="RSIStrategy"
+                strategy="RSIStrategy",
             )
 
         assert len(collector.decision_history) == 2
@@ -264,7 +265,7 @@ class TestDecisionOutcomeRecording:
             outcome="profit",
             pnl=100.0,
             regime="bullish",
-            strategy="RSIStrategy"
+            strategy="RSIStrategy",
         )
 
         collector.record_decision_outcome(
@@ -273,7 +274,7 @@ class TestDecisionOutcomeRecording:
             outcome="loss",
             pnl=-50.0,
             regime="bearish",
-            strategy="MACDStrategy"
+            strategy="MACDStrategy",
         )
 
         collector.record_decision_outcome(
@@ -282,7 +283,7 @@ class TestDecisionOutcomeRecording:
             outcome="neutral",
             pnl=0.0,
             regime="bullish",
-            strategy="none"
+            strategy="none",
         )
 
         # Check bullish regime stats
@@ -315,27 +316,28 @@ class TestMetricsCalculation:
         base_time = datetime.now()
         for i in range(10):
             prediction = {
-                "timestamp": base_time - timedelta(minutes=i*5),
+                "timestamp": base_time - timedelta(minutes=i * 5),
                 "symbol": f"BTC/USDT_{i}",
                 "probability": 0.5 + i * 0.05,
                 "threshold": 0.6,
                 "regime": "bullish" if i % 2 == 0 else "bearish",
                 "features": {"RSI": 50.0 + i},
-                "decision": "trade" if (0.5 + i * 0.05) >= 0.6 else "skip"
+                "decision": "trade" if (0.5 + i * 0.05) >= 0.6 else "skip",
             }
             collector.prediction_history.append(prediction)
 
         # Add sample decisions
         for i in range(8):
             decision = {
-                "timestamp": base_time - timedelta(minutes=i*5),
+                "timestamp": base_time - timedelta(minutes=i * 5),
                 "symbol": f"BTC/USDT_{i}",
                 "decision": "trade" if i % 2 == 0 else "skip",
                 "outcome": "profit" if i % 3 == 0 else "loss",
                 "pnl": 100.0 if i % 3 == 0 else -50.0,
                 "regime": "bullish" if i % 2 == 0 else "bearish",
                 "strategy": "RSIStrategy" if i % 2 == 0 else "none",
-                "was_correct": (i % 2 == 0 and i % 3 == 0) or (i % 2 == 1 and i % 3 != 0)
+                "was_correct": (i % 2 == 0 and i % 3 == 0)
+                or (i % 2 == 1 and i % 3 != 0),
             }
             collector.decision_history.append(decision)
 
@@ -393,7 +395,11 @@ class TestMetricsCalculation:
         assert isinstance(metrics, dict)
 
         # Should have health metrics
-        expected_keys = ["prediction_stability", "trade_decision_ratio", "feature_count"]
+        expected_keys = [
+            "prediction_stability",
+            "trade_decision_ratio",
+            "feature_count",
+        ]
         for key in expected_keys:
             if key in metrics:
                 assert isinstance(metrics[key], (int, float))
@@ -433,11 +439,9 @@ class TestMetricsCalculation:
 
         # Add minimal data
         for i in range(50):
-            collector.prediction_history.append({
-                "timestamp": datetime.now(),
-                "probability": 0.6,
-                "decision": "trade"
-            })
+            collector.prediction_history.append(
+                {"timestamp": datetime.now(), "probability": 0.6, "decision": "trade"}
+            )
 
         indicators = collector._calculate_drift_indicators()
 
@@ -461,7 +465,9 @@ class TestMetricsCollection:
         return collector
 
     @pytest.mark.asyncio
-    async def test_collect_binary_model_metrics_enabled(self, collector, mock_metrics_collector):
+    async def test_collect_binary_model_metrics_enabled(
+        self, collector, mock_metrics_collector
+    ):
         """Test collecting binary model metrics when enabled."""
         # Add some sample data
         collector.prediction_history = [
@@ -470,7 +476,7 @@ class TestMetricsCollection:
                 "probability": 0.7,
                 "threshold": 0.6,
                 "regime": "bullish",
-                "decision": "trade"
+                "decision": "trade",
             }
         ]
 
@@ -479,7 +485,7 @@ class TestMetricsCollection:
                 "timestamp": datetime.now(),
                 "decision": "trade",
                 "outcome": "profit",
-                "regime": "bullish"
+                "regime": "bullish",
             }
         ]
 
@@ -500,7 +506,9 @@ class TestMetricsCollection:
         assert not mock_metrics_collector.record_metric.called
 
     @pytest.mark.asyncio
-    async def test_collect_binary_model_metrics_with_exception(self, collector, mock_metrics_collector):
+    async def test_collect_binary_model_metrics_with_exception(
+        self, collector, mock_metrics_collector
+    ):
         """Test collecting metrics handles exceptions gracefully."""
         # Make record_metric raise an exception
         mock_metrics_collector.record_metric.side_effect = Exception("Test error")
@@ -525,38 +533,48 @@ class TestAlertGeneration:
 
         # Add historical predictions with high trade frequency
         for i in range(100):
-            collector.prediction_history.append({
-                "timestamp": base_time - timedelta(hours=1) + timedelta(minutes=i),
-                "probability": 0.8,
-                "decision": "trade",
-                "regime": "bullish"
-            })
+            collector.prediction_history.append(
+                {
+                    "timestamp": base_time - timedelta(hours=1) + timedelta(minutes=i),
+                    "probability": 0.8,
+                    "decision": "trade",
+                    "regime": "bullish",
+                }
+            )
 
         # Add recent predictions with low trade frequency (drift)
         for i in range(100):
-            collector.prediction_history.append({
-                "timestamp": base_time + timedelta(minutes=i),
-                "probability": 0.3,
-                "decision": "skip",
-                "regime": "bullish"
-            })
+            collector.prediction_history.append(
+                {
+                    "timestamp": base_time + timedelta(minutes=i),
+                    "probability": 0.3,
+                    "decision": "skip",
+                    "regime": "bullish",
+                }
+            )
 
         # Add decisions for accuracy comparison
         for i in range(50):
-            collector.decision_history.append({
-                "timestamp": base_time - timedelta(hours=1) + timedelta(minutes=i*2),
-                "decision": "trade",
-                "outcome": "profit",
-                "was_correct": True
-            })
+            collector.decision_history.append(
+                {
+                    "timestamp": base_time
+                    - timedelta(hours=1)
+                    + timedelta(minutes=i * 2),
+                    "decision": "trade",
+                    "outcome": "profit",
+                    "was_correct": True,
+                }
+            )
 
         for i in range(50):
-            collector.decision_history.append({
-                "timestamp": base_time + timedelta(minutes=i*2),
-                "decision": "trade",
-                "outcome": "loss",
-                "was_correct": False
-            })
+            collector.decision_history.append(
+                {
+                    "timestamp": base_time + timedelta(minutes=i * 2),
+                    "decision": "trade",
+                    "outcome": "loss",
+                    "was_correct": False,
+                }
+            )
 
         return collector
 
@@ -566,7 +584,9 @@ class TestAlertGeneration:
         alerts = await collector.check_for_alerts()
 
         # Should generate trade frequency drift alert
-        trade_freq_alerts = [a for a in alerts if a["alert_name"] == "BinaryModelTradeFrequencyDrift"]
+        trade_freq_alerts = [
+            a for a in alerts if a["alert_name"] == "BinaryModelTradeFrequencyDrift"
+        ]
         assert len(trade_freq_alerts) == 1
 
         alert = trade_freq_alerts[0]
@@ -580,7 +600,9 @@ class TestAlertGeneration:
         alerts = await collector.check_for_alerts()
 
         # Should generate accuracy drop alert
-        accuracy_alerts = [a for a in alerts if a["alert_name"] == "BinaryModelAccuracyDrop"]
+        accuracy_alerts = [
+            a for a in alerts if a["alert_name"] == "BinaryModelAccuracyDrop"
+        ]
         assert len(accuracy_alerts) == 1
 
         alert = accuracy_alerts[0]
@@ -605,19 +627,23 @@ class TestAlertGeneration:
         # Add consistent data with no drift
         base_time = datetime.now()
         for i in range(50):
-            collector.prediction_history.append({
-                "timestamp": base_time + timedelta(minutes=i),
-                "probability": 0.65,
-                "decision": "trade",
-                "regime": "bullish"
-            })
+            collector.prediction_history.append(
+                {
+                    "timestamp": base_time + timedelta(minutes=i),
+                    "probability": 0.65,
+                    "decision": "trade",
+                    "regime": "bullish",
+                }
+            )
 
-            collector.decision_history.append({
-                "timestamp": base_time + timedelta(minutes=i),
-                "decision": "trade",
-                "outcome": "profit",
-                "was_correct": True
-            })
+            collector.decision_history.append(
+                {
+                    "timestamp": base_time + timedelta(minutes=i),
+                    "decision": "trade",
+                    "outcome": "profit",
+                    "was_correct": True,
+                }
+            )
 
         alerts = await collector.check_for_alerts()
 
@@ -653,24 +679,28 @@ class TestPerformanceReporting:
         # Add sample data
         base_time = datetime.now()
         for i in range(10):
-            collector.prediction_history.append({
-                "timestamp": base_time,
-                "probability": 0.6 + i * 0.05,
-                "decision": "trade"
-            })
+            collector.prediction_history.append(
+                {
+                    "timestamp": base_time,
+                    "probability": 0.6 + i * 0.05,
+                    "decision": "trade",
+                }
+            )
 
-            collector.decision_history.append({
-                "timestamp": base_time,
-                "decision": "trade",
-                "outcome": "profit",
-                "regime": "bullish"
-            })
+            collector.decision_history.append(
+                {
+                    "timestamp": base_time,
+                    "decision": "trade",
+                    "outcome": "profit",
+                    "regime": "bullish",
+                }
+            )
 
         collector.regime_performance = {
             "bullish": {
                 "total_decisions": 10,
                 "correct_decisions": 8,
-                "total_pnl": 500.0
+                "total_pnl": 500.0,
             }
         }
 
@@ -743,7 +773,9 @@ class TestErrorHandling:
         mock_metrics_collector = Mock()
         mock_metrics_collector.record_metric = AsyncMock()
 
-        with patch('core.binary_model_metrics.get_binary_integration', side_effect=ImportError):
+        with patch(
+            "core.binary_model_metrics.get_binary_integration", side_effect=ImportError
+        ):
             # Should not raise exception
             await collector.collect_binary_model_metrics(mock_metrics_collector)
 
@@ -757,7 +789,7 @@ class TestErrorHandling:
             probability="invalid",  # Invalid
             threshold=0.6,
             regime="test",
-            features=None  # Invalid
+            features=None,  # Invalid
         )
 
         # Should still record (or handle gracefully)
@@ -774,7 +806,7 @@ class TestErrorHandling:
             outcome="invalid_outcome",  # Invalid
             pnl="invalid_pnl",  # Invalid
             regime="test",
-            strategy=None  # Invalid
+            strategy=None,  # Invalid
         )
 
         # Should still record (or handle gracefully)
@@ -789,7 +821,7 @@ class TestErrorHandling:
             {
                 "timestamp": "invalid_timestamp",
                 "probability": "invalid_probability",
-                "decision": "invalid_decision"
+                "decision": "invalid_decision",
             }
         ]
 
@@ -803,7 +835,11 @@ class TestErrorHandling:
         collector = BinaryModelMetricsCollector({})
 
         # Mock a method to raise exception
-        with patch.object(collector, '_calculate_drift_indicators', side_effect=Exception("Test error")):
+        with patch.object(
+            collector,
+            "_calculate_drift_indicators",
+            side_effect=Exception("Test error"),
+        ):
             alerts = await collector.check_for_alerts()
 
             # Should return empty list on exception
@@ -825,7 +861,7 @@ class TestDataIntegrity:
                 "threshold": 0.6,
                 "regime": "bullish",
                 "features": {"RSI": 65.0, "MACD": 0.5},
-                "decision": "trade"
+                "decision": "trade",
             },
             {
                 "symbol": "ETH/USDT",
@@ -833,8 +869,8 @@ class TestDataIntegrity:
                 "threshold": 0.6,
                 "regime": "bearish",
                 "features": {"RSI": 35.0, "MACD": -0.3},
-                "decision": "skip"
-            }
+                "decision": "skip",
+            },
         ]
 
         for prediction in predictions:
@@ -860,7 +896,7 @@ class TestDataIntegrity:
                 "outcome": "profit",
                 "pnl": 150.0,
                 "regime": "bullish",
-                "strategy": "RSIStrategy"
+                "strategy": "RSIStrategy",
             },
             {
                 "symbol": "ETH/USDT",
@@ -868,8 +904,8 @@ class TestDataIntegrity:
                 "outcome": "loss",
                 "pnl": 0.0,
                 "regime": "bearish",
-                "strategy": "none"
-            }
+                "strategy": "none",
+            },
         ]
 
         for decision in decisions:
@@ -899,7 +935,7 @@ class TestConcurrency:
                 probability=0.5 + i * 0.01,
                 threshold=0.6,
                 regime="bullish",
-                features={"RSI": 50.0 + i}
+                features={"RSI": 50.0 + i},
             )
 
         # Record predictions concurrently
@@ -920,11 +956,7 @@ class TestConcurrency:
 
         # Add some test data
         collector.prediction_history = [
-            {
-                "timestamp": datetime.now(),
-                "probability": 0.7,
-                "decision": "trade"
-            }
+            {"timestamp": datetime.now(), "probability": 0.7, "decision": "trade"}
         ]
 
         mock_metrics_collector = Mock()

@@ -4,16 +4,14 @@ core/execution/live_executor.py
 Handles live order execution and exchange communication.
 """
 
-import asyncio
 import logging
 import os
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 import ccxt.async_support as ccxt
-from ccxt.base.errors import NetworkError, ExchangeError
+from ccxt.base.errors import ExchangeError, NetworkError
 
 from utils.logger import get_trade_logger
-from core.types.order_types import Order
-from utils.adapter import signal_to_dict
 
 logger = logging.getLogger(__name__)
 trade_logger = get_trade_logger()
@@ -41,7 +39,9 @@ class LiveOrderExecutor:
           - CRYPTOBOT_EXCHANGE_API_SECRET
           - CRYPTOBOT_EXCHANGE_API_PASSPHRASE
         """
-        exch_cfg = self.config.get("exchange", {}) if isinstance(self.config, dict) else {}
+        exch_cfg = (
+            self.config.get("exchange", {}) if isinstance(self.config, dict) else {}
+        )
         api_key = os.getenv("CRYPTOBOT_EXCHANGE_API_KEY")
         api_secret = os.getenv("CRYPTOBOT_EXCHANGE_API_SECRET")
         api_pass = os.getenv("CRYPTOBOT_EXCHANGE_API_PASSPHRASE")
@@ -55,7 +55,11 @@ class LiveOrderExecutor:
                 "defaultType": exch_cfg.get("default_type", "spot"),
             },
         }
-        exchange_name = exch_cfg.get("name") or self.config.get("exchange", {}).get("name") or "binance"
+        exchange_name = (
+            exch_cfg.get("name")
+            or self.config.get("exchange", {}).get("name")
+            or "binance"
+        )
         exchange_class = getattr(ccxt, exchange_name)
         self.exchange = exchange_class(exchange_config)
 
@@ -75,12 +79,19 @@ class LiveOrderExecutor:
 
         # Try positional API first (common ccxt signature)
         try:
-            return await self.exchange.create_order(symbol, otype, side, amount, price, params)
+            return await self.exchange.create_order(
+                symbol, otype, side, amount, price, params
+            )
         except TypeError:
             # Some adapters accept kwargs - try a kwargs call as a fallback
             try:
                 return await self.exchange.create_order(
-                    symbol=symbol, type=otype, side=side, amount=amount, price=price, params=params
+                    symbol=symbol,
+                    type=otype,
+                    side=side,
+                    amount=amount,
+                    price=price,
+                    params=params,
                 )
             except Exception:
                 # Re-raise original exception for upstream handling
@@ -112,6 +123,7 @@ class LiveOrderExecutor:
         # If side is not provided, map from signal_type
         if side is None and hasattr(signal, "signal_type"):
             from core.contracts import SignalType
+
             signal_type = getattr(signal, "signal_type", None)
             if signal_type == SignalType.ENTRY_LONG:
                 side = "buy"
@@ -155,7 +167,9 @@ class LiveOrderExecutor:
             "params": getattr(
                 signal,
                 "params",
-                signal.get("params") if isinstance(signal, dict) else getattr(signal, "metadata", {}),
+                signal.get("params")
+                if isinstance(signal, dict)
+                else getattr(signal, "metadata", {}),
             )
             or {},
         }

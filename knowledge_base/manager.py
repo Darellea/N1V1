@@ -9,18 +9,20 @@ weighting for strategy selection.
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional, Any, Union, Tuple
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
-import threading
+from typing import Any, Dict, List, Optional, Tuple, Union
 
+from .adaptive import AdaptiveWeightingEngine
 from .schema import (
-    KnowledgeEntry, KnowledgeQuery, KnowledgeQueryResult,
-    MarketRegime, StrategyCategory, MarketCondition, StrategyMetadata,
-    PerformanceMetrics, OutcomeTag, validate_knowledge_entry
+    KnowledgeEntry,
+    KnowledgeQuery,
+    KnowledgeQueryResult,
+    MarketCondition,
+    StrategyMetadata,
 )
 from .storage import KnowledgeStorage
-from .adaptive import AdaptiveWeightingEngine
 
 logger = logging.getLogger(__name__)
 
@@ -36,15 +38,15 @@ class KnowledgeValidator:
     def __init__(self):
         """Initialize the knowledge validator."""
         self.allowed_update_fields = {
-            'market_condition': dict,
-            'strategy_metadata': dict,
-            'performance': dict,
-            'outcome': str,
-            'confidence_score': (int, float),
-            'sample_size': int,
-            'last_updated': str,
-            'tags': list,
-            'notes': (str, type(None))
+            "market_condition": dict,
+            "strategy_metadata": dict,
+            "performance": dict,
+            "outcome": str,
+            "confidence_score": (int, float),
+            "sample_size": int,
+            "last_updated": str,
+            "tags": list,
+            "notes": (str, type(None)),
         }
 
     def validate_update_payload(self, updates: Dict[str, Any]) -> List[str]:
@@ -74,26 +76,32 @@ class KnowledgeValidator:
                 if not isinstance(value, expected_type):
                     if isinstance(expected_type, tuple):
                         type_names = [t.__name__ for t in expected_type]
-                        errors.append(f"Field '{key}' must be one of: {', '.join(type_names)}")
+                        errors.append(
+                            f"Field '{key}' must be one of: {', '.join(type_names)}"
+                        )
                     else:
-                        errors.append(f"Field '{key}' must be of type {expected_type.__name__}")
+                        errors.append(
+                            f"Field '{key}' must be of type {expected_type.__name__}"
+                        )
 
                 # Additional validation for specific fields
-                if key == 'confidence_score' and isinstance(value, (int, float)):
+                if key == "confidence_score" and isinstance(value, (int, float)):
                     if not (0.0 <= value <= 1.0):
-                        errors.append("Field 'confidence_score' must be between 0.0 and 1.0")
+                        errors.append(
+                            "Field 'confidence_score' must be between 0.0 and 1.0"
+                        )
 
-                if key == 'sample_size' and isinstance(value, int):
+                if key == "sample_size" and isinstance(value, int):
                     if value < 1:
                         errors.append("Field 'sample_size' must be a positive integer")
 
-                if key == 'outcome' and isinstance(value, str):
+                if key == "outcome" and isinstance(value, str):
                     # Validate against known outcome values if available
                     # For now, just ensure it's a non-empty string
                     if not value.strip():
                         errors.append("Field 'outcome' cannot be empty")
 
-                if key == 'tags' and isinstance(value, list):
+                if key == "tags" and isinstance(value, list):
                     # Ensure all tags are strings
                     if not all(isinstance(tag, str) for tag in value):
                         errors.append("All tags must be strings")
@@ -145,15 +153,24 @@ class KnowledgeValidator:
         errors = []
 
         # Validate confidence thresholds
-        if query.min_confidence is not None and not (0.0 <= query.min_confidence <= 1.0):
+        if query.min_confidence is not None and not (
+            0.0 <= query.min_confidence <= 1.0
+        ):
             errors.append("Minimum confidence must be between 0.0 and 1.0")
 
-        if query.max_confidence is not None and not (0.0 <= query.max_confidence <= 1.0):
+        if query.max_confidence is not None and not (
+            0.0 <= query.max_confidence <= 1.0
+        ):
             errors.append("Maximum confidence must be between 0.0 and 1.0")
 
-        if (query.min_confidence is not None and query.max_confidence is not None and
-            query.min_confidence > query.max_confidence):
-            errors.append("Minimum confidence cannot be greater than maximum confidence")
+        if (
+            query.min_confidence is not None
+            and query.max_confidence is not None
+            and query.min_confidence > query.max_confidence
+        ):
+            errors.append(
+                "Minimum confidence cannot be greater than maximum confidence"
+            )
 
         # Validate sample size
         if query.min_sample_size is not None and query.min_sample_size < 1:
@@ -194,6 +211,7 @@ class DataStoreInterface:
             Success status
         """
         import asyncio
+
         return asyncio.run(self.storage.save_entry(entry))
 
     def get_entry(self, entry_id: str) -> Optional[KnowledgeEntry]:
@@ -207,6 +225,7 @@ class DataStoreInterface:
             Knowledge entry or None if not found
         """
         import asyncio
+
         return asyncio.run(self.storage.get_entry(entry_id))
 
     def delete_entry(self, entry_id: str) -> bool:
@@ -220,6 +239,7 @@ class DataStoreInterface:
             Success status
         """
         import asyncio
+
         return asyncio.run(self.storage.delete_entry(entry_id))
 
     def query_entries(self, query: KnowledgeQuery) -> KnowledgeQueryResult:
@@ -233,6 +253,7 @@ class DataStoreInterface:
             Query results
         """
         import asyncio
+
         return asyncio.run(self.storage.query_entries(query))
 
     def list_entries(self, limit: Optional[int] = None) -> List[KnowledgeEntry]:
@@ -246,6 +267,7 @@ class DataStoreInterface:
             List of knowledge entries
         """
         import asyncio
+
         return asyncio.run(self.storage.list_entries(limit))
 
     def get_stats(self) -> Dict[str, Any]:
@@ -256,6 +278,7 @@ class DataStoreInterface:
             Statistics dictionary
         """
         import asyncio
+
         return asyncio.run(self.storage.get_stats())
 
     def clear_all(self) -> bool:
@@ -267,6 +290,7 @@ class DataStoreInterface:
         """
         try:
             import asyncio
+
             all_entries = asyncio.run(self.storage.list_entries(limit=10000))
             deleted_count = 0
             for entry in all_entries:
@@ -297,7 +321,7 @@ class KnowledgeManager:
             config: Configuration dictionary with knowledge base settings
         """
         self.config = config or self._get_default_config()
-        self.enabled = self.config.get('enabled', True)
+        self.enabled = self.config.get("enabled", True)
         self.storage = None
 
         if not self.enabled:
@@ -308,8 +332,10 @@ class KnowledgeManager:
             return
 
         # Initialize storage backend
-        storage_config = self.config.get('storage', {})
-        backend = storage_config.pop('backend', 'json')  # Remove backend from config to avoid conflict
+        storage_config = self.config.get("storage", {})
+        backend = storage_config.pop(
+            "backend", "json"
+        )  # Remove backend from config to avoid conflict
         self.storage = KnowledgeStorage(backend, **storage_config)
 
         # Initialize specialized components
@@ -317,7 +343,7 @@ class KnowledgeManager:
         self.validator = KnowledgeValidator()
 
         # Initialize adaptive weighting engine
-        adaptive_config = self.config.get('adaptive', {})
+        adaptive_config = self.config.get("adaptive", {})
         self.adaptive_engine = AdaptiveWeightingEngine(self.storage, adaptive_config)
 
         # Thread safety
@@ -328,28 +354,28 @@ class KnowledgeManager:
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration."""
         return {
-            'enabled': True,
-            'storage': {
-                'backend': 'json',
-                'file_path': 'knowledge_base/knowledge.json',
-                'compress': False
+            "enabled": True,
+            "storage": {
+                "backend": "json",
+                "file_path": "knowledge_base/knowledge.json",
+                "compress": False,
             },
-            'adaptive': {
-                'performance_weight': 0.4,
-                'regime_similarity_weight': 0.3,
-                'recency_weight': 0.2,
-                'sample_size_weight': 0.1,
-                'performance_decay_days': 90,
-                'confidence_threshold': 0.3,
-                'min_sample_size': 5,
-                'max_weight': 3.0,
-                'min_weight': 0.1
+            "adaptive": {
+                "performance_weight": 0.4,
+                "regime_similarity_weight": 0.3,
+                "recency_weight": 0.2,
+                "sample_size_weight": 0.1,
+                "performance_decay_days": 90,
+                "confidence_threshold": 0.3,
+                "min_sample_size": 5,
+                "max_weight": 3.0,
+                "min_weight": 0.1,
             },
-            'maintenance': {
-                'auto_cleanup': True,
-                'max_age_days': 365,
-                'min_confidence_cleanup': 0.1
-            }
+            "maintenance": {
+                "auto_cleanup": True,
+                "max_age_days": 365,
+                "min_confidence_cleanup": 0.1,
+            },
         }
 
     def store_trade_knowledge(
@@ -357,7 +383,7 @@ class KnowledgeManager:
         strategy_name: str,
         market_condition: MarketCondition,
         trade_result: Dict[str, Any],
-        strategy_metadata: Optional[StrategyMetadata] = None
+        strategy_metadata: Optional[StrategyMetadata] = None,
     ) -> bool:
         """
         Store knowledge from a completed trade.
@@ -378,14 +404,19 @@ class KnowledgeManager:
             try:
                 # Use adaptive engine to update knowledge
                 import asyncio
-                success = asyncio.run(self.adaptive_engine.update_knowledge_from_trade(
-                    strategy_name, market_condition, trade_result
-                ))
+
+                success = asyncio.run(
+                    self.adaptive_engine.update_knowledge_from_trade(
+                        strategy_name, market_condition, trade_result
+                    )
+                )
 
                 if success:
                     logger.info(f"Stored knowledge for strategy {strategy_name}")
                 else:
-                    logger.warning(f"Failed to store knowledge for strategy {strategy_name}")
+                    logger.warning(
+                        f"Failed to store knowledge for strategy {strategy_name}"
+                    )
 
                 return success
 
@@ -397,7 +428,7 @@ class KnowledgeManager:
         self,
         current_market: MarketCondition,
         available_strategies: List[StrategyMetadata],
-        base_weights: Optional[Dict[str, float]] = None
+        base_weights: Optional[Dict[str, float]] = None,
     ) -> Dict[str, float]:
         """
         Get adaptive weights for strategies based on historical knowledge.
@@ -417,9 +448,12 @@ class KnowledgeManager:
         with self._lock:
             try:
                 import asyncio
-                return asyncio.run(self.adaptive_engine.calculate_adaptive_weights(
-                    current_market, available_strategies, base_weights
-                ))
+
+                return asyncio.run(
+                    self.adaptive_engine.calculate_adaptive_weights(
+                        current_market, available_strategies, base_weights
+                    )
+                )
             except Exception as e:
                 logger.error(f"Error calculating adaptive weights: {e}")
                 return {s.name: 1.0 for s in available_strategies}
@@ -428,7 +462,7 @@ class KnowledgeManager:
         self,
         current_market: MarketCondition,
         available_strategies: List[StrategyMetadata],
-        top_n: int = 3
+        top_n: int = 3,
     ) -> List[Tuple[str, float, str]]:
         """
         Get top strategy recommendations with reasoning.
@@ -445,27 +479,29 @@ class KnowledgeManager:
             # Return basic recommendations
             recommendations = []
             for i, strategy in enumerate(available_strategies[:top_n]):
-                recommendations.append((
-                    strategy.name,
-                    1.0,
-                    f"Basic recommendation for {strategy.name} (knowledge base disabled)"
-                ))
+                recommendations.append(
+                    (
+                        strategy.name,
+                        1.0,
+                        f"Basic recommendation for {strategy.name} (knowledge base disabled)",
+                    )
+                )
             return recommendations
 
         with self._lock:
             try:
                 import asyncio
-                return asyncio.run(self.adaptive_engine.get_strategy_recommendations(
-                    current_market, available_strategies, top_n
-                ))
+
+                return asyncio.run(
+                    self.adaptive_engine.get_strategy_recommendations(
+                        current_market, available_strategies, top_n
+                    )
+                )
             except Exception as e:
                 logger.error(f"Error getting strategy recommendations: {e}")
                 return []
 
-    def query_knowledge(
-        self,
-        query: KnowledgeQuery
-    ) -> KnowledgeQueryResult:
+    def query_knowledge(self, query: KnowledgeQuery) -> KnowledgeQueryResult:
         """
         Query the knowledge base for specific entries.
 
@@ -513,11 +549,7 @@ class KnowledgeManager:
                 logger.error(f"Error retrieving knowledge entry {entry_id}: {e}")
                 return None
 
-    def update_knowledge_entry(
-        self,
-        entry_id: str,
-        updates: Dict[str, Any]
-    ) -> bool:
+    def update_knowledge_entry(self, entry_id: str, updates: Dict[str, Any]) -> bool:
         """
         Update an existing knowledge entry.
 
@@ -536,7 +568,9 @@ class KnowledgeManager:
         if not self.enabled or not self.data_store:
             return False
 
-        logger.info(f"Starting update of knowledge entry {entry_id} with {len(updates)} fields")
+        logger.info(
+            f"Starting update of knowledge entry {entry_id} with {len(updates)} fields"
+        )
 
         with self._lock:
             try:
@@ -547,8 +581,12 @@ class KnowledgeManager:
                 # Validate the update payload using KnowledgeValidator
                 validation_errors = self.validator.validate_update_payload(updates)
                 if validation_errors:
-                    logger.error(f"Invalid update payload for entry {entry_id}: {validation_errors}")
-                    raise ValueError(f"Update validation failed: {', '.join(validation_errors)}")
+                    logger.error(
+                        f"Invalid update payload for entry {entry_id}: {validation_errors}"
+                    )
+                    raise ValueError(
+                        f"Update validation failed: {', '.join(validation_errors)}"
+                    )
 
                 # Apply validated updates
                 for key, value in updates.items():
@@ -610,41 +648,46 @@ class KnowledgeManager:
             Statistics dictionary
         """
         if not self.enabled:
-            return {'enabled': False}
+            return {"enabled": False}
 
         stats = {
-            'enabled': True,
-            'storage_stats': {},
-            'adaptive_stats': {},
-            'knowledge_summary': {}
+            "enabled": True,
+            "storage_stats": {},
+            "adaptive_stats": {},
+            "knowledge_summary": {},
         }
 
         with self._lock:
             try:
                 if self.data_store:
-                    stats['storage_stats'] = self.data_store.get_stats()
+                    stats["storage_stats"] = self.data_store.get_stats()
 
                 if self.adaptive_engine:
                     import asyncio
-                    stats['adaptive_stats'] = asyncio.run(self.adaptive_engine.get_adaptive_statistics())
+
+                    stats["adaptive_stats"] = asyncio.run(
+                        self.adaptive_engine.get_adaptive_statistics()
+                    )
 
                 # Get knowledge summary
                 if self.data_store:
                     all_entries = self.data_store.list_entries(limit=1000)
-                    stats['knowledge_summary'] = self._analyze_knowledge_entries(all_entries)
+                    stats["knowledge_summary"] = self._analyze_knowledge_entries(
+                        all_entries
+                    )
 
                 return stats
 
             except Exception as e:
                 logger.error(f"Error getting knowledge statistics: {e}")
-                return {'enabled': True, 'error': str(e)}
+                return {"enabled": True, "error": str(e)}
 
-
-
-    def _analyze_knowledge_entries(self, entries: List[KnowledgeEntry]) -> Dict[str, Any]:
+    def _analyze_knowledge_entries(
+        self, entries: List[KnowledgeEntry]
+    ) -> Dict[str, Any]:
         """Analyze knowledge entries for summary statistics."""
         if not entries:
-            return {'total_entries': 0}
+            return {"total_entries": 0}
 
         # Group by various dimensions
         by_regime = {}
@@ -672,14 +715,14 @@ class KnowledgeManager:
             total_sample_size += entry.sample_size
 
         return {
-            'total_entries': len(entries),
-            'avg_confidence': total_confidence / len(entries),
-            'avg_sample_size': total_sample_size / len(entries),
-            'regime_distribution': by_regime,
-            'strategy_distribution': by_strategy,
-            'outcome_distribution': by_outcome,
-            'unique_strategies': len(by_strategy),
-            'unique_regimes': len(by_regime)
+            "total_entries": len(entries),
+            "avg_confidence": total_confidence / len(entries),
+            "avg_sample_size": total_sample_size / len(entries),
+            "regime_distribution": by_regime,
+            "strategy_distribution": by_strategy,
+            "outcome_distribution": by_outcome,
+            "unique_strategies": len(by_strategy),
+            "unique_regimes": len(by_regime),
         }
 
     def perform_maintenance(self) -> Dict[str, Any]:
@@ -690,45 +733,49 @@ class KnowledgeManager:
             Maintenance results
         """
         if not self.enabled:
-            return {'enabled': False}
+            return {"enabled": False}
 
-        results = {
-            'cleanup_performed': False,
-            'entries_removed': 0,
-            'errors': []
-        }
+        results = {"cleanup_performed": False, "entries_removed": 0, "errors": []}
 
         with self._lock:
             try:
-                maintenance_config = self.config.get('maintenance', {})
+                maintenance_config = self.config.get("maintenance", {})
 
-                if maintenance_config.get('auto_cleanup', True):
+                if maintenance_config.get("auto_cleanup", True):
                     # Remove old entries
-                    max_age_days = maintenance_config.get('max_age_days', 365)
-                    min_confidence = maintenance_config.get('min_confidence_cleanup', 0.1)
+                    max_age_days = maintenance_config.get("max_age_days", 365)
+                    min_confidence = maintenance_config.get(
+                        "min_confidence_cleanup", 0.1
+                    )
 
-                    cutoff_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=max_age_days)
+                    cutoff_date = datetime.now().replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    ) - timedelta(days=max_age_days)
 
                     all_entries = self.data_store.list_entries(limit=10000)
                     removed_count = 0
 
                     for entry in all_entries:
                         should_remove = (
-                            entry.last_updated < cutoff_date and
-                            entry.confidence_score < min_confidence
+                            entry.last_updated < cutoff_date
+                            and entry.confidence_score < min_confidence
                         )
 
                         if should_remove:
                             if self.data_store.delete_entry(entry.id):
                                 removed_count += 1
                             else:
-                                results['errors'].append(f"Failed to remove entry {entry.id}")
+                                results["errors"].append(
+                                    f"Failed to remove entry {entry.id}"
+                                )
 
-                    results['cleanup_performed'] = True
-                    results['entries_removed'] = removed_count
+                    results["cleanup_performed"] = True
+                    results["entries_removed"] = removed_count
 
                     if removed_count > 0:
-                        logger.info(f"Removed {removed_count} old/low-confidence knowledge entries")
+                        logger.info(
+                            f"Removed {removed_count} old/low-confidence knowledge entries"
+                        )
 
                 # Invalidate caches after maintenance
                 if self.adaptive_engine:
@@ -736,11 +783,13 @@ class KnowledgeManager:
 
             except Exception as e:
                 logger.error(f"Error during knowledge base maintenance: {e}")
-                results['errors'].append(str(e))
+                results["errors"].append(str(e))
 
         return results
 
-    def export_knowledge(self, file_path: Union[str, Path], format: str = 'json') -> bool:
+    def export_knowledge(
+        self, file_path: Union[str, Path], format: str = "json"
+    ) -> bool:
         """
         Export knowledge base to a file.
 
@@ -757,28 +806,38 @@ class KnowledgeManager:
         try:
             all_entries = self.data_store.list_entries(limit=10000)
 
-            if format.lower() == 'json':
+            if format.lower() == "json":
                 data = {
-                    'export_timestamp': datetime.now().isoformat(),
-                    'total_entries': len(all_entries),
-                    'entries': [entry.to_dict() for entry in all_entries]
+                    "export_timestamp": datetime.now().isoformat(),
+                    "total_entries": len(all_entries),
+                    "entries": [entry.to_dict() for entry in all_entries],
                 }
 
                 import json
-                with open(file_path, 'w', encoding='utf-8') as f:
+
+                with open(file_path, "w", encoding="utf-8") as f:
                     json.dump(data, f, indent=2, default=str)
 
-            elif format.lower() == 'csv':
+            elif format.lower() == "csv":
                 if not all_entries:
                     return False
 
                 import csv
-                with open(file_path, 'w', newline='', encoding='utf-8') as f:
+
+                with open(file_path, "w", newline="", encoding="utf-8") as f:
                     writer = csv.writer(f)
 
                     # Write header
-                    header = ['id', 'regime', 'strategy_name', 'win_rate', 'profit_factor',
-                             'confidence_score', 'sample_size', 'last_updated']
+                    header = [
+                        "id",
+                        "regime",
+                        "strategy_name",
+                        "win_rate",
+                        "profit_factor",
+                        "confidence_score",
+                        "sample_size",
+                        "last_updated",
+                    ]
                     writer.writerow(header)
 
                     # Write data
@@ -791,7 +850,7 @@ class KnowledgeManager:
                             entry.performance.profit_factor,
                             entry.confidence_score,
                             entry.sample_size,
-                            entry.last_updated.isoformat()
+                            entry.last_updated.isoformat(),
                         ]
                         writer.writerow(row)
 
@@ -817,76 +876,82 @@ class KnowledgeManager:
             Import results
         """
         if not self.enabled or not self.data_store:
-            return {'success': False, 'error': 'Knowledge base disabled'}
+            return {"success": False, "error": "Knowledge base disabled"}
 
         results = {
-            'success': False,
-            'entries_imported': 0,
-            'entries_skipped': 0,
-            'errors': []
+            "success": False,
+            "entries_imported": 0,
+            "entries_skipped": 0,
+            "errors": [],
         }
 
         try:
             file_path = Path(file_path)
 
             if not file_path.exists():
-                results['error'] = f"File not found: {file_path}"
+                results["error"] = f"File not found: {file_path}"
                 return results
 
-            if file_path.suffix.lower() == '.json':
+            if file_path.suffix.lower() == ".json":
                 import json
-                with open(file_path, 'r', encoding='utf-8') as f:
+
+                with open(file_path, "r", encoding="utf-8") as f:
                     data = json.load(f)
 
-                entries_data = data.get('entries', [])
+                entries_data = data.get("entries", [])
 
-            elif file_path.suffix.lower() == '.csv':
+            elif file_path.suffix.lower() == ".csv":
                 import csv
+
                 entries_data = []
 
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, "r", encoding="utf-8") as f:
                     reader = csv.DictReader(f)
                     for row in reader:
                         # Convert CSV row to knowledge entry format
                         # This is a simplified conversion
                         entry_data = {
-                            'id': row.get('id', ''),
-                            'market_condition': {
-                                'regime': row.get('regime', 'unknown'),
-                                'volatility': float(row.get('volatility', 0.0)),
-                                'trend_strength': float(row.get('trend_strength', 0.0)),
-                                'timestamp': row.get('timestamp', datetime.now().isoformat())
+                            "id": row.get("id", ""),
+                            "market_condition": {
+                                "regime": row.get("regime", "unknown"),
+                                "volatility": float(row.get("volatility", 0.0)),
+                                "trend_strength": float(row.get("trend_strength", 0.0)),
+                                "timestamp": row.get(
+                                    "timestamp", datetime.now().isoformat()
+                                ),
                             },
-                            'strategy_metadata': {
-                                'name': row.get('strategy_name', ''),
-                                'category': 'trend_following',
-                                'parameters': {},
-                                'timeframe': '1h',
-                                'indicators_used': ['price'],
-                                'risk_profile': 'medium'
+                            "strategy_metadata": {
+                                "name": row.get("strategy_name", ""),
+                                "category": "trend_following",
+                                "parameters": {},
+                                "timeframe": "1h",
+                                "indicators_used": ["price"],
+                                "risk_profile": "medium",
                             },
-                            'performance': {
-                                'total_trades': int(row.get('total_trades', 1)),
-                                'winning_trades': int(row.get('winning_trades', 0)),
-                                'losing_trades': int(row.get('losing_trades', 0)),
-                                'win_rate': float(row.get('win_rate', 0.0)),
-                                'profit_factor': float(row.get('profit_factor', 1.0)),
-                                'sharpe_ratio': float(row.get('sharpe_ratio', 0.0)),
-                                'max_drawdown': float(row.get('max_drawdown', 0.0)),
-                                'avg_win': float(row.get('avg_win', 0.0)),
-                                'avg_loss': float(row.get('avg_loss', 0.0)),
-                                'total_pnl': float(row.get('total_pnl', 0.0)),
-                                'total_returns': float(row.get('total_returns', 0.0))
+                            "performance": {
+                                "total_trades": int(row.get("total_trades", 1)),
+                                "winning_trades": int(row.get("winning_trades", 0)),
+                                "losing_trades": int(row.get("losing_trades", 0)),
+                                "win_rate": float(row.get("win_rate", 0.0)),
+                                "profit_factor": float(row.get("profit_factor", 1.0)),
+                                "sharpe_ratio": float(row.get("sharpe_ratio", 0.0)),
+                                "max_drawdown": float(row.get("max_drawdown", 0.0)),
+                                "avg_win": float(row.get("avg_win", 0.0)),
+                                "avg_loss": float(row.get("avg_loss", 0.0)),
+                                "total_pnl": float(row.get("total_pnl", 0.0)),
+                                "total_returns": float(row.get("total_returns", 0.0)),
                             },
-                            'outcome': row.get('outcome', 'success'),
-                            'confidence_score': float(row.get('confidence_score', 0.5)),
-                            'sample_size': int(row.get('sample_size', 1)),
-                            'last_updated': row.get('last_updated', datetime.now().isoformat())
+                            "outcome": row.get("outcome", "success"),
+                            "confidence_score": float(row.get("confidence_score", 0.5)),
+                            "sample_size": int(row.get("sample_size", 1)),
+                            "last_updated": row.get(
+                                "last_updated", datetime.now().isoformat()
+                            ),
                         }
                         entries_data.append(entry_data)
 
             else:
-                results['error'] = f"Unsupported file format: {file_path.suffix}"
+                results["error"] = f"Unsupported file format: {file_path.suffix}"
                 return results
 
             # Import entries
@@ -897,31 +962,33 @@ class KnowledgeManager:
                     # Validate entry
                     errors = self.validator.validate_knowledge_entry(entry)
                     if errors:
-                        results['entries_skipped'] += 1
-                        results['errors'].append(f"Invalid entry {entry.id}: {errors}")
+                        results["entries_skipped"] += 1
+                        results["errors"].append(f"Invalid entry {entry.id}: {errors}")
                         continue
 
                     # Save entry
                     if self.data_store.save_entry(entry):
-                        results['entries_imported'] += 1
+                        results["entries_imported"] += 1
                     else:
-                        results['entries_skipped'] += 1
-                        results['errors'].append(f"Failed to save entry {entry.id}")
+                        results["entries_skipped"] += 1
+                        results["errors"].append(f"Failed to save entry {entry.id}")
 
                 except Exception as e:
-                    results['entries_skipped'] += 1
-                    results['errors'].append(f"Error processing entry: {e}")
+                    results["entries_skipped"] += 1
+                    results["errors"].append(f"Error processing entry: {e}")
 
-            results['success'] = True
+            results["success"] = True
 
             # Invalidate caches
             if self.adaptive_engine:
                 self.adaptive_engine.cache_manager.clear_cache()
 
-            logger.info(f"Imported {results['entries_imported']} knowledge entries from {file_path}")
+            logger.info(
+                f"Imported {results['entries_imported']} knowledge entries from {file_path}"
+            )
 
         except Exception as e:
-            results['error'] = str(e)
+            results["error"] = str(e)
             logger.error(f"Error importing knowledge: {e}")
 
         return results
@@ -966,9 +1033,7 @@ def get_knowledge_manager(config: Optional[Dict[str, Any]] = None) -> KnowledgeM
 
 
 def store_trade_result(
-    strategy_name: str,
-    market_condition: MarketCondition,
-    trade_result: Dict[str, Any]
+    strategy_name: str, market_condition: MarketCondition, trade_result: Dict[str, Any]
 ) -> bool:
     """
     Convenience function to store trade knowledge.
@@ -986,8 +1051,7 @@ def store_trade_result(
 
 
 def get_adaptive_strategy_weights(
-    current_market: MarketCondition,
-    available_strategies: List[StrategyMetadata]
+    current_market: MarketCondition, available_strategies: List[StrategyMetadata]
 ) -> Dict[str, float]:
     """
     Convenience function to get adaptive strategy weights.

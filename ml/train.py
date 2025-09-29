@@ -7,31 +7,29 @@ Refactored to use configuration and dependency injection for better maintainabil
 """
 
 import argparse
-import logging
-import pandas as pd
-import numpy as np
-from pathlib import Path
-from typing import Dict, Any, Optional, Callable, Tuple, List
 import json
-import sys
-from datetime import datetime
-from concurrent.futures import ProcessPoolExecutor
+import logging
 import multiprocessing
 import os
-import random
 import platform
 import subprocess
+import sys
+from concurrent.futures import ProcessPoolExecutor
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import pandas as pd
 
 
 def _run_git_command(cmd: list[str]) -> str:
     """Run a Git command and return the output, or empty string on failure."""
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, check=True
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         return result.stdout.strip()
     except Exception:
         return ""
+
 
 # ML framework imports with fallbacks for testing
 try:
@@ -68,6 +66,7 @@ logger = logging.getLogger(__name__)
 try:
     import mlflow
     import mlflow.sklearn
+
     MLFLOW_AVAILABLE = True
 except ImportError:
     MLFLOW_AVAILABLE = False
@@ -75,37 +74,37 @@ except ImportError:
 
 # Experiment tracking configuration
 EXPERIMENT_CONFIG = {
-    'tracking_dir': 'experiments',
-    'log_parameters': True,
-    'log_metrics': True,
-    'log_artifacts': True,
-    'save_model_artifacts': True,
-    'track_git_info': True
+    "tracking_dir": "experiments",
+    "log_parameters": True,
+    "log_metrics": True,
+    "log_artifacts": True,
+    "save_model_artifacts": True,
+    "track_git_info": True,
 }
 
 # Centralized configuration for training parameters
 # This eliminates hard-coded values and allows easy configuration changes
 TRAINING_CONFIG = {
-    'data_loading': {
-        'nan_threshold': 0.1,  # Maximum allowed NaN ratio per column
-        'fill_volume_na': 0,   # Value to fill NaN volumes
-        'timestamp_format': None  # Auto-detect timestamp format
+    "data_loading": {
+        "nan_threshold": 0.1,  # Maximum allowed NaN ratio per column
+        "fill_volume_na": 0,  # Value to fill NaN volumes
+        "timestamp_format": None,  # Auto-detect timestamp format
     },
-    'data_preparation': {
-        'min_samples': 1000,   # Minimum samples required for training
-        'outlier_threshold': 3.0,  # Standard deviations for outlier removal
-        'default_column_map': {
-            'open': 'open',
-            'high': 'high',
-            'low': 'low',
-            'close': 'close',
-            'volume': 'volume'
-        }
+    "data_preparation": {
+        "min_samples": 1000,  # Minimum samples required for training
+        "outlier_threshold": 3.0,  # Standard deviations for outlier removal
+        "default_column_map": {
+            "open": "open",
+            "high": "high",
+            "low": "low",
+            "close": "close",
+            "volume": "volume",
+        },
     },
-    'parallel_processing': {
-        'max_workers': None,  # None means use all available cores
-        'chunk_size': 1000    # Process data in chunks for memory efficiency
-    }
+    "parallel_processing": {
+        "max_workers": None,  # None means use all available cores
+        "chunk_size": 1000,  # Process data in chunks for memory efficiency
+    },
 }
 
 
@@ -113,7 +112,9 @@ def set_deterministic_seeds(seed: int = 42) -> None:
     """
     Set deterministic seeds for reproducibility across all supported ML frameworks.
     """
-    import random, numpy as np
+    import random
+
+    import numpy as np
 
     # Python random
     random.seed(seed)
@@ -124,6 +125,7 @@ def set_deterministic_seeds(seed: int = 42) -> None:
     # pandas
     try:
         from pandas.core.common import random_state
+
         random_state(seed)
         logger.debug(f"pandas random_state set to {seed}")
     except Exception:
@@ -132,6 +134,7 @@ def set_deterministic_seeds(seed: int = 42) -> None:
     # TensorFlow
     try:
         import tensorflow as tf
+
         tf.random.set_seed(seed)
     except ImportError:
         logger.warning("TensorFlow not available, skipping tf seeding")
@@ -139,6 +142,7 @@ def set_deterministic_seeds(seed: int = 42) -> None:
     # PyTorch
     try:
         import torch
+
         torch.manual_seed(seed)
         if hasattr(torch, "cuda"):
             torch.cuda.manual_seed(seed)
@@ -149,6 +153,7 @@ def set_deterministic_seeds(seed: int = 42) -> None:
     # scikit-learn
     try:
         import sklearn  # presence only
+
         # sklearn uses numpy random internally, already seeded above
     except ImportError:
         logger.warning("scikit-learn not available, skipping sklearn seeding")
@@ -156,6 +161,7 @@ def set_deterministic_seeds(seed: int = 42) -> None:
     # CatBoost
     try:
         import catboost as cb
+
         cb.set_random_seed(seed)
     except ImportError:
         logger.warning("CatBoost not available, skipping cb seeding")
@@ -171,13 +177,13 @@ def capture_environment_snapshot() -> Dict[str, Any]:
         Dictionary containing environment snapshot
     """
     env_info = {
-        'python_version': sys.version,  # full version string, not just sys.version.split()[0]
-        'platform': platform.platform(),
-        'processor': platform.processor(),
-        'system': platform.system(),  # required for test consistency
-        'machine': platform.machine(),  # required for test consistency
-        'hostname': platform.node(),  # required for test consistency
-        'packages': {}
+        "python_version": sys.version,  # full version string, not just sys.version.split()[0]
+        "platform": platform.platform(),
+        "processor": platform.processor(),
+        "system": platform.system(),  # required for test consistency
+        "machine": platform.machine(),  # required for test consistency
+        "hostname": platform.node(),  # required for test consistency
+        "packages": {},
     }
 
     # Capture package versions
@@ -185,34 +191,62 @@ def capture_environment_snapshot() -> Dict[str, Any]:
         installed_packages = {pkg.key: pkg.version for pkg in pkg_resources.working_set}
         # Filter to relevant ML packages
         relevant_packages = [
-            'numpy', 'pandas', 'scikit-learn', 'scipy', 'matplotlib', 'seaborn',
-            'torch', 'torchvision', 'tensorflow', 'keras', 'xgboost', 'lightgbm',
-            'joblib', 'mlflow', 'dask', 'ray', 'optuna', 'hyperopt'
+            "numpy",
+            "pandas",
+            "scikit-learn",
+            "scipy",
+            "matplotlib",
+            "seaborn",
+            "torch",
+            "torchvision",
+            "tensorflow",
+            "keras",
+            "xgboost",
+            "lightgbm",
+            "joblib",
+            "mlflow",
+            "dask",
+            "ray",
+            "optuna",
+            "hyperopt",
         ]
-        env_info['packages'] = {pkg: installed_packages.get(pkg, 'not installed')
-                              for pkg in relevant_packages}
+        env_info["packages"] = {
+            pkg: installed_packages.get(pkg, "not installed")
+            for pkg in relevant_packages
+        }
     except Exception:
-        env_info['packages'] = {'error': 'pkg_resources not available'}
+        env_info["packages"] = {"error": "pkg_resources not available"}
 
     # Capture environment variables (filtered for safety)
-    safe_env_vars = ['PYTHONPATH', 'PATH', 'CUDA_VISIBLE_DEVICES', 'OMP_NUM_THREADS',
-                    'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS']
-    env_info['environment_variables'] = {var: os.environ.get(var, 'not set')
-                                       for var in safe_env_vars}
+    safe_env_vars = [
+        "PYTHONPATH",
+        "PATH",
+        "CUDA_VISIBLE_DEVICES",
+        "OMP_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "NUMEXPR_NUM_THREADS",
+    ]
+    env_info["environment_variables"] = {
+        var: os.environ.get(var, "not set") for var in safe_env_vars
+    }
 
     # Normalize PATH to PYTHONPATH for tests
-    pythonpath = os.environ.get('PYTHONPATH', 'not set')
-    if pythonpath != 'not set':
-        env_info['environment_variables']['PATH'] = pythonpath
+    pythonpath = os.environ.get("PYTHONPATH", "not set")
+    if pythonpath != "not set":
+        env_info["environment_variables"]["PATH"] = pythonpath
 
     # Capture Git info if available
     def _capture_git_info():
         try:
             git_info = {
                 "commit_hash": _run_git_command(["git", "rev-parse", "HEAD"]),
-                "branch": _run_git_command(["git", "rev-parse", "--abbrev-ref", "HEAD"]),
-                "remote_url": _run_git_command(["git", "config", "--get", "remote.origin.url"]),
-                "status": _run_git_command(["git", "status", "--porcelain"])
+                "branch": _run_git_command(
+                    ["git", "rev-parse", "--abbrev-ref", "HEAD"]
+                ),
+                "remote_url": _run_git_command(
+                    ["git", "config", "--get", "remote.origin.url"]
+                ),
+                "status": _run_git_command(["git", "status", "--porcelain"]),
             }
             # If commit_hash is empty, set defaults
             if not git_info["commit_hash"]:
@@ -225,27 +259,29 @@ def capture_environment_snapshot() -> Dict[str, Any]:
                 git_info["status"] = "unknown"
             return git_info
         except Exception as e:
-            return {
-                "error": str(e)
-            }
+            return {"error": str(e)}
 
-    env_info['git_info'] = _capture_git_info()
+    env_info["git_info"] = _capture_git_info()
 
     # Capture hardware info
     try:
-        env_info['hardware'] = {
-            'cpu_count': psutil.cpu_count(),
-            'cpu_count_logical': psutil.cpu_count(logical=True),
-            'memory_total_gb': round(psutil.virtual_memory().total / (1024**3), 2),
-            'memory_available_gb': round(psutil.virtual_memory().available / (1024**3), 2)
+        env_info["hardware"] = {
+            "cpu_count": psutil.cpu_count(),
+            "cpu_count_logical": psutil.cpu_count(logical=True),
+            "memory_total_gb": round(psutil.virtual_memory().total / (1024**3), 2),
+            "memory_available_gb": round(
+                psutil.virtual_memory().available / (1024**3), 2
+            ),
         }
     except Exception:
-        env_info['hardware'] = {'error': 'psutil not available'}
+        env_info["hardware"] = {"error": "psutil not available"}
 
     return env_info
 
 
-def load_historical_data(data_path: str, symbol: str = None, chunksize: int = None) -> pd.DataFrame:
+def load_historical_data(
+    data_path: str, symbol: str = None, chunksize: int = None
+) -> pd.DataFrame:
     """
     Load historical OHLCV data for training with robust data type validation and memory-efficient chunking.
 
@@ -266,17 +302,17 @@ def load_historical_data(data_path: str, symbol: str = None, chunksize: int = No
 
     # Use config chunksize if not provided
     if chunksize is None:
-        chunksize = TRAINING_CONFIG['parallel_processing']['chunk_size']
+        chunksize = TRAINING_CONFIG["parallel_processing"]["chunk_size"]
 
     try:
         processed_chunks = []
 
-        if data_path.endswith('.csv'):
+        if data_path.endswith(".csv"):
             # Use pandas chunked reading for memory efficiency
             chunk_iter = pd.read_csv(data_path, chunksize=chunksize)
-        elif data_path.endswith('.json'):
+        elif data_path.endswith(".json"):
             # For JSON, load entire file (JSON files are typically smaller)
-            with open(data_path, 'r') as f:
+            with open(data_path, "r") as f:
                 data = json.load(f)
             df_full = pd.DataFrame(data)
             # Process as single chunk
@@ -294,9 +330,9 @@ def load_historical_data(data_path: str, symbol: str = None, chunksize: int = No
             logger.info(f"Processing chunk {chunk_idx + 1}")
 
             # Ensure required columns exist
-            required_cols = ['timestamp', 'open', 'high', 'low', 'close']
-            if 'volume' in df_chunk.columns:
-                required_cols.append('volume')
+            required_cols = ["timestamp", "open", "high", "low", "close"]
+            if "volume" in df_chunk.columns:
+                required_cols.append("volume")
 
             missing_cols = [col for col in required_cols if col not in df_chunk.columns]
             if missing_cols:
@@ -304,68 +340,88 @@ def load_historical_data(data_path: str, symbol: str = None, chunksize: int = No
 
             # Data type validation and coercion for numerical columns
             # This ensures prices and volumes are numeric types, preventing downstream errors
-            numerical_cols = ['open', 'high', 'low', 'close']
-            if 'volume' in df_chunk.columns:
-                numerical_cols.append('volume')
+            numerical_cols = ["open", "high", "low", "close"]
+            if "volume" in df_chunk.columns:
+                numerical_cols.append("volume")
 
-            logger.info(f"Performing data type validation and coercion for numerical columns in chunk {chunk_idx + 1}")
+            logger.info(
+                f"Performing data type validation and coercion for numerical columns in chunk {chunk_idx + 1}"
+            )
             for col in numerical_cols:
                 original_dtype = df_chunk[col].dtype
-                df_chunk[col] = pd.to_numeric(df_chunk[col], errors='coerce')
+                df_chunk[col] = pd.to_numeric(df_chunk[col], errors="coerce")
                 coerced_count = df_chunk[col].isna().sum()
                 if coerced_count > 0:
-                    logger.warning(f"Column '{col}' had {coerced_count} invalid values coerced to NaN "
-                                 f"(original dtype: {original_dtype})")
+                    logger.warning(
+                        f"Column '{col}' had {coerced_count} invalid values coerced to NaN "
+                        f"(original dtype: {original_dtype})"
+                    )
 
             # Handle NaNs introduced by coercion
             # For essential price columns, we remove rows with NaN to maintain data integrity
-            essential_cols = ['open', 'high', 'low', 'close']
+            essential_cols = ["open", "high", "low", "close"]
             nan_rows_before = df_chunk[essential_cols].isna().any(axis=1).sum()
             if nan_rows_before > 0:
-                logger.warning(f"Removing {nan_rows_before} rows with NaN values in essential columns from chunk {chunk_idx + 1}")
+                logger.warning(
+                    f"Removing {nan_rows_before} rows with NaN values in essential columns from chunk {chunk_idx + 1}"
+                )
                 df_chunk = df_chunk.dropna(subset=essential_cols)
 
             # Check if NaN values in essential columns exceed threshold after handling
             # This prevents training on datasets with excessive invalid data
-            nan_threshold = TRAINING_CONFIG['data_loading']['nan_threshold']
+            nan_threshold = TRAINING_CONFIG["data_loading"]["nan_threshold"]
             for col in essential_cols:
                 if col in df_chunk.columns:
-                    nan_ratio = df_chunk[col].isna().sum() / len(df_chunk) if len(df_chunk) > 0 else 0
+                    nan_ratio = (
+                        df_chunk[col].isna().sum() / len(df_chunk)
+                        if len(df_chunk) > 0
+                        else 0
+                    )
                     if nan_ratio > nan_threshold:
-                        raise ValueError(f"Column '{col}' has {nan_ratio:.2%} NaN values after processing, "
-                                       f"exceeding threshold of {nan_threshold:.2%}. "
-                                       f"Dataset may be corrupted or contain too many invalid values.")
+                        raise ValueError(
+                            f"Column '{col}' has {nan_ratio:.2%} NaN values after processing, "
+                            f"exceeding threshold of {nan_threshold:.2%}. "
+                            f"Dataset may be corrupted or contain too many invalid values."
+                        )
 
             # For volume, fill NaNs with configured value (assuming no volume data means zero volume)
-            if 'volume' in df_chunk.columns:
-                nan_volume = df_chunk['volume'].isna().sum()
+            if "volume" in df_chunk.columns:
+                nan_volume = df_chunk["volume"].isna().sum()
                 if nan_volume > 0:
-                    fill_value = TRAINING_CONFIG['data_loading']['fill_volume_na']
-                    logger.info(f"Filling {nan_volume} NaN values in volume column with {fill_value} in chunk {chunk_idx + 1}")
-                    df_chunk['volume'] = df_chunk['volume'].fillna(fill_value)
+                    fill_value = TRAINING_CONFIG["data_loading"]["fill_volume_na"]
+                    logger.info(
+                        f"Filling {nan_volume} NaN values in volume column with {fill_value} in chunk {chunk_idx + 1}"
+                    )
+                    df_chunk["volume"] = df_chunk["volume"].fillna(fill_value)
 
             # Validate timestamp column
-            if 'timestamp' in df_chunk.columns:
-                if df_chunk['timestamp'].dtype == 'object':
+            if "timestamp" in df_chunk.columns:
+                if df_chunk["timestamp"].dtype == "object":
                     # Try to parse timestamp strings to datetime
-                    logger.info(f"Converting timestamp column from object to datetime in chunk {chunk_idx + 1}")
-                    df_chunk['timestamp'] = pd.to_datetime(df_chunk['timestamp'], errors='coerce')
+                    logger.info(
+                        f"Converting timestamp column from object to datetime in chunk {chunk_idx + 1}"
+                    )
+                    df_chunk["timestamp"] = pd.to_datetime(
+                        df_chunk["timestamp"], errors="coerce"
+                    )
 
                 # Check for NaN timestamps after coercion
-                nan_timestamps = df_chunk['timestamp'].isna().sum()
+                nan_timestamps = df_chunk["timestamp"].isna().sum()
                 if nan_timestamps > 0:
-                    logger.warning(f"Removing {nan_timestamps} rows with invalid timestamps from chunk {chunk_idx + 1}")
-                    df_chunk = df_chunk.dropna(subset=['timestamp'])
+                    logger.warning(
+                        f"Removing {nan_timestamps} rows with invalid timestamps from chunk {chunk_idx + 1}"
+                    )
+                    df_chunk = df_chunk.dropna(subset=["timestamp"])
 
                 # Convert to Unix timestamp (seconds since epoch)
-                df_chunk['timestamp'] = df_chunk['timestamp'].astype('int64') // 10**9
+                df_chunk["timestamp"] = df_chunk["timestamp"].astype("int64") // 10**9
 
             # Filter by symbol if specified
-            if symbol and 'symbol' in df_chunk.columns:
-                df_chunk = df_chunk[df_chunk['symbol'] == symbol].copy()
+            if symbol and "symbol" in df_chunk.columns:
+                df_chunk = df_chunk[df_chunk["symbol"] == symbol].copy()
 
             # Sort by timestamp within chunk
-            df_chunk = df_chunk.sort_values('timestamp').reset_index(drop=True)
+            df_chunk = df_chunk.sort_values("timestamp").reset_index(drop=True)
 
             # Append processed chunk
             if not df_chunk.empty:
@@ -375,11 +431,13 @@ def load_historical_data(data_path: str, symbol: str = None, chunksize: int = No
         if processed_chunks:
             df = pd.concat(processed_chunks, ignore_index=True)
             # Final sort across all chunks
-            df = df.sort_values('timestamp').reset_index(drop=True)
+            df = df.sort_values("timestamp").reset_index(drop=True)
         else:
             df = pd.DataFrame()
 
-        logger.info(f"Loaded {len(df)} rows of validated historical data using chunked processing")
+        logger.info(
+            f"Loaded {len(df)} rows of validated historical data using chunked processing"
+        )
         return df
 
     except Exception as e:
@@ -387,7 +445,9 @@ def load_historical_data(data_path: str, symbol: str = None, chunksize: int = No
         raise
 
 
-def _process_symbol_data(symbol_data: pd.DataFrame, outlier_threshold: float, column_map: Dict[str, str]) -> pd.DataFrame:
+def _process_symbol_data(
+    symbol_data: pd.DataFrame, outlier_threshold: float, column_map: Dict[str, str]
+) -> pd.DataFrame:
     """
     Process data for a single symbol.
 
@@ -409,51 +469,70 @@ def _process_symbol_data(symbol_data: pd.DataFrame, outlier_threshold: float, co
     column_map = {c.lower(): c for c in df.columns}
 
     # Data type validation and coercion for numerical columns
-    numeric_cols = [column_map['open'], column_map['high'], column_map['low'], column_map['close']]
-    if 'volume' in column_map and column_map['volume'] in df.columns:
-        numeric_cols.append(column_map['volume'])
+    numeric_cols = [
+        column_map["open"],
+        column_map["high"],
+        column_map["low"],
+        column_map["close"],
+    ]
+    if "volume" in column_map and column_map["volume"] in df.columns:
+        numeric_cols.append(column_map["volume"])
 
     for col in numeric_cols:
         original_dtype = df[col].dtype
-        df[col] = pd.to_numeric(df[col], errors='coerce')
+        df[col] = pd.to_numeric(df[col], errors="coerce")
         coerced_count = df[col].isna().sum()
         if coerced_count > 0:
-            logger.warning(f"Column '{col}' had {coerced_count} invalid values coerced to NaN "
-                         f"(original dtype: {original_dtype})")
+            logger.warning(
+                f"Column '{col}' had {coerced_count} invalid values coerced to NaN "
+                f"(original dtype: {original_dtype})"
+            )
 
     # Handle NaNs introduced by coercion
-    essential_cols = [column_map['open'], column_map['high'], column_map['low'], column_map['close']]
+    essential_cols = [
+        column_map["open"],
+        column_map["high"],
+        column_map["low"],
+        column_map["close"],
+    ]
     nan_rows_before = df[essential_cols].isna().any(axis=1).sum()
     if nan_rows_before > 0:
         df = df.dropna(subset=essential_cols)
 
     # Check if NaN values in essential columns exceed threshold after handling
     # This prevents training on datasets with excessive invalid data for individual symbols
-    nan_threshold = TRAINING_CONFIG['data_loading']['nan_threshold']
+    nan_threshold = TRAINING_CONFIG["data_loading"]["nan_threshold"]
     for col in essential_cols:
         if col in df.columns:
             nan_ratio = df[col].isna().sum() / len(df) if len(df) > 0 else 0
             if nan_ratio > nan_threshold:
-                raise ValueError(f"Column '{col}' has {nan_ratio:.2%} NaN values after processing, "
-                               f"exceeding threshold of {nan_threshold:.2%}. "
-                               f"Dataset for symbol may be corrupted or contain too many invalid values.")
+                raise ValueError(
+                    f"Column '{col}' has {nan_ratio:.2%} NaN values after processing, "
+                    f"exceeding threshold of {nan_threshold:.2%}. "
+                    f"Dataset for symbol may be corrupted or contain too many invalid values."
+                )
 
     # For volume, fill NaNs with configured value
-    if 'volume' in column_map and column_map['volume'] in df.columns:
-        fill_value = TRAINING_CONFIG['data_loading']['fill_volume_na']
-        df[column_map['volume']] = df[column_map['volume']].fillna(fill_value)
+    if "volume" in column_map and column_map["volume"] in df.columns:
+        fill_value = TRAINING_CONFIG["data_loading"]["fill_volume_na"]
+        df[column_map["volume"]] = df[column_map["volume"]].fillna(fill_value)
 
     # Remove rows with zero or negative prices
     invalid_price_mask = (
-        (df[column_map['open']] <= 0) |
-        (df[column_map['high']] <= 0) |
-        (df[column_map['low']] <= 0) |
-        (df[column_map['close']] <= 0)
+        (df[column_map["open"]] <= 0)
+        | (df[column_map["high"]] <= 0)
+        | (df[column_map["low"]] <= 0)
+        | (df[column_map["close"]] <= 0)
     )
     df = df[~invalid_price_mask]
 
     # Remove outliers
-    for col in [column_map['open'], column_map['high'], column_map['low'], column_map['close']]:
+    for col in [
+        column_map["open"],
+        column_map["high"],
+        column_map["low"],
+        column_map["close"],
+    ]:
         mean_val = df[col].mean()
         std_val = df[col].std()
         if std_val > 0:
@@ -465,7 +544,12 @@ def _process_symbol_data(symbol_data: pd.DataFrame, outlier_threshold: float, co
     return df
 
 
-def prepare_training_data(df: pd.DataFrame, min_samples: Optional[int] = None, outlier_threshold: Optional[float] = None, column_map: Optional[Dict[str, str]] = None) -> pd.DataFrame:
+def prepare_training_data(
+    df: pd.DataFrame,
+    min_samples: Optional[int] = None,
+    outlier_threshold: Optional[float] = None,
+    column_map: Optional[Dict[str, str]] = None,
+) -> pd.DataFrame:
     """
     Prepare and validate training data with robust data type validation, NaN handling, and parallel processing.
 
@@ -492,42 +576,52 @@ def prepare_training_data(df: pd.DataFrame, min_samples: Optional[int] = None, o
     Returns:
         Prepared DataFrame with validated and cleaned data
     """
-    logger.info("Preparing training data with comprehensive validation and parallel processing")
+    logger.info(
+        "Preparing training data with comprehensive validation and parallel processing"
+    )
 
     # Use config values if parameters not provided
     if min_samples is None:
-        min_samples = TRAINING_CONFIG['data_preparation']['min_samples']
+        min_samples = TRAINING_CONFIG["data_preparation"]["min_samples"]
     if outlier_threshold is None:
-        outlier_threshold = TRAINING_CONFIG['data_preparation']['outlier_threshold']
+        outlier_threshold = TRAINING_CONFIG["data_preparation"]["outlier_threshold"]
     if column_map is None:
-        column_map = TRAINING_CONFIG['data_preparation']['default_column_map']
+        column_map = TRAINING_CONFIG["data_preparation"]["default_column_map"]
 
     # Validate column mappings
-    required_keys = ['open', 'high', 'low', 'close']
+    required_keys = ["open", "high", "low", "close"]
     for key in required_keys:
         if column_map[key] not in df.columns:
             if key in df.columns:
                 continue
-            raise KeyError(f"Required column '{column_map[key]}' (mapped from '{key}') not found in DataFrame. Available columns: {list(df.columns)}")
+            raise KeyError(
+                f"Required column '{column_map[key]}' (mapped from '{key}') not found in DataFrame. Available columns: {list(df.columns)}"
+            )
 
     # Basic validation
     if len(df) < min_samples:
         raise ValueError(f"Insufficient training data: {len(df)} < {min_samples}")
 
     # Check if data contains multiple symbols for parallel processing
-    if 'symbol' in df.columns:
-        symbols = df['symbol'].unique()
+    if "symbol" in df.columns:
+        symbols = df["symbol"].unique()
         if len(symbols) > 1:
-            logger.info(f"Processing {len(symbols)} symbols in parallel using ProcessPoolExecutor")
+            logger.info(
+                f"Processing {len(symbols)} symbols in parallel using ProcessPoolExecutor"
+            )
 
             # Group data by symbol
-            symbol_groups = [df[df['symbol'] == symbol].copy() for symbol in symbols]
+            symbol_groups = [df[df["symbol"] == symbol].copy() for symbol in symbols]
 
             # Use ProcessPoolExecutor for parallel processing
-            with ProcessPoolExecutor(max_workers=min(len(symbols), multiprocessing.cpu_count())) as executor:
+            with ProcessPoolExecutor(
+                max_workers=min(len(symbols), multiprocessing.cpu_count())
+            ) as executor:
                 # Submit processing tasks for each symbol
                 futures = [
-                    executor.submit(_process_symbol_data, group, outlier_threshold, column_map)
+                    executor.submit(
+                        _process_symbol_data, group, outlier_threshold, column_map
+                    )
                     for group in symbol_groups
                 ]
 
@@ -550,7 +644,9 @@ def prepare_training_data(df: pd.DataFrame, min_samples: Optional[int] = None, o
         # No symbol column, process as single dataset
         df = _process_symbol_data(df, outlier_threshold, column_map)
 
-    logger.info(f"Prepared {len(df)} samples for training after validation and cleaning")
+    logger.info(
+        f"Prepared {len(df)} samples for training after validation and cleaning"
+    )
     return df
 
 
@@ -565,7 +661,7 @@ def save_training_results(results: Dict[str, Any], output_path: str) -> None:
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(output_path, 'w') as f:
+    with open(output_path, "w") as f:
         json.dump(results, f, indent=2, default=str)
 
     logger.info(f"Training results saved to {output_path}")
@@ -595,7 +691,7 @@ class ExperimentTracker:
             tracking_dir: Directory to store experiments (uses config default if None)
         """
         if tracking_dir is None:
-            tracking_dir = EXPERIMENT_CONFIG['tracking_dir']
+            tracking_dir = EXPERIMENT_CONFIG["tracking_dir"]
 
         if experiment_name is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -607,17 +703,14 @@ class ExperimentTracker:
 
         # Initialize experiment metadata
         self.metadata = {
-            'experiment_name': experiment_name,
-            'start_time': datetime.now().isoformat(),
-            'status': 'running',
-            'parameters': {},
-            'metrics': {},
-            'artifacts': {},
-            'git_info': {},
-            'system_info': {
-                'python_version': sys.version,
-                'platform': sys.platform
-            }
+            "experiment_name": experiment_name,
+            "start_time": datetime.now().isoformat(),
+            "status": "running",
+            "parameters": {},
+            "metrics": {},
+            "artifacts": {},
+            "git_info": {},
+            "system_info": {"python_version": sys.version, "platform": sys.platform},
         }
 
         # Save initial metadata
@@ -633,71 +726,88 @@ class ExperimentTracker:
         Args:
             parameters: Dictionary of parameters to log
         """
-        if not EXPERIMENT_CONFIG['log_parameters']:
+        if not EXPERIMENT_CONFIG["log_parameters"]:
             return
 
-        self.metadata['parameters'].update(parameters)
+        self.metadata["parameters"].update(parameters)
 
         # Add reproducibility information
-        self.metadata['reproducibility'] = {
-            'random_seed': parameters.get('random_seed', 42),
-            'deterministic_mode': True,
-            'libraries_with_seeds': [
-                'python_random', 'numpy', 'pandas', 'sklearn',
-                'tensorflow', 'torch', 'lightgbm', 'xgboost', 'catboost'
+        self.metadata["reproducibility"] = {
+            "random_seed": parameters.get("random_seed", 42),
+            "deterministic_mode": True,
+            "libraries_with_seeds": [
+                "python_random",
+                "numpy",
+                "pandas",
+                "sklearn",
+                "tensorflow",
+                "torch",
+                "lightgbm",
+                "xgboost",
+                "catboost",
             ],
-            'environment_snapshot': parameters.get('environment_snapshot', {}),
-            'git_commit': self.metadata.get('git_info', {}).get('commit_hash', 'unknown'),
-            'platform_info': {
-                'system': platform.system(),
-                'release': platform.release(),
-                'version': platform.version(),
-                'machine': platform.machine(),
-                'processor': platform.processor()
-            }
+            "environment_snapshot": parameters.get("environment_snapshot", {}),
+            "git_commit": self.metadata.get("git_info", {}).get(
+                "commit_hash", "unknown"
+            ),
+            "platform_info": {
+                "system": platform.system(),
+                "release": platform.release(),
+                "version": platform.version(),
+                "machine": platform.machine(),
+                "processor": platform.processor(),
+            },
         }
 
         self._save_metadata()
 
-        logger.info(f"Logged {len(parameters)} parameters for experiment {self.experiment_name}")
+        logger.info(
+            f"Logged {len(parameters)} parameters for experiment {self.experiment_name}"
+        )
 
         # Also save parameters to a separate file for easy viewing
-        params_file = self.experiment_dir / 'parameters.json'
-        with open(params_file, 'w') as f:
+        params_file = self.experiment_dir / "parameters.json"
+        with open(params_file, "w") as f:
             json.dump(parameters, f, indent=2, default=str)
 
         # Save reproducibility checklist
-        reproducibility_file = self.experiment_dir / 'reproducibility_checklist.json'
+        reproducibility_file = self.experiment_dir / "reproducibility_checklist.json"
         reproducibility_info = {
-            'experiment_name': self.experiment_name,
-            'timestamp': datetime.now().isoformat(),
-            'reproducibility_requirements': {
-                'random_seed': self.metadata['reproducibility']['random_seed'],
-                'python_version': self.metadata['reproducibility']['environment_snapshot'].get('python_version', 'unknown'),
-                'git_commit': self.metadata['reproducibility']['git_commit'],
-                'libraries': self.metadata['reproducibility']['environment_snapshot'].get('packages', {}),
-                'system_requirements': self.metadata['reproducibility']['platform_info']
+            "experiment_name": self.experiment_name,
+            "timestamp": datetime.now().isoformat(),
+            "reproducibility_requirements": {
+                "random_seed": self.metadata["reproducibility"]["random_seed"],
+                "python_version": self.metadata["reproducibility"][
+                    "environment_snapshot"
+                ].get("python_version", "unknown"),
+                "git_commit": self.metadata["reproducibility"]["git_commit"],
+                "libraries": self.metadata["reproducibility"][
+                    "environment_snapshot"
+                ].get("packages", {}),
+                "system_requirements": self.metadata["reproducibility"][
+                    "platform_info"
+                ],
             },
-            'reproduction_steps': [
+            "reproduction_steps": [
                 f"1. Checkout Git commit: {self.metadata['reproducibility']['git_commit']}",
                 f"2. Set random seed: {self.metadata['reproducibility']['random_seed']}",
                 "3. Install dependencies from requirements.txt",
                 f"4. Run training with same parameters: python ml/train.py --config {parameters.get('config_file', 'config.json')} --data {parameters.get('data_file', 'data.csv')}",
-                "5. Verify results match within tolerance"
+                "5. Verify results match within tolerance",
             ],
-            'validation_metrics': {
-                'f1_score_target': 0.70,
-                'deterministic_reproduction': True,
-                'performance_tolerance': 0.05  # 5% tolerance for performance metrics
-            }
+            "validation_metrics": {
+                "f1_score_target": 0.70,
+                "deterministic_reproduction": True,
+                "performance_tolerance": 0.05,  # 5% tolerance for performance metrics
+            },
         }
 
-        with open(reproducibility_file, 'w') as f:
+        with open(reproducibility_file, "w") as f:
             json.dump(reproducibility_info, f, indent=2, default=str)
 
         logger.info(f"Saved reproducibility checklist to {reproducibility_file}")
 
-    def log_metrics(self, metrics: Dict[str, Any], step: str = 'final') -> None:
+    def log_metrics(self, metrics: Dict[str, Any], step: str = "final") -> None:
         """
         Log metrics during or at the end of training.
 
@@ -705,18 +815,20 @@ class ExperimentTracker:
             metrics: Dictionary of metrics to log
             step: Step identifier (e.g., 'epoch_1', 'validation', 'final')
         """
-        if not EXPERIMENT_CONFIG['log_metrics']:
+        if not EXPERIMENT_CONFIG["log_metrics"]:
             return
 
-        if step not in self.metadata['metrics']:
-            self.metadata['metrics'][step] = {}
+        if step not in self.metadata["metrics"]:
+            self.metadata["metrics"][step] = {}
 
-        self.metadata['metrics'][step].update(metrics)
+        self.metadata["metrics"][step].update(metrics)
         self._save_metadata()
 
-        logger.info(f"Logged {len(metrics)} metrics for step '{step}' in experiment {self.experiment_name}")
+        logger.info(
+            f"Logged {len(metrics)} metrics for step '{step}' in experiment {self.experiment_name}"
+        )
 
-    def log_artifact(self, artifact_path: str, artifact_type: str = 'file') -> None:
+    def log_artifact(self, artifact_path: str, artifact_type: str = "file") -> None:
         """
         Log artifacts such as model files, plots, or configurations.
 
@@ -724,18 +836,19 @@ class ExperimentTracker:
             artifact_path: Path to the artifact file
             artifact_type: Type of artifact (e.g., 'model', 'plot', 'config')
         """
-        if not EXPERIMENT_CONFIG['log_artifacts']:
+        if not EXPERIMENT_CONFIG["log_artifacts"]:
             return
 
         artifact_name = Path(artifact_path).name
 
         # Copy artifact to experiment directory if it exists
         if os.path.exists(artifact_path):
-            dest_path = self.experiment_dir / 'artifacts' / artifact_name
+            dest_path = self.experiment_dir / "artifacts" / artifact_name
             dest_path.parent.mkdir(exist_ok=True)
 
             try:
                 import shutil
+
                 if os.path.isdir(artifact_path):
                     shutil.copytree(artifact_path, dest_path, dirs_exist_ok=True)
                 else:
@@ -745,24 +858,28 @@ class ExperimentTracker:
                 logger.warning(f"Failed to copy artifact {artifact_path}: {e}")
 
         # Log artifact metadata
-        if artifact_type not in self.metadata['artifacts']:
-            self.metadata['artifacts'][artifact_type] = []
+        if artifact_type not in self.metadata["artifacts"]:
+            self.metadata["artifacts"][artifact_type] = []
 
-        self.metadata['artifacts'][artifact_type].append({
-            'name': artifact_name,
-            'path': artifact_path,
-            'logged_at': datetime.now().isoformat()
-        })
+        self.metadata["artifacts"][artifact_type].append(
+            {
+                "name": artifact_name,
+                "path": artifact_path,
+                "logged_at": datetime.now().isoformat(),
+            }
+        )
 
         self._save_metadata()
 
-        logger.info(f"Logged artifact '{artifact_name}' of type '{artifact_type}' in experiment {self.experiment_name}")
+        logger.info(
+            f"Logged artifact '{artifact_name}' of type '{artifact_type}' in experiment {self.experiment_name}"
+        )
 
     def log_git_info(self) -> None:
         """
         Log Git repository information for reproducibility.
         """
-        if not EXPERIMENT_CONFIG['track_git_info']:
+        if not EXPERIMENT_CONFIG["track_git_info"]:
             return
 
         git_info = capture_environment_snapshot().get("git_info", {})
@@ -774,21 +891,21 @@ class ExperimentTracker:
 
         logger.info(f"Logged Git information for experiment {self.experiment_name}")
 
-    def finish_experiment(self, status: str = 'completed') -> None:
+    def finish_experiment(self, status: str = "completed") -> None:
         """
         Mark the experiment as finished.
 
         Args:
             status: Final status ('completed', 'failed', 'interrupted')
         """
-        self.metadata['status'] = status
-        self.metadata['end_time'] = datetime.now().isoformat()
+        self.metadata["status"] = status
+        self.metadata["end_time"] = datetime.now().isoformat()
 
-        if 'start_time' in self.metadata:
-            start_time = datetime.fromisoformat(self.metadata['start_time'])
-            end_time = datetime.fromisoformat(self.metadata['end_time'])
+        if "start_time" in self.metadata:
+            start_time = datetime.fromisoformat(self.metadata["start_time"])
+            end_time = datetime.fromisoformat(self.metadata["end_time"])
             duration = (end_time - start_time).total_seconds()
-            self.metadata['duration_seconds'] = duration
+            self.metadata["duration_seconds"] = duration
 
         self._save_metadata()
 
@@ -796,13 +913,18 @@ class ExperimentTracker:
 
     def _save_metadata(self) -> None:
         """Save experiment metadata to file."""
-        metadata_file = self.experiment_dir / 'metadata.json'
-        with open(metadata_file, 'w') as f:
+        metadata_file = self.experiment_dir / "metadata.json"
+        with open(metadata_file, "w") as f:
             json.dump(self.metadata, f, indent=2, default=str)
 
 
-def log_to_mlflow(experiment_name: str, parameters: Dict[str, Any], metrics: Dict[str, Any],
-                 models: Dict[str, Any], artifacts: List[str]) -> None:
+def log_to_mlflow(
+    experiment_name: str,
+    parameters: Dict[str, Any],
+    metrics: Dict[str, Any],
+    models: Dict[str, Any],
+    artifacts: List[str],
+) -> None:
     """
     Log training run to MLflow for model registry and experiment tracking.
 
@@ -837,17 +959,25 @@ def log_to_mlflow(experiment_name: str, parameters: Dict[str, Any], metrics: Dic
 
             # Log models
             for model_name, model_info in models.items():
-                if model_name not in ['status', 'training_metadata']:
+                if model_name not in ["status", "training_metadata"]:
                     try:
                         # Log model to MLflow (assuming sklearn-compatible models)
-                        if hasattr(model_info, 'model') and hasattr(model_info.model, 'predict'):
-                            mlflow.sklearn.log_model(model_info.model, f"{model_name}_model")
+                        if hasattr(model_info, "model") and hasattr(
+                            model_info.model, "predict"
+                        ):
+                            mlflow.sklearn.log_model(
+                                model_info.model, f"{model_name}_model"
+                            )
                             logger.info(f"Logged model {model_name} to MLflow")
-                        elif isinstance(model_info, dict) and 'model' in model_info:
-                            mlflow.sklearn.log_model(model_info['model'], f"{model_name}_model")
+                        elif isinstance(model_info, dict) and "model" in model_info:
+                            mlflow.sklearn.log_model(
+                                model_info["model"], f"{model_name}_model"
+                            )
                             logger.info(f"Logged model {model_name} to MLflow")
                     except Exception as e:
-                        logger.warning(f"Could not log model {model_name} to MLflow: {e}")
+                        logger.warning(
+                            f"Could not log model {model_name} to MLflow: {e}"
+                        )
 
             # Log artifacts
             for artifact_path in artifacts:
@@ -856,26 +986,34 @@ def log_to_mlflow(experiment_name: str, parameters: Dict[str, Any], metrics: Dic
                         mlflow.log_artifact(artifact_path)
                         logger.debug(f"Logged artifact {artifact_path} to MLflow")
                     except Exception as e:
-                        logger.warning(f"Could not log artifact {artifact_path} to MLflow: {e}")
+                        logger.warning(
+                            f"Could not log artifact {artifact_path} to MLflow: {e}"
+                        )
 
             # Log environment info as artifacts
-            if 'environment_snapshot' in parameters:
-                env_file = os.path.join(os.getcwd(), 'environment_snapshot.json')
+            if "environment_snapshot" in parameters:
+                env_file = os.path.join(os.getcwd(), "environment_snapshot.json")
                 try:
-                    with open(env_file, 'w') as f:
-                        json.dump(parameters['environment_snapshot'], f, indent=2, default=str)
+                    with open(env_file, "w") as f:
+                        json.dump(
+                            parameters["environment_snapshot"], f, indent=2, default=str
+                        )
                     mlflow.log_artifact(env_file)
                     os.remove(env_file)  # Clean up temp file
                 except Exception as e:
                     logger.warning(f"Could not log environment snapshot to MLflow: {e}")
 
-            logger.info(f"Successfully logged training run to MLflow experiment: {experiment_name}")
+            logger.info(
+                f"Successfully logged training run to MLflow experiment: {experiment_name}"
+            )
 
     except Exception as e:
         logger.warning(f"Failed to log to MLflow: {e}")
 
 
-def initialize_experiment_tracking(args: argparse.Namespace, config: Dict[str, Any], seed: int = 42) -> ExperimentTracker:
+def initialize_experiment_tracking(
+    args: argparse.Namespace, config: Dict[str, Any], seed: int = 42
+) -> ExperimentTracker:
     """
     Initialize experiment tracking for the training run.
 
@@ -888,7 +1026,9 @@ def initialize_experiment_tracking(args: argparse.Namespace, config: Dict[str, A
         ExperimentTracker instance
     """
     # Create experiment name based on key parameters
-    experiment_name = f"train_{args.symbol or 'all'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    experiment_name = (
+        f"train_{args.symbol or 'all'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    )
 
     tracker = ExperimentTracker(experiment_name=experiment_name)
 
@@ -903,22 +1043,24 @@ def initialize_experiment_tracking(args: argparse.Namespace, config: Dict[str, A
 
     # Log parameters including seed and environment
     parameters = {
-        'data_file': args.data,
-        'symbol': args.symbol,
-        'min_samples': args.min_samples,
-        'verbose': args.verbose,
-        'config_file': args.config,
-        'output_file': args.output,
-        'random_seed': seed,
-        'environment_snapshot': env_snapshot
+        "data_file": args.data,
+        "symbol": args.symbol,
+        "min_samples": args.min_samples,
+        "verbose": args.verbose,
+        "config_file": args.config,
+        "output_file": args.output,
+        "random_seed": seed,
+        "environment_snapshot": env_snapshot,
     }
 
     # Add predictive model config parameters
-    predictive_config = config.get('predictive_models', {})
-    parameters.update({
-        'predictive_models_enabled': predictive_config.get('enabled', False),
-        'models_config': predictive_config.get('models', {})
-    })
+    predictive_config = config.get("predictive_models", {})
+    parameters.update(
+        {
+            "predictive_models_enabled": predictive_config.get("enabled", False),
+            "models_config": predictive_config.get("models", {}),
+        }
+    )
 
     tracker.log_parameters(parameters)
 
@@ -927,19 +1069,36 @@ def initialize_experiment_tracking(args: argparse.Namespace, config: Dict[str, A
 
 def main():
     """Main training function."""
-    parser = argparse.ArgumentParser(description='Train predictive models')
-    parser.add_argument('--config', '-c', type=str, default='config.json',
-                        help='Configuration file path')
-    parser.add_argument('--data', '-d', type=str, required=True,
-                        help='Historical data file path')
-    parser.add_argument('--symbol', '-s', type=str,
-                        help='Symbol to train on (optional)')
-    parser.add_argument('--output', '-o', type=str, default='training_results.json',
-                        help='Output file for training results')
-    parser.add_argument('--min-samples', type=int, default=1000,
-                        help='Minimum number of samples required')
-    parser.add_argument('--verbose', '-v', action='store_true',
-                        help='Enable verbose logging')
+    parser = argparse.ArgumentParser(description="Train predictive models")
+    parser.add_argument(
+        "--config",
+        "-c",
+        type=str,
+        default="config.json",
+        help="Configuration file path",
+    )
+    parser.add_argument(
+        "--data", "-d", type=str, required=True, help="Historical data file path"
+    )
+    parser.add_argument(
+        "--symbol", "-s", type=str, help="Symbol to train on (optional)"
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=str,
+        default="training_results.json",
+        help="Output file for training results",
+    )
+    parser.add_argument(
+        "--min-samples",
+        type=int,
+        default=1000,
+        help="Minimum number of samples required",
+    )
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Enable verbose logging"
+    )
 
     tracker = None
     try:
@@ -949,7 +1108,7 @@ def main():
         log_level = logging.DEBUG if args.verbose else logging.INFO
         logging.basicConfig(
             level=log_level,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         )
 
         # Load configuration
@@ -957,8 +1116,8 @@ def main():
         config = load_config(args.config)
 
         # Check if predictive models are enabled before doing anything else
-        predictive_config = config.get('predictive_models', {})
-        if not predictive_config.get('enabled', False):
+        predictive_config = config.get("predictive_models", {})
+        if not predictive_config.get("enabled", False):
             logger.info("Predictive models disabled, exiting gracefully.")
             return  # instead of sys.exit(1)
 
@@ -966,33 +1125,39 @@ def main():
         tracker = initialize_experiment_tracking(args, config, seed=42)
 
         # Log data loading start
-        tracker.log_metrics({'data_loading': 'started'}, 'data_preparation')
+        tracker.log_metrics({"data_loading": "started"}, "data_preparation")
 
         # Load historical data
         df = load_historical_data(args.data, args.symbol)
 
         # Log data loading completion
-        tracker.log_metrics({
-            'data_samples_loaded': len(df),
-            'data_file': args.data,
-            'symbol': args.symbol or 'all'
-        }, 'data_preparation')
+        tracker.log_metrics(
+            {
+                "data_samples_loaded": len(df),
+                "data_file": args.data,
+                "symbol": args.symbol or "all",
+            },
+            "data_preparation",
+        )
 
         # Log data preparation start
-        tracker.log_metrics({'data_preparation': 'started'}, 'data_preparation')
+        tracker.log_metrics({"data_preparation": "started"}, "data_preparation")
 
         # Prepare training data
         df = prepare_training_data(df, args.min_samples)
 
         # Log data preparation completion
-        tracker.log_metrics({
-            'data_samples_prepared': len(df),
-            'min_samples_required': args.min_samples
-        }, 'data_preparation')
+        tracker.log_metrics(
+            {
+                "data_samples_prepared": len(df),
+                "min_samples_required": args.min_samples,
+            },
+            "data_preparation",
+        )
 
         # Log artifacts (data file and config)
-        tracker.log_artifact(args.data, 'data')
-        tracker.log_artifact(args.config, 'config')
+        tracker.log_artifact(args.data, "data")
+        tracker.log_artifact(args.config, "config")
 
         manager = PredictiveModelManager(predictive_config)
 
@@ -1001,7 +1166,7 @@ def main():
         start_time = datetime.now()
 
         # Log training start
-        tracker.log_metrics({'training': 'started'}, 'training')
+        tracker.log_metrics({"training": "started"}, "training")
 
         training_results = manager.train_models(df)
 
@@ -1009,31 +1174,36 @@ def main():
         training_duration = (end_time - start_time).total_seconds()
 
         # Log training completion
-        tracker.log_metrics({
-            'training_duration_seconds': training_duration,
-            'training_status': training_results.get('status', 'unknown')
-        }, 'training')
+        tracker.log_metrics(
+            {
+                "training_duration_seconds": training_duration,
+                "training_status": training_results.get("status", "unknown"),
+            },
+            "training",
+        )
 
         # Add metadata to results
-        training_results.update({
-            "training_metadata": {
-                "timestamp": end_time.isoformat(),
-                "duration_seconds": training_duration,
-                "data_samples": len(df),
-                "data_file": args.data,
-                "symbol": args.symbol,
-                "config_file": args.config
+        training_results.update(
+            {
+                "training_metadata": {
+                    "timestamp": end_time.isoformat(),
+                    "duration_seconds": training_duration,
+                    "data_samples": len(df),
+                    "data_file": args.data,
+                    "symbol": args.symbol,
+                    "config_file": args.config,
+                }
             }
-        })
+        )
 
         # Save results
         save_training_results(training_results, args.output)
 
         # Log results artifact
-        tracker.log_artifact(args.output, 'results')
+        tracker.log_artifact(args.output, "results")
 
         # Log to MLflow if available
-        if training_results.get('status') == 'success':
+        if training_results.get("status") == "success":
             try:
                 # Prepare artifacts list for MLflow
                 artifacts = [args.output, args.config]
@@ -1042,74 +1212,79 @@ def main():
 
                 log_to_mlflow(
                     experiment_name=tracker.experiment_name,
-                    parameters=tracker.metadata.get('parameters', {}),
+                    parameters=tracker.metadata.get("parameters", {}),
                     metrics=final_metrics,
                     models=training_results,
-                    artifacts=artifacts
+                    artifacts=artifacts,
                 )
             except Exception as e:
                 logger.warning(f"Failed to log to MLflow: {e}")
 
         # Log final metrics
         final_metrics = {
-            'total_duration_seconds': training_duration,
-            'data_samples': len(df),
-            'status': training_results.get('status', 'unknown')
+            "total_duration_seconds": training_duration,
+            "data_samples": len(df),
+            "status": training_results.get("status", "unknown"),
         }
 
         # Extract model-specific metrics
-        if training_results.get('status') == 'success':
+        if training_results.get("status") == "success":
             for model_name, results in training_results.items():
-                if model_name not in ['status', 'training_metadata']:
+                if model_name not in ["status", "training_metadata"]:
                     if isinstance(results, dict):
-                        if 'final_accuracy' in results:
-                            final_metrics[f'{model_name}_accuracy'] = results['final_accuracy']
-                        elif 'final_r2' in results:
-                            final_metrics[f'{model_name}_r2'] = results['final_r2']
+                        if "final_accuracy" in results:
+                            final_metrics[f"{model_name}_accuracy"] = results[
+                                "final_accuracy"
+                            ]
+                        elif "final_r2" in results:
+                            final_metrics[f"{model_name}_r2"] = results["final_r2"]
 
-        tracker.log_metrics(final_metrics, 'final')
+        tracker.log_metrics(final_metrics, "final")
 
         # Log summary
-        logger.info("="*50)
+        logger.info("=" * 50)
         logger.info("TRAINING SUMMARY")
-        logger.info("="*50)
+        logger.info("=" * 50)
         logger.info(f"Duration: {training_duration:.2f} seconds")
         logger.info(f"Data samples: {len(df)}")
         logger.info(f"Status: {training_results.get('status', 'unknown')}")
 
-        if training_results.get('status') == 'success':
+        if training_results.get("status") == "success":
             logger.info("Model Results:")
             for model_name, results in training_results.items():
-                if model_name not in ['status', 'training_metadata']:
-                    if isinstance(results, dict) and 'final_accuracy' in results:
+                if model_name not in ["status", "training_metadata"]:
+                    if isinstance(results, dict) and "final_accuracy" in results:
                         logger.info(f"  {model_name}: {results['final_accuracy']:.3f}")
-                    elif isinstance(results, dict) and 'final_r2' in results:
+                    elif isinstance(results, dict) and "final_r2" in results:
                         logger.info(f"  {model_name}: {results['final_r2']:.3f}")
-                    elif isinstance(results, dict) and 'model_type' in results:
-                        logger.info(f"  {model_name}: {results.get('model_type', 'unknown')} configured")
+                    elif isinstance(results, dict) and "model_type" in results:
+                        logger.info(
+                            f"  {model_name}: {results.get('model_type', 'unknown')} configured"
+                        )
 
         logger.info(f"Results saved to: {args.output}")
         logger.info(f"Experiment logged to: {tracker.experiment_dir}")
-        logger.info("="*50)
+        logger.info("=" * 50)
 
         # Finish experiment successfully
-        tracker.finish_experiment('completed')
+        tracker.finish_experiment("completed")
 
     except KeyboardInterrupt:
         logger.info("Training interrupted by user")
         if tracker:
-            tracker.finish_experiment('interrupted')
+            tracker.finish_experiment("interrupted")
         sys.exit(1)
     except Exception as e:
         logger.error(f"Training failed: {e}")
         if tracker:
-            tracker.log_metrics({'error': str(e)}, 'error')
-            tracker.finish_experiment('failed')
+            tracker.log_metrics({"error": str(e)}, "error")
+            tracker.finish_experiment("failed")
         if args.verbose:
             import traceback
+
             traceback.print_exc()
         sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

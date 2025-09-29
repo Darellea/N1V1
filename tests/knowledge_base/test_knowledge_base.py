@@ -6,27 +6,44 @@ including schema validation, storage operations, adaptive weighting, and
 integration with strategy selection.
 """
 
-import pytest
-import json
 import tempfile
-import os
-from pathlib import Path
 from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, MagicMock, call, AsyncMock
+from pathlib import Path
+from unittest.mock import AsyncMock, Mock, patch
 
-from knowledge_base.schema import (
-    KnowledgeEntry, KnowledgeQuery, KnowledgeQueryResult,
-    MarketRegime, StrategyCategory, MarketCondition, StrategyMetadata,
-    PerformanceMetrics, OutcomeTag, validate_knowledge_entry
-)
-from knowledge_base.storage import KnowledgeStorage, JSONStorage, CSVStorage, SQLiteStorage
+import pytest
+
 from knowledge_base.adaptive import (
-    AdaptiveWeightingEngine, WeightingCalculator, CacheManager,
-    PERFORMANCE_WEIGHT_DEFAULT, REGIME_SIMILARITY_WEIGHT_DEFAULT,
-    RECENCY_WEIGHT_DEFAULT, SAMPLE_SIZE_WEIGHT_DEFAULT, LRUCache
+    PERFORMANCE_WEIGHT_DEFAULT,
+    RECENCY_WEIGHT_DEFAULT,
+    REGIME_SIMILARITY_WEIGHT_DEFAULT,
+    SAMPLE_SIZE_WEIGHT_DEFAULT,
+    AdaptiveWeightingEngine,
+    CacheManager,
+    LRUCache,
+    WeightingCalculator,
 )
 from knowledge_base.manager import (
-    KnowledgeManager, KnowledgeValidator, DataStoreInterface
+    DataStoreInterface,
+    KnowledgeManager,
+    KnowledgeValidator,
+)
+from knowledge_base.schema import (
+    KnowledgeEntry,
+    KnowledgeQuery,
+    KnowledgeQueryResult,
+    MarketCondition,
+    MarketRegime,
+    OutcomeTag,
+    PerformanceMetrics,
+    StrategyCategory,
+    StrategyMetadata,
+    validate_knowledge_entry,
+)
+from knowledge_base.storage import (
+    CSVStorage,
+    JSONStorage,
+    SQLiteStorage,
 )
 
 
@@ -39,7 +56,7 @@ class TestKnowledgeSchema:
             regime=MarketRegime.TRENDING,
             volatility=0.15,
             trend_strength=0.8,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         assert condition.regime == MarketRegime.TRENDING
@@ -48,8 +65,8 @@ class TestKnowledgeSchema:
 
         # Test serialization
         data = condition.to_dict()
-        assert data['regime'] == 'trending'
-        assert data['volatility'] == 0.15
+        assert data["regime"] == "trending"
+        assert data["volatility"] == 0.15
 
         # Test deserialization
         condition2 = MarketCondition.from_dict(data)
@@ -64,7 +81,7 @@ class TestKnowledgeSchema:
             parameters={"period": 14},
             timeframe="1h",
             indicators_used=["rsi"],
-            risk_profile="medium"
+            risk_profile="medium",
         )
 
         assert metadata.name == "TestStrategy"
@@ -73,8 +90,8 @@ class TestKnowledgeSchema:
 
         # Test serialization
         data = metadata.to_dict()
-        assert data['name'] == 'TestStrategy'
-        assert data['category'] == 'trend_following'
+        assert data["name"] == "TestStrategy"
+        assert data["category"] == "trend_following"
 
     def test_performance_metrics_creation(self):
         """Test PerformanceMetrics dataclass creation and serialization."""
@@ -89,7 +106,7 @@ class TestKnowledgeSchema:
             avg_win=100.0,
             avg_loss=-80.0,
             total_pnl=2000.0,
-            total_returns=0.2
+            total_returns=0.2,
         )
 
         assert metrics.total_trades == 100
@@ -98,15 +115,13 @@ class TestKnowledgeSchema:
 
         # Test serialization
         data = metrics.to_dict()
-        assert data['total_trades'] == 100
-        assert data['win_rate'] == 0.6
+        assert data["total_trades"] == 100
+        assert data["win_rate"] == 0.6
 
     def test_knowledge_entry_creation(self):
         """Test KnowledgeEntry dataclass creation and validation."""
         condition = MarketCondition(
-            regime=MarketRegime.TRENDING,
-            volatility=0.15,
-            trend_strength=0.8
+            regime=MarketRegime.TRENDING, volatility=0.15, trend_strength=0.8
         )
 
         metadata = StrategyMetadata(
@@ -115,7 +130,7 @@ class TestKnowledgeSchema:
             parameters={},
             timeframe="1h",
             indicators_used=["ema"],
-            risk_profile="medium"
+            risk_profile="medium",
         )
 
         performance = PerformanceMetrics(
@@ -129,7 +144,7 @@ class TestKnowledgeSchema:
             avg_win=150.0,
             avg_loss=-100.0,
             total_pnl=1500.0,
-            total_returns=0.15
+            total_returns=0.15,
         )
 
         entry = KnowledgeEntry(
@@ -140,7 +155,7 @@ class TestKnowledgeSchema:
             outcome=OutcomeTag.SUCCESS,
             confidence_score=0.8,
             sample_size=50,
-            last_updated=datetime.now()
+            last_updated=datetime.now(),
         )
 
         assert entry.id == "test_entry_001"
@@ -156,20 +171,34 @@ class TestKnowledgeSchema:
         # Test invalid confidence score
         entry = KnowledgeEntry(
             id="",
-            market_condition=MarketCondition(regime=MarketRegime.UNKNOWN, volatility=0.1, trend_strength=0.1),
+            market_condition=MarketCondition(
+                regime=MarketRegime.UNKNOWN, volatility=0.1, trend_strength=0.1
+            ),
             strategy_metadata=StrategyMetadata(
-                name="Test", category=StrategyCategory.TREND_FOLLOWING,
-                parameters={}, timeframe="1h", indicators_used=[], risk_profile="low"
+                name="Test",
+                category=StrategyCategory.TREND_FOLLOWING,
+                parameters={},
+                timeframe="1h",
+                indicators_used=[],
+                risk_profile="low",
             ),
             performance=PerformanceMetrics(
-                total_trades=10, winning_trades=5, losing_trades=5, win_rate=0.5,
-                profit_factor=1.0, sharpe_ratio=0.0, max_drawdown=0.0,
-                avg_win=0.0, avg_loss=0.0, total_pnl=0.0, total_returns=0.0
+                total_trades=10,
+                winning_trades=5,
+                losing_trades=5,
+                win_rate=0.5,
+                profit_factor=1.0,
+                sharpe_ratio=0.0,
+                max_drawdown=0.0,
+                avg_win=0.0,
+                avg_loss=0.0,
+                total_pnl=0.0,
+                total_returns=0.0,
             ),
             outcome=OutcomeTag.SUCCESS,
             confidence_score=1.5,  # Invalid: > 1.0
             sample_size=0,  # Invalid: < 1
-            last_updated=datetime.now()
+            last_updated=datetime.now(),
         )
 
         errors = validate_knowledge_entry(entry)
@@ -184,7 +213,7 @@ class TestKnowledgeSchema:
             strategy_name="TestStrategy",
             min_confidence=0.5,
             min_sample_size=10,
-            limit=20
+            limit=20,
         )
 
         assert query.market_regime == MarketRegime.TRENDING
@@ -199,6 +228,7 @@ class TestStorageBackends:
     def test_json_storage(self):
         """Test JSON storage backend."""
         import asyncio
+
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = Path(temp_dir) / "test_knowledge.json"
 
@@ -222,12 +252,13 @@ class TestStorageBackends:
 
             # Test stats
             stats = asyncio.run(storage.get_stats())
-            assert stats['backend'] == 'json'
-            assert stats['total_entries'] == 1
+            assert stats["backend"] == "json"
+            assert stats["total_entries"] == 1
 
     def test_csv_storage(self):
         """Test CSV storage backend."""
         import asyncio
+
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = Path(temp_dir) / "test_knowledge.csv"
 
@@ -251,6 +282,7 @@ class TestStorageBackends:
     def test_sqlite_storage(self):
         """Test SQLite storage backend."""
         import asyncio
+
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "test_knowledge.db"
 
@@ -276,6 +308,7 @@ class TestStorageBackends:
     def test_storage_query_filtering(self):
         """Test storage query filtering."""
         import asyncio
+
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "test_knowledge.db"
             storage = SQLiteStorage(db_path)
@@ -300,13 +333,11 @@ class TestStorageBackends:
             result = asyncio.run(storage.query_entries(query))
             assert result.total_found == 0  # Our test entries have confidence 0.7
 
-    def _create_test_entry(self, entry_id: str, regime: MarketRegime = MarketRegime.TRENDING) -> KnowledgeEntry:
+    def _create_test_entry(
+        self, entry_id: str, regime: MarketRegime = MarketRegime.TRENDING
+    ) -> KnowledgeEntry:
         """Helper to create test knowledge entry."""
-        condition = MarketCondition(
-            regime=regime,
-            volatility=0.15,
-            trend_strength=0.8
-        )
+        condition = MarketCondition(regime=regime, volatility=0.15, trend_strength=0.8)
 
         metadata = StrategyMetadata(
             name="TestStrategy",
@@ -314,7 +345,7 @@ class TestStorageBackends:
             parameters={"period": 14},
             timeframe="1h",
             indicators_used=["ema"],
-            risk_profile="medium"
+            risk_profile="medium",
         )
 
         performance = PerformanceMetrics(
@@ -328,7 +359,7 @@ class TestStorageBackends:
             avg_win=150.0,
             avg_loss=-100.0,
             total_pnl=1500.0,
-            total_returns=0.15
+            total_returns=0.15,
         )
 
         return KnowledgeEntry(
@@ -339,7 +370,7 @@ class TestStorageBackends:
             outcome=OutcomeTag.SUCCESS,
             confidence_score=0.7,
             sample_size=50,
-            last_updated=datetime.now()
+            last_updated=datetime.now(),
         )
 
 
@@ -360,6 +391,7 @@ class TestAdaptiveWeighting:
     def test_calculate_adaptive_weights(self):
         """Test adaptive weight calculation."""
         import asyncio
+
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "test.db"
             storage = SQLiteStorage(db_path)
@@ -367,9 +399,7 @@ class TestAdaptiveWeighting:
 
             # Create test market condition
             market_condition = MarketCondition(
-                regime=MarketRegime.TRENDING,
-                volatility=0.15,
-                trend_strength=0.8
+                regime=MarketRegime.TRENDING, volatility=0.15, trend_strength=0.8
             )
 
             # Create test strategies
@@ -380,7 +410,7 @@ class TestAdaptiveWeighting:
                     parameters={},
                     timeframe="1h",
                     indicators_used=["ema"],
-                    risk_profile="medium"
+                    risk_profile="medium",
                 ),
                 StrategyMetadata(
                     name="StrategyB",
@@ -388,12 +418,14 @@ class TestAdaptiveWeighting:
                     parameters={},
                     timeframe="1h",
                     indicators_used=["rsi"],
-                    risk_profile="medium"
-                )
+                    risk_profile="medium",
+                ),
             ]
 
             # Calculate weights
-            weights = asyncio.run(engine.calculate_adaptive_weights(market_condition, strategies))
+            weights = asyncio.run(
+                engine.calculate_adaptive_weights(market_condition, strategies)
+            )
 
             # Should return equal weights when no knowledge exists
             assert len(weights) == 2
@@ -407,15 +439,11 @@ class TestAdaptiveWeighting:
             engine = AdaptiveWeightingEngine(storage)
 
             current = MarketCondition(
-                regime=MarketRegime.TRENDING,
-                volatility=0.15,
-                trend_strength=0.8
+                regime=MarketRegime.TRENDING, volatility=0.15, trend_strength=0.8
             )
 
             historical = MarketCondition(
-                regime=MarketRegime.TRENDING,
-                volatility=0.16,
-                trend_strength=0.75
+                regime=MarketRegime.TRENDING, volatility=0.16, trend_strength=0.75
             )
 
             similarity = engine._calculate_market_similarity(current, historical)
@@ -439,7 +467,7 @@ class TestAdaptiveWeighting:
                 avg_win=200.0,
                 avg_loss=-150.0,
                 total_pnl=5000.0,
-                total_returns=0.5
+                total_returns=0.5,
             )
 
             score = engine._calculate_performance_score(performance)
@@ -448,32 +476,37 @@ class TestAdaptiveWeighting:
     def test_update_knowledge_from_trade(self):
         """Test updating knowledge from trade results."""
         import asyncio
+
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "test.db"
             storage = SQLiteStorage(db_path)
             engine = AdaptiveWeightingEngine(storage)
 
             market_condition = MarketCondition(
-                regime=MarketRegime.TRENDING,
-                volatility=0.15,
-                trend_strength=0.8
+                regime=MarketRegime.TRENDING, volatility=0.15, trend_strength=0.8
             )
 
             trade_result = {
-                'pnl': 250.0,
-                'returns': 0.025,
-                'entry_price': 10000.0,
-                'exit_price': 10250.0
+                "pnl": 250.0,
+                "returns": 0.025,
+                "entry_price": 10000.0,
+                "exit_price": 10250.0,
             }
 
-            success = asyncio.run(engine.update_knowledge_from_trade(
-                "TestStrategy", market_condition, trade_result
-            ))
+            success = asyncio.run(
+                engine.update_knowledge_from_trade(
+                    "TestStrategy", market_condition, trade_result
+                )
+            )
 
             assert success
 
             # Check that entry was created
-            entry = asyncio.run(storage.get_entry(engine._generate_entry_id("TestStrategy", market_condition)))
+            entry = asyncio.run(
+                storage.get_entry(
+                    engine._generate_entry_id("TestStrategy", market_condition)
+                )
+            )
             assert entry is not None
             assert entry.performance.total_trades == 1
             assert entry.performance.total_pnl == 250.0
@@ -486,11 +519,11 @@ class TestKnowledgeManager:
         """Test KnowledgeManager initialization."""
         with tempfile.TemporaryDirectory() as temp_dir:
             config = {
-                'enabled': True,
-                'storage': {
-                    'backend': 'json',
-                    'file_path': str(Path(temp_dir) / 'test_knowledge.json')
-                }
+                "enabled": True,
+                "storage": {
+                    "backend": "json",
+                    "file_path": str(Path(temp_dir) / "test_knowledge.json"),
+                },
             }
 
             manager = KnowledgeManager(config)
@@ -502,25 +535,20 @@ class TestKnowledgeManager:
         """Test storing trade knowledge through manager."""
         with tempfile.TemporaryDirectory() as temp_dir:
             config = {
-                'enabled': True,
-                'storage': {
-                    'backend': 'json',
-                    'file_path': str(Path(temp_dir) / 'knowledge.json')
-                }
+                "enabled": True,
+                "storage": {
+                    "backend": "json",
+                    "file_path": str(Path(temp_dir) / "knowledge.json"),
+                },
             }
 
             manager = KnowledgeManager(config)
 
             market_condition = MarketCondition(
-                regime=MarketRegime.TRENDING,
-                volatility=0.15,
-                trend_strength=0.8
+                regime=MarketRegime.TRENDING, volatility=0.15, trend_strength=0.8
             )
 
-            trade_result = {
-                'pnl': 150.0,
-                'returns': 0.015
-            }
+            trade_result = {"pnl": 150.0, "returns": 0.015}
 
             success = manager.store_trade_knowledge(
                 "TestStrategy", market_condition, trade_result
@@ -532,19 +560,17 @@ class TestKnowledgeManager:
         """Test getting adaptive weights through manager."""
         with tempfile.TemporaryDirectory() as temp_dir:
             config = {
-                'enabled': True,
-                'storage': {
-                    'backend': 'json',
-                    'file_path': str(Path(temp_dir) / 'knowledge.json')
-                }
+                "enabled": True,
+                "storage": {
+                    "backend": "json",
+                    "file_path": str(Path(temp_dir) / "knowledge.json"),
+                },
             }
 
             manager = KnowledgeManager(config)
 
             market_condition = MarketCondition(
-                regime=MarketRegime.TRENDING,
-                volatility=0.15,
-                trend_strength=0.8
+                regime=MarketRegime.TRENDING, volatility=0.15, trend_strength=0.8
             )
 
             strategies = [
@@ -554,7 +580,7 @@ class TestKnowledgeManager:
                     parameters={},
                     timeframe="1h",
                     indicators_used=["ema"],
-                    risk_profile="medium"
+                    risk_profile="medium",
                 )
             ]
 
@@ -567,24 +593,24 @@ class TestKnowledgeManager:
         """Test getting knowledge statistics."""
         with tempfile.TemporaryDirectory() as temp_dir:
             config = {
-                'enabled': True,
-                'storage': {
-                    'backend': 'json',
-                    'file_path': str(Path(temp_dir) / 'knowledge.json')
-                }
+                "enabled": True,
+                "storage": {
+                    "backend": "json",
+                    "file_path": str(Path(temp_dir) / "knowledge.json"),
+                },
             }
 
             manager = KnowledgeManager(config)
             stats = manager.get_knowledge_statistics()
 
-            assert stats['enabled'] is True
-            assert 'storage_stats' in stats
-            assert 'adaptive_stats' in stats
-            assert 'knowledge_summary' in stats
+            assert stats["enabled"] is True
+            assert "storage_stats" in stats
+            assert "adaptive_stats" in stats
+            assert "knowledge_summary" in stats
 
     def test_disabled_knowledge_manager(self):
         """Test disabled knowledge manager."""
-        config = {'enabled': False}
+        config = {"enabled": False}
         manager = KnowledgeManager(config)
 
         assert not manager.enabled
@@ -599,14 +625,14 @@ class TestKnowledgeManager:
 class TestIntegrationWithStrategySelector:
     """Test integration with strategy selector."""
 
-    @patch('strategies.regime.strategy_selector.get_knowledge_manager')
+    @patch("strategies.regime.strategy_selector.get_knowledge_manager")
     def test_knowledge_base_integration(self, mock_get_manager):
         """Test that strategy selector integrates with knowledge base."""
         # Mock knowledge manager
         mock_manager = Mock()
         mock_manager.get_adaptive_weights.return_value = {
-            'RSIStrategy': 1.2,
-            'EMACrossStrategy': 0.8
+            "RSIStrategy": 1.2,
+            "EMACrossStrategy": 0.8,
         }
         mock_get_manager.return_value = mock_manager
 
@@ -637,10 +663,10 @@ class TestWeightingCalculator:
     def test_calculator_custom_config(self):
         """Test WeightingCalculator with custom config."""
         config = {
-            'performance_weight': 0.5,
-            'regime_similarity_weight': 0.4,
-            'recency_weight': 0.05,
-            'sample_size_weight': 0.05
+            "performance_weight": 0.5,
+            "regime_similarity_weight": 0.4,
+            "recency_weight": 0.05,
+            "sample_size_weight": 0.05,
         }
         calculator = WeightingCalculator(config)
 
@@ -652,14 +678,10 @@ class TestWeightingCalculator:
         calculator = WeightingCalculator({})
 
         current = MarketCondition(
-            regime=MarketRegime.TRENDING,
-            volatility=0.15,
-            trend_strength=0.8
+            regime=MarketRegime.TRENDING, volatility=0.15, trend_strength=0.8
         )
         historical = MarketCondition(
-            regime=MarketRegime.TRENDING,
-            volatility=0.15,
-            trend_strength=0.8
+            regime=MarketRegime.TRENDING, volatility=0.15, trend_strength=0.8
         )
 
         similarity = calculator.calculate_market_similarity(current, historical)
@@ -670,14 +692,10 @@ class TestWeightingCalculator:
         calculator = WeightingCalculator({})
 
         current = MarketCondition(
-            regime=MarketRegime.TRENDING,
-            volatility=0.1,
-            trend_strength=0.9
+            regime=MarketRegime.TRENDING, volatility=0.1, trend_strength=0.9
         )
         historical = MarketCondition(
-            regime=MarketRegime.SIDEWAYS,
-            volatility=0.9,
-            trend_strength=0.1
+            regime=MarketRegime.SIDEWAYS, volatility=0.9, trend_strength=0.1
         )
 
         similarity = calculator.calculate_market_similarity(current, historical)
@@ -688,14 +706,10 @@ class TestWeightingCalculator:
         calculator = WeightingCalculator({})
 
         current = MarketCondition(
-            regime=MarketRegime.TRENDING,
-            volatility=0.0,
-            trend_strength=0.8
+            regime=MarketRegime.TRENDING, volatility=0.0, trend_strength=0.8
         )
         historical = MarketCondition(
-            regime=MarketRegime.TRENDING,
-            volatility=0.2,
-            trend_strength=0.8
+            regime=MarketRegime.TRENDING, volatility=0.2, trend_strength=0.8
         )
 
         similarity = calculator.calculate_market_similarity(current, historical)
@@ -745,7 +759,7 @@ class TestWeightingCalculator:
             avg_win=100.0,
             avg_loss=0.0,
             total_pnl=10000.0,
-            total_returns=1.0
+            total_returns=1.0,
         )
 
         score = calculator.calculate_performance_score(perf)
@@ -766,7 +780,7 @@ class TestWeightingCalculator:
             avg_win=50.0,
             avg_loss=-200.0,
             total_pnl=-5000.0,
-            total_returns=-0.5
+            total_returns=-0.5,
         )
 
         score = calculator.calculate_performance_score(perf)
@@ -787,7 +801,7 @@ class TestWeightingCalculator:
             avg_win=100.0,
             avg_loss=-100.0,
             total_pnl=0.0,
-            total_returns=0.0
+            total_returns=0.0,
         )
 
         score = calculator.calculate_performance_score(perf)
@@ -805,13 +819,11 @@ class TestWeightingCalculator:
             parameters={},
             timeframe="1h",
             indicators_used=["ema"],
-            risk_profile="medium"
+            risk_profile="medium",
         )
 
         current_market = MarketCondition(
-            regime=MarketRegime.TRENDING,
-            volatility=0.15,
-            trend_strength=0.8
+            regime=MarketRegime.TRENDING, volatility=0.15, trend_strength=0.8
         )
 
         market_similarity_cache = {}
@@ -832,13 +844,11 @@ class TestWeightingCalculator:
             parameters={},
             timeframe="1h",
             indicators_used=["ema"],
-            risk_profile="medium"
+            risk_profile="medium",
         )
 
         current_market = MarketCondition(
-            regime=MarketRegime.TRENDING,
-            volatility=0.15,
-            trend_strength=0.8
+            regime=MarketRegime.TRENDING, volatility=0.15, trend_strength=0.8
         )
 
         # Create knowledge entry
@@ -853,7 +863,7 @@ class TestWeightingCalculator:
             avg_win=200.0,
             avg_loss=-150.0,
             total_pnl=5000.0,
-            total_returns=0.5
+            total_returns=0.5,
         )
 
         entry = KnowledgeEntry(
@@ -864,7 +874,7 @@ class TestWeightingCalculator:
             outcome=OutcomeTag.SUCCESS,
             confidence_score=0.8,
             sample_size=100,
-            last_updated=datetime.now() - timedelta(days=10)
+            last_updated=datetime.now() - timedelta(days=10),
         )
 
         knowledge_entries = [entry]
@@ -941,14 +951,26 @@ class TestCacheManager:
             regime=MarketRegime.TRENDING,
             volatility=0.15,
             trend_strength=0.8,
-            timestamp=datetime(2023, 1, 1)
+            timestamp=datetime(2023, 1, 1),
         )
 
         strategies = [
-            StrategyMetadata(name="StrategyA", category=StrategyCategory.TREND_FOLLOWING,
-                           parameters={}, timeframe="1h", indicators_used=[], risk_profile="medium"),
-            StrategyMetadata(name="StrategyB", category=StrategyCategory.MEAN_REVERSION,
-                           parameters={}, timeframe="1h", indicators_used=[], risk_profile="medium")
+            StrategyMetadata(
+                name="StrategyA",
+                category=StrategyCategory.TREND_FOLLOWING,
+                parameters={},
+                timeframe="1h",
+                indicators_used=[],
+                risk_profile="medium",
+            ),
+            StrategyMetadata(
+                name="StrategyB",
+                category=StrategyCategory.MEAN_REVERSION,
+                parameters={},
+                timeframe="1h",
+                indicators_used=[],
+                risk_profile="medium",
+            ),
         ]
 
         key = cache_manager.get_cache_key(market_condition, strategies)
@@ -996,17 +1018,17 @@ class TestCacheManager:
 
         # Empty cache
         stats = cache_manager.get_cache_stats()
-        assert stats['cache_size'] == 0
-        assert stats['cache_age_minutes'] is None
+        assert stats["cache_size"] == 0
+        assert stats["cache_age_minutes"] is None
 
         # With data
         cache_manager.cache_weights("key1", {"A": 1.0})
         cache_manager.cache_weights("key2", {"B": 1.0})
 
         stats = cache_manager.get_cache_stats()
-        assert stats['cache_size'] == 2
-        assert stats['cache_age_minutes'] is not None
-        assert stats['cache_ttl_minutes'] == 5
+        assert stats["cache_size"] == 2
+        assert stats["cache_age_minutes"] is not None
+        assert stats["cache_ttl_minutes"] == 5
 
 
 class TestKnowledgeValidator:
@@ -1015,18 +1037,14 @@ class TestKnowledgeValidator:
     def test_validator_initialization(self):
         """Test KnowledgeValidator initialization."""
         validator = KnowledgeValidator()
-        assert 'confidence_score' in validator.allowed_update_fields
-        assert 'sample_size' in validator.allowed_update_fields
+        assert "confidence_score" in validator.allowed_update_fields
+        assert "sample_size" in validator.allowed_update_fields
 
     def test_validate_update_payload_valid(self):
         """Test validation of valid update payload."""
         validator = KnowledgeValidator()
 
-        updates = {
-            'confidence_score': 0.8,
-            'sample_size': 100,
-            'notes': 'Test update'
-        }
+        updates = {"confidence_score": 0.8, "sample_size": 100, "notes": "Test update"}
 
         errors = validator.validate_update_payload(updates)
         assert len(errors) == 0
@@ -1035,42 +1053,36 @@ class TestKnowledgeValidator:
         """Test validation with invalid field."""
         validator = KnowledgeValidator()
 
-        updates = {
-            'invalid_field': 'value',
-            'confidence_score': 0.8
-        }
+        updates = {"invalid_field": "value", "confidence_score": 0.8}
 
         errors = validator.validate_update_payload(updates)
         assert len(errors) == 1
-        assert 'Unknown field' in errors[0]
+        assert "Unknown field" in errors[0]
 
     def test_validate_update_payload_invalid_type(self):
         """Test validation with invalid type."""
         validator = KnowledgeValidator()
 
         updates = {
-            'confidence_score': '0.8',  # Should be int/float
-            'sample_size': '100'  # Should be int
+            "confidence_score": "0.8",  # Should be int/float
+            "sample_size": "100",  # Should be int
         }
 
         errors = validator.validate_update_payload(updates)
         assert len(errors) == 2
-        assert any('confidence_score' in error for error in errors)
-        assert any('sample_size' in error for error in errors)
+        assert any("confidence_score" in error for error in errors)
+        assert any("sample_size" in error for error in errors)
 
     def test_validate_update_payload_invalid_values(self):
         """Test validation with invalid values."""
         validator = KnowledgeValidator()
 
-        updates = {
-            'confidence_score': 1.5,  # > 1.0
-            'sample_size': 0  # < 1
-        }
+        updates = {"confidence_score": 1.5, "sample_size": 0}  # > 1.0  # < 1
 
         errors = validator.validate_update_payload(updates)
         assert len(errors) == 2
-        assert any('confidence' in error.lower() for error in errors)
-        assert any('sample' in error.lower() for error in errors)
+        assert any("confidence" in error.lower() for error in errors)
+        assert any("sample" in error.lower() for error in errors)
 
     def test_validate_knowledge_entry_valid(self):
         """Test validation of valid knowledge entry."""
@@ -1078,20 +1090,34 @@ class TestKnowledgeValidator:
 
         entry = KnowledgeEntry(
             id="test_001",
-            market_condition=MarketCondition(regime=MarketRegime.TRENDING, volatility=0.1, trend_strength=0.5),
+            market_condition=MarketCondition(
+                regime=MarketRegime.TRENDING, volatility=0.1, trend_strength=0.5
+            ),
             strategy_metadata=StrategyMetadata(
-                name="TestStrategy", category=StrategyCategory.TREND_FOLLOWING,
-                parameters={}, timeframe="1h", indicators_used=[], risk_profile="medium"
+                name="TestStrategy",
+                category=StrategyCategory.TREND_FOLLOWING,
+                parameters={},
+                timeframe="1h",
+                indicators_used=[],
+                risk_profile="medium",
             ),
             performance=PerformanceMetrics(
-                total_trades=10, winning_trades=5, losing_trades=5, win_rate=0.5,
-                profit_factor=1.0, sharpe_ratio=0.0, max_drawdown=0.0,
-                avg_win=0.0, avg_loss=0.0, total_pnl=0.0, total_returns=0.0
+                total_trades=10,
+                winning_trades=5,
+                losing_trades=5,
+                win_rate=0.5,
+                profit_factor=1.0,
+                sharpe_ratio=0.0,
+                max_drawdown=0.0,
+                avg_win=0.0,
+                avg_loss=0.0,
+                total_pnl=0.0,
+                total_returns=0.0,
             ),
             outcome=OutcomeTag.SUCCESS,
             confidence_score=0.8,
             sample_size=10,
-            last_updated=datetime.now()
+            last_updated=datetime.now(),
         )
 
         errors = validator.validate_knowledge_entry(entry)
@@ -1103,28 +1129,42 @@ class TestKnowledgeValidator:
 
         entry = KnowledgeEntry(
             id="",  # Empty ID
-            market_condition=MarketCondition(regime=MarketRegime.TRENDING, volatility=0.1, trend_strength=0.5),
+            market_condition=MarketCondition(
+                regime=MarketRegime.TRENDING, volatility=0.1, trend_strength=0.5
+            ),
             strategy_metadata=StrategyMetadata(
-                name="", category=StrategyCategory.TREND_FOLLOWING,  # Empty name
-                parameters={}, timeframe="1h", indicators_used=[], risk_profile="medium"
+                name="",
+                category=StrategyCategory.TREND_FOLLOWING,  # Empty name
+                parameters={},
+                timeframe="1h",
+                indicators_used=[],
+                risk_profile="medium",
             ),
             performance=PerformanceMetrics(
-                total_trades=10, winning_trades=5, losing_trades=5, win_rate=0.5,
-                profit_factor=1.0, sharpe_ratio=0.0, max_drawdown=0.0,
-                avg_win=0.0, avg_loss=0.0, total_pnl=0.0, total_returns=0.0
+                total_trades=10,
+                winning_trades=5,
+                losing_trades=5,
+                win_rate=0.5,
+                profit_factor=1.0,
+                sharpe_ratio=0.0,
+                max_drawdown=0.0,
+                avg_win=0.0,
+                avg_loss=0.0,
+                total_pnl=0.0,
+                total_returns=0.0,
             ),
             outcome=OutcomeTag.SUCCESS,
             confidence_score=1.2,  # > 1.0
             sample_size=0,  # < 1
-            last_updated=datetime.now()
+            last_updated=datetime.now(),
         )
 
         errors = validator.validate_knowledge_entry(entry)
         assert len(errors) > 0
-        assert any('ID' in error for error in errors)
-        assert any('name' in error for error in errors)
-        assert any('confidence' in error.lower() for error in errors)
-        assert any('sample' in error.lower() for error in errors)
+        assert any("ID" in error for error in errors)
+        assert any("name" in error for error in errors)
+        assert any("confidence" in error.lower() for error in errors)
+        assert any("sample" in error.lower() for error in errors)
 
     def test_validate_query_parameters_valid(self):
         """Test validation of valid query parameters."""
@@ -1135,7 +1175,7 @@ class TestKnowledgeValidator:
             min_confidence=0.5,
             max_confidence=0.9,
             min_sample_size=10,
-            limit=100
+            limit=100,
         )
 
         errors = validator.validate_query_parameters(query)
@@ -1149,14 +1189,14 @@ class TestKnowledgeValidator:
             min_confidence=0.8,
             max_confidence=0.5,  # min > max
             min_sample_size=0,  # < 1
-            limit=0  # < 1
+            limit=0,  # < 1
         )
 
         errors = validator.validate_query_parameters(query)
         assert len(errors) == 3
-        assert any('confidence' in error.lower() for error in errors)
-        assert any('sample' in error.lower() for error in errors)
-        assert any('limit' in error.lower() for error in errors)
+        assert any("confidence" in error.lower() for error in errors)
+        assert any("sample" in error.lower() for error in errors)
+        assert any("limit" in error.lower() for error in errors)
 
 
 class TestDataStoreInterface:
@@ -1258,7 +1298,7 @@ class TestAdaptiveWeightingEngine:
     def test_engine_initialization(self):
         """Test AdaptiveWeightingEngine initialization."""
         mock_storage = AsyncMock()
-        config = {'performance_weight': 0.5}
+        config = {"performance_weight": 0.5}
 
         engine = AdaptiveWeightingEngine(mock_storage, config)
 
@@ -1270,15 +1310,16 @@ class TestAdaptiveWeightingEngine:
     def test_calculate_adaptive_weights_empty_knowledge(self):
         """Test adaptive weights calculation with empty knowledge."""
         import asyncio
+
         mock_storage = AsyncMock()
-        mock_storage.query_entries.return_value = KnowledgeQueryResult([], 0, KnowledgeQuery(), 0.0)
+        mock_storage.query_entries.return_value = KnowledgeQueryResult(
+            [], 0, KnowledgeQuery(), 0.0
+        )
 
         engine = AdaptiveWeightingEngine(mock_storage)
 
         market_condition = MarketCondition(
-            regime=MarketRegime.TRENDING,
-            volatility=0.15,
-            trend_strength=0.8
+            regime=MarketRegime.TRENDING, volatility=0.15, trend_strength=0.8
         )
 
         strategies = [
@@ -1288,26 +1329,29 @@ class TestAdaptiveWeightingEngine:
                 parameters={},
                 timeframe="1h",
                 indicators_used=[],
-                risk_profile="medium"
+                risk_profile="medium",
             )
         ]
 
-        weights = asyncio.run(engine.calculate_adaptive_weights(market_condition, strategies))
+        weights = asyncio.run(
+            engine.calculate_adaptive_weights(market_condition, strategies)
+        )
 
         assert weights == {"StrategyA": 1.0}
 
     def test_get_strategy_recommendations(self):
         """Test strategy recommendations."""
         import asyncio
+
         mock_storage = AsyncMock()
-        mock_storage.query_entries.return_value = KnowledgeQueryResult([], 0, KnowledgeQuery(), 0.0)
+        mock_storage.query_entries.return_value = KnowledgeQueryResult(
+            [], 0, KnowledgeQuery(), 0.0
+        )
 
         engine = AdaptiveWeightingEngine(mock_storage)
 
         market_condition = MarketCondition(
-            regime=MarketRegime.TRENDING,
-            volatility=0.15,
-            trend_strength=0.8
+            regime=MarketRegime.TRENDING, volatility=0.15, trend_strength=0.8
         )
 
         strategies = [
@@ -1317,7 +1361,7 @@ class TestAdaptiveWeightingEngine:
                 parameters={},
                 timeframe="1h",
                 indicators_used=[],
-                risk_profile="medium"
+                risk_profile="medium",
             ),
             StrategyMetadata(
                 name="StrategyB",
@@ -1325,11 +1369,13 @@ class TestAdaptiveWeightingEngine:
                 parameters={},
                 timeframe="1h",
                 indicators_used=[],
-                risk_profile="medium"
-            )
+                risk_profile="medium",
+            ),
         ]
 
-        recommendations = asyncio.run(engine.get_strategy_recommendations(market_condition, strategies, top_n=1))
+        recommendations = asyncio.run(
+            engine.get_strategy_recommendations(market_condition, strategies, top_n=1)
+        )
 
         assert len(recommendations) == 1
         assert recommendations[0][0] in ["StrategyA", "StrategyB"]
@@ -1337,6 +1383,7 @@ class TestAdaptiveWeightingEngine:
     def test_update_knowledge_from_trade_success(self):
         """Test successful knowledge update from trade."""
         import asyncio
+
         mock_storage = AsyncMock()
         mock_storage.get_entry.return_value = None  # No existing entry
         mock_storage.save_entry.return_value = True
@@ -1344,19 +1391,21 @@ class TestAdaptiveWeightingEngine:
         engine = AdaptiveWeightingEngine(mock_storage)
 
         market_condition = MarketCondition(
-            regime=MarketRegime.TRENDING,
-            volatility=0.15,
-            trend_strength=0.8
+            regime=MarketRegime.TRENDING, volatility=0.15, trend_strength=0.8
         )
 
         trade_result = {
-            'pnl': 250.0,
-            'returns': 0.025,
-            'entry_price': 10000.0,
-            'exit_price': 10250.0
+            "pnl": 250.0,
+            "returns": 0.025,
+            "entry_price": 10000.0,
+            "exit_price": 10250.0,
         }
 
-        success = asyncio.run(engine.update_knowledge_from_trade("TestStrategy", market_condition, trade_result))
+        success = asyncio.run(
+            engine.update_knowledge_from_trade(
+                "TestStrategy", market_condition, trade_result
+            )
+        )
 
         assert success
         mock_storage.save_entry.assert_called_once()
@@ -1364,6 +1413,7 @@ class TestAdaptiveWeightingEngine:
     def test_update_knowledge_from_trade_existing_entry(self):
         """Test knowledge update with existing entry."""
         import asyncio
+
         mock_existing_entry = Mock()
         mock_storage = AsyncMock()
         mock_storage.get_entry.return_value = mock_existing_entry
@@ -1372,14 +1422,16 @@ class TestAdaptiveWeightingEngine:
         engine = AdaptiveWeightingEngine(mock_storage)
 
         market_condition = MarketCondition(
-            regime=MarketRegime.TRENDING,
-            volatility=0.15,
-            trend_strength=0.8
+            regime=MarketRegime.TRENDING, volatility=0.15, trend_strength=0.8
         )
 
-        trade_result = {'pnl': 150.0}
+        trade_result = {"pnl": 150.0}
 
-        success = asyncio.run(engine.update_knowledge_from_trade("TestStrategy", market_condition, trade_result))
+        success = asyncio.run(
+            engine.update_knowledge_from_trade(
+                "TestStrategy", market_condition, trade_result
+            )
+        )
 
         assert success
         mock_existing_entry.update_performance.assert_called_once()
@@ -1387,21 +1439,24 @@ class TestAdaptiveWeightingEngine:
     def test_update_knowledge_from_trade_error_handling(self):
         """Test error handling in knowledge update."""
         import asyncio
+
         mock_storage = AsyncMock()
         mock_storage.get_entry.side_effect = ValueError("Storage error")
 
         engine = AdaptiveWeightingEngine(mock_storage)
 
         market_condition = MarketCondition(
-            regime=MarketRegime.TRENDING,
-            volatility=0.15,
-            trend_strength=0.8
+            regime=MarketRegime.TRENDING, volatility=0.15, trend_strength=0.8
         )
 
-        trade_result = {'pnl': 100.0}
+        trade_result = {"pnl": 100.0}
 
         with pytest.raises(ValueError):
-            asyncio.run(engine.update_knowledge_from_trade("TestStrategy", market_condition, trade_result))
+            asyncio.run(
+                engine.update_knowledge_from_trade(
+                    "TestStrategy", market_condition, trade_result
+                )
+            )
 
 
 class TestEdgeCases:
@@ -1410,15 +1465,14 @@ class TestEdgeCases:
     def test_empty_knowledge_base(self):
         """Test behavior with empty knowledge base."""
         import asyncio
+
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "empty.db"
             storage = SQLiteStorage(db_path)
             engine = AdaptiveWeightingEngine(storage)
 
             market_condition = MarketCondition(
-                regime=MarketRegime.UNKNOWN,
-                volatility=0.0,
-                trend_strength=0.0
+                regime=MarketRegime.UNKNOWN, volatility=0.0, trend_strength=0.0
             )
 
             strategies = [
@@ -1428,23 +1482,26 @@ class TestEdgeCases:
                     parameters={},
                     timeframe="1h",
                     indicators_used=["price"],
-                    risk_profile="medium"
+                    risk_profile="medium",
                 )
             ]
 
-            weights = asyncio.run(engine.calculate_adaptive_weights(market_condition, strategies))
+            weights = asyncio.run(
+                engine.calculate_adaptive_weights(market_condition, strategies)
+            )
 
             # Should return equal weights
-            assert weights['TestStrategy'] == 1.0
+            assert weights["TestStrategy"] == 1.0
 
     def test_corrupted_storage_file(self):
         """Test handling of corrupted storage files."""
         import asyncio
+
         with tempfile.TemporaryDirectory() as temp_dir:
             file_path = Path(temp_dir) / "corrupted.json"
 
             # Create corrupted JSON file
-            with open(file_path, 'w') as f:
+            with open(file_path, "w") as f:
                 f.write("invalid json content")
 
             storage = JSONStorage(file_path)
@@ -1456,6 +1513,7 @@ class TestEdgeCases:
     def test_large_knowledge_base(self):
         """Test performance with large knowledge base."""
         import asyncio
+
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "large.db"
             storage = SQLiteStorage(db_path)
@@ -1477,9 +1535,7 @@ class TestEdgeCases:
     def _create_test_entry(self, entry_id: str) -> KnowledgeEntry:
         """Helper to create test knowledge entry."""
         condition = MarketCondition(
-            regime=MarketRegime.TRENDING,
-            volatility=0.15,
-            trend_strength=0.8
+            regime=MarketRegime.TRENDING, volatility=0.15, trend_strength=0.8
         )
 
         metadata = StrategyMetadata(
@@ -1488,7 +1544,7 @@ class TestEdgeCases:
             parameters={},
             timeframe="1h",
             indicators_used=["ema"],
-            risk_profile="medium"
+            risk_profile="medium",
         )
 
         performance = PerformanceMetrics(
@@ -1502,7 +1558,7 @@ class TestEdgeCases:
             avg_win=150.0,
             avg_loss=-100.0,
             total_pnl=1500.0,
-            total_returns=0.15
+            total_returns=0.15,
         )
 
         return KnowledgeEntry(
@@ -1513,7 +1569,7 @@ class TestEdgeCases:
             outcome=OutcomeTag.SUCCESS,
             confidence_score=0.7,
             sample_size=50,
-            last_updated=datetime.now()
+            last_updated=datetime.now(),
         )
 
 

@@ -14,13 +14,13 @@ VOLUME_FILTER = True  # Use volume confirmation
 VOLUME_MULTIPLIER = 1.2  # Volume must be 1.2x average
 """
 
-import numpy as np
-import pandas as pd
-from typing import List, Dict
+from typing import Dict, List
 
-from strategies.base_strategy import BaseStrategy, StrategyConfig
+import pandas as pd
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
+from strategies.base_strategy import BaseStrategy
 from strategies.indicators_cache import calculate_indicators_for_multi_symbol
-from core.contracts import TradingSignal, SignalType, SignalStrength
 
 
 class DonchianBreakoutStrategy(BaseStrategy):
@@ -43,7 +43,9 @@ class DonchianBreakoutStrategy(BaseStrategy):
             "volume_multiplier": VOLUME_MULTIPLIER,  # Volume must be 1.2x average
         }
         # Handle both StrategyConfig objects and dict configs
-        config_params = config.params if hasattr(config, 'params') else config.get('params', {})
+        config_params = (
+            config.params if hasattr(config, "params") else config.get("params", {})
+        )
         self.params: Dict[str, float] = {**self.default_params, **(config_params or {})}
 
         # Signal tracking
@@ -66,19 +68,19 @@ class DonchianBreakoutStrategy(BaseStrategy):
             return data
 
         # Input validation: Check for required columns
-        required_columns = ['high', 'low']  # Donchian Channel needs high and low prices
+        required_columns = ["high", "low"]  # Donchian Channel needs high and low prices
         if self.params.get("volume_filter", False):
-            required_columns.append('volume')
+            required_columns.append("volume")
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
-            raise ValueError(f"Missing required columns in market data: {missing_columns}. "
-                           f"Expected columns: {required_columns}")
+            raise ValueError(
+                f"Missing required columns in market data: {missing_columns}. "
+                f"Expected columns: {required_columns}"
+            )
 
         # Use vectorized calculation for all symbols at once
         # This eliminates the need for groupby operations and provides much better performance
-        indicators_config = {
-            'donchian': {'period': int(self.params["channel_period"])}
-        }
+        indicators_config = {"donchian": {"period": int(self.params["channel_period"])}}
 
         # Calculate indicators using the shared vectorized function
         result_df = calculate_indicators_for_multi_symbol(data, indicators_config)
@@ -101,7 +103,13 @@ class DonchianBreakoutStrategy(BaseStrategy):
 
         try:
             # Ensure indicators are calculated
-            required_cols = ['donchian_high', 'donchian_low', 'donchian_mid', 'donchian_width', 'donchian_width_pct']
+            required_cols = [
+                "donchian_high",
+                "donchian_low",
+                "donchian_mid",
+                "donchian_width",
+                "donchian_width_pct",
+            ]
             if not all(col in data.columns for col in required_cols):
                 data = await self.calculate_indicators(data)
 
@@ -121,18 +129,27 @@ class DonchianBreakoutStrategy(BaseStrategy):
 
                 # Volume confirmation (vectorized where possible)
                 volume_confirmed = True
-                if self.params["volume_filter"] and "volume" in last_row.index and not pd.isna(last_row["volume"]):
+                if (
+                    self.params["volume_filter"]
+                    and "volume" in last_row.index
+                    and not pd.isna(last_row["volume"])
+                ):
                     try:
                         # Get full symbol data for volume calculation
                         full_symbol_data = data[data["symbol"] == symbol]
                         volume_period = int(self.params["channel_period"])
 
                         if len(full_symbol_data) >= volume_period:
-                            avg_volume = full_symbol_data["volume"].tail(volume_period).mean()
+                            avg_volume = (
+                                full_symbol_data["volume"].tail(volume_period).mean()
+                            )
                             current_volume = last_row["volume"]
-                            volume_confirmed = current_volume >= (avg_volume * self.params["volume_multiplier"])
+                            volume_confirmed = current_volume >= (
+                                avg_volume * self.params["volume_multiplier"]
+                            )
                     except Exception as e:
                         import logging
+
                         logger = logging.getLogger(__name__)
                         logger.warning(f"Volume confirmation failed for {symbol}: {e}")
                         volume_confirmed = True
@@ -142,21 +159,23 @@ class DonchianBreakoutStrategy(BaseStrategy):
 
                 # Check for breakout above upper channel
                 breakout_up = (
-                    last_row["high"] > last_row["donchian_high"] and
-                    prev_row["high"] <= prev_row["donchian_high"]
+                    last_row["high"] > last_row["donchian_high"]
+                    and prev_row["high"] <= prev_row["donchian_high"]
                 )
 
                 # Check for breakout below lower channel
                 breakout_down = (
-                    last_row["low"] < last_row["donchian_low"] and
-                    prev_row["low"] >= prev_row["donchian_low"]
+                    last_row["low"] < last_row["donchian_low"]
+                    and prev_row["low"] >= prev_row["donchian_low"]
                 )
 
                 # Additional filter: breakout should be significant
                 breakout_threshold = self.params["breakout_threshold"]
 
                 if breakout_up:
-                    breakout_pct = (last_row["high"] - last_row["donchian_high"]) / last_row["donchian_high"]
+                    breakout_pct = (
+                        last_row["high"] - last_row["donchian_high"]
+                    ) / last_row["donchian_high"]
                     if breakout_pct > breakout_threshold:
                         self.signal_counts["long"] += 1
                         self.signal_counts["total"] += 1
@@ -175,21 +194,25 @@ class DonchianBreakoutStrategy(BaseStrategy):
                                 order_type="market",
                                 amount=self.params["position_size"],
                                 current_price=current_price,
-                                stop_loss=current_price * (1 - self.params["stop_loss_pct"]),
-                                take_profit=current_price * (1 + self.params["take_profit_pct"]),
+                                stop_loss=current_price
+                                * (1 - self.params["stop_loss_pct"]),
+                                take_profit=current_price
+                                * (1 + self.params["take_profit_pct"]),
                                 metadata={
                                     "breakout_type": "upper",
                                     "donchian_high": last_row["donchian_high"],
                                     "donchian_low": last_row["donchian_low"],
                                     "breakout_pct": breakout_pct,
-                                    "channel_width_pct": last_row["donchian_width_pct"]
+                                    "channel_width_pct": last_row["donchian_width_pct"],
                                 },
                                 timestamp=signal_timestamp,
                             )
                         )
 
                 elif breakout_down:
-                    breakout_pct = (last_row["donchian_low"] - last_row["low"]) / last_row["donchian_low"]
+                    breakout_pct = (
+                        last_row["donchian_low"] - last_row["low"]
+                    ) / last_row["donchian_low"]
                     if breakout_pct > breakout_threshold:
                         self.signal_counts["short"] += 1
                         self.signal_counts["total"] += 1
@@ -208,14 +231,16 @@ class DonchianBreakoutStrategy(BaseStrategy):
                                 order_type="market",
                                 amount=self.params["position_size"],
                                 current_price=current_price,
-                                stop_loss=current_price * (1 + self.params["stop_loss_pct"]),
-                                take_profit=current_price * (1 - self.params["take_profit_pct"]),
+                                stop_loss=current_price
+                                * (1 + self.params["stop_loss_pct"]),
+                                take_profit=current_price
+                                * (1 - self.params["take_profit_pct"]),
                                 metadata={
                                     "breakout_type": "lower",
                                     "donchian_high": last_row["donchian_high"],
                                     "donchian_low": last_row["donchian_low"],
                                     "breakout_pct": breakout_pct,
-                                    "channel_width_pct": last_row["donchian_width_pct"]
+                                    "channel_width_pct": last_row["donchian_width_pct"],
                                 },
                                 timestamp=signal_timestamp,
                             )
@@ -223,12 +248,15 @@ class DonchianBreakoutStrategy(BaseStrategy):
 
         except Exception as e:
             import logging
+
             logger = logging.getLogger(__name__)
             logger.error(f"Error in vectorized signal generation: {str(e)}")
 
         return signals
 
-    async def _generate_signals_for_symbol(self, symbol: str, data) -> List[TradingSignal]:
+    async def _generate_signals_for_symbol(
+        self, symbol: str, data
+    ) -> List[TradingSignal]:
         """Generate signals for a specific symbol's data."""
         signals = []
 
@@ -249,9 +277,13 @@ class DonchianBreakoutStrategy(BaseStrategy):
                 try:
                     volume_period = int(self.params["channel_period"])
                     if len(data_with_donchian) >= volume_period:
-                        avg_volume = data_with_donchian["volume"].tail(volume_period).mean()
+                        avg_volume = (
+                            data_with_donchian["volume"].tail(volume_period).mean()
+                        )
                         current_volume = last_row["volume"]
-                        volume_confirmed = current_volume >= (avg_volume * self.params["volume_multiplier"])
+                        volume_confirmed = current_volume >= (
+                            avg_volume * self.params["volume_multiplier"]
+                        )
                 except Exception:
                     volume_confirmed = True
 
@@ -260,21 +292,23 @@ class DonchianBreakoutStrategy(BaseStrategy):
 
             # Check for breakout above upper channel
             breakout_up = (
-                last_row["high"] > last_row["donchian_high"] and
-                prev_row["high"] <= prev_row["donchian_high"]
+                last_row["high"] > last_row["donchian_high"]
+                and prev_row["high"] <= prev_row["donchian_high"]
             )
 
             # Check for breakout below lower channel
             breakout_down = (
-                last_row["low"] < last_row["donchian_low"] and
-                prev_row["low"] >= prev_row["donchian_low"]
+                last_row["low"] < last_row["donchian_low"]
+                and prev_row["low"] >= prev_row["donchian_low"]
             )
 
             # Additional filter: breakout should be significant
             breakout_threshold = self.params["breakout_threshold"]
 
             if breakout_up:
-                breakout_pct = (last_row["high"] - last_row["donchian_high"]) / last_row["donchian_high"]
+                breakout_pct = (
+                    last_row["high"] - last_row["donchian_high"]
+                ) / last_row["donchian_high"]
                 if breakout_pct > breakout_threshold:
                     self.signal_counts["long"] += 1
                     self.signal_counts["total"] += 1
@@ -282,7 +316,9 @@ class DonchianBreakoutStrategy(BaseStrategy):
 
                     # Extract deterministic timestamp from the data that triggered the signal
                     signal_timestamp = None
-                    if not data_with_donchian.empty and isinstance(data_with_donchian.index, pd.DatetimeIndex):
+                    if not data_with_donchian.empty and isinstance(
+                        data_with_donchian.index, pd.DatetimeIndex
+                    ):
                         signal_timestamp = data_with_donchian.index[-1].to_pydatetime()
 
                     signals.append(
@@ -293,21 +329,25 @@ class DonchianBreakoutStrategy(BaseStrategy):
                             order_type="market",
                             amount=self.params["position_size"],
                             current_price=current_price,
-                            stop_loss=current_price * (1 - self.params["stop_loss_pct"]),
-                            take_profit=current_price * (1 + self.params["take_profit_pct"]),
+                            stop_loss=current_price
+                            * (1 - self.params["stop_loss_pct"]),
+                            take_profit=current_price
+                            * (1 + self.params["take_profit_pct"]),
                             metadata={
                                 "breakout_type": "upper",
                                 "donchian_high": last_row["donchian_high"],
                                 "donchian_low": last_row["donchian_low"],
                                 "breakout_pct": breakout_pct,
-                                "channel_width_pct": last_row["donchian_width_pct"]
+                                "channel_width_pct": last_row["donchian_width_pct"],
                             },
                             timestamp=signal_timestamp,
                         )
                     )
 
             elif breakout_down:
-                breakout_pct = (last_row["donchian_low"] - last_row["low"]) / last_row["donchian_low"]
+                breakout_pct = (last_row["donchian_low"] - last_row["low"]) / last_row[
+                    "donchian_low"
+                ]
                 if breakout_pct > breakout_threshold:
                     self.signal_counts["short"] += 1
                     self.signal_counts["total"] += 1
@@ -315,7 +355,9 @@ class DonchianBreakoutStrategy(BaseStrategy):
 
                     # Extract deterministic timestamp from the data that triggered the signal
                     signal_timestamp = None
-                    if not data_with_donchian.empty and isinstance(data_with_donchian.index, pd.DatetimeIndex):
+                    if not data_with_donchian.empty and isinstance(
+                        data_with_donchian.index, pd.DatetimeIndex
+                    ):
                         signal_timestamp = data_with_donchian.index[-1].to_pydatetime()
 
                     signals.append(
@@ -326,14 +368,16 @@ class DonchianBreakoutStrategy(BaseStrategy):
                             order_type="market",
                             amount=self.params["position_size"],
                             current_price=current_price,
-                            stop_loss=current_price * (1 + self.params["stop_loss_pct"]),
-                            take_profit=current_price * (1 - self.params["take_profit_pct"]),
+                            stop_loss=current_price
+                            * (1 + self.params["stop_loss_pct"]),
+                            take_profit=current_price
+                            * (1 - self.params["take_profit_pct"]),
                             metadata={
                                 "breakout_type": "lower",
                                 "donchian_high": last_row["donchian_high"],
                                 "donchian_low": last_row["donchian_low"],
                                 "breakout_pct": breakout_pct,
-                                "channel_width_pct": last_row["donchian_width_pct"]
+                                "channel_width_pct": last_row["donchian_width_pct"],
                             },
                             timestamp=signal_timestamp,
                         )
@@ -341,6 +385,7 @@ class DonchianBreakoutStrategy(BaseStrategy):
 
         except Exception as e:
             import logging
+
             logger = logging.getLogger(__name__)
             logger.error(f"Error generating signals for {symbol}: {str(e)}")
 

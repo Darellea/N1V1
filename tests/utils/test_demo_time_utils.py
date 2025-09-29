@@ -1,8 +1,8 @@
-import pytest
 import logging
-from unittest.mock import patch, MagicMock
 from io import StringIO
-import sys
+from unittest.mock import patch
+
+import pytest
 
 # Import the demo function
 from demo.demo_time_utils import demo_time_utilities
@@ -14,16 +14,15 @@ class TestDemoTimeUtils:
     @pytest.fixture
     def mock_logger(self):
         """Mock logger to capture log output."""
-        with patch('demo.demo_time_utils.logger') as mock_logger:
+        with patch("demo.demo_time_utils.logger") as mock_logger:
             yield mock_logger
 
     @pytest.fixture
     def mock_time_functions(self):
         """Mock time utility functions."""
-        with patch('demo.demo_time_utils.now_ms') as mock_now_ms, \
-             patch('demo.demo_time_utils.to_ms') as mock_to_ms, \
-             patch('demo.demo_time_utils.to_iso') as mock_to_iso:
-
+        with patch("demo.demo_time_utils.now_ms") as mock_now_ms, patch(
+            "demo.demo_time_utils.to_ms"
+        ) as mock_to_ms, patch("demo.demo_time_utils.to_iso") as mock_to_iso:
             # Set up mock return values
             mock_now_ms.return_value = 1672574400000  # 2023-01-01 12:00:00 UTC
             mock_to_iso.return_value = "2023-01-01T12:00:00.000Z"
@@ -52,13 +51,11 @@ class TestDemoTimeUtils:
 
             mock_to_ms.side_effect = mock_to_ms_func
 
-            yield {
-                'now_ms': mock_now_ms,
-                'to_ms': mock_to_ms,
-                'to_iso': mock_to_iso
-            }
+            yield {"now_ms": mock_now_ms, "to_ms": mock_to_ms, "to_iso": mock_to_iso}
 
-    def test_demo_time_utilities_basic_execution(self, mock_logger, mock_time_functions):
+    def test_demo_time_utilities_basic_execution(
+        self, mock_logger, mock_time_functions
+    ):
         """Test that demo_time_utilities runs without errors."""
         # Execute the demo function
         demo_time_utilities()
@@ -75,7 +72,9 @@ class TestDemoTimeUtils:
         assert any("=== Edge Cases ===" in msg for msg in log_calls)
         assert any("=== ISO Conversion ===" in msg for msg in log_calls)
 
-    def test_demo_time_utilities_current_time_logging(self, mock_logger, mock_time_functions):
+    def test_demo_time_utilities_current_time_logging(
+        self, mock_logger, mock_time_functions
+    ):
         """Test logging of current time values."""
         demo_time_utilities()
 
@@ -87,7 +86,9 @@ class TestDemoTimeUtils:
         assert any("Round-trip ms:" in msg for msg in log_calls)
         assert any("Round-trip difference:" in msg for msg in log_calls)
 
-    def test_demo_time_utilities_conversion_examples(self, mock_logger, mock_time_functions):
+    def test_demo_time_utilities_conversion_examples(
+        self, mock_logger, mock_time_functions
+    ):
         """Test conversion examples section."""
         demo_time_utilities()
 
@@ -100,11 +101,13 @@ class TestDemoTimeUtils:
             "Seconds as float",
             "ISO string",
             "Numeric string seconds",
-            "Numeric string milliseconds"
+            "Numeric string milliseconds",
         ]
 
         for example in conversion_examples:
-            assert any(example in msg for msg in log_calls), f"Missing conversion example: {example}"
+            assert any(
+                example in msg for msg in log_calls
+            ), f"Missing conversion example: {example}"
 
     def test_demo_time_utilities_edge_cases(self, mock_logger, mock_time_functions):
         """Test edge cases section."""
@@ -113,11 +116,7 @@ class TestDemoTimeUtils:
         log_calls = [call[0][0] for call in mock_logger.info.call_args_list]
 
         # Verify edge cases are logged
-        edge_cases = [
-            "None",
-            "Invalid string",
-            "List (unsupported)"
-        ]
+        edge_cases = ["None", "Invalid string", "List (unsupported)"]
 
         for case in edge_cases:
             assert any(case in msg for msg in log_calls), f"Missing edge case: {case}"
@@ -129,26 +128,24 @@ class TestDemoTimeUtils:
         log_calls = [call[0][0] for call in mock_logger.info.call_args_list]
 
         # Verify ISO conversion examples
-        iso_examples = [
-            "Epoch",
-            "Recent timestamp",
-            "Future timestamp"
-        ]
+        iso_examples = ["Epoch", "Recent timestamp", "Future timestamp"]
 
         for example in iso_examples:
-            assert any(example in msg for msg in log_calls), f"Missing ISO example: {example}"
+            assert any(
+                example in msg for msg in log_calls
+            ), f"Missing ISO example: {example}"
 
     def test_demo_time_utilities_function_calls(self, mock_time_functions):
         """Test that the correct utility functions are called."""
         demo_time_utilities()
 
         # Verify function call counts
-        mock_time_functions['now_ms'].assert_called()
-        mock_time_functions['to_iso'].assert_called()
-        mock_time_functions['to_ms'].assert_called()
+        mock_time_functions["now_ms"].assert_called()
+        mock_time_functions["to_iso"].assert_called()
+        mock_time_functions["to_ms"].assert_called()
 
         # to_ms should be called multiple times for examples
-        assert mock_time_functions['to_ms'].call_count > 5
+        assert mock_time_functions["to_ms"].call_count > 5
 
     def test_demo_time_utilities_with_real_functions(self):
         """Test demo_time_utilities with real utility functions (integration test)."""
@@ -157,7 +154,7 @@ class TestDemoTimeUtils:
         ch = logging.StreamHandler(log_capture_string)
         ch.setLevel(logging.INFO)
 
-        logger = logging.getLogger('demo.demo_time_utils')
+        logger = logging.getLogger("demo.demo_time_utils")
         logger.setLevel(logging.INFO)
         logger.addHandler(ch)
 
@@ -182,11 +179,12 @@ class TestDemoTimeUtils:
     def test_demo_time_utilities_main_execution(self):
         """Test execution when run as main script."""
         # Mock sys.argv and other dependencies
-        with patch('sys.argv', ['demo_time_utils.py']), \
-             patch('demo.demo_time_utils.demo_time_utilities') as mock_demo:
-
+        with patch("sys.argv", ["demo_time_utils.py"]), patch(
+            "demo.demo_time_utils.demo_time_utilities"
+        ) as mock_demo:
             # Import and run as main
             import demo.demo_time_utils
+
             # Simulate the if __name__ == "__main__" block
             demo.demo_time_utils.main()
 
@@ -196,17 +194,18 @@ class TestDemoTimeUtils:
     def test_demo_time_utilities_error_handling(self, mock_logger):
         """Test error handling in demo function."""
         # Mock time functions to raise exceptions
-        with patch('demo.demo_time_utils.now_ms', side_effect=Exception("Test error")), \
-             patch('demo.demo_time_utils.to_ms'), \
-             patch('demo.demo_time_utils.to_iso'):
-
+        with patch(
+            "demo.demo_time_utils.now_ms", side_effect=Exception("Test error")
+        ), patch("demo.demo_time_utils.to_ms"), patch("demo.demo_time_utils.to_iso"):
             # Should not crash, but may log errors
             demo_time_utilities()
 
             # Verify some logging still occurred
             assert mock_logger.info.call_count >= 1
 
-    def test_demo_time_utilities_comprehensive_logging(self, mock_logger, mock_time_functions):
+    def test_demo_time_utilities_comprehensive_logging(
+        self, mock_logger, mock_time_functions
+    ):
         """Test comprehensive logging output."""
         demo_time_utilities()
 
@@ -214,7 +213,9 @@ class TestDemoTimeUtils:
         log_messages = [call[0][0] for call in mock_logger.info.call_args_list]
 
         # Count different types of messages
-        section_headers = sum(1 for msg in log_messages if msg.startswith("===") and msg.endswith("==="))
+        section_headers = sum(
+            1 for msg in log_messages if msg.startswith("===") and msg.endswith("===")
+        )
         time_logs = sum(1 for msg in log_messages if "time" in msg.lower())
         conversion_logs = sum(1 for msg in log_messages if "->" in msg)
         example_logs = sum(1 for msg in log_messages if ":" in msg and "->" in msg)
@@ -225,55 +226,77 @@ class TestDemoTimeUtils:
         assert conversion_logs >= 6  # Various conversion examples
         assert example_logs >= 9  # All examples combined
 
-    @pytest.mark.parametrize("input_val,expected_desc", [
-        (1672574400, "Seconds as int"),
-        (1672574400000, "Milliseconds as int"),
-        (1672574400.123, "Seconds as float"),
-        ("2023-01-01T12:00:00Z", "ISO string"),
-        ("1672574400", "Numeric string seconds"),
-        ("1672574400000", "Numeric string milliseconds"),
-    ])
-    def test_demo_time_utilities_parametrized_examples(self, mock_logger, input_val, expected_desc):
+    @pytest.mark.parametrize(
+        "input_val,expected_desc",
+        [
+            (1672574400, "Seconds as int"),
+            (1672574400000, "Milliseconds as int"),
+            (1672574400.123, "Seconds as float"),
+            ("2023-01-01T12:00:00Z", "ISO string"),
+            ("1672574400", "Numeric string seconds"),
+            ("1672574400000", "Numeric string milliseconds"),
+        ],
+    )
+    def test_demo_time_utilities_parametrized_examples(
+        self, mock_logger, input_val, expected_desc
+    ):
         """Test specific conversion examples with parametrization."""
-        with patch('demo.demo_time_utils.now_ms', return_value=1672574400000), \
-             patch('demo.demo_time_utils.to_iso', return_value="2023-01-01T12:00:00.000Z"), \
-             patch('demo.demo_time_utils.to_ms') as mock_to_ms:
-
+        with patch("demo.demo_time_utils.now_ms", return_value=1672574400000), patch(
+            "demo.demo_time_utils.to_iso", return_value="2023-01-01T12:00:00.000Z"
+        ), patch("demo.demo_time_utils.to_ms") as mock_to_ms:
             mock_to_ms.return_value = 1672574400000
 
             demo_time_utilities()
 
             # Verify the specific example was logged
             log_calls = [call[0][0] for call in mock_logger.info.call_args_list]
-            assert any(expected_desc in msg and str(input_val) in msg for msg in log_calls)
+            assert any(
+                expected_desc in msg and str(input_val) in msg for msg in log_calls
+            )
 
     def test_demo_time_utilities_edge_case_logging(self, mock_logger):
         """Test edge case logging specifically."""
-        with patch('demo.demo_time_utils.now_ms', return_value=1672574400000), \
-             patch('demo.demo_time_utils.to_iso', return_value="2023-01-01T12:00:00.000Z"), \
-             patch('demo.demo_time_utils.to_ms') as mock_to_ms:
-
+        with patch("demo.demo_time_utils.now_ms", return_value=1672574400000), patch(
+            "demo.demo_time_utils.to_iso", return_value="2023-01-01T12:00:00.000Z"
+        ), patch("demo.demo_time_utils.to_ms") as mock_to_ms:
             # Mock to_ms for edge cases
-            mock_to_ms.side_effect = lambda x: None if x in [None, "invalid", [1, 2, 3]] else 1672574400000
+            mock_to_ms.side_effect = (
+                lambda x: None if x in [None, "invalid", [1, 2, 3]] else 1672574400000
+            )
 
             demo_time_utilities()
 
             log_calls = [call[0][0] for call in mock_logger.info.call_args_list]
 
             # Verify edge cases are logged
-            edge_cases_found = sum(1 for msg in log_calls if any(case in msg for case in ["None", "Invalid string", "List (unsupported)"]))
+            edge_cases_found = sum(
+                1
+                for msg in log_calls
+                if any(
+                    case in msg
+                    for case in ["None", "Invalid string", "List (unsupported)"]
+                )
+            )
             assert edge_cases_found >= 3
 
     def test_demo_time_utilities_iso_examples(self, mock_logger):
         """Test ISO conversion examples specifically."""
-        with patch('demo.demo_time_utils.now_ms', return_value=1672574400000), \
-             patch('demo.demo_time_utils.to_ms', return_value=1672574400000), \
-             patch('demo.demo_time_utils.to_iso', return_value="2023-01-01T12:00:00.000Z") as mock_to_iso:
-
+        with patch("demo.demo_time_utils.now_ms", return_value=1672574400000), patch(
+            "demo.demo_time_utils.to_ms", return_value=1672574400000
+        ), patch(
+            "demo.demo_time_utils.to_iso", return_value="2023-01-01T12:00:00.000Z"
+        ) as mock_to_iso:
             demo_time_utilities()
 
             log_calls = [call[0][0] for call in mock_logger.info.call_args_list]
 
             # Verify ISO examples
-            iso_examples_found = sum(1 for msg in log_calls if any(case in msg for case in ["Epoch", "Recent timestamp", "Future timestamp"]))
+            iso_examples_found = sum(
+                1
+                for msg in log_calls
+                if any(
+                    case in msg
+                    for case in ["Epoch", "Recent timestamp", "Future timestamp"]
+                )
+            )
             assert iso_examples_found >= 3

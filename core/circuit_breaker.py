@@ -31,17 +31,19 @@ Trigger Conditions:
 """
 
 import asyncio
-from typing import Dict, List, Any, Optional, Protocol
+import logging
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
 import numpy as np
-import logging
-from abc import ABC, abstractmethod
 
 # Import metrics collector at module level to avoid blocking imports in async methods
 try:
     from core.metrics_collector import get_metrics_collector
+
     _metrics_collector_available = True
 except ImportError:
     _metrics_collector_available = False
@@ -50,6 +52,7 @@ except ImportError:
 @dataclass
 class CircuitBreakerConfig:
     """Configuration for Circuit Breaker."""
+
     equity_drawdown_threshold: float = 0.1
     consecutive_losses_threshold: int = 5
     volatility_spike_threshold: float = 0.05
@@ -77,17 +80,20 @@ class CircuitBreakerConfig:
             raise ValueError("recovery_period_minutes must be positive")
 
     def __repr__(self):
-        return (f"CircuitBreakerConfig(equity_drawdown_threshold={self.equity_drawdown_threshold}, "
-                f"consecutive_losses_threshold={self.consecutive_losses_threshold}, "
-                f"volatility_spike_threshold={self.volatility_spike_threshold}, "
-                f"max_triggers_per_hour={self.max_triggers_per_hour}, "
-                f"monitoring_window_minutes={self.monitoring_window_minutes}, "
-                f"cooling_period_minutes={self.cooling_period_minutes}, "
-                f"recovery_period_minutes={self.recovery_period_minutes})")
+        return (
+            f"CircuitBreakerConfig(equity_drawdown_threshold={self.equity_drawdown_threshold}, "
+            f"consecutive_losses_threshold={self.consecutive_losses_threshold}, "
+            f"volatility_spike_threshold={self.volatility_spike_threshold}, "
+            f"max_triggers_per_hour={self.max_triggers_per_hour}, "
+            f"monitoring_window_minutes={self.monitoring_window_minutes}, "
+            f"cooling_period_minutes={self.cooling_period_minutes}, "
+            f"recovery_period_minutes={self.recovery_period_minutes})"
+        )
 
 
 class CircuitBreakerState(Enum):
     """Circuit breaker operational states."""
+
     NORMAL = "normal"
     MONITORING = "monitoring"
     TRIGGERED = "triggered"
@@ -98,6 +104,7 @@ class CircuitBreakerState(Enum):
 
 class TriggerSeverity(Enum):
     """Trigger severity levels."""
+
     WARNING = "warning"
     CRITICAL = "critical"
     EMERGENCY = "emergency"
@@ -106,6 +113,7 @@ class TriggerSeverity(Enum):
 @dataclass
 class TriggerCondition:
     """A single trigger condition with its configuration."""
+
     name: str
     description: str
     severity: TriggerSeverity
@@ -119,6 +127,7 @@ class TriggerCondition:
 @dataclass
 class CircuitBreakerEvent:
     """A circuit breaker event record."""
+
     timestamp: datetime
     event_type: str
     severity: TriggerSeverity
@@ -134,6 +143,7 @@ class CircuitBreakerEvent:
 @dataclass
 class TriggerEvent:
     """A circuit breaker trigger event for dashboard integration."""
+
     trigger_type: str
     timestamp: datetime
     details: Dict[str, Any] = field(default_factory=dict)
@@ -145,6 +155,7 @@ class TriggerEvent:
 @dataclass
 class EquityPoint:
     """A single equity curve data point."""
+
     timestamp: datetime
     equity: float
     realized_pnl: float
@@ -159,7 +170,9 @@ class TriggerStrategy(ABC):
         self.config = config
 
     @abstractmethod
-    async def check_condition(self, conditions: Dict[str, Any], circuit_breaker: 'CircuitBreaker') -> bool:
+    async def check_condition(
+        self, conditions: Dict[str, Any], circuit_breaker: "CircuitBreaker"
+    ) -> bool:
         """Check if this trigger condition is met."""
         pass
 
@@ -175,12 +188,14 @@ class EquityDrawdownTrigger(TriggerStrategy):
     def get_trigger_name(self) -> str:
         return "equity_drawdown"
 
-    async def check_condition(self, conditions: Dict[str, Any], circuit_breaker: 'CircuitBreaker') -> bool:
+    async def check_condition(
+        self, conditions: Dict[str, Any], circuit_breaker: "CircuitBreaker"
+    ) -> bool:
         """Check if equity drawdown exceeds threshold."""
-        if 'equity' not in conditions:
+        if "equity" not in conditions:
             return False
 
-        equity = conditions['equity']
+        equity = conditions["equity"]
         # Assume peak equity is initial 10000 for simplicity
         peak_equity = 10000.0
 
@@ -197,12 +212,14 @@ class ConsecutiveLossesTrigger(TriggerStrategy):
     def get_trigger_name(self) -> str:
         return "consecutive_losses"
 
-    async def check_condition(self, conditions: Dict[str, Any], circuit_breaker: 'CircuitBreaker') -> bool:
+    async def check_condition(
+        self, conditions: Dict[str, Any], circuit_breaker: "CircuitBreaker"
+    ) -> bool:
         """Check if consecutive losses exceed threshold."""
-        if 'consecutive_losses' not in conditions:
+        if "consecutive_losses" not in conditions:
             return False
 
-        consecutive_losses = conditions['consecutive_losses']
+        consecutive_losses = conditions["consecutive_losses"]
         return consecutive_losses >= self.config.consecutive_losses_threshold
 
 
@@ -212,12 +229,14 @@ class VolatilitySpikeTrigger(TriggerStrategy):
     def get_trigger_name(self) -> str:
         return "volatility_spike"
 
-    async def check_condition(self, conditions: Dict[str, Any], circuit_breaker: 'CircuitBreaker') -> bool:
+    async def check_condition(
+        self, conditions: Dict[str, Any], circuit_breaker: "CircuitBreaker"
+    ) -> bool:
         """Check if volatility spike exceeds threshold."""
-        if 'volatility' not in conditions:
+        if "volatility" not in conditions:
             return False
 
-        volatility = conditions['volatility']
+        volatility = conditions["volatility"]
         return volatility >= self.config.volatility_spike_threshold
 
 
@@ -227,18 +246,22 @@ class AnomalyTrigger(TriggerStrategy):
     def get_trigger_name(self) -> str:
         return "market_anomaly"
 
-    async def check_condition(self, conditions: Dict[str, Any], circuit_breaker: 'CircuitBreaker') -> bool:
+    async def check_condition(
+        self, conditions: Dict[str, Any], circuit_breaker: "CircuitBreaker"
+    ) -> bool:
         """Check for market anomalies using integrated anomaly detector."""
         if not circuit_breaker.anomaly_detector:
             return False
 
-        if 'market_data' not in conditions:
+        if "market_data" not in conditions:
             return False
 
         try:
             return await asyncio.wait_for(
-                circuit_breaker.anomaly_detector.detect_market_anomaly(conditions['market_data']),
-                timeout=15.0  # 15 second timeout for anomaly detection
+                circuit_breaker.anomaly_detector.detect_market_anomaly(
+                    conditions["market_data"]
+                ),
+                timeout=15.0,  # 15 second timeout for anomaly detection
             )
         except asyncio.TimeoutError:
             circuit_breaker.logger.warning("Timeout in anomaly detection")
@@ -251,36 +274,36 @@ class AnomalyTrigger(TriggerStrategy):
 class StateMachine:
     """State machine for managing circuit breaker state transitions."""
 
-    def __init__(self, circuit_breaker: 'CircuitBreaker'):
+    def __init__(self, circuit_breaker: "CircuitBreaker"):
         self.circuit_breaker = circuit_breaker
         self.transitions = self._build_transitions()
 
-    def _build_transitions(self) -> Dict[CircuitBreakerState, Dict[str, CircuitBreakerState]]:
+    def _build_transitions(
+        self,
+    ) -> Dict[CircuitBreakerState, Dict[str, CircuitBreakerState]]:
         """Build the state transition table."""
         return {
             CircuitBreakerState.NORMAL: {
-                'trigger': CircuitBreakerState.TRIGGERED,
-                'monitor': CircuitBreakerState.MONITORING
+                "trigger": CircuitBreakerState.TRIGGERED,
+                "monitor": CircuitBreakerState.MONITORING,
             },
             CircuitBreakerState.MONITORING: {
-                'trigger': CircuitBreakerState.TRIGGERED,
-                'normal': CircuitBreakerState.NORMAL
+                "trigger": CircuitBreakerState.TRIGGERED,
+                "normal": CircuitBreakerState.NORMAL,
             },
             CircuitBreakerState.TRIGGERED: {
-                'cooling': CircuitBreakerState.COOLING,
-                'emergency': CircuitBreakerState.EMERGENCY
+                "cooling": CircuitBreakerState.COOLING,
+                "emergency": CircuitBreakerState.EMERGENCY,
             },
             CircuitBreakerState.COOLING: {
-                'recovery': CircuitBreakerState.RECOVERY,
-                'trigger': CircuitBreakerState.TRIGGERED
+                "recovery": CircuitBreakerState.RECOVERY,
+                "trigger": CircuitBreakerState.TRIGGERED,
             },
             CircuitBreakerState.RECOVERY: {
-                'normal': CircuitBreakerState.NORMAL,
-                'trigger': CircuitBreakerState.TRIGGERED
+                "normal": CircuitBreakerState.NORMAL,
+                "trigger": CircuitBreakerState.TRIGGERED,
             },
-            CircuitBreakerState.EMERGENCY: {
-                'normal': CircuitBreakerState.NORMAL
-            }
+            CircuitBreakerState.EMERGENCY: {"normal": CircuitBreakerState.NORMAL},
         }
 
     async def transition(self, action: str, reason: str = "") -> bool:
@@ -304,7 +327,7 @@ class StateMachine:
                 f"state_transition_{action}",
                 old_state,
                 new_state,
-                reason or f"State transition: {action}"
+                reason or f"State transition: {action}",
             )
 
             # Execute state-specific actions (without holding the lock to prevent deadlocks)
@@ -315,22 +338,31 @@ class StateMachine:
         try:
             await asyncio.wait_for(
                 self._execute_state_actions(new_state, old_state),
-                timeout=30.0  # 30 second timeout for state actions
+                timeout=30.0,  # 30 second timeout for state actions
             )
         except asyncio.TimeoutError:
-            self.circuit_breaker.logger.warning(f"Timeout executing state actions for {new_state}")
+            self.circuit_breaker.logger.warning(
+                f"Timeout executing state actions for {new_state}"
+            )
         except Exception as e:
-            self.circuit_breaker.logger.warning(f"Error executing state actions for {new_state}: {e}")
+            self.circuit_breaker.logger.warning(
+                f"Error executing state actions for {new_state}: {e}"
+            )
 
         return True
 
-    async def _execute_state_actions(self, new_state: CircuitBreakerState, old_state: CircuitBreakerState) -> None:
+    async def _execute_state_actions(
+        self, new_state: CircuitBreakerState, old_state: CircuitBreakerState
+    ) -> None:
         """Execute actions specific to entering a new state."""
         if new_state == CircuitBreakerState.COOLING:
             await self.circuit_breaker._enter_cooling_period()
         elif new_state == CircuitBreakerState.RECOVERY:
             await self.circuit_breaker._enter_recovery_period()
-        elif new_state == CircuitBreakerState.NORMAL and old_state != CircuitBreakerState.NORMAL:
+        elif (
+            new_state == CircuitBreakerState.NORMAL
+            and old_state != CircuitBreakerState.NORMAL
+        ):
             await self.circuit_breaker._return_to_normal()
         elif new_state == CircuitBreakerState.TRIGGERED:
             await self.circuit_breaker._trigger_circuit_breaker("State machine trigger")
@@ -373,7 +405,7 @@ class CircuitBreaker:
             EquityDrawdownTrigger(config),
             ConsecutiveLossesTrigger(config),
             VolatilitySpikeTrigger(config),
-            AnomalyTrigger(config)
+            AnomalyTrigger(config),
         ]
 
         # Initialize state machine
@@ -382,24 +414,32 @@ class CircuitBreaker:
         # Initialize background tasks set
         self._background_tasks = set()
 
-    def _log_event(self, event_type: str, previous_state: CircuitBreakerState,
-                   new_state: CircuitBreakerState, reason: str, **kwargs) -> None:
+    def _log_event(
+        self,
+        event_type: str,
+        previous_state: CircuitBreakerState,
+        new_state: CircuitBreakerState,
+        reason: str,
+        **kwargs,
+    ) -> None:
         """Log a circuit breaker event to event_history."""
         event = {
-            'timestamp': datetime.now(),
-            'event_type': event_type,
-            'previous_state': previous_state.value,
-            'new_state': new_state.value,
-            'reason': reason,
-            **kwargs
+            "timestamp": datetime.now(),
+            "event_type": event_type,
+            "previous_state": previous_state.value,
+            "new_state": new_state.value,
+            "reason": reason,
+            **kwargs,
         }
         self.event_history.append(event)
 
         # Maintain max history size
         if len(self.event_history) > self.config.max_history_size:
-            self.event_history = self.event_history[-self.config.max_history_size:]
+            self.event_history = self.event_history[-self.config.max_history_size :]
 
-        self.logger.info(f"Circuit breaker event: {event_type} - {previous_state.value} -> {new_state.value} ({reason})")
+        self.logger.info(
+            f"Circuit breaker event: {event_type} - {previous_state.value} -> {new_state.value} ({reason})"
+        )
 
     def _check_equity_drawdown(self, peak_equity: float, current_equity: float) -> bool:
         """Check if equity drawdown exceeds threshold."""
@@ -417,7 +457,7 @@ class CircuitBreaker:
         if len(self.trade_results) < self.config.consecutive_losses_threshold:
             return False
         # Check the last N trades
-        recent_trades = self.trade_results[-self.config.consecutive_losses_threshold:]
+        recent_trades = self.trade_results[-self.config.consecutive_losses_threshold :]
         return all(not win for win in recent_trades)
 
     def _check_volatility_spike(self, prices: np.ndarray) -> bool:
@@ -431,9 +471,9 @@ class CircuitBreaker:
     def _calculate_trigger_score(self, factors: Dict[str, bool]) -> float:
         """Calculate multi-factor trigger score."""
         weights = {
-            'equity_drawdown': 0.6,
-            'consecutive_losses': 0.3,
-            'volatility_spike': 0.1
+            "equity_drawdown": 0.6,
+            "consecutive_losses": 0.3,
+            "volatility_spike": 0.1,
         }
         score = 0.0
         for factor, triggered in factors.items():
@@ -444,47 +484,64 @@ class CircuitBreaker:
     async def check_and_trigger(self, conditions: Dict[str, Any]) -> bool:
         """Check conditions and trigger if needed using strategy pattern."""
         self.logger.debug(f"Checking trigger conditions: {conditions}")
-        start_time = asyncio.get_event_loop().time()
+        # Cache timestamp to avoid repeated time.monotonic calls
+        cached_time = asyncio.get_event_loop().time()
+        start_time = cached_time
         triggered_strategies = []
 
         # Use strategy pattern to check all trigger conditions with timeout protection
         for strategy in self.trigger_strategies:
             try:
                 # Add timeout protection to prevent hangs
-                strategy_start = asyncio.get_event_loop().time()
                 result = await asyncio.wait_for(
                     strategy.check_condition(conditions, self),
-                    timeout=10.0  # 10 second timeout per strategy
+                    timeout=10.0,  # 10 second timeout per strategy
                 )
-                strategy_duration = asyncio.get_event_loop().time() - strategy_start
-                self.logger.debug(f"Strategy {strategy.get_trigger_name()} checked in {strategy_duration:.3f}s: {result}")
+                # Remove debug logging during breaker engagement to reduce overhead
+                if self.state != CircuitBreakerState.TRIGGERED:
+                    strategy_duration = asyncio.get_event_loop().time() - cached_time
+                    self.logger.debug(
+                        f"Strategy {strategy.get_trigger_name()} checked in {strategy_duration:.3f}s: {result}"
+                    )
 
                 if result:
                     triggered_strategies.append(strategy.get_trigger_name())
             except asyncio.TimeoutError:
-                self.logger.warning(f"Timeout checking {strategy.get_trigger_name()} after 10s")
+                self.logger.warning(
+                    f"Timeout checking {strategy.get_trigger_name()} after 10s"
+                )
                 continue
             except Exception as e:
-                self.logger.warning(f"Error checking {strategy.get_trigger_name()}: {e}")
+                self.logger.warning(
+                    f"Error checking {strategy.get_trigger_name()}: {e}"
+                )
                 continue
 
         if triggered_strategies:
             # Check for deduplication - don't trigger if already in TRIGGERED state
             if self.state == CircuitBreakerState.TRIGGERED:
-                self.logger.debug("Circuit breaker already triggered, skipping duplicate trigger")
+                self.logger.debug(
+                    "Circuit breaker already triggered, skipping duplicate trigger"
+                )
                 return False
 
             self.logger.info(f"Trigger conditions met: {triggered_strategies}")
 
             # Use state machine to transition to triggered state with timeout
             try:
-                transition_start = asyncio.get_event_loop().time()
                 transition_result = await asyncio.wait_for(
-                    self.state_machine.transition("trigger", f"Strategies triggered: {', '.join(triggered_strategies)}"),
-                    timeout=30.0  # 30 second timeout for state transition
+                    self.state_machine.transition(
+                        "trigger",
+                        f"Strategies triggered: {', '.join(triggered_strategies)}",
+                    ),
+                    timeout=30.0,  # 30 second timeout for state transition
                 )
-                transition_duration = asyncio.get_event_loop().time() - transition_start
-                self.logger.debug(f"State transition completed in {transition_duration:.3f}s: {transition_result}")
+                # Remove debug logging during breaker engagement
+                if self.state != CircuitBreakerState.TRIGGERED:
+                    transition_duration = asyncio.get_event_loop().time() - cached_time
+                    self.logger.debug(
+                        f"State transition completed in {transition_duration:.3f}s: {transition_result}"
+                    )
             except asyncio.TimeoutError:
                 self.logger.error("Timeout during state transition to TRIGGERED")
                 return False
@@ -493,26 +550,30 @@ class CircuitBreaker:
                 return False
 
             # Integration: cancel orders when triggered with timeout
-            if self.order_manager and hasattr(self.order_manager, 'cancel_all_orders'):
+            if self.order_manager and hasattr(self.order_manager, "cancel_all_orders"):
                 try:
                     await asyncio.wait_for(
                         self.order_manager.cancel_all_orders(),
-                        timeout=30.0  # 30 second timeout
+                        timeout=30.0,  # 30 second timeout
                     )
-                    self.logger.debug("Successfully cancelled all orders")
+                    # Remove debug logging during breaker engagement
+                    if self.state != CircuitBreakerState.TRIGGERED:
+                        self.logger.debug("Successfully cancelled all orders")
                 except asyncio.TimeoutError:
                     self.logger.warning("Timeout cancelling orders")
                 except Exception as e:
                     self.logger.warning(f"Failed to cancel orders: {e}")
 
             # Integration: block signals when triggered with timeout
-            if self.signal_router and hasattr(self.signal_router, 'block_signals'):
+            if self.signal_router and hasattr(self.signal_router, "block_signals"):
                 try:
                     await asyncio.wait_for(
                         self.signal_router.block_signals(),
-                        timeout=30.0  # 30 second timeout
+                        timeout=30.0,  # 30 second timeout
                     )
-                    self.logger.debug("Successfully blocked signals")
+                    # Remove debug logging during breaker engagement
+                    if self.state != CircuitBreakerState.TRIGGERED:
+                        self.logger.debug("Successfully blocked signals")
                 except asyncio.TimeoutError:
                     self.logger.warning("Timeout blocking signals")
                 except Exception as e:
@@ -523,7 +584,11 @@ class CircuitBreaker:
             return True
 
         check_duration = asyncio.get_event_loop().time() - start_time
-        self.logger.debug(f"check_and_trigger completed in {check_duration:.3f}s - no triggers")
+        # Remove debug logging during breaker engagement
+        if self.state != CircuitBreakerState.TRIGGERED:
+            self.logger.debug(
+                f"check_and_trigger completed in {check_duration:.3f}s - no triggers"
+            )
         return False
 
     async def _trigger_circuit_breaker(self, reason: str) -> None:
@@ -532,57 +597,64 @@ class CircuitBreaker:
             previous_state = self.state
             self.state = CircuitBreakerState.TRIGGERED
 
+            # Cache timestamp to avoid multiple datetime.now() calls
+            cached_timestamp = datetime.now()
+
             # Set current trigger for dashboard integration
             self.current_trigger = TriggerEvent(
                 trigger_type=reason,
-                timestamp=datetime.now(),
+                timestamp=cached_timestamp,
                 details={
-                    'previous_state': previous_state.value,
-                    'current_equity': self.current_equity,
-                    'trigger_count': self.trigger_count + 1
-                }
+                    "previous_state": previous_state.value,
+                    "current_equity": self.current_equity,
+                    "trigger_count": self.trigger_count + 1,
+                },
             )
 
-            self.trigger_history.append({
-                'timestamp': datetime.now(),
-                'reason': reason
-            })
-            self.last_trigger_time = datetime.now()
+            self.trigger_history.append({"timestamp": cached_timestamp, "reason": reason})
+            self.last_trigger_time = cached_timestamp
             self.trigger_count += 1
-            self._log_event("trigger", previous_state, CircuitBreakerState.TRIGGERED, reason)
+            self._log_event(
+                "trigger", previous_state, CircuitBreakerState.TRIGGERED, reason
+            )
 
-            # Record state change in metrics with timeout protection
+            # Record state change in metrics - fire-and-forget during breaker engagement to reduce overhead
             if _metrics_collector_available:
                 try:
                     metrics_collector = get_metrics_collector()
-                    await asyncio.wait_for(
-                        metrics_collector.record_metric(
+                    # Create fire-and-forget task for metrics recording during breaker engagement
+                    asyncio.create_task(
+                        self._record_metric_async(
+                            metrics_collector,
                             "circuit_breaker_state",
                             1,  # 1 = triggered, 0 = normal
                             {"account": "main"}
-                        ),
-                        timeout=5.0  # 5 second timeout for metrics
+                        )
                     )
-                except asyncio.TimeoutError:
-                    self.logger.debug("Timeout recording circuit breaker state in metrics")
                 except Exception as e:
-                    self.logger.debug(f"Could not record circuit breaker state in metrics: {e}")
+                    # Silent failure during breaker engagement to minimize overhead
+                    pass
 
     async def _enter_cooling_period(self) -> None:
         """Enter cooling period."""
         async with self._lock:
             previous_state = self.state
             self.state = CircuitBreakerState.COOLING
-            self._log_event("cooling", previous_state, CircuitBreakerState.COOLING, "Entering cooling period")
+            self._log_event(
+                "cooling",
+                previous_state,
+                CircuitBreakerState.COOLING,
+                "Entering cooling period",
+            )
 
         # Integration: freeze portfolio when entering cooling
-        if self.risk_manager and hasattr(self.risk_manager, 'freeze_portfolio'):
+        if self.risk_manager and hasattr(self.risk_manager, "freeze_portfolio"):
             try:
                 # Create task with proper exception handling and timeout
                 task = asyncio.create_task(
                     asyncio.wait_for(
                         self.risk_manager.freeze_portfolio(),
-                        timeout=30.0  # 30 second timeout
+                        timeout=30.0,  # 30 second timeout
                     )
                 )
                 # Store task reference to prevent unhandled exceptions
@@ -596,23 +668,33 @@ class CircuitBreaker:
         async with self._lock:
             previous_state = self.state
             self.state = CircuitBreakerState.RECOVERY
-            self._log_event("recovery", previous_state, CircuitBreakerState.RECOVERY, "Entering recovery period")
+            self._log_event(
+                "recovery",
+                previous_state,
+                CircuitBreakerState.RECOVERY,
+                "Entering recovery period",
+            )
 
     async def _return_to_normal(self) -> None:
         """Return to normal state."""
         async with self._lock:
             previous_state = self.state
             self.state = CircuitBreakerState.NORMAL
-            self._log_event("normal", previous_state, CircuitBreakerState.NORMAL, "Returning to normal state")
+            self._log_event(
+                "normal",
+                previous_state,
+                CircuitBreakerState.NORMAL,
+                "Returning to normal state",
+            )
 
         # Integration: unfreeze portfolio when returning to normal
-        if self.risk_manager and hasattr(self.risk_manager, 'unfreeze_portfolio'):
+        if self.risk_manager and hasattr(self.risk_manager, "unfreeze_portfolio"):
             try:
                 # Create task with proper exception handling and timeout
                 task = asyncio.create_task(
                     asyncio.wait_for(
                         self.risk_manager.unfreeze_portfolio(),
-                        timeout=30.0  # 30 second timeout
+                        timeout=30.0,  # 30 second timeout
                     )
                 )
                 # Store task reference to prevent unhandled exceptions
@@ -622,13 +704,13 @@ class CircuitBreaker:
                 self.logger.warning(f"Failed to unfreeze portfolio: {e}")
 
         # Integration: unblock signals when returning to normal
-        if self.signal_router and hasattr(self.signal_router, 'unblock_signals'):
+        if self.signal_router and hasattr(self.signal_router, "unblock_signals"):
             try:
                 # Create task with proper exception handling and timeout
                 task = asyncio.create_task(
                     asyncio.wait_for(
                         self.signal_router.unblock_signals(),
-                        timeout=30.0  # 30 second timeout
+                        timeout=30.0,  # 30 second timeout
                     )
                 )
                 # Store task reference to prevent unhandled exceptions
@@ -657,30 +739,38 @@ class CircuitBreaker:
     def get_state_snapshot(self) -> Dict[str, Any]:
         """Get state snapshot for persistence."""
         return {
-            'state': self.state.value,
-            'trigger_history': self.trigger_history,
-            'event_history': self.event_history,
-            'trade_results': self.trade_results,
-            'last_trigger_time': self.last_trigger_time.isoformat() if self.last_trigger_time else None,
-            'trigger_count': self.trigger_count
+            "state": self.state.value,
+            "trigger_history": self.trigger_history,
+            "event_history": self.event_history,
+            "trade_results": self.trade_results,
+            "last_trigger_time": self.last_trigger_time.isoformat()
+            if self.last_trigger_time
+            else None,
+            "trigger_count": self.trigger_count,
         }
 
     def restore_state_snapshot(self, snapshot: Dict[str, Any]) -> None:
         """Restore state from snapshot."""
-        self.state = CircuitBreakerState(snapshot['state'])
-        self.trigger_history = snapshot['trigger_history']
-        self.event_history = snapshot['event_history']
-        self.trade_results = snapshot['trade_results']
-        self.last_trigger_time = datetime.fromisoformat(snapshot['last_trigger_time']) if snapshot['last_trigger_time'] else None
-        self.trigger_count = snapshot['trigger_count']
+        self.state = CircuitBreakerState(snapshot["state"])
+        self.trigger_history = snapshot["trigger_history"]
+        self.event_history = snapshot["event_history"]
+        self.trade_results = snapshot["trade_results"]
+        self.last_trigger_time = (
+            datetime.fromisoformat(snapshot["last_trigger_time"])
+            if snapshot["last_trigger_time"]
+            else None
+        )
+        self.trigger_count = snapshot["trigger_count"]
 
     async def _check_anomaly_integration(self, market_data: Dict[str, Any]) -> bool:
         """Check anomaly integration with timeout protection."""
-        if self.anomaly_detector and hasattr(self.anomaly_detector, 'detect_market_anomaly'):
+        if self.anomaly_detector and hasattr(
+            self.anomaly_detector, "detect_market_anomaly"
+        ):
             try:
                 return await asyncio.wait_for(
                     self.anomaly_detector.detect_market_anomaly(market_data),
-                    timeout=15.0  # 15 second timeout for anomaly detection
+                    timeout=15.0,  # 15 second timeout for anomaly detection
                 )
             except asyncio.TimeoutError:
                 self.logger.warning("Timeout in anomaly detection")
@@ -691,6 +781,17 @@ class CircuitBreaker:
     def _evaluate_triggers(self, conditions: Dict[str, Any]) -> Dict[str, Any]:
         """Evaluate triggers (simplified)."""
         return {}
+
+    async def _record_metric_async(self, metrics_collector, metric_name: str, value, labels: Dict[str, str]) -> None:
+        """Fire-and-forget metric recording to reduce overhead during breaker engagement."""
+        try:
+            await asyncio.wait_for(
+                metrics_collector.record_metric(metric_name, value, labels),
+                timeout=2.0,  # Reduced timeout for fire-and-forget
+            )
+        except Exception:
+            # Silent failure for fire-and-forget metrics
+            pass
 
     async def update_equity(self, equity: float) -> None:
         """
@@ -703,22 +804,22 @@ class CircuitBreaker:
             self.current_equity = equity
             self.logger.info(f"Equity updated: {equity}")
 
-            # Record in metrics if available with timeout protection
+            # Record in metrics - fire-and-forget during breaker engagement to reduce overhead
             if _metrics_collector_available:
                 try:
                     metrics_collector = get_metrics_collector()
-                    await asyncio.wait_for(
-                        metrics_collector.record_metric(
+                    # Create fire-and-forget task for metrics recording
+                    asyncio.create_task(
+                        self._record_metric_async(
+                            metrics_collector,
                             "circuit_breaker_equity",
                             equity,
                             {"account": "main"}
-                        ),
-                        timeout=5.0  # 5 second timeout for metrics
+                        )
                     )
-                except asyncio.TimeoutError:
-                    self.logger.debug("Timeout recording equity in metrics")
-                except Exception as e:
-                    self.logger.debug(f"Could not record equity in metrics: {e}")
+                except Exception:
+                    # Silent failure during breaker engagement to minimize overhead
+                    pass
 
     def update_config(self, new_config: CircuitBreakerConfig) -> None:
         """Update configuration."""
@@ -726,12 +827,12 @@ class CircuitBreaker:
 
     async def cleanup_background_tasks(self) -> None:
         """Clean up any pending background tasks."""
-        if hasattr(self, '_background_tasks') and self._background_tasks:
+        if hasattr(self, "_background_tasks") and self._background_tasks:
             try:
                 # Wait for all background tasks to complete with timeout
                 await asyncio.wait_for(
                     asyncio.gather(*self._background_tasks, return_exceptions=True),
-                    timeout=10.0  # 10 second timeout for cleanup
+                    timeout=10.0,  # 10 second timeout for cleanup
                 )
             except asyncio.TimeoutError:
                 self.logger.warning("Timeout waiting for background tasks to complete")
@@ -766,6 +867,8 @@ def get_circuit_breaker() -> CircuitBreaker:
     return _circuit_breaker
 
 
-def create_circuit_breaker(config: Optional[CircuitBreakerConfig] = None) -> CircuitBreaker:
+def create_circuit_breaker(
+    config: Optional[CircuitBreakerConfig] = None,
+) -> CircuitBreaker:
     """Create a new circuit breaker instance."""
     return CircuitBreaker(config or CircuitBreakerConfig())

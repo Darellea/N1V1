@@ -9,21 +9,16 @@ Tests multi-node scaling capabilities:
 """
 
 import asyncio
-import pytest
-import time
 import json
-import threading
-import subprocess
-from unittest.mock import Mock, patch, AsyncMock
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
-import multiprocessing
-import concurrent.futures
+import time
+from datetime import datetime
+from typing import Any, Dict, List
+from unittest.mock import Mock
 
-from core.task_manager import TaskManager
+import pytest
+
 from core.bot_engine import BotEngine
-from core.distributed_system import DistributedSystemManager
+from core.task_manager import TaskManager
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -36,32 +31,32 @@ class TestScalabilityValidation:
     def config(self) -> Dict[str, Any]:
         """Test configuration."""
         return {
-            'distributed': {
-                'enabled': True,
-                'coordinator_host': 'localhost',
-                'coordinator_port': 6379,
-                'worker_nodes': 3,
-                'task_queue_size': 1000,
-                'heartbeat_interval': 30
+            "distributed": {
+                "enabled": True,
+                "coordinator_host": "localhost",
+                "coordinator_port": 6379,
+                "worker_nodes": 3,
+                "task_queue_size": 1000,
+                "heartbeat_interval": 30,
             },
-            'scaling': {
-                'min_workers': 2,
-                'max_workers': 10,
-                'scale_up_threshold': 0.8,
-                'scale_down_threshold': 0.3,
-                'cooldown_period': 300
+            "scaling": {
+                "min_workers": 2,
+                "max_workers": 10,
+                "scale_up_threshold": 0.8,
+                "scale_down_threshold": 0.3,
+                "cooldown_period": 300,
             },
-            'strategies': {
-                'max_concurrent': 50,
-                'batch_size': 100,
-                'processing_timeout': 30
-            }
+            "strategies": {
+                "max_concurrent": 50,
+                "batch_size": 100,
+                "processing_timeout": 30,
+            },
         }
 
     @pytest.fixture
     def task_manager(self, config: Dict[str, Any]) -> TaskManager:
         """Task manager fixture."""
-        return TaskManager(config.get('distributed', {}))
+        return TaskManager(config.get("distributed", {}))
 
     @pytest.fixture
     def bot_engine(self, config: Dict[str, Any]) -> BotEngine:
@@ -78,8 +73,8 @@ class TestScalabilityValidation:
         worker_nodes = []
         for i in range(3):
             worker = Mock()
-            worker.node_id = f'worker_{i}'
-            worker.status = 'active'
+            worker.node_id = f"worker_{i}"
+            worker.status = "active"
             worker.capacity = 10  # strategies per worker
             worker.current_load = 0
             worker_nodes.append(worker)
@@ -96,8 +91,8 @@ class TestScalabilityValidation:
         new_workers = []
         for i in range(2):  # Add 2 more workers
             worker = Mock()
-            worker.node_id = f'worker_{i+3}'
-            worker.status = 'active'
+            worker.node_id = f"worker_{i+3}"
+            worker.status = "active"
             worker.capacity = 10
             worker.current_load = 0
             new_workers.append(worker)
@@ -113,16 +108,19 @@ class TestScalabilityValidation:
         strategies = []
         for i in range(25):  # Create 25 strategies
             strategy = Mock()
-            strategy.id = f'strategy_{i}'
-            strategy.complexity = 'medium'
-            strategy.priority = 'normal'
+            strategy.id = f"strategy_{i}"
+            strategy.complexity = "medium"
+            strategy.priority = "normal"
             strategies.append(strategy)
 
         # Distribute strategies across workers
         await task_manager.distribute_strategies(strategies)
 
         # Verify load balancing
-        total_assigned = sum(len(worker.assigned_strategies) for worker in task_manager.active_workers.values())
+        total_assigned = sum(
+            len(worker.assigned_strategies)
+            for worker in task_manager.active_workers.values()
+        )
         assert total_assigned == 25
 
         # Check that no worker is overloaded
@@ -142,11 +140,11 @@ class TestScalabilityValidation:
         strategies = []
         for i in range(num_strategies):
             strategy = Mock()
-            strategy.id = f'strategy_{i}'
-            strategy.symbol = f'TEST{i}/USDT'
-            strategy.timeframe = '1h'
-            strategy.parameters = {'param1': i, 'param2': i * 2}
-            strategy.status = 'active'
+            strategy.id = f"strategy_{i}"
+            strategy.symbol = f"TEST{i}/USDT"
+            strategy.timeframe = "1h"
+            strategy.parameters = {"param1": i, "param2": i * 2}
+            strategy.status = "active"
             strategies.append(strategy)
 
         # Setup semaphore for concurrency control
@@ -164,10 +162,10 @@ class TestScalabilityValidation:
                 processing_time = end_time - start_time
 
                 return {
-                    'strategy_id': strategy.id,
-                    'status': 'completed',
-                    'processing_time': processing_time,
-                    'success': True
+                    "strategy_id": strategy.id,
+                    "status": "completed",
+                    "processing_time": processing_time,
+                    "success": True,
                 }
 
         # Process strategies concurrently
@@ -179,25 +177,31 @@ class TestScalabilityValidation:
         total_time = time.time() - start_time
 
         # Analyze results
-        successful = sum(1 for r in results if r['success'])
+        successful = sum(1 for r in results if r["success"])
         failed = len(results) - successful
 
         # Calculate throughput
         throughput = len(results) / total_time if total_time > 0 else 0
 
         # Verify requirements
-        assert successful >= 50, f"Only {successful} strategies completed successfully, need at least 50"
+        assert (
+            successful >= 50
+        ), f"Only {successful} strategies completed successfully, need at least 50"
         assert failed == 0, f"{failed} strategies failed"
-        assert throughput >= 100, f"Throughput {throughput:.1f} strategies/sec below target of 100"
+        assert (
+            throughput >= 100
+        ), f"Throughput {throughput:.1f} strategies/sec below target of 100"
 
         # Log performance metrics
-        logger.info(f"Concurrent strategy processing:")
+        logger.info("Concurrent strategy processing:")
         logger.info(f"  Total strategies: {len(results)}")
         logger.info(f"  Successful: {successful}")
         logger.info(f"  Failed: {failed}")
         logger.info(f"  Total time: {total_time:.2f}s")
         logger.info(f"  Throughput: {throughput:.1f} strategies/sec")
-        logger.info(f"  Average processing time: {sum(r['processing_time'] for r in results) / len(results):.3f}s")
+        logger.info(
+            f"  Average processing time: {sum(r['processing_time'] for r in results) / len(results):.3f}s"
+        )
 
     @pytest.mark.asyncio
     async def test_no_downtime_during_scaling(self, task_manager: TaskManager):
@@ -208,11 +212,13 @@ class TestScalabilityValidation:
         initial_workers = []
         for i in range(3):
             worker = Mock()
-            worker.node_id = f'initial_worker_{i}'
-            worker.status = 'active'
+            worker.node_id = f"initial_worker_{i}"
+            worker.status = "active"
             worker.capacity = 5
             worker.current_load = 3  # Some load
-            worker.assigned_strategies = [f'strategy_{j}' for j in range(i*3, (i+1)*3)]
+            worker.assigned_strategies = [
+                f"strategy_{j}" for j in range(i * 3, (i + 1) * 3)
+            ]
             initial_workers.append(worker)
 
         for worker in initial_workers:
@@ -231,8 +237,8 @@ class TestScalabilityValidation:
         new_workers = []
         for i in range(2):
             worker = Mock()
-            worker.node_id = f'new_worker_{i}'
-            worker.status = 'active'
+            worker.node_id = f"new_worker_{i}"
+            worker.status = "active"
             worker.capacity = 5
             worker.current_load = 0
             worker.assigned_strategies = []
@@ -243,7 +249,7 @@ class TestScalabilityValidation:
             await task_manager.register_worker(worker)
 
         # Redistribute some strategies to new workers
-        strategies_to_move = ['strategy_0', 'strategy_1', 'strategy_2']
+        strategies_to_move = ["strategy_0", "strategy_1", "strategy_2"]
 
         # Simulate redistribution
         for strategy in strategies_to_move:
@@ -274,10 +280,14 @@ class TestScalabilityValidation:
         for worker in task_manager.active_workers.values():
             strategies_after.update(worker.assigned_strategies)
 
-        assert strategies_before == strategies_after, "Strategies were lost during scaling"
+        assert (
+            strategies_before == strategies_after
+        ), "Strategies were lost during scaling"
 
         # Verify all workers are still active
-        active_count = sum(1 for w in task_manager.active_workers.values() if w.status == 'active')
+        active_count = sum(
+            1 for w in task_manager.active_workers.values() if w.status == "active"
+        )
         assert active_count == 5, f"Expected 5 active workers, got {active_count}"
 
         logger.info(f"Scaling operation completed in {scaling_time:.2f}s")
@@ -296,8 +306,8 @@ class TestScalabilityValidation:
 
         for i, capacity in enumerate(capacities):
             worker = Mock()
-            worker.node_id = f'distributed_worker_{i}'
-            worker.status = 'active'
+            worker.node_id = f"distributed_worker_{i}"
+            worker.status = "active"
             worker.capacity = capacity
             worker.current_load = 0
             worker.assigned_strategies = []
@@ -309,12 +319,12 @@ class TestScalabilityValidation:
 
         # Create tasks with different priorities and complexities
         tasks = []
-        priorities = ['high', 'medium', 'low']
-        complexities = ['simple', 'medium', 'complex']
+        priorities = ["high", "medium", "low"]
+        complexities = ["simple", "medium", "complex"]
 
         for i in range(100):
             task = Mock()
-            task.id = f'task_{i}'
+            task.id = f"task_{i}"
             task.priority = priorities[i % len(priorities)]
             task.complexity = complexities[i % len(complexities)]
             task.estimated_duration = 1.0 + (i % 3) * 0.5  # 1-2.5 seconds
@@ -325,25 +335,33 @@ class TestScalabilityValidation:
         await task_manager.distribute_tasks(tasks)
 
         # Verify distribution properties
-        total_assigned = sum(len(worker.assigned_tasks) for worker in task_manager.active_workers.values())
+        total_assigned = sum(
+            len(worker.assigned_tasks)
+            for worker in task_manager.active_workers.values()
+        )
         assert total_assigned == len(tasks)
 
         # Check load balancing (should be proportional to processing_power)
         total_processing_power = sum(worker.processing_power for worker in workers)
         for worker in workers:
-            expected_load = len(tasks) * (worker.processing_power / total_processing_power)
+            expected_load = len(tasks) * (
+                worker.processing_power / total_processing_power
+            )
             actual_load = len(worker.assigned_tasks)
             # Allow some tolerance for load balancing
             tolerance = expected_load * 0.6
-            assert abs(actual_load - expected_load) <= tolerance, \
-                f"Worker {worker.node_id} load imbalance: expected ~{expected_load:.1f}, got {actual_load}"
+            assert (
+                abs(actual_load - expected_load) <= tolerance
+            ), f"Worker {worker.node_id} load imbalance: expected ~{expected_load:.1f}, got {actual_load}"
 
         # Verify high priority tasks are distributed to capable workers
-        high_priority_tasks = [t for t in tasks if t.priority == 'high']
+        high_priority_tasks = [t for t in tasks if t.priority == "high"]
         high_priority_assigned = 0
 
         for worker in workers:
-            worker_high_priority = sum(1 for t in worker.assigned_tasks if t.priority == 'high')
+            worker_high_priority = sum(
+                1 for t in worker.assigned_tasks if t.priority == "high"
+            )
             high_priority_assigned += worker_high_priority
 
         assert high_priority_assigned == len(high_priority_tasks)
@@ -353,7 +371,9 @@ class TestScalabilityValidation:
         max_processing_power = max(worker.processing_power for worker in workers)
         for worker in workers:
             # Simulate task completion times based on worker processing_power
-            base_time = 1.0 / (worker.processing_power / max_processing_power)  # Faster workers complete faster
+            base_time = 1.0 / (
+                worker.processing_power / max_processing_power
+            )  # Faster workers complete faster
             for task in worker.assigned_tasks:
                 completion_time = base_time * task.estimated_duration
                 completion_times.append(completion_time)
@@ -366,13 +386,19 @@ class TestScalabilityValidation:
         for worker in workers:
             load = len(worker.assigned_tasks)
             processing_power = worker.processing_power
-            logger.info(f"  Worker {worker.node_id}: {load} tasks, processing_power: {processing_power}")
+            logger.info(
+                f"  Worker {worker.node_id}: {load} tasks, processing_power: {processing_power}"
+            )
 
         # Verify performance targets
-        assert avg_completion_time < 2.2, f"Average completion time {avg_completion_time:.2f}s too high"
-        assert max_completion_time < 5.0, f"Max completion time {max_completion_time:.2f}s too high"
+        assert (
+            avg_completion_time < 2.2
+        ), f"Average completion time {avg_completion_time:.2f}s too high"
+        assert (
+            max_completion_time < 5.0
+        ), f"Max completion time {max_completion_time:.2f}s too high"
 
-        logger.info(f"Distributed task processing:")
+        logger.info("Distributed task processing:")
         logger.info(f"  Workers: {len(workers)}")
         logger.info(f"  Total tasks: {len(tasks)}")
         logger.info(f"  Average completion time: {avg_completion_time:.2f}s")
@@ -389,11 +415,11 @@ class TestScalabilityValidation:
         workers = []
         for i in range(5):
             worker = Mock()
-            worker.node_id = f'cluster_worker_{i}'
-            worker.status = 'active'
+            worker.node_id = f"cluster_worker_{i}"
+            worker.status = "active"
             worker.capacity = 8
             worker.current_load = 5
-            worker.assigned_strategies = [f'strategy_{i*5 + j}' for j in range(5)]
+            worker.assigned_strategies = [f"strategy_{i*5 + j}" for j in range(5)]
             workers.append(worker)
 
         for worker in workers:
@@ -433,13 +459,15 @@ class TestScalabilityValidation:
 
         # Verify no worker is overloaded
         for worker in task_manager.active_workers.values():
-            assert len(worker.assigned_strategies) <= worker.capacity * 1.5  # Allow some overload during recovery
+            assert (
+                len(worker.assigned_strategies) <= worker.capacity * 1.5
+            )  # Allow some overload during recovery
 
         # Test recovery time
         recovery_time = 2.0  # Assume recovery took 2 seconds
         assert recovery_time < 10.0, f"Recovery took too long: {recovery_time:.2f}s"
 
-        logger.info(f"Cluster failure recovery:")
+        logger.info("Cluster failure recovery:")
         logger.info(f"  Failed worker: {failed_worker.node_id}")
         logger.info(f"  Strategies reassigned: {len(failed_strategies)}")
         logger.info(f"  Recovery time: {recovery_time:.2f}s")
@@ -449,81 +477,104 @@ class TestScalabilityValidation:
     def test_scalability_validation_report_generation(self, tmp_path):
         """Test generation of scalability validation report."""
         report_data = {
-            'test_timestamp': datetime.now().isoformat(),
-            'criteria': 'scalability',
-            'tests_run': [
-                'test_multi_node_scaling',
-                'test_concurrent_strategies_processing',
-                'test_no_downtime_during_scaling',
-                'test_distributed_task_processing',
-                'test_cluster_failure_recovery'
+            "test_timestamp": datetime.now().isoformat(),
+            "criteria": "scalability",
+            "tests_run": [
+                "test_multi_node_scaling",
+                "test_concurrent_strategies_processing",
+                "test_no_downtime_during_scaling",
+                "test_distributed_task_processing",
+                "test_cluster_failure_recovery",
             ],
-            'results': {
-                'multi_node_scaling': {'status': 'passed', 'nodes_scaled': 5, 'capacity': 50},
-                'concurrent_strategies': {'status': 'passed', 'strategies_processed': 60, 'throughput': 120.5},
-                'downtime_during_scaling': {'status': 'passed', 'downtime_seconds': 0.0},
-                'distributed_processing': {'status': 'passed', 'tasks_distributed': 100, 'load_balance_ratio': 0.95},
-                'cluster_recovery': {'status': 'passed', 'recovery_time_seconds': 2.1, 'data_loss': False}
-            },
-            'metrics': {
-                'cluster_performance': {
-                    'total_nodes': 5,
-                    'total_capacity': 50,
-                    'active_nodes': 5,
-                    'average_load': 0.75,
-                    'load_distribution_std': 0.12
+            "results": {
+                "multi_node_scaling": {
+                    "status": "passed",
+                    "nodes_scaled": 5,
+                    "capacity": 50,
                 },
-                'strategy_processing': {
-                    'concurrent_strategies_supported': 60,
-                    'average_processing_time_seconds': 0.15,
-                    'throughput_strategies_per_second': 120.5,
-                    'failure_rate_during_scale': 0.0
+                "concurrent_strategies": {
+                    "status": "passed",
+                    "strategies_processed": 60,
+                    "throughput": 120.5,
                 },
-                'scaling_operations': {
-                    'scale_up_time_seconds': 1.2,
-                    'scale_down_time_seconds': 0.8,
-                    'task_redistribution_time_seconds': 0.5,
-                    'downtime_during_scaling': 0.0
+                "downtime_during_scaling": {
+                    "status": "passed",
+                    "downtime_seconds": 0.0,
                 },
-                'fault_tolerance': {
-                    'node_failure_recovery_time_seconds': 2.1,
-                    'data_preservation_during_failure': True,
-                    'automatic_failover_success_rate': 1.0,
-                    'service_continuity_maintained': True
-                }
+                "distributed_processing": {
+                    "status": "passed",
+                    "tasks_distributed": 100,
+                    "load_balance_ratio": 0.95,
+                },
+                "cluster_recovery": {
+                    "status": "passed",
+                    "recovery_time_seconds": 2.1,
+                    "data_loss": False,
+                },
             },
-            'scalability_targets': {
-                'min_nodes_supported': 3,
-                'max_concurrent_strategies': 50,
-                'max_scaling_time_seconds': 5.0,
-                'max_downtime_seconds': 0.0,
-                'min_throughput_strategies_per_second': 100
+            "metrics": {
+                "cluster_performance": {
+                    "total_nodes": 5,
+                    "total_capacity": 50,
+                    "active_nodes": 5,
+                    "average_load": 0.75,
+                    "load_distribution_std": 0.12,
+                },
+                "strategy_processing": {
+                    "concurrent_strategies_supported": 60,
+                    "average_processing_time_seconds": 0.15,
+                    "throughput_strategies_per_second": 120.5,
+                    "failure_rate_during_scale": 0.0,
+                },
+                "scaling_operations": {
+                    "scale_up_time_seconds": 1.2,
+                    "scale_down_time_seconds": 0.8,
+                    "task_redistribution_time_seconds": 0.5,
+                    "downtime_during_scaling": 0.0,
+                },
+                "fault_tolerance": {
+                    "node_failure_recovery_time_seconds": 2.1,
+                    "data_preservation_during_failure": True,
+                    "automatic_failover_success_rate": 1.0,
+                    "service_continuity_maintained": True,
+                },
             },
-            'acceptance_criteria': {
-                'multi_node_scaling_works': True,
-                'concurrent_strategies_supported': True,
-                'no_downtime_during_scaling': True,
-                'fault_tolerance_adequate': True,
-                'performance_targets_met': True
-            }
+            "scalability_targets": {
+                "min_nodes_supported": 3,
+                "max_concurrent_strategies": 50,
+                "max_scaling_time_seconds": 5.0,
+                "max_downtime_seconds": 0.0,
+                "min_throughput_strategies_per_second": 100,
+            },
+            "acceptance_criteria": {
+                "multi_node_scaling_works": True,
+                "concurrent_strategies_supported": True,
+                "no_downtime_during_scaling": True,
+                "fault_tolerance_adequate": True,
+                "performance_targets_met": True,
+            },
         }
 
         # Save report
-        report_path = tmp_path / 'scalability_report.json'
-        with open(report_path, 'w') as f:
+        report_path = tmp_path / "scalability_report.json"
+        with open(report_path, "w") as f:
             json.dump(report_data, f, indent=2, default=str)
 
         # Verify report structure
         assert report_path.exists()
 
-        with open(report_path, 'r') as f:
+        with open(report_path, "r") as f:
             loaded_report = json.load(f)
 
-        assert loaded_report['criteria'] == 'scalability'
-        assert len(loaded_report['tests_run']) == 5
-        assert all(result['status'] == 'passed' for result in loaded_report['results'].values())
-        assert loaded_report['acceptance_criteria']['multi_node_scaling_works'] == True
-        assert loaded_report['acceptance_criteria']['no_downtime_during_scaling'] == True
+        assert loaded_report["criteria"] == "scalability"
+        assert len(loaded_report["tests_run"]) == 5
+        assert all(
+            result["status"] == "passed" for result in loaded_report["results"].values()
+        )
+        assert loaded_report["acceptance_criteria"]["multi_node_scaling_works"] == True
+        assert (
+            loaded_report["acceptance_criteria"]["no_downtime_during_scaling"] == True
+        )
 
 
 # Helper functions for scalability validation
@@ -532,8 +583,8 @@ def simulate_worker_node(capacity: int, load_factor: float = 0.8) -> Mock:
     worker = Mock()
     worker.capacity = capacity
     worker.current_load = int(capacity * load_factor)
-    worker.status = 'active'
-    worker.node_id = f'worker_{id(worker)}'
+    worker.status = "active"
+    worker.node_id = f"worker_{id(worker)}"
     worker.assigned_strategies = []
     return worker
 
@@ -550,73 +601,99 @@ def calculate_load_balance_ratio(workers: List[Mock]) -> float:
         return 1.0  # Perfect balance if no load
 
     variance = sum((load - avg_load) ** 2 for load in loads) / len(loads)
-    std_dev = variance ** 0.5
+    std_dev = variance**0.5
 
     # Load balance ratio (1.0 = perfect balance, 0.0 = terrible balance)
     balance_ratio = 1.0 - (std_dev / avg_load) if avg_load > 0 else 1.0
     return max(0.0, min(1.0, balance_ratio))
 
 
-def validate_scaling_requirements(nodes: int, strategies: int, throughput: float) -> Dict[str, bool]:
+def validate_scaling_requirements(
+    nodes: int, strategies: int, throughput: float
+) -> Dict[str, bool]:
     """Validate that scaling requirements are met."""
     return {
-        'multi_node_scaling': nodes >= 3,
-        'concurrent_strategies': strategies >= 50,
-        'throughput_target': throughput >= 100.0,
-        'all_requirements_met': nodes >= 3 and strategies >= 50 and throughput >= 100.0
+        "multi_node_scaling": nodes >= 3,
+        "concurrent_strategies": strategies >= 50,
+        "throughput_target": throughput >= 100.0,
+        "all_requirements_met": nodes >= 3 and strategies >= 50 and throughput >= 100.0,
     }
 
 
 def generate_scalability_summary(metrics: Dict[str, Any]) -> Dict[str, Any]:
     """Generate summary of scalability validation results."""
     summary = {
-        'scaling_capabilities': {},
-        'performance_metrics': {},
-        'reliability_metrics': {},
-        'overall_assessment': 'passed'
+        "scaling_capabilities": {},
+        "performance_metrics": {},
+        "reliability_metrics": {},
+        "overall_assessment": "passed",
     }
 
     # Assess scaling capabilities
-    node_count = metrics.get('cluster_performance', {}).get('total_nodes', 0)
-    strategy_count = metrics.get('strategy_processing', {}).get('concurrent_strategies_supported', 0)
-    throughput = metrics.get('strategy_processing', {}).get('throughput_strategies_per_second', 0.0)
+    node_count = metrics.get("cluster_performance", {}).get("total_nodes", 0)
+    strategy_count = metrics.get("strategy_processing", {}).get(
+        "concurrent_strategies_supported", 0
+    )
+    throughput = metrics.get("strategy_processing", {}).get(
+        "throughput_strategies_per_second", 0.0
+    )
 
-    summary['scaling_capabilities'] = {
-        'nodes_supported': node_count,
-        'concurrent_strategies': strategy_count,
-        'throughput_achieved': throughput,
-        'scaling_targets_met': validate_scaling_requirements(node_count, strategy_count, throughput)
+    summary["scaling_capabilities"] = {
+        "nodes_supported": node_count,
+        "concurrent_strategies": strategy_count,
+        "throughput_achieved": throughput,
+        "scaling_targets_met": validate_scaling_requirements(
+            node_count, strategy_count, throughput
+        ),
     }
 
     # Performance metrics
-    summary['performance_metrics'] = {
-        'average_load': metrics.get('cluster_performance', {}).get('average_load', 0.0),
-        'load_distribution': metrics.get('cluster_performance', {}).get('load_distribution_std', 0.0),
-        'processing_time': metrics.get('strategy_processing', {}).get('average_processing_time_seconds', 0.0),
-        'scaling_time': metrics.get('scaling_operations', {}).get('scale_up_time_seconds', 0.0)
+    summary["performance_metrics"] = {
+        "average_load": metrics.get("cluster_performance", {}).get("average_load", 0.0),
+        "load_distribution": metrics.get("cluster_performance", {}).get(
+            "load_distribution_std", 0.0
+        ),
+        "processing_time": metrics.get("strategy_processing", {}).get(
+            "average_processing_time_seconds", 0.0
+        ),
+        "scaling_time": metrics.get("scaling_operations", {}).get(
+            "scale_up_time_seconds", 0.0
+        ),
     }
 
     # Reliability metrics
-    summary['reliability_metrics'] = {
-        'downtime_during_scaling': metrics.get('scaling_operations', {}).get('downtime_during_scaling', 0.0),
-        'failure_recovery_time': metrics.get('fault_tolerance', {}).get('node_failure_recovery_time_seconds', 0.0),
-        'data_preservation': metrics.get('fault_tolerance', {}).get('data_preservation_during_failure', True),
-        'service_continuity': metrics.get('fault_tolerance', {}).get('service_continuity_maintained', True)
+    summary["reliability_metrics"] = {
+        "downtime_during_scaling": metrics.get("scaling_operations", {}).get(
+            "downtime_during_scaling", 0.0
+        ),
+        "failure_recovery_time": metrics.get("fault_tolerance", {}).get(
+            "node_failure_recovery_time_seconds", 0.0
+        ),
+        "data_preservation": metrics.get("fault_tolerance", {}).get(
+            "data_preservation_during_failure", True
+        ),
+        "service_continuity": metrics.get("fault_tolerance", {}).get(
+            "service_continuity_maintained", True
+        ),
     }
 
     # Overall assessment
-    requirements_met = summary['scaling_capabilities']['scaling_targets_met']['all_requirements_met']
-    downtime_acceptable = summary['reliability_metrics']['downtime_during_scaling'] == 0.0
-    data_preserved = summary['reliability_metrics']['data_preservation']
+    requirements_met = summary["scaling_capabilities"]["scaling_targets_met"][
+        "all_requirements_met"
+    ]
+    downtime_acceptable = (
+        summary["reliability_metrics"]["downtime_during_scaling"] == 0.0
+    )
+    data_preserved = summary["reliability_metrics"]["data_preservation"]
 
     if requirements_met and downtime_acceptable and data_preserved:
-        summary['overall_assessment'] = 'passed'
+        summary["overall_assessment"] = "passed"
     else:
-        summary['overall_assessment'] = 'failed'
+        summary["overall_assessment"] = "failed"
 
     return summary
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Run scalability validation tests
-    pytest.main([__file__, '-v', '--tb=short'])
+    pytest.main([__file__, "-v", "--tb=short"])

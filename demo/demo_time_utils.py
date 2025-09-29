@@ -6,13 +6,12 @@ Comprehensive demonstration of timestamp utilities with robust error handling.
 Provides functions for converting between various timestamp formats and logging utilities.
 """
 
+import contextlib
 import logging
+import os
 import time
 from datetime import datetime, timezone
-from typing import Any, Optional, Union
-import contextlib
-import os
-
+from typing import Any, Optional
 
 # Module-level logger
 logger = logging.getLogger(__name__)
@@ -52,7 +51,9 @@ def to_ms(ts: Any) -> Optional[int]:
 
     # Reject unsupported types that could cause TypeError
     if isinstance(ts, (list, dict, set, tuple)):
-        raise ValueError(f"Unsupported input type: {type(ts).__name__}. Expected int, float, str, datetime, or None.")
+        raise ValueError(
+            f"Unsupported input type: {type(ts).__name__}. Expected int, float, str, datetime, or None."
+        )
 
     # Handle numeric types
     if isinstance(ts, (int, float)):
@@ -77,9 +78,9 @@ def to_ms(ts: Any) -> Optional[int]:
         # Try ISO format parsing first
         try:
             # Handle various ISO formats
-            ts_clean = ts.replace('Z', '+00:00')
-            if not ts_clean.endswith('+00:00'):
-                ts_clean += '+00:00'
+            ts_clean = ts.replace("Z", "+00:00")
+            if not ts_clean.endswith("+00:00"):
+                ts_clean += "+00:00"
             dt = datetime.fromisoformat(ts_clean)
             return int(dt.timestamp() * 1000)
         except (ValueError, TypeError, AttributeError):
@@ -120,10 +121,10 @@ def to_iso(ts_ms: Any) -> str:
         # Convert ms to seconds for datetime
         timestamp_seconds = ts_ms / 1000.0
         dt = datetime.fromtimestamp(timestamp_seconds, tz=timezone.utc)
-        return dt.isoformat().replace('+00:00', 'Z')
+        return dt.isoformat().replace("+00:00", "Z")
     except (ValueError, TypeError, OSError, AttributeError):
         # Fallback to current time if conversion fails
-        return datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+        return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def to_datetime(ts: Any) -> Optional[datetime]:
@@ -190,9 +191,11 @@ def safe_file_logging(logfile_path: str, level: int = logging.INFO):
     os.makedirs(os.path.dirname(logfile_path), exist_ok=True)
 
     # Create file handler
-    file_handler = logging.FileHandler(logfile_path, mode='a', encoding='utf-8')
+    file_handler = logging.FileHandler(logfile_path, mode="a", encoding="utf-8")
     file_handler.setLevel(level)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     file_handler.setFormatter(formatter)
 
     # Add handler to logger
@@ -321,7 +324,7 @@ def main():
     # Setup basic logging
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     # Run demo with safe file logging

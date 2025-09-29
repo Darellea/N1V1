@@ -6,17 +6,13 @@ for maintaining clean, DRY (Don't Repeat Yourself) codebase.
 """
 
 import ast
+import hashlib
 import logging
 import re
-from typing import Dict, Any, List, Optional, Set, Tuple
-from pathlib import Path
-from difflib import SequenceMatcher
-import hashlib
 from collections import defaultdict
-import inspect
-
-from utils.constants import PROJECT_ROOT
-from utils.error_handler import ErrorHandler, TradingError
+from difflib import SequenceMatcher
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +20,14 @@ logger = logging.getLogger(__name__)
 class CodeBlock:
     """Represents a block of code for similarity analysis."""
 
-    def __init__(self, content: str, file_path: str, start_line: int, end_line: int,
-                 block_type: str = "function"):
+    def __init__(
+        self,
+        content: str,
+        file_path: str,
+        start_line: int,
+        end_line: int,
+        block_type: str = "function",
+    ):
         self.content = content
         self.file_path = file_path
         self.start_line = start_line
@@ -41,19 +43,23 @@ class CodeBlock:
     def _normalize_content(self) -> str:
         """Normalize content for better similarity comparison."""
         # Remove comments
-        content = re.sub(r'#.*$', '', self.content, flags=re.MULTILINE)
+        content = re.sub(r"#.*$", "", self.content, flags=re.MULTILINE)
         # Remove extra whitespace
-        content = re.sub(r'\s+', ' ', content).strip()
+        content = re.sub(r"\s+", " ", content).strip()
         # Remove variable names (replace with placeholders)
-        content = re.sub(r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', 'VAR', content)
+        content = re.sub(r"\b[a-zA-Z_][a-zA-Z0-9_]*\b", "VAR", content)
         return content
 
-    def similarity_to(self, other: 'CodeBlock') -> float:
+    def similarity_to(self, other: "CodeBlock") -> float:
         """Calculate similarity to another code block."""
-        return SequenceMatcher(None, self.normalized_content, other.normalized_content).ratio()
+        return SequenceMatcher(
+            None, self.normalized_content, other.normalized_content
+        ).ratio()
 
     def __str__(self) -> str:
-        return f"{self.block_type} in {self.file_path}:{self.start_line}-{self.end_line}"
+        return (
+            f"{self.block_type} in {self.file_path}:{self.start_line}-{self.end_line}"
+        )
 
 
 class CodeDuplicationAnalyzer:
@@ -68,7 +74,9 @@ class CodeDuplicationAnalyzer:
         self.duplicate_groups: List[List[CodeBlock]] = []
         self.shared_utilities: Dict[str, List[str]] = {}
 
-    def analyze_directory(self, directory_path: str, file_pattern: str = "*.py") -> Dict[str, Any]:
+    def analyze_directory(
+        self, directory_path: str, file_pattern: str = "*.py"
+    ) -> Dict[str, Any]:
         """Analyze directory for code duplication."""
         logger.info(f"Starting code duplication analysis in {directory_path}")
 
@@ -92,13 +100,13 @@ class CodeDuplicationAnalyzer:
             "total_duplicated_lines": self._calculate_total_duplicated_lines(),
             "duplication_percentage": self._calculate_duplication_percentage(),
             "refactoring_suggestions": suggestions,
-            "shared_utility_candidates": self._identify_shared_utility_candidates()
+            "shared_utility_candidates": self._identify_shared_utility_candidates(),
         }
 
     def _extract_code_blocks(self, file_path: str):
         """Extract code blocks from a Python file."""
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
             tree = ast.parse(content, filename=file_path)
@@ -107,11 +115,11 @@ class CodeDuplicationAnalyzer:
                 if isinstance(node, ast.FunctionDef):
                     # Extract function code
                     start_line = node.lineno
-                    end_line = getattr(node, 'end_lineno', start_line + 10)
-                    lines = content.split('\n')
+                    end_line = getattr(node, "end_lineno", start_line + 10)
+                    lines = content.split("\n")
 
                     if end_line - start_line >= self.min_lines:
-                        block_content = '\n'.join(lines[start_line-1:end_line])
+                        block_content = "\n".join(lines[start_line - 1 : end_line])
                         code_block = CodeBlock(
                             block_content, file_path, start_line, end_line, "function"
                         )
@@ -122,14 +130,19 @@ class CodeDuplicationAnalyzer:
                     for item in node.body:
                         if isinstance(item, ast.FunctionDef):
                             start_line = item.lineno
-                            end_line = getattr(item, 'end_lineno', start_line + 10)
-                            lines = content.split('\n')
+                            end_line = getattr(item, "end_lineno", start_line + 10)
+                            lines = content.split("\n")
 
                             if end_line - start_line >= self.min_lines:
-                                block_content = '\n'.join(lines[start_line-1:end_line])
+                                block_content = "\n".join(
+                                    lines[start_line - 1 : end_line]
+                                )
                                 code_block = CodeBlock(
-                                    block_content, file_path, start_line, end_line,
-                                    f"method_{item.name}"
+                                    block_content,
+                                    file_path,
+                                    start_line,
+                                    end_line,
+                                    f"method_{item.name}",
                                 )
                                 self.code_blocks.append(code_block)
 
@@ -165,14 +178,16 @@ class CodeDuplicationAnalyzer:
         for group in self.duplicate_groups:
             for block in group[1:]:  # Skip the first occurrence
                 if block.hash not in processed_blocks:
-                    total_lines += (block.end_line - block.start_line + 1)
+                    total_lines += block.end_line - block.start_line + 1
                     processed_blocks.add(block.hash)
 
         return total_lines
 
     def _calculate_duplication_percentage(self) -> float:
         """Calculate percentage of duplicated code."""
-        total_lines = sum(block.end_line - block.start_line + 1 for block in self.code_blocks)
+        total_lines = sum(
+            block.end_line - block.start_line + 1 for block in self.code_blocks
+        )
         duplicated_lines = self._calculate_total_duplicated_lines()
 
         return (duplicated_lines / total_lines * 100) if total_lines > 0 else 0
@@ -186,7 +201,9 @@ class CodeDuplicationAnalyzer:
                 continue
 
             # Calculate group metrics
-            avg_lines = sum(block.end_line - block.start_line + 1 for block in group) / len(group)
+            avg_lines = sum(
+                block.end_line - block.start_line + 1 for block in group
+            ) / len(group)
             files = list(set(block.file_path for block in group))
 
             suggestion = {
@@ -199,13 +216,13 @@ class CodeDuplicationAnalyzer:
                         "file": block.file_path,
                         "start_line": block.start_line,
                         "end_line": block.end_line,
-                        "block_type": block.block_type
+                        "block_type": block.block_type,
                     }
                     for block in group
                 ],
                 "refactoring_type": self._determine_refactoring_type(group),
                 "estimated_savings": int(avg_lines * (len(group) - 1)),
-                "priority": self._calculate_refactoring_priority(group)
+                "priority": self._calculate_refactoring_priority(group),
             }
 
             suggestions.append(suggestion)
@@ -233,7 +250,9 @@ class CodeDuplicationAnalyzer:
         priority += len(group) * 10
 
         # Longer code blocks = higher priority
-        avg_lines = sum(block.end_line - block.start_line + 1 for block in group) / len(group)
+        avg_lines = sum(block.end_line - block.start_line + 1 for block in group) / len(
+            group
+        )
         priority += min(avg_lines, 50)  # Cap at 50
 
         # Cross-file duplicates = higher priority
@@ -263,12 +282,14 @@ class CodeDuplicationAnalyzer:
 
         for pattern, blocks in pattern_groups.items():
             if len(blocks) >= 3:  # At least 3 occurrences
-                candidates.append({
-                    "pattern": pattern,
-                    "occurrences": len(blocks),
-                    "affected_files": list(set(b.file_path for b in blocks)),
-                    "suggested_utility": f"create_shared_{pattern}_utility"
-                })
+                candidates.append(
+                    {
+                        "pattern": pattern,
+                        "occurrences": len(blocks),
+                        "affected_files": list(set(b.file_path for b in blocks)),
+                        "suggested_utility": f"create_shared_{pattern}_utility",
+                    }
+                )
 
         return candidates
 
@@ -317,7 +338,11 @@ class CodeDuplicationAnalyzer:
             report += "ℹ️ **LOW PRIORITY:** Minor code duplication detected. Address during regular maintenance.\n\n"
 
         # Specific recommendations
-        high_priority_groups = [g for g in self.duplicate_groups if self._calculate_refactoring_priority(g) > 50]
+        high_priority_groups = [
+            g
+            for g in self.duplicate_groups
+            if self._calculate_refactoring_priority(g) > 50
+        ]
         if high_priority_groups:
             report += "### High Priority Refactoring Targets:\n\n"
             for i, group in enumerate(high_priority_groups[:5]):  # Top 5
@@ -340,15 +365,20 @@ class SharedUtilityLibrary:
         self.utilities: Dict[str, Dict[str, Any]] = {}
         self.usage_tracking: Dict[str, List[str]] = defaultdict(list)
 
-    def add_utility_function(self, name: str, function: callable,
-                           description: str = "", category: str = "general"):
+    def add_utility_function(
+        self,
+        name: str,
+        function: callable,
+        description: str = "",
+        category: str = "general",
+    ):
         """Add a shared utility function."""
         self.utilities[name] = {
             "function": function,
             "description": description,
             "category": category,
             "created_at": datetime.now().isoformat(),
-            "usage_count": 0
+            "usage_count": 0,
         }
 
         logger.info(f"Added shared utility: {name} ({category})")
@@ -370,7 +400,7 @@ class SharedUtilityLibrary:
             "total_utilities": len(self.utilities),
             "categories": self._get_category_breakdown(),
             "most_used": self._get_most_used_utilities(),
-            "usage_tracking": dict(self.usage_tracking)
+            "usage_tracking": dict(self.usage_tracking),
         }
 
     def _get_category_breakdown(self) -> Dict[str, int]:
@@ -383,7 +413,11 @@ class SharedUtilityLibrary:
     def _get_most_used_utilities(self) -> List[Dict[str, Any]]:
         """Get most used utilities."""
         utilities_list = [
-            {"name": name, "usage_count": data["usage_count"], "category": data["category"]}
+            {
+                "name": name,
+                "usage_count": data["usage_count"],
+                "category": data["category"],
+            }
             for name, data in self.utilities.items()
         ]
 
@@ -401,7 +435,9 @@ class CodeDuplicationManager:
         self.utility_library = SharedUtilityLibrary()
         self.refactoring_history: List[Dict[str, Any]] = []
 
-    async def perform_duplication_analysis(self, directory_path: str = ".") -> Dict[str, Any]:
+    async def perform_duplication_analysis(
+        self, directory_path: str = "."
+    ) -> Dict[str, Any]:
         """Perform comprehensive code duplication analysis."""
         logger.info("Starting comprehensive code duplication analysis")
 
@@ -418,10 +454,12 @@ class CodeDuplicationManager:
             "analysis_results": analysis_results,
             "recommendations": recommendations,
             "shared_utility_suggestions": shared_utility_suggestions,
-            "refactoring_roadmap": self._create_refactoring_roadmap(analysis_results)
+            "refactoring_roadmap": self._create_refactoring_roadmap(analysis_results),
         }
 
-    def _generate_duplication_recommendations(self, analysis_results: Dict[str, Any]) -> List[str]:
+    def _generate_duplication_recommendations(
+        self, analysis_results: Dict[str, Any]
+    ) -> List[str]:
         """Generate recommendations for addressing code duplication."""
         recommendations = []
 
@@ -429,25 +467,37 @@ class CodeDuplicationManager:
         duplicate_groups = analysis_results.get("duplicate_groups_found", 0)
 
         if duplication_percentage > 20:
-            recommendations.append("🚨 CRITICAL: High code duplication detected - immediate refactoring required")
+            recommendations.append(
+                "🚨 CRITICAL: High code duplication detected - immediate refactoring required"
+            )
         elif duplication_percentage > 10:
-            recommendations.append("⚠️ HIGH: Moderate code duplication found - prioritize refactoring")
+            recommendations.append(
+                "⚠️ HIGH: Moderate code duplication found - prioritize refactoring"
+            )
         elif duplication_percentage > 5:
-            recommendations.append("ℹ️ MEDIUM: Some code duplication detected - address in next sprint")
+            recommendations.append(
+                "ℹ️ MEDIUM: Some code duplication detected - address in next sprint"
+            )
 
         if duplicate_groups > 10:
-            recommendations.append(f"📊 Create {duplicate_groups} shared utility functions")
+            recommendations.append(
+                f"📊 Create {duplicate_groups} shared utility functions"
+            )
         elif duplicate_groups > 5:
             recommendations.append(f"🔧 Extract {duplicate_groups} common functions")
 
         # Specific recommendations based on patterns
         shared_candidates = analysis_results.get("shared_utility_candidates", [])
         if shared_candidates:
-            recommendations.append(f"🏗️ Create shared utilities for: {', '.join(c['pattern'] for c in shared_candidates[:3])}")
+            recommendations.append(
+                f"🏗️ Create shared utilities for: {', '.join(c['pattern'] for c in shared_candidates[:3])}"
+            )
 
         return recommendations
 
-    def _suggest_shared_utilities(self, analysis_results: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _suggest_shared_utilities(
+        self, analysis_results: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         """Suggest shared utilities based on duplication patterns."""
         suggestions = []
 
@@ -456,75 +506,102 @@ class CodeDuplicationManager:
 
         # Combine and prioritize suggestions
         for candidate in candidates:
-            suggestions.append({
-                "type": "shared_utility",
-                "pattern": candidate["pattern"],
-                "occurrences": candidate["occurrences"],
-                "affected_files": candidate["affected_files"],
-                "suggested_name": candidate["suggested_utility"],
-                "priority": "high" if candidate["occurrences"] > 5 else "medium"
-            })
+            suggestions.append(
+                {
+                    "type": "shared_utility",
+                    "pattern": candidate["pattern"],
+                    "occurrences": candidate["occurrences"],
+                    "affected_files": candidate["affected_files"],
+                    "suggested_name": candidate["suggested_utility"],
+                    "priority": "high" if candidate["occurrences"] > 5 else "medium",
+                }
+            )
 
         for suggestion in refactoring_suggestions[:5]:  # Top 5
-            suggestions.append({
-                "type": "refactoring",
-                "group_id": suggestion["group_id"],
-                "occurrences": suggestion["duplicate_count"],
-                "estimated_savings": suggestion["estimated_savings"],
-                "refactoring_type": suggestion["refactoring_type"],
-                "priority": "high" if suggestion["priority"] > 50 else "medium"
-            })
+            suggestions.append(
+                {
+                    "type": "refactoring",
+                    "group_id": suggestion["group_id"],
+                    "occurrences": suggestion["duplicate_count"],
+                    "estimated_savings": suggestion["estimated_savings"],
+                    "refactoring_type": suggestion["refactoring_type"],
+                    "priority": "high" if suggestion["priority"] > 50 else "medium",
+                }
+            )
 
         return suggestions
 
-    def _create_refactoring_roadmap(self, analysis_results: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _create_refactoring_roadmap(
+        self, analysis_results: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         """Create a roadmap for addressing code duplication."""
         roadmap = []
 
         # Phase 1: High-impact refactoring
         high_priority = [
-            s for s in analysis_results.get("refactoring_suggestions", [])
+            s
+            for s in analysis_results.get("refactoring_suggestions", [])
             if s["priority"] > 60
         ]
 
         if high_priority:
-            roadmap.append({
-                "phase": 1,
-                "name": "High-Impact Refactoring",
-                "duration": "1-2 weeks",
-                "tasks": [f"Refactor Group {s['group_id']} ({s['duplicate_count']} duplicates)" for s in high_priority[:5]],
-                "estimated_savings": sum(s["estimated_savings"] for s in high_priority)
-            })
+            roadmap.append(
+                {
+                    "phase": 1,
+                    "name": "High-Impact Refactoring",
+                    "duration": "1-2 weeks",
+                    "tasks": [
+                        f"Refactor Group {s['group_id']} ({s['duplicate_count']} duplicates)"
+                        for s in high_priority[:5]
+                    ],
+                    "estimated_savings": sum(
+                        s["estimated_savings"] for s in high_priority
+                    ),
+                }
+            )
 
         # Phase 2: Shared utilities creation
         shared_candidates = analysis_results.get("shared_utility_candidates", [])
         if shared_candidates:
-            roadmap.append({
-                "phase": 2,
-                "name": "Shared Utilities Creation",
-                "duration": "1 week",
-                "tasks": [f"Create {c['suggested_utility']}" for c in shared_candidates],
-                "estimated_savings": len(shared_candidates) * 50  # Rough estimate
-            })
+            roadmap.append(
+                {
+                    "phase": 2,
+                    "name": "Shared Utilities Creation",
+                    "duration": "1 week",
+                    "tasks": [
+                        f"Create {c['suggested_utility']}" for c in shared_candidates
+                    ],
+                    "estimated_savings": len(shared_candidates) * 50,  # Rough estimate
+                }
+            )
 
         # Phase 3: Cleanup and optimization
         medium_priority = [
-            s for s in analysis_results.get("refactoring_suggestions", [])
+            s
+            for s in analysis_results.get("refactoring_suggestions", [])
             if 30 <= s["priority"] <= 60
         ]
 
         if medium_priority:
-            roadmap.append({
-                "phase": 3,
-                "name": "Cleanup and Optimization",
-                "duration": "2-3 weeks",
-                "tasks": [f"Clean up Group {s['group_id']}" for s in medium_priority],
-                "estimated_savings": sum(s["estimated_savings"] for s in medium_priority)
-            })
+            roadmap.append(
+                {
+                    "phase": 3,
+                    "name": "Cleanup and Optimization",
+                    "duration": "2-3 weeks",
+                    "tasks": [
+                        f"Clean up Group {s['group_id']}" for s in medium_priority
+                    ],
+                    "estimated_savings": sum(
+                        s["estimated_savings"] for s in medium_priority
+                    ),
+                }
+            )
 
         return roadmap
 
-    def generate_duplication_management_report(self, output_file: str = "duplication_management_report.md"):
+    def generate_duplication_management_report(
+        self, output_file: str = "duplication_management_report.md"
+    ):
         """Generate comprehensive duplication management report."""
         report = "# Code Duplication Management Report\n\n"
 
@@ -580,6 +657,7 @@ class CodeDuplicationManager:
 # Global duplication manager instance
 _duplication_manager = None
 
+
 def get_duplication_manager() -> CodeDuplicationManager:
     """Get the global code duplication manager instance."""
     global _duplication_manager
@@ -607,7 +685,9 @@ def get_shared_utility(name: str) -> Optional[callable]:
     return manager.utility_library.get_utility(name)
 
 
-def add_shared_utility(name: str, function: callable, description: str = "", category: str = "general"):
+def add_shared_utility(
+    name: str, function: callable, description: str = "", category: str = "general"
+):
     """Convenience function to add a shared utility."""
     manager = get_duplication_manager()
     manager.utility_library.add_utility_function(name, function, description, category)

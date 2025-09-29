@@ -9,12 +9,9 @@ the full SignalRouter implementation (which reduces circular import risk).
 """
 
 from dataclasses import dataclass, field
-from enum import Enum, auto
-from typing import Dict, Optional, Any
-from decimal import Decimal
-import time
 from datetime import datetime, timezone
-from utils.time import now_ms, to_ms
+from enum import Enum, auto
+from typing import Any, Dict, Optional
 
 
 class SignalType(Enum):
@@ -142,7 +139,9 @@ class TradingSignal:
             elif self.timestamp.tzinfo is not timezone.utc:
                 self.timestamp = self.timestamp.astimezone(timezone.utc)
         else:
-            raise ValueError(f"Invalid timestamp type: {type(self.timestamp)}. Expected int, float, datetime, or str.")
+            raise ValueError(
+                f"Invalid timestamp type: {type(self.timestamp)}. Expected int, float, datetime, or str."
+            )
 
         # Handle deprecated fields for backward compatibility
         if self.quantity is not None and self.amount is None:
@@ -159,50 +158,54 @@ class TradingSignal:
     def to_dict(self) -> Dict[str, Any]:
         """Convert the TradingSignal to a dictionary for JSON serialization."""
         return {
-            'strategy_id': self.strategy_id,
-            'symbol': self.symbol,
-            'signal_type': self.signal_type.name,
-            'signal_strength': self.signal_strength.name,
-            'order_type': self.order_type,
-            'amount': self.amount,
-            'current_price': self.current_price,
-            'timestamp': self.timestamp.isoformat(),
-            'side': self.side,
-            'price': self.price,
-            'quantity': self.quantity,
-            'stop_loss': self.stop_loss,
-            'take_profit': self.take_profit,
-            'trailing_stop': self.trailing_stop,
-            'metadata': self.metadata
+            "strategy_id": self.strategy_id,
+            "symbol": self.symbol,
+            "signal_type": self.signal_type.name,
+            "signal_strength": self.signal_strength.name,
+            "order_type": self.order_type,
+            "amount": self.amount,
+            "current_price": self.current_price,
+            "timestamp": self.timestamp.isoformat(),
+            "side": self.side,
+            "price": self.price,
+            "quantity": self.quantity,
+            "stop_loss": self.stop_loss,
+            "take_profit": self.take_profit,
+            "trailing_stop": self.trailing_stop,
+            "metadata": self.metadata,
         }
 
     def __repr__(self) -> str:
         """Return a string representation of the TradingSignal for logging/debugging."""
-        return (f"TradingSignal(strategy_id='{self.strategy_id}', symbol='{self.symbol}', "
-                f"signal_type={self.signal_type.name}, signal_strength={self.signal_strength.name}, "
-                f"order_type='{self.order_type}', amount={self.amount}, "
-                f"current_price={self.current_price}, timestamp='{self.timestamp.isoformat()}')")
+        return (
+            f"TradingSignal(strategy_id='{self.strategy_id}', symbol='{self.symbol}', "
+            f"signal_type={self.signal_type.name}, signal_strength={self.signal_strength.name}, "
+            f"order_type='{self.order_type}', amount={self.amount}, "
+            f"current_price={self.current_price}, timestamp='{self.timestamp.isoformat()}')"
+        )
 
     def __eq__(self, other) -> bool:
         """Check equality between two TradingSignal objects."""
         if not isinstance(other, TradingSignal):
             return False
-        
+
         # Compare all fields except timestamp which might have slight variations
-        return (self.strategy_id == other.strategy_id and
-                self.symbol == other.symbol and
-                self.signal_type == other.signal_type and
-                self.signal_strength == other.signal_strength and
-                self.order_type == other.order_type and
-                self.amount == other.amount and
-                self.current_price == other.current_price and
-                self.side == other.side and
-                self.price == other.price and
-                self.quantity == other.quantity and
-                self.stop_loss == other.stop_loss and
-                self.take_profit == other.take_profit and
-                self.trailing_stop == other.trailing_stop and
-                self.metadata == other.metadata)
+        return (
+            self.strategy_id == other.strategy_id
+            and self.symbol == other.symbol
+            and self.signal_type == other.signal_type
+            and self.signal_strength == other.signal_strength
+            and self.order_type == other.order_type
+            and self.amount == other.amount
+            and self.current_price == other.current_price
+            and self.side == other.side
+            and self.price == other.price
+            and self.quantity == other.quantity
+            and self.stop_loss == other.stop_loss
+            and self.take_profit == other.take_profit
+            and self.trailing_stop == other.trailing_stop
+            and self.metadata == other.metadata
+        )
 
     def normalize_amount(self, total_balance: Optional[float] = None) -> None:
         """
@@ -230,7 +233,9 @@ class TradingSignal:
             return
 
         if total_balance is None:
-            raise ValueError("total_balance is required to convert fractional amount to notional")
+            raise ValueError(
+                "total_balance is required to convert fractional amount to notional"
+            )
 
         try:
             frac = float(self.amount)
@@ -239,7 +244,7 @@ class TradingSignal:
                 frac = 0.0
             if frac > 1:
                 frac = 1.0
-            notional = (float(total_balance) * frac)
+            notional = float(total_balance) * frac
             # Round to 8 decimal places
             self.amount = round(notional, 8)
             # Clear the metadata flag to indicate amount is now absolute/notional

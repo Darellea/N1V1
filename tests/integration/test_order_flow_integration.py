@@ -3,19 +3,28 @@ Integration test for end-to-end order flow.
 Tests the complete order lifecycle from signal to execution.
 """
 
-import pytest
 import asyncio
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from core.contracts import SignalType
 from core.order_manager import OrderManager
 from core.types import TradingMode
-from core.contracts import SignalType
 
 
 class MockSignal:
     """Mock signal for testing."""
-    def __init__(self, symbol="BTC/USDT", signal_type=SignalType.ENTRY_LONG,
-                 amount=0.001, price=50000, order_type="MARKET"):
+
+    def __init__(
+        self,
+        symbol="BTC/USDT",
+        signal_type=SignalType.ENTRY_LONG,
+        amount=0.001,
+        price=50000,
+        order_type="MARKET",
+    ):
         self.symbol = symbol
         self.signal_type = signal_type
         self.amount = amount
@@ -41,19 +50,15 @@ class TestOrderFlowIntegration:
                 "api_key": "test_key",
                 "api_secret": "test_secret",
                 "base_currency": "USDT",
-                "trade_fee": "0.001"
+                "trade_fee": "0.001",
             },
-            "exchange": {
-                "name": "kucoin"
-            },
+            "exchange": {"name": "kucoin"},
             "paper": {
                 "initial_balance": "1000.0",
                 "trade_fee": "0.001",
-                "slippage": "0.001"
+                "slippage": "0.001",
             },
-            "risk": {
-                "max_position_size": 0.1
-            }
+            "risk": {"max_position_size": 0.1},
         }
 
     @pytest.fixture
@@ -87,8 +92,12 @@ class TestOrderFlowIntegration:
         positions = order_manager.order_processor.positions
         assert "BTC/USDT" in positions
         position = positions["BTC/USDT"]
-        assert abs(position["amount"] - Decimal("0.001")) < Decimal("0.0001")  # Approximate comparison
-        assert abs(position["entry_price"] - Decimal("50050")) < Decimal("0.01")  # Account for slippage
+        assert abs(position["amount"] - Decimal("0.001")) < Decimal(
+            "0.0001"
+        )  # Approximate comparison
+        assert abs(position["entry_price"] - Decimal("50050")) < Decimal(
+            "0.01"
+        )  # Account for slippage
 
     async def test_order_flow_with_validation(self, order_manager):
         """Test order flow with payload validation."""
@@ -114,7 +123,9 @@ class TestOrderFlowIntegration:
 
         # Verify results
         assert all(r is not None for r in results)
-        assert len(order_manager.order_processor.positions) >= 0  # May have positions left
+        assert (
+            len(order_manager.order_processor.positions) >= 0
+        )  # May have positions left
 
         # Check final balance
         final_balance = await order_manager.get_balance()
@@ -151,14 +162,16 @@ class TestOrderFlowIntegration:
         order_manager = OrderManager(config, TradingMode.LIVE)
 
         # Mock the live executor's execute_live_order method
-        with patch.object(order_manager.live_executor, 'execute_live_order', new_callable=AsyncMock) as mock_execute:
+        with patch.object(
+            order_manager.live_executor, "execute_live_order", new_callable=AsyncMock
+        ) as mock_execute:
             mock_execute.return_value = {
                 "id": "test_order_123",
                 "symbol": "BTC/USDT",
                 "side": "buy",
                 "amount": 0.001,
                 "price": 50000,
-                "status": "filled"
+                "status": "filled",
             }
 
             # Execute order
@@ -222,15 +235,19 @@ class TestOrderFlowIntegration:
 
     async def test_concurrent_order_execution(self, order_manager):
         """Test concurrent order execution."""
-        signals = [MockSignal("BTC/USDT", SignalType.ENTRY_LONG, 0.001, 50000 + i)
-                  for i in range(10)]
+        signals = [
+            MockSignal("BTC/USDT", SignalType.ENTRY_LONG, 0.001, 50000 + i)
+            for i in range(10)
+        ]
 
         # Execute orders concurrently
         tasks = [order_manager.execute_order(signal) for signal in signals]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Verify all orders were processed
-        successful_results = [r for r in results if r is not None and not isinstance(r, Exception)]
+        successful_results = [
+            r for r in results if r is not None and not isinstance(r, Exception)
+        ]
         assert len(successful_results) == 10
 
         # Check positions

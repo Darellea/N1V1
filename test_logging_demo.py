@@ -3,15 +3,21 @@
 Demo script to test the new production-grade logging system.
 """
 
+import json
 import os
 import sys
-import json
 from pathlib import Path
 
 # Add the project root to Python path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from utils.logger import setup_logging, get_logger_with_context, generate_correlation_id, generate_request_id
+from utils.logger import (
+    generate_correlation_id,
+    generate_request_id,
+    get_logger_with_context,
+    setup_logging,
+)
+
 
 def test_json_logging():
     """Test JSON logging format."""
@@ -30,7 +36,7 @@ def test_json_logging():
         component="TestComponent",
         correlation_id=generate_correlation_id(),
         request_id=generate_request_id(),
-        strategy_id="demo_strategy"
+        strategy_id="demo_strategy",
     )
 
     # Log some messages
@@ -39,6 +45,7 @@ def test_json_logging():
     ctx_logger.error("This is an error message")
 
     print("JSON logging test completed")
+
 
 def test_pretty_logging():
     """Test pretty logging format."""
@@ -56,7 +63,7 @@ def test_pretty_logging():
         symbol="ETH/USDT",
         component="PrettyTest",
         correlation_id=generate_correlation_id(),
-        request_id=generate_request_id()
+        request_id=generate_request_id(),
     )
 
     # Log some messages
@@ -65,6 +72,7 @@ def test_pretty_logging():
     ctx_logger.warning("Warning message with context")
 
     print("Pretty logging test completed")
+
 
 def test_file_logging():
     """Test file logging."""
@@ -84,7 +92,7 @@ def test_file_logging():
         component="FileTest",
         correlation_id=generate_correlation_id(),
         request_id=generate_request_id(),
-        strategy_id="file_test_strategy"
+        strategy_id="file_test_strategy",
     )
 
     # Log some messages
@@ -100,7 +108,7 @@ def test_file_logging():
             print(f"Log file content length: {len(content)} characters")
 
             # Try to parse first line as JSON
-            lines = content.strip().split('\n')
+            lines = content.strip().split("\n")
             if lines:
                 try:
                     parsed = json.loads(lines[0])
@@ -111,6 +119,7 @@ def test_file_logging():
         print("Log file was not created")
 
     print("File logging test completed")
+
 
 if __name__ == "__main__":
     print("Testing Production-Grade Logging System")

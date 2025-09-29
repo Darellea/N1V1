@@ -8,27 +8,32 @@ Performance Optimization as specified in the testing strategy.
 """
 
 import asyncio
-import time
-import pytest
-import unittest.mock as mock
-from unittest.mock import AsyncMock, MagicMock, patch
-import numpy as np
-import pandas as pd
-import json
-import aiohttp
-from typing import Dict, List, Any, Optional
-import tempfile
-import os
-from pathlib import Path
 import statistics
+import time
+from unittest.mock import MagicMock, patch
 
-from core.circuit_breaker import CircuitBreaker, CircuitBreakerState, CircuitBreakerConfig
+import numpy as np
+import pytest
+
+from core.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerState,
+)
 from core.metrics_collector import MetricsCollector, get_metrics_collector
-from core.metrics_endpoint import MetricsEndpoint
-from core.performance_profiler import PerformanceProfiler, get_profiler, profile_function
-from core.performance_monitor import RealTimePerformanceMonitor, PerformanceAlert, get_performance_monitor
-from core.performance_reports import PerformanceReportGenerator, get_performance_report_generator
 from core.order_manager import OrderManager
+from core.performance_monitor import (
+    PerformanceAlert,
+    RealTimePerformanceMonitor,
+)
+from core.performance_profiler import (
+    PerformanceProfiler,
+    get_profiler,
+    profile_function,
+)
+from core.performance_reports import (
+    PerformanceReportGenerator,
+)
 from core.signal_router import SignalRouter
 from risk.risk_manager import RiskManager
 from utils.logger import get_logger
@@ -44,7 +49,7 @@ class TestCircuitBreakerMonitoringIntegration:
         self.cb_config = CircuitBreakerConfig(
             equity_drawdown_threshold=0.1,
             consecutive_losses_threshold=3,
-            monitoring_window_minutes=5
+            monitoring_window_minutes=5,
         )
         self.cb = CircuitBreaker(self.cb_config)
         self.metrics_collector = get_metrics_collector()
@@ -57,14 +62,18 @@ class TestCircuitBreakerMonitoringIntegration:
 
         # Provide initial equity data
         await self.cb.update_equity(10000)  # Initial equity
-        await self.cb.update_equity(9500)   # Small drawdown
-        await self.cb.update_equity(9000)   # Larger drawdown
+        await self.cb.update_equity(9500)  # Small drawdown
+        await self.cb.update_equity(9000)  # Larger drawdown
 
         # Trigger circuit breaker with severe drawdown
-        await self.cb.check_and_trigger({'equity': 4000})  # 60% drawdown (should trigger)
+        await self.cb.check_and_trigger(
+            {"equity": 4000}
+        )  # 60% drawdown (should trigger)
 
         # Check that circuit breaker state is recorded in metrics
-        cb_state_metric = self.metrics_collector.get_metric_value("circuit_breaker_state")
+        cb_state_metric = self.metrics_collector.get_metric_value(
+            "circuit_breaker_state"
+        )
         assert cb_state_metric is not None
 
         # Verify state value corresponds to TRIGGERED (1 for triggered, 0 for normal)
@@ -84,12 +93,12 @@ class TestCircuitBreakerMonitoringIntegration:
             condition="above",
             threshold=0,  # Any trigger count > 0
             severity="critical",
-            cooldown_period=60
+            cooldown_period=60,
         )
         monitor.add_alert(alert)
 
         # Trigger circuit breaker
-        await self.cb.check_and_trigger({'consecutive_losses': 5})
+        await self.cb.check_and_trigger({"consecutive_losses": 5})
 
         # Wait a bit for monitoring to process the metrics
         await asyncio.sleep(0.1)
@@ -116,9 +125,9 @@ class TestCircuitBreakerMonitoringIntegration:
 
         # Trigger circuit breaker through various conditions
         conditions = [
-            {'equity': 8500},  # Drawdown
-            {'consecutive_losses': 5},  # Losses
-            {'volatility': 0.1}  # Volatility
+            {"equity": 8500},  # Drawdown
+            {"consecutive_losses": 5},  # Losses
+            {"volatility": 0.1},  # Volatility
         ]
 
         dashboard_data = []
@@ -128,12 +137,14 @@ class TestCircuitBreakerMonitoringIntegration:
 
             # Collect dashboard data
             data_point = {
-                'timestamp': time.time(),
-                'circuit_breaker_state': self.cb.state.value,
-                'trigger_reason': self.cb.current_trigger.trigger_type if self.cb.current_trigger else None,
-                'equity_level': condition.get('equity', 10000),
-                'consecutive_losses': condition.get('consecutive_losses', 0),
-                'volatility': condition.get('volatility', 0.02)
+                "timestamp": time.time(),
+                "circuit_breaker_state": self.cb.state.value,
+                "trigger_reason": self.cb.current_trigger.trigger_type
+                if self.cb.current_trigger
+                else None,
+                "equity_level": condition.get("equity", 10000),
+                "consecutive_losses": condition.get("consecutive_losses", 0),
+                "volatility": condition.get("volatility", 0.02),
             }
             dashboard_data.append(data_point)
 
@@ -143,9 +154,11 @@ class TestCircuitBreakerMonitoringIntegration:
         # Verify dashboard data structure
         assert len(dashboard_data) == 3
         for data in dashboard_data:
-            assert 'circuit_breaker_state' in data
-            assert 'timestamp' in data
-            assert data['circuit_breaker_state'] in [state.value for state in CircuitBreakerState]
+            assert "circuit_breaker_state" in data
+            assert "timestamp" in data
+            assert data["circuit_breaker_state"] in [
+                state.value for state in CircuitBreakerState
+            ]
 
     @pytest.mark.asyncio
     async def test_monitoring_performance_during_circuit_breaker(self):
@@ -171,7 +184,7 @@ class TestCircuitBreakerMonitoringIntegration:
         baseline_time = statistics.mean(baseline_times)
 
         # Trigger circuit breaker
-        await self.cb.check_and_trigger({'equity': 8500})
+        await self.cb.check_and_trigger({"equity": 8500})
 
         # Brief pause to allow circuit breaker state to settle
         await asyncio.sleep(0.01)
@@ -191,10 +204,14 @@ class TestCircuitBreakerMonitoringIntegration:
         # The original 20% threshold was too strict given circuit breaker and monitoring overhead
         if baseline_time > 0:
             degradation = (cb_time - baseline_time) / baseline_time
-            assert degradation < 0.5, f"Performance degraded by {degradation:.1%} during circuit breaker (threshold: 50%)"
+            assert (
+                degradation < 0.5
+            ), f"Performance degraded by {degradation:.1%} during circuit breaker (threshold: 50%)"
         else:
             # If baseline_time is 0, just ensure cb_time is reasonable
-            assert cb_time < 2.0, f"Circuit breaker operation took too long: {cb_time:.2f}s"
+            assert (
+                cb_time < 2.0
+            ), f"Circuit breaker operation took too long: {cb_time:.2f}s"
 
         await monitor.stop_monitoring()
 
@@ -212,22 +229,29 @@ class TestPerformanceCircuitBreakerIntegration:
         """Test that performance optimizations don't affect circuit breaker timing."""
         # Profile circuit breaker operations
         with self.profiler.profile_function("circuit_breaker_check"):
-            result = await self.cb.check_and_trigger({'equity': 9000})
+            result = await self.cb.check_and_trigger({"equity": 9000})
 
         # Check that profiling captured the operation
         assert len(self.profiler.metrics_history) > 0
 
-        metrics = [m for m in self.profiler.metrics_history if m.function_name == "circuit_breaker_check"]
+        metrics = [
+            m
+            for m in self.profiler.metrics_history
+            if m.function_name == "circuit_breaker_check"
+        ]
         assert len(metrics) == 1
 
         cb_metric = metrics[0]
 
         # Circuit breaker should still meet timing requirements (< 100ms)
-        assert cb_metric.execution_time < 0.1, f"Circuit breaker took {cb_metric.execution_time:.3f}s"
+        assert (
+            cb_metric.execution_time < 0.1
+        ), f"Circuit breaker took {cb_metric.execution_time:.3f}s"
 
     @pytest.mark.asyncio
     async def test_circuit_breaker_behavior_optimized_execution(self):
         """Test circuit breaker behavior under optimized execution paths."""
+
         # Test with optimized data processing
         @profile_function("optimized_processing")
         def optimized_processing():
@@ -236,24 +260,24 @@ class TestPerformanceCircuitBreakerIntegration:
             signals = np.where(prices > 0.5, 1, -1)
 
             # Vectorized operations
-            sma = np.convolve(prices, np.ones(20)/20, mode='valid')
+            sma = np.convolve(prices, np.ones(20) / 20, mode="valid")
             returns = np.diff(prices) / prices[:-1]
 
             return {
-                'signals': signals,
-                'sma': sma,
-                'returns': returns,
-                'final_signal': signals[-1]
+                "signals": signals,
+                "sma": sma,
+                "returns": returns,
+                "final_signal": signals[-1],
             }
 
         # Run optimized processing
         result = optimized_processing()
 
         # Test circuit breaker with results
-        equity_change = result['returns'][-1] * 10000  # Simulate equity impact
+        equity_change = result["returns"][-1] * 10000  # Simulate equity impact
         current_equity = 10000 + equity_change
 
-        await self.cb.check_and_trigger({'equity': current_equity})
+        await self.cb.check_and_trigger({"equity": current_equity})
 
         # Circuit breaker should function correctly regardless of optimization
         assert self.cb.state in CircuitBreakerState
@@ -275,7 +299,7 @@ class TestPerformanceCircuitBreakerIntegration:
         baseline_avg = np.mean(baseline_metrics)
 
         # Trigger circuit breaker
-        await self.cb.check_and_trigger({'equity': 8500})
+        await self.cb.check_and_trigger({"equity": 8500})
 
         # Measure performance after circuit breaker
         post_cb_metrics = []
@@ -296,11 +320,11 @@ class TestPerformanceCircuitBreakerIntegration:
     async def test_resource_constrained_circuit_breaker(self):
         """Test circuit breaker behavior in resource-constrained scenarios."""
         # Simulate memory pressure
-        with patch('psutil.virtual_memory') as mock_memory:
+        with patch("psutil.virtual_memory") as mock_memory:
             mock_memory.return_value.percent = 90  # High memory usage
 
             # Circuit breaker should still function
-            result = await self.cb.check_and_trigger({'equity': 9000})
+            result = await self.cb.check_and_trigger({"equity": 9000})
             assert isinstance(result, bool)
 
             # Performance should be monitored
@@ -359,7 +383,9 @@ class TestMonitoringPerformanceIntegration:
 
         # Check specific metrics with hybrid tolerance
         for op, expected_time in zip(operations, expected_times):
-            metrics = [m for m in self.profiler.metrics_history if m.function_name == op]
+            metrics = [
+                m for m in self.profiler.metrics_history if m.function_name == op
+            ]
             assert len(metrics) > 0
 
             metric = metrics[0]
@@ -367,9 +393,10 @@ class TestMonitoringPerformanceIntegration:
             # This ensures fast operations remain precise while slow ones allow more variance
             relative_error = abs(metric.execution_time - expected_time) / expected_time
             absolute_error = abs(metric.execution_time - expected_time)
-            assert relative_error < 3.0 or absolute_error < 0.2, \
-                f"Operation {op}: execution_time={metric.execution_time:.4f}s, expected={expected_time:.4f}s, " \
+            assert relative_error < 3.0 or absolute_error < 0.2, (
+                f"Operation {op}: execution_time={metric.execution_time:.4f}s, expected={expected_time:.4f}s, "
                 f"relative_error={relative_error:.2f}, absolute_error={absolute_error:.4f}s"
+            )
 
         await self.monitor.stop_monitoring()
 
@@ -386,7 +413,7 @@ class TestMonitoringPerformanceIntegration:
             with self.profiler.profile_function(f"intensive_op_{i}"):
                 # Simulate some work
                 data = np.random.random(1000)
-                result = np.sum(data ** 2)
+                result = np.sum(data**2)
 
         profiling_time = time.time() - start_time
 
@@ -395,7 +422,9 @@ class TestMonitoringPerformanceIntegration:
 
         # Monitoring should not significantly impact performance
         assert profiling_time < 5.0, f"Profiling took {profiling_time:.2f}s (too slow)"
-        assert status["system_health"] > 50, f"System health too low: {status['system_health']}"
+        assert (
+            status["system_health"] > 50
+        ), f"System health too low: {status['system_health']}"
 
         await self.monitor.stop_monitoring()
 
@@ -407,7 +436,7 @@ class TestMonitoringPerformanceIntegration:
         for i in range(20):
             start = time.perf_counter()
             data = np.random.random(1000)
-            result = np.sum(data ** 2)  # Non-optimized
+            result = np.sum(data**2)  # Non-optimized
             baseline_times.append(time.perf_counter() - start)
 
         baseline_avg = np.mean(baseline_times)
@@ -417,18 +446,24 @@ class TestMonitoringPerformanceIntegration:
         for i in range(20):
             start = time.perf_counter()
             data = np.random.random(1000)
-            result = np.sum(data ** 2)  # Same operation, but now "optimized"
+            result = np.sum(data**2)  # Same operation, but now "optimized"
             optimized_times.append(time.perf_counter() - start)
 
         optimized_avg = np.mean(optimized_times)
 
         # Record metrics for both
         await self.metrics_collector.record_metric("baseline_performance", baseline_avg)
-        await self.metrics_collector.record_metric("optimized_performance", optimized_avg)
+        await self.metrics_collector.record_metric(
+            "optimized_performance", optimized_avg
+        )
 
         # Verify metrics are captured
-        baseline_metric = self.metrics_collector.get_metric_value("baseline_performance")
-        optimized_metric = self.metrics_collector.get_metric_value("optimized_performance")
+        baseline_metric = self.metrics_collector.get_metric_value(
+            "baseline_performance"
+        )
+        optimized_metric = self.metrics_collector.get_metric_value(
+            "optimized_performance"
+        )
 
         assert baseline_metric is not None
         assert optimized_metric is not None
@@ -460,7 +495,9 @@ class TestMonitoringPerformanceIntegration:
 
         # Health should not degrade significantly
         health_change = final_status["system_health"] - initial_status["system_health"]
-        assert health_change > -20, f"System health degraded by {abs(health_change)} points"
+        assert (
+            health_change > -20
+        ), f"System health degraded by {abs(health_change)} points"
 
         await self.monitor.stop_monitoring()
 
@@ -508,7 +545,7 @@ class TestFullSystemIntegration:
         for i in range(5):
             self.cb._record_trade_result(-50, False)  # Loss
 
-        await self.cb.check_and_trigger({'consecutive_losses': 5})
+        await self.cb.check_and_trigger({"consecutive_losses": 5})
 
         # Verify circuit breaker triggered
         assert self.cb.state == CircuitBreakerState.TRIGGERED
@@ -556,24 +593,25 @@ class TestFullSystemIntegration:
                 with self.profiler.profile_function(f"stress_op_{operation_id}_{i}"):
                     # Perform some work
                     data = np.random.random(500)
-                    result = np.sum(data ** 2)
+                    result = np.sum(data**2)
 
                     # Record metric
                     await self.metrics_collector.record_metric(
-                        f"stress_metric_{operation_id}",
-                        float(result)
+                        f"stress_metric_{operation_id}", float(result)
                     )
 
                     # Check circuit breaker
-                    await self.cb.check_and_trigger({
-                        'equity': 10000 + np.random.normal(0, 100)
-                    })
+                    await self.cb.check_and_trigger(
+                        {"equity": 10000 + np.random.normal(0, 100)}
+                    )
 
                 # Small delay to prevent overwhelming
                 await asyncio.sleep(0.001)
 
         # Run concurrent stress operations
-        logger.info(f"Starting stress test with {concurrent_operations} concurrent operations")
+        logger.info(
+            f"Starting stress test with {concurrent_operations} concurrent operations"
+        )
         start_time = time.time()
 
         tasks = [stress_operation(i) for i in range(concurrent_operations)]
@@ -585,13 +623,21 @@ class TestFullSystemIntegration:
         final_status = await self.monitor.get_performance_status()
 
         # Performance requirements under stress
-        assert stress_duration < 30.0, f"Stress test took {stress_duration:.1f}s (too slow)"
-        assert final_status["system_health"] > 50, f"System health too low under stress: {final_status['system_health']}"
-        assert final_status["recent_anomalies"] < 10, f"Too many anomalies under stress: {final_status['recent_anomalies']}"
+        assert (
+            stress_duration < 30.0
+        ), f"Stress test took {stress_duration:.1f}s (too slow)"
+        assert (
+            final_status["system_health"] > 50
+        ), f"System health too low under stress: {final_status['system_health']}"
+        assert (
+            final_status["recent_anomalies"] < 10
+        ), f"Too many anomalies under stress: {final_status['recent_anomalies']}"
 
         # Verify data integrity (adjusted expectation due to metrics optimization)
         total_metrics = len(self.metrics_collector.metrics)
-        assert total_metrics >= concurrent_operations, f"Insufficient metrics collected: {total_metrics}"
+        assert (
+            total_metrics >= concurrent_operations
+        ), f"Insufficient metrics collected: {total_metrics}"
 
         await self.monitor.stop_monitoring()
 
@@ -607,7 +653,7 @@ class TestFullSystemIntegration:
             "memory_pressure",
             "cpu_overload",
             "network_issues",
-            "disk_full"
+            "disk_full",
         ]
 
         for scenario in failure_scenarios:
@@ -615,14 +661,14 @@ class TestFullSystemIntegration:
 
             # Simulate failure condition
             if scenario == "memory_pressure":
-                with patch('psutil.virtual_memory') as mock_mem:
+                with patch("psutil.virtual_memory") as mock_mem:
                     mock_mem.return_value.percent = 95
                     # System should continue functioning
-                    result = await self.cb.check_and_trigger({'equity': 9000})
+                    result = await self.cb.check_and_trigger({"equity": 9000})
                     assert isinstance(result, bool)
 
             elif scenario == "cpu_overload":
-                with patch('psutil.cpu_percent') as mock_cpu:
+                with patch("psutil.cpu_percent") as mock_cpu:
                     mock_cpu.return_value = 95
                     # Should still collect metrics
                     await self.metrics_collector.record_metric("cpu_test", 1.0)
@@ -649,7 +695,7 @@ class TestFullSystemIntegration:
             start = time.perf_counter()
             with self.profiler.profile_function("baseline_func"):
                 data = np.random.random(1000)
-                result = np.sum(data ** 2)
+                result = np.sum(data**2)
             baseline_times.append(time.perf_counter() - start)
 
         baseline_avg = np.mean(baseline_times)
@@ -661,7 +707,7 @@ class TestFullSystemIntegration:
             with self.profiler.profile_function("regression_func"):
                 # Simulate slower operation (regression)
                 data = np.random.random(1000)
-                result = np.sum(data ** 2)
+                result = np.sum(data**2)
                 time.sleep(0.005)  # Artificial delay
             regression_times.append(time.perf_counter() - start)
 
@@ -669,7 +715,9 @@ class TestFullSystemIntegration:
 
         # Verify regression is detected
         regression_ratio = regression_avg / baseline_avg
-        assert regression_ratio > 1.5, f"Regression not significant enough: {regression_ratio:.2f}x"
+        assert (
+            regression_ratio > 1.5
+        ), f"Regression not significant enough: {regression_ratio:.2f}x"
 
         # Check that monitoring detects the change
         status = await self.monitor.get_performance_status()
@@ -704,11 +752,11 @@ async def integrated_system():
     await monitor.start_monitoring()
 
     yield {
-        'circuit_breaker': cb,
-        'profiler': profiler,
-        'monitor': monitor,
-        'metrics_collector': metrics_collector,
-        'report_generator': report_generator
+        "circuit_breaker": cb,
+        "profiler": profiler,
+        "monitor": monitor,
+        "metrics_collector": metrics_collector,
+        "report_generator": report_generator,
     }
 
     # Cleanup
@@ -719,9 +767,9 @@ async def integrated_system():
 def mock_trading_components():
     """Mock trading components for integration testing."""
     return {
-        'order_manager': MagicMock(spec=OrderManager),
-        'signal_router': MagicMock(spec=SignalRouter),
-        'risk_manager': MagicMock(spec=RiskManager)
+        "order_manager": MagicMock(spec=OrderManager),
+        "signal_router": MagicMock(spec=SignalRouter),
+        "risk_manager": MagicMock(spec=RiskManager),
     }
 
 

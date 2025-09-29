@@ -5,17 +5,16 @@ Executes orders using Time-Weighted Average Price strategy.
 """
 
 import logging
-import asyncio
-import uuid
 import time
-from typing import Dict, Any, List, Optional
+import uuid
 from decimal import Decimal
-from datetime import datetime, timedelta
+from typing import Any, Dict, List
 
-from .base_executor import BaseExecutor
-from core.contracts import TradingSignal, SignalType
+from core.contracts import SignalType, TradingSignal
 from core.types.order_types import Order, OrderStatus, OrderType
 from utils.logger import get_trade_logger
+
+from .base_executor import BaseExecutor
 
 logger = logging.getLogger(__name__)
 trade_logger = get_trade_logger()
@@ -50,8 +49,10 @@ class TWAPExecutor(BaseExecutor):
         self.total_duration_seconds = self.duration_minutes * 60
         self.interval_seconds = self.total_duration_seconds / self.parts
 
-        self.logger.info(f"TWAPExecutor initialized: duration={self.duration_minutes}min, "
-                        f"parts={self.parts}, interval={self.interval_seconds:.1f}s, test_mode={self.test_mode}")
+        self.logger.info(
+            f"TWAPExecutor initialized: duration={self.duration_minutes}min, "
+            f"parts={self.parts}, interval={self.interval_seconds:.1f}s, test_mode={self.test_mode}"
+        )
 
     async def execute_order(self, signal: TradingSignal) -> List[Order]:
         """
@@ -66,16 +67,21 @@ class TWAPExecutor(BaseExecutor):
         if not self._validate_signal(signal):
             return []
 
-        self.logger.info(f"Executing TWAP order: {signal.symbol} {signal.amount} "
-                        f"over {self.duration_minutes} minutes in {self.parts} parts")
+        self.logger.info(
+            f"Executing TWAP order: {signal.symbol} {signal.amount} "
+            f"over {self.duration_minutes} minutes in {self.parts} parts"
+        )
 
-        trade_logger.trade("TWAP Order Start", {
-            "symbol": signal.symbol,
-            "amount": float(signal.amount),
-            "duration_minutes": self.duration_minutes,
-            "parts": self.parts,
-            "interval_seconds": self.interval_seconds
-        })
+        trade_logger.trade(
+            "TWAP Order Start",
+            {
+                "symbol": signal.symbol,
+                "amount": float(signal.amount),
+                "duration_minutes": self.duration_minutes,
+                "parts": self.parts,
+                "interval_seconds": self.interval_seconds,
+            },
+        )
 
         # Split the order into equal parts
         split_amounts = await self.split_order(signal.amount, self.parts)
@@ -95,12 +101,16 @@ class TWAPExecutor(BaseExecutor):
                     await self._wait_delay(delay)
 
                 # Create child order
-                child_signal = self._create_child_order(signal, amount, parent_order_id, i + 1)
-                child_signal.metadata.update({
-                    'total_parts': self.parts,
-                    'part_interval': self.interval_seconds,
-                    'total_duration': self.total_duration_seconds
-                })
+                child_signal = self._create_child_order(
+                    signal, amount, parent_order_id, i + 1
+                )
+                child_signal.metadata.update(
+                    {
+                        "total_parts": self.parts,
+                        "part_interval": self.interval_seconds,
+                        "total_duration": self.total_duration_seconds,
+                    }
+                )
 
                 # Execute child order
                 order = await self._execute_single_order(child_signal)
@@ -109,24 +119,33 @@ class TWAPExecutor(BaseExecutor):
 
                 # Log progress
                 progress = (i + 1) / self.parts * 100
-                self.logger.debug(f"TWAP progress: {i+1}/{self.parts} parts ({progress:.1f}%)")
+                self.logger.debug(
+                    f"TWAP progress: {i+1}/{self.parts} parts ({progress:.1f}%)"
+                )
 
             except Exception as e:
-                self.logger.error(f"Failed to execute TWAP part {i+1}/{self.parts}: {e}")
+                self.logger.error(
+                    f"Failed to execute TWAP part {i+1}/{self.parts}: {e}"
+                )
                 # Continue with remaining parts
 
         # Log completion
         completion_time = time.time() - start_time
-        self.logger.info(f"TWAP order completed: {len(executed_orders)}/{self.parts} parts "
-                        f"in {completion_time:.1f}s")
+        self.logger.info(
+            f"TWAP order completed: {len(executed_orders)}/{self.parts} parts "
+            f"in {completion_time:.1f}s"
+        )
 
-        trade_logger.trade("TWAP Order Complete", {
-            "symbol": signal.symbol,
-            "parts_executed": len(executed_orders),
-            "total_parts": self.parts,
-            "duration_actual": completion_time,
-            "duration_expected": self.total_duration_seconds
-        })
+        trade_logger.trade(
+            "TWAP Order Complete",
+            {
+                "symbol": signal.symbol,
+                "parts_executed": len(executed_orders),
+                "total_parts": self.parts,
+                "duration_actual": completion_time,
+                "duration_expected": self.total_duration_seconds,
+            },
+        )
 
         return executed_orders
 
@@ -183,18 +202,18 @@ class TWAPExecutor(BaseExecutor):
         order_type = signal.order_type.value if signal.order_type else "market"
 
         params = {
-            'symbol': signal.symbol,
-            'type': order_type,
-            'side': side,
-            'amount': float(signal.amount)
+            "symbol": signal.symbol,
+            "type": order_type,
+            "side": side,
+            "amount": float(signal.amount),
         }
 
         if signal.price and order_type == "limit":
-            params['price'] = float(signal.price)
+            params["price"] = float(signal.price)
 
         # Add TWAP metadata
         if signal.metadata:
-            params['metadata'] = signal.metadata
+            params["metadata"] = signal.metadata
 
         # Place the order
         response = await self.exchange_api.create_order(**params)
@@ -211,18 +230,20 @@ class TWAPExecutor(BaseExecutor):
             Parsed Order object
         """
         return Order(
-            id=str(response.get('id', '')),
-            symbol=response.get('symbol', ''),
-            type=OrderType(response.get('type', 'market')),
-            side=response.get('side', ''),
-            amount=Decimal(str(response.get('amount', 0))),
-            price=Decimal(str(response.get('price', 0))) if response.get('price') else None,
-            status=OrderStatus(response.get('status', 'open')),
-            timestamp=response.get('timestamp', 0),
-            filled=Decimal(str(response.get('filled', 0))),
-            remaining=Decimal(str(response.get('remaining', 0))),
-            cost=Decimal(str(response.get('cost', 0))),
-            fee=response.get('fee')
+            id=str(response.get("id", "")),
+            symbol=response.get("symbol", ""),
+            type=OrderType(response.get("type", "market")),
+            side=response.get("side", ""),
+            amount=Decimal(str(response.get("amount", 0))),
+            price=Decimal(str(response.get("price", 0)))
+            if response.get("price")
+            else None,
+            status=OrderStatus(response.get("status", "open")),
+            timestamp=response.get("timestamp", 0),
+            filled=Decimal(str(response.get("filled", 0))),
+            remaining=Decimal(str(response.get("remaining", 0))),
+            cost=Decimal(str(response.get("cost", 0))),
+            fee=response.get("fee"),
         )
 
     def _create_mock_order(self, signal: TradingSignal) -> Order:
@@ -259,7 +280,7 @@ class TWAPExecutor(BaseExecutor):
             filled=signal.amount,
             remaining=Decimal(0),
             cost=signal.amount * (signal.price or Decimal(1)),
-            fee={'cost': Decimal(0), 'currency': 'USD'}
+            fee={"cost": Decimal(0), "currency": "USD"},
         )
 
     async def cancel_order(self, order_id: str) -> bool:
@@ -289,16 +310,20 @@ class TWAPExecutor(BaseExecutor):
             List of execution times and amounts
         """
         schedule = []
-        split_amounts = await self.split_order(Decimal(1), self.parts)  # Use 1 as base for percentages
+        split_amounts = await self.split_order(
+            Decimal(1), self.parts
+        )  # Use 1 as base for percentages
 
         for i, amount in enumerate(split_amounts):
             execution_time = i * self.interval_seconds
-            schedule.append({
-                'part': i + 1,
-                'amount': float(amount),
-                'execution_time_seconds': execution_time,
-                'cumulative_time': execution_time
-            })
+            schedule.append(
+                {
+                    "part": i + 1,
+                    "amount": float(amount),
+                    "execution_time_seconds": execution_time,
+                    "cumulative_time": execution_time,
+                }
+            )
 
         return schedule
 

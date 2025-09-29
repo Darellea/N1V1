@@ -5,13 +5,10 @@ Handles the main trading cycle, orchestrates data fetching, signal processing,
 risk evaluation, and order execution while maintaining clean separation of concerns.
 """
 
-from typing import Dict, Any, Optional, List
-import asyncio
-import time
+from typing import Any, Dict, List
 
-from .logging_utils import get_structured_logger, LogSensitivity
-from .utils.error_utils import ErrorHandler, ErrorContext, ErrorSeverity, ErrorCategory
-from .utils.config_utils import get_config
+from .logging_utils import LogSensitivity, get_structured_logger
+from .utils.error_utils import ErrorCategory, ErrorContext, ErrorHandler, ErrorSeverity
 
 logger = get_structured_logger("core.trading_coordinator", LogSensitivity.SECURE)
 error_handler = ErrorHandler("trading_coordinator")
@@ -37,7 +34,9 @@ class TradingCoordinator:
         """
         self.config = config
         self.mode = config.get("environment", {}).get("mode", "paper")
-        self.portfolio_mode = bool(config.get("trading", {}).get("portfolio_mode", False))
+        self.portfolio_mode = bool(
+            config.get("trading", {}).get("portfolio_mode", False)
+        )
         self.pairs = []
 
         # Component references (to be injected)
@@ -55,13 +54,15 @@ class TradingCoordinator:
         # Trading cycle configuration
         self.update_interval = config.get("monitoring", {}).get("update_interval", 60)
 
-    def set_components(self,
-                      data_manager,
-                      signal_processor,
-                      risk_manager,
-                      order_executor,
-                      performance_tracker,
-                      state_manager):
+    def set_components(
+        self,
+        data_manager,
+        signal_processor,
+        risk_manager,
+        order_executor,
+        performance_tracker,
+        state_manager,
+    ):
         """Set component references for coordination."""
         self.data_manager = data_manager
         self.signal_processor = signal_processor
@@ -113,7 +114,7 @@ class TradingCoordinator:
                 operation="execute_trading_cycle",
                 severity=ErrorSeverity.HIGH,
                 category=ErrorCategory.LOGIC,
-                metadata={"cycle_error": str(e)}
+                metadata={"cycle_error": str(e)},
             )
             await error_handler.handle_error(e, context)
 
@@ -125,7 +126,7 @@ class TradingCoordinator:
 
         try:
             return await self.data_manager.fetch_market_data()
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to fetch market data")
             return {}
 
@@ -140,25 +141,37 @@ class TradingCoordinator:
                 return True
 
             # Check component safe modes
-            if hasattr(self.order_executor, 'safe_mode_active') and self.order_executor.safe_mode_active:
+            if (
+                hasattr(self.order_executor, "safe_mode_active")
+                and self.order_executor.safe_mode_active
+            ):
                 if not self._safe_mode_notified:
-                    logger.warning("Order executor safe mode active: skipping trading cycle")
+                    logger.warning(
+                        "Order executor safe mode active: skipping trading cycle"
+                    )
                     self._safe_mode_notified = True
                 return True
 
-            if hasattr(self.signal_processor, 'block_signals') and self.signal_processor.block_signals:
+            if (
+                hasattr(self.signal_processor, "block_signals")
+                and self.signal_processor.block_signals
+            ):
                 if not self._safe_mode_notified:
-                    logger.warning("Signal processor safe mode active: skipping trading cycle")
+                    logger.warning(
+                        "Signal processor safe mode active: skipping trading cycle"
+                    )
                     self._safe_mode_notified = True
                 return True
 
             return False
 
-        except Exception as e:
+        except Exception:
             logger.exception("Error checking safe mode conditions")
             return True  # Conservative: skip trading on error
 
-    async def _process_binary_integration(self, market_data: Dict[str, Any]) -> List[Any]:
+    async def _process_binary_integration(
+        self, market_data: Dict[str, Any]
+    ) -> List[Any]:
         """Process market data through binary model integration."""
         # This would integrate with binary model processing
         # For now, return empty list to use legacy signal processing
@@ -172,11 +185,13 @@ class TradingCoordinator:
 
         try:
             return await self.signal_processor.generate_signals(market_data)
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to generate signals")
             return []
 
-    async def _evaluate_risk(self, signals: List[Any], market_data: Dict[str, Any]) -> List[Any]:
+    async def _evaluate_risk(
+        self, signals: List[Any], market_data: Dict[str, Any]
+    ) -> List[Any]:
         """Evaluate signals through risk management."""
         if not self.signal_processor:
             logger.warning("SignalProcessor not set, approving all signals")
@@ -184,7 +199,7 @@ class TradingCoordinator:
 
         try:
             return await self.signal_processor.evaluate_risk(signals, market_data)
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to evaluate risk")
             return []  # Conservative: reject all on error
 
@@ -204,13 +219,15 @@ class TradingCoordinator:
                         await self.performance_tracker.record_trade_equity(order_result)
 
                     # Send notifications if available
-                    if hasattr(self.order_executor, 'send_notifications'):
+                    if hasattr(self.order_executor, "send_notifications"):
                         await self.order_executor.send_notifications(order_result)
 
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to execute orders")
 
-    async def _execute_integrated_decisions(self, integrated_decisions: List[Dict[str, Any]]) -> None:
+    async def _execute_integrated_decisions(
+        self, integrated_decisions: List[Dict[str, Any]]
+    ) -> None:
         """Execute integrated trading decisions from binary model."""
         # Implementation for binary model decisions
         pass
@@ -223,7 +240,7 @@ class TradingCoordinator:
         try:
             # Update state through state manager
             await self.state_manager.update_state()
-        except Exception as e:
+        except Exception:
             logger.exception("Failed to update state")
 
     def enable_safe_mode(self):
@@ -248,13 +265,15 @@ class TradingCoordinator:
                 await self.order_executor.cancel_all_orders()
 
             # Shutdown components
-            if self.data_manager and hasattr(self.data_manager, 'shutdown'):
+            if self.data_manager and hasattr(self.data_manager, "shutdown"):
                 await self.data_manager.shutdown()
 
-            if self.signal_processor and hasattr(self.signal_processor, 'shutdown_strategies'):
+            if self.signal_processor and hasattr(
+                self.signal_processor, "shutdown_strategies"
+            ):
                 await self.signal_processor.shutdown_strategies()
 
-        except Exception as e:
+        except Exception:
             logger.exception("Error during emergency shutdown")
 
     def get_coordinator_status(self) -> Dict[str, Any]:
@@ -270,6 +289,6 @@ class TradingCoordinator:
                 "risk_manager": self.risk_manager is not None,
                 "order_executor": self.order_executor is not None,
                 "performance_tracker": self.performance_tracker is not None,
-                "state_manager": self.state_manager is not None
-            }
+                "state_manager": self.state_manager is not None,
+            },
         }

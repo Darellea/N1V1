@@ -5,25 +5,28 @@ Provides standardized error handling patterns, structured logging,
 error recovery strategies, and comprehensive error context preservation.
 """
 
-import logging
-import traceback
 import asyncio
+import logging
 import time
-from typing import Dict, Any, Optional, List, Callable, Type
+import traceback
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import wraps
-import sys
+from typing import Any, Callable, Dict, List, Optional, Type
+
 
 def _get_sanitize_error_message():
     from utils.security import sanitize_error_message
+
     return sanitize_error_message
+
 
 logger = logging.getLogger(__name__)
 
 
 class ErrorSeverity(Enum):
     """Error severity levels for classification and handling."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -32,6 +35,7 @@ class ErrorSeverity(Enum):
 
 class ErrorCategory(Enum):
     """Error categories for structured handling."""
+
     NETWORK = "network"
     DATA = "data"
     CONFIGURATION = "configuration"
@@ -45,6 +49,7 @@ class ErrorCategory(Enum):
 @dataclass
 class ErrorContext:
     """Structured error context information."""
+
     timestamp: float = field(default_factory=time.time)
     component: str = ""
     operation: str = ""
@@ -74,36 +79,43 @@ class TradingError(Exception):
 
 class NetworkError(TradingError):
     """Network-related errors."""
+
     pass
 
 
 class DataError(TradingError):
     """Data processing and validation errors."""
+
     pass
 
 
 class ConfigurationError(TradingError):
     """Configuration-related errors."""
+
     pass
 
 
 class SecurityError(TradingError):
     """Security-related errors."""
+
     pass
 
 
 class PerformanceError(TradingError):
     """Performance-related errors."""
+
     pass
 
 
 class BusinessLogicError(TradingError):
     """Business logic errors."""
+
     pass
 
 
 class ExternalAPIError(TradingError):
     """External API errors."""
+
     pass
 
 
@@ -133,20 +145,29 @@ class ErrorRecoveryStrategy:
 
     async def _handle_retry(self, exception: Exception, attempt: int):
         """Handle retry logic."""
-        delay = self.backoff_factor ** attempt
-        logger.warning(f"Retry attempt {attempt + 1} after {delay:.2f}s due to: {exception}")
+        delay = self.backoff_factor**attempt
+        logger.warning(
+            f"Retry attempt {attempt + 1} after {delay:.2f}s due to: {exception}"
+        )
         await asyncio.sleep(delay)
 
 
 class ExponentialBackoffStrategy(ErrorRecoveryStrategy):
     """Exponential backoff recovery strategy."""
+
     pass
 
 
 class CircuitBreakerStrategy(ErrorRecoveryStrategy):
     """Circuit breaker pattern for external service failures."""
 
-    def __init__(self, failure_threshold: int = 5, recovery_timeout: float = 60.0, *args, **kwargs):
+    def __init__(
+        self,
+        failure_threshold: int = 5,
+        recovery_timeout: float = 60.0,
+        *args,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
@@ -175,7 +196,9 @@ class CircuitBreakerStrategy(ErrorRecoveryStrategy):
 
             if self.failure_count >= self.failure_threshold:
                 self.state = "open"
-                logger.error(f"Circuit breaker opened after {self.failure_count} failures")
+                logger.error(
+                    f"Circuit breaker opened after {self.failure_count} failures"
+                )
 
             raise e
 
@@ -194,8 +217,12 @@ class ErrorHandler:
 
         # Register default recovery strategies
         self.register_recovery_strategy("network", CircuitBreakerStrategy())
-        self.register_recovery_strategy("api", ExponentialBackoffStrategy(max_retries=5))
-        self.register_recovery_strategy("data", ExponentialBackoffStrategy(max_retries=2))
+        self.register_recovery_strategy(
+            "api", ExponentialBackoffStrategy(max_retries=5)
+        )
+        self.register_recovery_strategy(
+            "data", ExponentialBackoffStrategy(max_retries=2)
+        )
 
         # Register default error handlers
         self.register_error_handler(TradingError, self._handle_trading_error)
@@ -206,21 +233,27 @@ class ErrorHandler:
         self.recovery_strategies[name] = strategy
         logger.info(f"Registered recovery strategy: {name}")
 
-    def register_error_handler(self, exception_type: Type[Exception], handler: Callable):
+    def register_error_handler(
+        self, exception_type: Type[Exception], handler: Callable
+    ):
         """Register an error handler for specific exception types."""
         self.error_handlers[exception_type] = handler
         logger.info(f"Registered error handler for: {exception_type.__name__}")
 
-    def create_error_context(self, component: str = "", operation: str = "",
-                           severity: ErrorSeverity = ErrorSeverity.MEDIUM,
-                           category: ErrorCategory = ErrorCategory.SYSTEM,
-                           **kwargs) -> ErrorContext:
+    def create_error_context(
+        self,
+        component: str = "",
+        operation: str = "",
+        severity: ErrorSeverity = ErrorSeverity.MEDIUM,
+        category: ErrorCategory = ErrorCategory.SYSTEM,
+        **kwargs,
+    ) -> ErrorContext:
         """Create a structured error context."""
         context = ErrorContext(
             component=component,
             operation=operation,
             severity=severity,
-            category=category
+            category=category,
         )
 
         # Add any additional context
@@ -232,7 +265,9 @@ class ErrorHandler:
 
         return context
 
-    async def handle_error(self, exception: Exception, context: Optional[ErrorContext] = None) -> None:
+    async def handle_error(
+        self, exception: Exception, context: Optional[ErrorContext] = None
+    ) -> None:
         """Handle an exception with structured logging and recovery."""
         # Create context if not provided
         if context is None:
@@ -259,7 +294,9 @@ class ErrorHandler:
         # Call specific error handler
         await self._call_error_handler(exception, context)
 
-    async def _log_error(self, exception: Exception, context: ErrorContext, sanitized_message: str):
+    async def _log_error(
+        self, exception: Exception, context: ErrorContext, sanitized_message: str
+    ):
         """Log error with structured information."""
         log_data = {
             "component": context.component,
@@ -272,22 +309,30 @@ class ErrorHandler:
             "session_id": context.session_id,
             "request_id": context.request_id,
             "symbol": context.symbol,
-            "parameters": context.parameters
+            "parameters": context.parameters,
         }
 
         # Choose log level based on severity
         if context.severity == ErrorSeverity.CRITICAL:
-            logger.critical(f"Critical error in {context.component}.{context.operation}: {sanitized_message}",
-                          extra={"error_context": log_data})
+            logger.critical(
+                f"Critical error in {context.component}.{context.operation}: {sanitized_message}",
+                extra={"error_context": log_data},
+            )
         elif context.severity == ErrorSeverity.HIGH:
-            logger.error(f"High severity error in {context.component}.{context.operation}: {sanitized_message}",
-                        extra={"error_context": log_data})
+            logger.error(
+                f"High severity error in {context.component}.{context.operation}: {sanitized_message}",
+                extra={"error_context": log_data},
+            )
         elif context.severity == ErrorSeverity.MEDIUM:
-            logger.warning(f"Medium severity error in {context.component}.{context.operation}: {sanitized_message}",
-                          extra={"error_context": log_data})
+            logger.warning(
+                f"Medium severity error in {context.component}.{context.operation}: {sanitized_message}",
+                extra={"error_context": log_data},
+            )
         else:
-            logger.info(f"Low severity error in {context.component}.{context.operation}: {sanitized_message}",
-                       extra={"error_context": log_data})
+            logger.info(
+                f"Low severity error in {context.component}.{context.operation}: {sanitized_message}",
+                extra={"error_context": log_data},
+            )
 
     def _store_error_history(self, context: ErrorContext):
         """Store error in history for analysis."""
@@ -295,16 +340,20 @@ class ErrorHandler:
 
         # Keep only recent errors
         if len(self.error_history) > self.max_history_size:
-            self.error_history = self.error_history[-self.max_history_size:]
+            self.error_history = self.error_history[-self.max_history_size :]
 
-    async def _apply_recovery_strategy(self, exception: Exception, context: ErrorContext):
+    async def _apply_recovery_strategy(
+        self, exception: Exception, context: ErrorContext
+    ):
         """Apply appropriate recovery strategy."""
         strategy_name = self._determine_recovery_strategy(context.category)
         strategy = self.recovery_strategies.get(strategy_name)
 
         if strategy and context.retry_count < context.max_retries:
             context.recovery_strategy = strategy_name
-            logger.info(f"Applying recovery strategy: {strategy_name} for {context.category.value}")
+            logger.info(
+                f"Applying recovery strategy: {strategy_name} for {context.category.value}"
+            )
 
             # Note: Actual retry logic would be handled by the calling code
             # This just sets up the context for retry
@@ -319,7 +368,7 @@ class ErrorHandler:
             ErrorCategory.SECURITY: "data",
             ErrorCategory.PERFORMANCE: "data",
             ErrorCategory.BUSINESS_LOGIC: "data",
-            ErrorCategory.SYSTEM: "data"
+            ErrorCategory.SYSTEM: "data",
         }
 
         return strategy_map.get(category)
@@ -332,10 +381,14 @@ class ErrorHandler:
                 try:
                     await handler(exception, context)
                 except Exception as handler_error:
-                    logger.error(f"Error in error handler for {exception_type.__name__}: {handler_error}")
+                    logger.error(
+                        f"Error in error handler for {exception_type.__name__}: {handler_error}"
+                    )
                 break
 
-    async def _handle_trading_error(self, exception: TradingError, context: ErrorContext):
+    async def _handle_trading_error(
+        self, exception: TradingError, context: ErrorContext
+    ):
         """Handle trading-specific errors."""
         # Trading-specific error handling logic
         if context.category == ErrorCategory.SECURITY:
@@ -346,7 +399,7 @@ class ErrorHandler:
             logger.warning("External API error - may need rate limit adjustment")
 
         # Add trading-specific recovery actions
-        if hasattr(exception, 'context') and exception.context:
+        if hasattr(exception, "context") and exception.context:
             # Merge contexts
             context.parameters.update(exception.context.parameters)
 
@@ -366,21 +419,27 @@ class ErrorHandler:
             "severity_breakdown": {},
             "category_breakdown": {},
             "component_breakdown": {},
-            "recent_errors": []
+            "recent_errors": [],
         }
 
         for error in self.error_history:
             # Severity breakdown
             severity = error.severity.value
-            stats["severity_breakdown"][severity] = stats["severity_breakdown"].get(severity, 0) + 1
+            stats["severity_breakdown"][severity] = (
+                stats["severity_breakdown"].get(severity, 0) + 1
+            )
 
             # Category breakdown
             category = error.category.value
-            stats["category_breakdown"][category] = stats["category_breakdown"].get(category, 0) + 1
+            stats["category_breakdown"][category] = (
+                stats["category_breakdown"].get(category, 0) + 1
+            )
 
             # Component breakdown
             component = error.component
-            stats["component_breakdown"][component] = stats["component_breakdown"].get(component, 0) + 1
+            stats["component_breakdown"][component] = (
+                stats["component_breakdown"].get(component, 0) + 1
+            )
 
         # Recent errors (last 10)
         stats["recent_errors"] = [
@@ -390,7 +449,7 @@ class ErrorHandler:
                 "operation": error.operation,
                 "severity": error.severity.value,
                 "category": error.category.value,
-                "error_code": error.error_code
+                "error_code": error.error_code,
             }
             for error in self.error_history[-10:]
         ]
@@ -406,6 +465,7 @@ class ErrorHandler:
 # Global error handler instance
 _error_handler = None
 
+
 def get_error_handler() -> ErrorHandler:
     """Get the global error handler instance."""
     global _error_handler
@@ -415,10 +475,14 @@ def get_error_handler() -> ErrorHandler:
 
 
 # Decorator for error handling
-def handle_errors(component: str = "", operation: str = "",
-                 severity: ErrorSeverity = ErrorSeverity.MEDIUM,
-                 category: ErrorCategory = ErrorCategory.SYSTEM):
+def handle_errors(
+    component: str = "",
+    operation: str = "",
+    severity: ErrorSeverity = ErrorSeverity.MEDIUM,
+    category: ErrorCategory = ErrorCategory.SYSTEM,
+):
     """Decorator to handle errors in functions."""
+
     def decorator(func):
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
@@ -427,7 +491,7 @@ def handle_errors(component: str = "", operation: str = "",
                 component=component,
                 operation=operation or func.__name__,
                 severity=severity,
-                category=category
+                category=category,
             )
 
             try:
@@ -443,7 +507,7 @@ def handle_errors(component: str = "", operation: str = "",
                 component=component,
                 operation=operation or func.__name__,
                 severity=severity,
-                category=category
+                category=category,
             )
 
             try:
@@ -451,6 +515,7 @@ def handle_errors(component: str = "", operation: str = "",
             except Exception as e:
                 # For sync functions, we need to run the async handler
                 import asyncio
+
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
@@ -468,7 +533,9 @@ def handle_errors(component: str = "", operation: str = "",
 
 
 # Utility functions for common error scenarios
-async def handle_network_error(operation: str, exception: Exception, retry_count: int = 0):
+async def handle_network_error(
+    operation: str, exception: Exception, retry_count: int = 0
+):
     """Handle network-related errors with retry logic."""
     error_handler = get_error_handler()
     context = error_handler.create_error_context(
@@ -476,7 +543,7 @@ async def handle_network_error(operation: str, exception: Exception, retry_count
         operation=operation,
         severity=ErrorSeverity.HIGH,
         category=ErrorCategory.NETWORK,
-        retry_count=retry_count
+        retry_count=retry_count,
     )
 
     await error_handler.handle_error(exception, context)
@@ -490,13 +557,15 @@ async def handle_data_error(operation: str, exception: Exception, symbol: str = 
         operation=operation,
         severity=ErrorSeverity.MEDIUM,
         category=ErrorCategory.DATA,
-        symbol=symbol
+        symbol=symbol,
     )
 
     await error_handler.handle_error(exception, context)
 
 
-async def handle_security_error(operation: str, exception: Exception, user_id: str = None):
+async def handle_security_error(
+    operation: str, exception: Exception, user_id: str = None
+):
     """Handle security-related errors."""
     error_handler = get_error_handler()
     context = error_handler.create_error_context(
@@ -504,7 +573,7 @@ async def handle_security_error(operation: str, exception: Exception, user_id: s
         operation=operation,
         severity=ErrorSeverity.CRITICAL,
         category=ErrorCategory.SECURITY,
-        user_id=user_id
+        user_id=user_id,
     )
 
     await error_handler.handle_error(exception, context)

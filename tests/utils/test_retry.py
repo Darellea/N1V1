@@ -1,5 +1,7 @@
 import asyncio
+
 import pytest
+
 from utils.retry import async_retry_call, retry_async
 
 
@@ -23,7 +25,9 @@ async def test_async_retry_call_retries_and_succeeds(monkeypatch):
 
     monkeypatch.setattr(asyncio, "sleep", _fast_sleep)
 
-    result = await async_retry_call(lambda: flaky(), retries=3, base_backoff=0.01, max_backoff=0.02)
+    result = await async_retry_call(
+        lambda: flaky(), retries=3, base_backoff=0.01, max_backoff=0.02
+    )
     assert result == "ok"
     assert attempts["count"] == 3
 

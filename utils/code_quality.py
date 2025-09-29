@@ -6,15 +6,13 @@ and code quality assessment tools for maintaining high code standards.
 """
 
 import ast
-import inspect
+import logging
 import re
-from typing import Dict, Any, List, Optional, Tuple, Set
 from pathlib import Path
+from typing import Any, Dict, List
+
 import radon.complexity as radon_cc
 import radon.metrics as radon_metrics
-from radon.visitors import ComplexityVisitor
-import mccabe
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +37,7 @@ class CodeComplexityAnalyzer:
     def analyze_file(self, file_path: str) -> Dict[str, Any]:
         """Analyze a single Python file for complexity issues."""
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
             # Parse AST
@@ -61,7 +59,9 @@ class CodeComplexityAnalyzer:
                 "metrics": metrics_results,
                 "complex_methods": complex_methods,
                 "refactoring_suggestions": suggestions,
-                "overall_score": self._calculate_overall_score(complexity_results, metrics_results)
+                "overall_score": self._calculate_overall_score(
+                    complexity_results, metrics_results
+                ),
             }
 
             self.analysis_results[file_path] = result
@@ -71,7 +71,9 @@ class CodeComplexityAnalyzer:
             logger.exception(f"Error analyzing file {file_path}: {e}")
             return {"error": str(e)}
 
-    def analyze_directory(self, directory_path: str, file_pattern: str = "*.py") -> Dict[str, Any]:
+    def analyze_directory(
+        self, directory_path: str, file_pattern: str = "*.py"
+    ) -> Dict[str, Any]:
         """Analyze all Python files in a directory."""
         directory = Path(directory_path)
         results = {}
@@ -95,7 +97,7 @@ class CodeComplexityAnalyzer:
                     "name": result.name,
                     "complexity": result.complexity,
                     "line_number": result.lineno,
-                    "classification": self._classify_complexity(result.complexity)
+                    "classification": self._classify_complexity(result.complexity),
                 }
 
             return complexity_data
@@ -113,16 +115,30 @@ class CodeComplexityAnalyzer:
             return {
                 "maintainability_index": mi,
                 "maintainability_grade": self._classify_maintainability(mi),
-                "lines_of_code": len(content.split('\n')),
-                "functions_count": len([line for line in content.split('\n') if line.strip().startswith('def ')]),
-                "classes_count": len([line for line in content.split('\n') if line.strip().startswith('class ')])
+                "lines_of_code": len(content.split("\n")),
+                "functions_count": len(
+                    [
+                        line
+                        for line in content.split("\n")
+                        if line.strip().startswith("def ")
+                    ]
+                ),
+                "classes_count": len(
+                    [
+                        line
+                        for line in content.split("\n")
+                        if line.strip().startswith("class ")
+                    ]
+                ),
             }
 
         except Exception as e:
             logger.exception(f"Error in metrics analysis: {e}")
             return {}
 
-    def _find_complex_methods(self, tree: ast.AST, complexity_results: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _find_complex_methods(
+        self, tree: ast.AST, complexity_results: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         """Find methods that exceed complexity thresholds."""
         complex_methods = []
 
@@ -136,13 +152,19 @@ class CodeComplexityAnalyzer:
                         break
 
                 if method_complexity and method_complexity > self.max_complexity:
-                    complex_methods.append({
-                        "name": node.name,
-                        "line_number": node.lineno,
-                        "complexity": method_complexity,
-                        "line_count": node.end_lineno - node.lineno if node.end_lineno else 0,
-                        "classification": self._classify_complexity(method_complexity)
-                    })
+                    complex_methods.append(
+                        {
+                            "name": node.name,
+                            "line_number": node.lineno,
+                            "complexity": method_complexity,
+                            "line_count": node.end_lineno - node.lineno
+                            if node.end_lineno
+                            else 0,
+                            "classification": self._classify_complexity(
+                                method_complexity
+                            ),
+                        }
+                    )
 
         return complex_methods
 
@@ -170,14 +192,18 @@ class CodeComplexityAnalyzer:
         else:
             return "poor"
 
-    def _calculate_overall_score(self, complexity_results: Dict[str, Any],
-                               metrics_results: Dict[str, Any]) -> float:
+    def _calculate_overall_score(
+        self, complexity_results: Dict[str, Any], metrics_results: Dict[str, Any]
+    ) -> float:
         """Calculate overall code quality score."""
         score = 100.0
 
         # Complexity penalties
-        high_complexity_count = sum(1 for data in complexity_results.values()
-                                  if data["complexity"] > self.max_complexity)
+        high_complexity_count = sum(
+            1
+            for data in complexity_results.values()
+            if data["complexity"] > self.max_complexity
+        )
         score -= high_complexity_count * 5
 
         # Maintainability penalties
@@ -192,8 +218,9 @@ class CodeComplexityAnalyzer:
 
         return max(0, score)
 
-    def _generate_refactoring_suggestions(self, complex_methods: List[Dict[str, Any]],
-                                        tree: ast.AST) -> List[Dict[str, Any]]:
+    def _generate_refactoring_suggestions(
+        self, complex_methods: List[Dict[str, Any]], tree: ast.AST
+    ) -> List[Dict[str, Any]]:
         """Generate refactoring suggestions for complex methods."""
         suggestions = []
 
@@ -202,32 +229,38 @@ class CodeComplexityAnalyzer:
                 "method": method["name"],
                 "complexity": method["complexity"],
                 "line_number": method["line_number"],
-                "suggestions": []
+                "suggestions": [],
             }
 
             # Extract method suggestions
             if method["complexity"] > 15:
-                suggestion["suggestions"].append({
-                    "type": "extract_method",
-                    "description": "Break down into smaller methods with single responsibilities",
-                    "estimated_complexity_reduction": method["complexity"] - 8
-                })
+                suggestion["suggestions"].append(
+                    {
+                        "type": "extract_method",
+                        "description": "Break down into smaller methods with single responsibilities",
+                        "estimated_complexity_reduction": method["complexity"] - 8,
+                    }
+                )
 
             # Conditional logic suggestions
             if method["complexity"] > 12:
-                suggestion["suggestions"].append({
-                    "type": "replace_conditional_with_polymorphism",
-                    "description": "Replace complex conditional logic with polymorphism",
-                    "estimated_complexity_reduction": 5
-                })
+                suggestion["suggestions"].append(
+                    {
+                        "type": "replace_conditional_with_polymorphism",
+                        "description": "Replace complex conditional logic with polymorphism",
+                        "estimated_complexity_reduction": 5,
+                    }
+                )
 
             # Long method suggestions
             if method["line_count"] > self.max_lines:
-                suggestion["suggestions"].append({
-                    "type": "extract_method",
-                    "description": f"Method is {method['line_count']} lines long, consider splitting",
-                    "estimated_complexity_reduction": 3
-                })
+                suggestion["suggestions"].append(
+                    {
+                        "type": "extract_method",
+                        "description": f"Method is {method['line_count']} lines long, consider splitting",
+                        "estimated_complexity_reduction": 3,
+                    }
+                )
 
             suggestions.append(suggestion)
 
@@ -297,14 +330,19 @@ class MethodExtractor:
     def __init__(self):
         self.extracted_methods: List[Dict[str, Any]] = []
 
-    def extract_method_from_function(self, source_code: str, function_name: str,
-                                   start_line: int, end_line: int,
-                                   new_method_name: str) -> str:
+    def extract_method_from_function(
+        self,
+        source_code: str,
+        function_name: str,
+        start_line: int,
+        end_line: int,
+        new_method_name: str,
+    ) -> str:
         """Extract a portion of a function into a new method."""
-        lines = source_code.split('\n')
+        lines = source_code.split("\n")
 
         # Extract the method portion
-        extracted_lines = lines[start_line-1:end_line]
+        extracted_lines = lines[start_line - 1 : end_line]
 
         # Create indentation for extracted method
         base_indent = self._get_base_indentation(extracted_lines[0])
@@ -321,13 +359,15 @@ class MethodExtractor:
         replacement = f"        self.{new_method_name}()"
 
         # Store extraction info
-        self.extracted_methods.append({
-            "original_function": function_name,
-            "new_method": new_method_name,
-            "extracted_lines": len(extracted_lines),
-            "start_line": start_line,
-            "end_line": end_line
-        })
+        self.extracted_methods.append(
+            {
+                "original_function": function_name,
+                "new_method": new_method_name,
+                "extracted_lines": len(extracted_lines),
+                "start_line": start_line,
+                "end_line": end_line,
+            }
+        )
 
         return new_method, replacement
 
@@ -335,7 +375,9 @@ class MethodExtractor:
         """Get the base indentation of a line."""
         return len(line) - len(line.lstrip())
 
-    def suggest_extractions(self, source_code: str, function_name: str) -> List[Dict[str, Any]]:
+    def suggest_extractions(
+        self, source_code: str, function_name: str
+    ) -> List[Dict[str, Any]]:
         """Suggest method extractions for a complex function."""
         suggestions = []
 
@@ -354,7 +396,9 @@ class MethodExtractor:
 
         return suggestions
 
-    def _analyze_function_body(self, function_node: ast.FunctionDef) -> List[Dict[str, Any]]:
+    def _analyze_function_body(
+        self, function_node: ast.FunctionDef
+    ) -> List[Dict[str, Any]]:
         """Analyze function body for extraction opportunities."""
         suggestions = []
 
@@ -367,23 +411,27 @@ class MethodExtractor:
                 # Check if the if block is long
                 if_block_length = self._get_block_length(node.body)
                 if if_block_length > 10:
-                    suggestions.append({
-                        "type": "extract_conditional",
-                        "line_number": node.lineno,
-                        "block_length": if_block_length,
-                        "suggestion": f"Extract the if block starting at line {node.lineno} into a separate method"
-                    })
+                    suggestions.append(
+                        {
+                            "type": "extract_conditional",
+                            "line_number": node.lineno,
+                            "block_length": if_block_length,
+                            "suggestion": f"Extract the if block starting at line {node.lineno} into a separate method",
+                        }
+                    )
 
             elif isinstance(node, ast.For) or isinstance(node, ast.While):
                 # Check loop complexity
                 loop_length = self._get_block_length(node.body)
                 if loop_length > 15:
-                    suggestions.append({
-                        "type": "extract_loop",
-                        "line_number": node.lineno,
-                        "block_length": loop_length,
-                        "suggestion": f"Extract the loop starting at line {node.lineno} into a separate method"
-                    })
+                    suggestions.append(
+                        {
+                            "type": "extract_loop",
+                            "line_number": node.lineno,
+                            "block_length": loop_length,
+                            "suggestion": f"Extract the loop starting at line {node.lineno} into a separate method",
+                        }
+                    )
 
         return suggestions
 
@@ -393,7 +441,11 @@ class MethodExtractor:
             return 0
 
         start_line = body[0].lineno
-        end_line = body[-1].end_lineno if hasattr(body[-1], 'end_lineno') and body[-1].end_lineno else body[-1].lineno
+        end_line = (
+            body[-1].end_lineno
+            if hasattr(body[-1], "end_lineno") and body[-1].end_lineno
+            else body[-1].lineno
+        )
 
         return end_line - start_line + 1
 
@@ -409,56 +461,56 @@ class CodeReviewChecklist:
                 "name": "Cyclomatic Complexity",
                 "description": "Functions should have complexity ≤ 10",
                 "severity": "high",
-                "automated": True
+                "automated": True,
             },
             "line_length": {
                 "name": "Line Length",
                 "description": "Lines should be ≤ 100 characters",
                 "severity": "low",
-                "automated": True
+                "automated": True,
             },
             "function_length": {
                 "name": "Function Length",
                 "description": "Functions should be ≤ 50 lines",
                 "severity": "medium",
-                "automated": True
+                "automated": True,
             },
             "docstrings": {
                 "name": "Documentation",
                 "description": "All public functions should have docstrings",
                 "severity": "medium",
-                "automated": True
+                "automated": True,
             },
             "error_handling": {
                 "name": "Error Handling",
                 "description": "Appropriate exception handling should be present",
                 "severity": "high",
-                "automated": False
+                "automated": False,
             },
             "security": {
                 "name": "Security",
                 "description": "No hardcoded secrets or security vulnerabilities",
                 "severity": "critical",
-                "automated": False
+                "automated": False,
             },
             "testing": {
                 "name": "Test Coverage",
                 "description": "Critical functions should have unit tests",
                 "severity": "high",
-                "automated": False
+                "automated": False,
             },
             "naming": {
                 "name": "Naming Conventions",
                 "description": "Follow PEP 8 naming conventions",
                 "severity": "low",
-                "automated": True
-            }
+                "automated": True,
+            },
         }
 
     def generate_checklist(self, file_path: str) -> Dict[str, Any]:
         """Generate a code review checklist for a file."""
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
             results = {}
@@ -469,13 +521,13 @@ class CodeReviewChecklist:
                 else:
                     results[item_key] = {
                         "status": "manual_review_required",
-                        "description": item_config["description"]
+                        "description": item_config["description"],
                     }
 
             return {
                 "file_path": file_path,
                 "checklist": results,
-                "overall_score": self._calculate_checklist_score(results)
+                "overall_score": self._calculate_checklist_score(results),
             }
 
         except Exception as e:
@@ -506,20 +558,20 @@ class CodeReviewChecklist:
             return {
                 "status": "pass" if not high_complexity else "fail",
                 "details": f"{len(high_complexity)} functions with complexity > 10",
-                "functions": [r.name for r in high_complexity]
+                "functions": [r.name for r in high_complexity],
             }
         except Exception:
             return {"status": "error", "details": "Could not analyze complexity"}
 
     def _check_line_length(self, content: str) -> Dict[str, Any]:
         """Check line lengths."""
-        lines = content.split('\n')
-        long_lines = [i+1 for i, line in enumerate(lines) if len(line) > 100]
+        lines = content.split("\n")
+        long_lines = [i + 1 for i, line in enumerate(lines) if len(line) > 100]
 
         return {
             "status": "pass" if not long_lines else "fail",
             "details": f"{len(long_lines)} lines exceed 100 characters",
-            "line_numbers": long_lines[:10]  # Show first 10
+            "line_numbers": long_lines[:10],  # Show first 10
         }
 
     def _check_function_length(self, content: str) -> Dict[str, Any]:
@@ -531,16 +583,18 @@ class CodeReviewChecklist:
             if isinstance(node, ast.FunctionDef):
                 length = node.end_lineno - node.lineno if node.end_lineno else 0
                 if length > 50:
-                    long_functions.append({
-                        "name": node.name,
-                        "length": length,
-                        "line_number": node.lineno
-                    })
+                    long_functions.append(
+                        {
+                            "name": node.name,
+                            "length": length,
+                            "line_number": node.lineno,
+                        }
+                    )
 
         return {
             "status": "pass" if not long_functions else "fail",
             "details": f"{len(long_functions)} functions exceed 50 lines",
-            "functions": long_functions
+            "functions": long_functions,
         }
 
     def _check_docstrings(self, content: str) -> Dict[str, Any]:
@@ -549,16 +603,19 @@ class CodeReviewChecklist:
         missing_docstrings = []
 
         for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and not node.name.startswith('_'):
+            if isinstance(node, ast.FunctionDef) and not node.name.startswith("_"):
                 # Check if function has a docstring
-                if not (node.body and isinstance(node.body[0], ast.Expr) and
-                       isinstance(node.body[0].value, ast.Str)):
+                if not (
+                    node.body
+                    and isinstance(node.body[0], ast.Expr)
+                    and isinstance(node.body[0].value, ast.Str)
+                ):
                     missing_docstrings.append(node.name)
 
         return {
             "status": "pass" if not missing_docstrings else "fail",
             "details": f"{len(missing_docstrings)} public functions missing docstrings",
-            "functions": missing_docstrings[:10]  # Show first 10
+            "functions": missing_docstrings[:10],  # Show first 10
         }
 
     def _check_naming(self, content: str) -> Dict[str, Any]:
@@ -567,7 +624,7 @@ class CodeReviewChecklist:
         issues = []
 
         # Check for camelCase in function names (should be snake_case)
-        camel_case_pattern = r'\bdef\s+[a-z]+[A-Z][a-zA-Z]*\b'
+        camel_case_pattern = r"\bdef\s+[a-z]+[A-Z][a-zA-Z]*\b"
         matches = re.findall(camel_case_pattern, content)
         if matches:
             issues.extend(matches)
@@ -575,7 +632,7 @@ class CodeReviewChecklist:
         return {
             "status": "pass" if not issues else "fail",
             "details": f"{len(issues)} potential naming convention issues",
-            "issues": issues[:5]  # Show first 5
+            "issues": issues[:5],  # Show first 5
         }
 
     def _calculate_checklist_score(self, results: Dict[str, Any]) -> float:
@@ -583,12 +640,7 @@ class CodeReviewChecklist:
         total_score = 0
         max_score = 0
 
-        severity_weights = {
-            "low": 1,
-            "medium": 2,
-            "high": 3,
-            "critical": 4
-        }
+        severity_weights = {"low": 1, "medium": 2, "high": 3, "critical": 4}
 
         for item_key, result in results.items():
             item_config = self.checklist_items[item_key]
@@ -602,7 +654,9 @@ class CodeReviewChecklist:
 
         return (total_score / max_score * 100) if max_score > 0 else 0
 
-    def generate_report(self, file_path: str, output_file: str = "code_review_report.md"):
+    def generate_report(
+        self, file_path: str, output_file: str = "code_review_report.md"
+    ):
         """Generate a code review report."""
         checklist_result = self.generate_checklist(file_path)
 
@@ -610,14 +664,18 @@ class CodeReviewChecklist:
             report = f"# Code Review Report\n\n**Error:** {checklist_result['error']}\n"
         else:
             report = f"# Code Review Report for {file_path}\n\n"
-            report += f"**Overall Score:** {checklist_result['overall_score']:.1f}/100\n\n"
+            report += (
+                f"**Overall Score:** {checklist_result['overall_score']:.1f}/100\n\n"
+            )
 
             report += "## Checklist Results\n\n"
 
             for item_key, result in checklist_result["checklist"].items():
                 item_config = self.checklist_items[item_key]
                 status = result.get("status", "unknown")
-                status_icon = "✅" if status == "pass" else "❌" if status == "fail" else "🔍"
+                status_icon = (
+                    "✅" if status == "pass" else "❌" if status == "fail" else "🔍"
+                )
 
                 report += f"### {status_icon} {item_config['name']}\n\n"
                 report += f"**Severity:** {item_config['severity'].title()}\n\n"
@@ -657,16 +715,18 @@ def analyze_code_quality(directory_path: str) -> Dict[str, Any]:
         "total_files": len(results),
         "complexity_issues": 0,
         "quality_score": 0,
-        "files_analyzed": []
+        "files_analyzed": [],
     }
 
     for file_path, result in results.items():
         if "error" not in result:
-            summary["files_analyzed"].append({
-                "path": file_path,
-                "score": result.get("overall_score", 0),
-                "complex_methods": len(result.get("complex_methods", []))
-            })
+            summary["files_analyzed"].append(
+                {
+                    "path": file_path,
+                    "score": result.get("overall_score", 0),
+                    "complex_methods": len(result.get("complex_methods", [])),
+                }
+            )
             summary["complexity_issues"] += len(result.get("complex_methods", []))
             summary["quality_score"] += result.get("overall_score", 0)
 

@@ -7,21 +7,19 @@ performance aggregation, and coordinated execution across multiple strategies.
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, Callable, Union
-from dataclasses import dataclass, field
-from decimal import Decimal
 import statistics
-import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from decimal import Decimal
+from typing import Any, Dict, List, Optional
 
 from core.contracts import TradingSignal
-from core.signal_router.events import (
-    StrategySwitchEvent,
-    create_strategy_switch_event,
-    EventType
-)
 from core.signal_router.event_bus import get_default_enhanced_event_bus
+from core.signal_router.events import (
+    create_strategy_switch_event,
+)
 from utils.logger import get_trade_logger
+
 # Import metrics functions or implement locally
 
 logger = logging.getLogger(__name__)
@@ -30,6 +28,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class StrategyAllocation:
     """Represents capital allocation for a strategy."""
+
     strategy_id: str
     weight: float  # 0.0 to 1.0
     capital_allocated: Decimal
@@ -40,8 +39,9 @@ class StrategyAllocation:
 @dataclass
 class EnsemblePerformance:
     """Aggregated performance metrics for the strategy ensemble."""
+
     total_capital: Decimal
-    total_pnl: Decimal = Decimal('0')
+    total_pnl: Decimal = Decimal("0")
     total_trades: int = 0
     win_rate: float = 0.0
     sharpe_ratio: float = 0.0
@@ -55,6 +55,7 @@ class EnsemblePerformance:
 @dataclass
 class EnsembleSignal:
     """Signal from the ensemble with allocation context."""
+
     original_signal: TradingSignal
     strategy_id: str
     allocated_weight: float
@@ -85,19 +86,23 @@ class StrategyEnsembleManager:
         self.logger = get_trade_logger()
 
         # Configuration with defaults
-        self.rebalance_interval_sec = self.config.get('rebalance_interval_sec', 3600)  # 1 hour
-        self.allocation_method = self.config.get('allocation_method', 'sharpe_weighted')
-        self.min_weight = self.config.get('min_weight', 0.05)  # 5%
-        self.max_weight = self.config.get('max_weight', 0.4)   # 40%
-        self.portfolio_risk_limit = self.config.get('portfolio_risk_limit', 0.1)  # 10%
-        self.performance_window_days = self.config.get('performance_window_days', 30)
+        self.rebalance_interval_sec = self.config.get(
+            "rebalance_interval_sec", 3600
+        )  # 1 hour
+        self.allocation_method = self.config.get("allocation_method", "sharpe_weighted")
+        self.min_weight = self.config.get("min_weight", 0.05)  # 5%
+        self.max_weight = self.config.get("max_weight", 0.4)  # 40%
+        self.portfolio_risk_limit = self.config.get("portfolio_risk_limit", 0.1)  # 10%
+        self.performance_window_days = self.config.get("performance_window_days", 30)
 
         # Core state
-        self.total_capital = Decimal(str(self.config.get('total_capital', '10000')))
+        self.total_capital = Decimal(str(self.config.get("total_capital", "10000")))
         self.strategies: Dict[str, Any] = {}  # strategy_id -> strategy_instance
         self.allocations: Dict[str, StrategyAllocation] = {}
         self.performance_history: Dict[str, List[Dict[str, Any]]] = {}
-        self.ensemble_performance = EnsemblePerformance(total_capital=self.total_capital)
+        self.ensemble_performance = EnsemblePerformance(
+            total_capital=self.total_capital
+        )
 
         # Control flags
         self._running = False
@@ -105,7 +110,9 @@ class StrategyEnsembleManager:
 
         # Risk management
         self.portfolio_exposure: Dict[str, Decimal] = {}  # symbol -> exposure
-        self.strategy_positions: Dict[str, Dict[str, Decimal]] = {}  # strategy_id -> {symbol: position}
+        self.strategy_positions: Dict[
+            str, Dict[str, Decimal]
+        ] = {}  # strategy_id -> {symbol: position}
 
         logger.info("StrategyEnsembleManager initialized")
 
@@ -139,8 +146,12 @@ class StrategyEnsembleManager:
 
         logger.info("StrategyEnsembleManager stopped")
 
-    async def add_strategy(self, strategy_id: str, strategy_instance: Any,
-                          initial_weight: Optional[float] = None) -> None:
+    async def add_strategy(
+        self,
+        strategy_id: str,
+        strategy_instance: Any,
+        initial_weight: Optional[float] = None,
+    ) -> None:
         """
         Add a strategy to the ensemble.
 
@@ -164,7 +175,7 @@ class StrategyEnsembleManager:
         allocation = StrategyAllocation(
             strategy_id=strategy_id,
             weight=initial_weight,
-            capital_allocated=self.total_capital * Decimal(str(initial_weight))
+            capital_allocated=self.total_capital * Decimal(str(initial_weight)),
         )
         self.allocations[strategy_id] = allocation
 
@@ -176,10 +187,12 @@ class StrategyEnsembleManager:
             strategy_id=strategy_id,
             event_type="strategy_added",
             weight=self.allocations[strategy_id].weight,  # Use normalized weight
-            rationale=f"Strategy {strategy_id} added to ensemble"
+            rationale=f"Strategy {strategy_id} added to ensemble",
         )
 
-        logger.info(f"Added strategy {strategy_id} with normalized weight {self.allocations[strategy_id].weight:.3f}")
+        logger.info(
+            f"Added strategy {strategy_id} with normalized weight {self.allocations[strategy_id].weight:.3f}"
+        )
 
     async def remove_strategy(self, strategy_id: str) -> None:
         """
@@ -210,13 +223,17 @@ class StrategyEnsembleManager:
             strategy_id=strategy_id,
             event_type="strategy_removed",
             weight=0.0,
-            rationale=f"Strategy {strategy_id} removed from ensemble"
+            rationale=f"Strategy {strategy_id} removed from ensemble",
         )
 
         logger.info(f"Removed strategy {strategy_id}")
 
-    async def route_signal(self, signal: TradingSignal, strategy_id: str,
-                          market_data: Optional[Dict[str, Any]] = None) -> Optional[EnsembleSignal]:
+    async def route_signal(
+        self,
+        signal: TradingSignal,
+        strategy_id: str,
+        market_data: Optional[Dict[str, Any]] = None,
+    ) -> Optional[EnsembleSignal]:
         """
         Route a signal from a strategy through the ensemble.
 
@@ -244,7 +261,9 @@ class StrategyEnsembleManager:
 
         # Check portfolio risk limits
         if not await self._check_portfolio_risk(signal, allocated_quantity):
-            logger.warning(f"Signal rejected due to portfolio risk limits: {signal.symbol}")
+            logger.warning(
+                f"Signal rejected due to portfolio risk limits: {signal.symbol}"
+            )
             return None
 
         # Create ensemble signal
@@ -256,9 +275,11 @@ class StrategyEnsembleManager:
             ensemble_context={
                 "allocation_weight": allocation.weight,
                 "capital_allocated": float(allocation.capital_allocated),
-                "portfolio_exposure": float(self._get_portfolio_exposure(signal.symbol)),
-                "strategy_performance": allocation.performance_score
-            }
+                "portfolio_exposure": float(
+                    self._get_portfolio_exposure(signal.symbol)
+                ),
+                "strategy_performance": allocation.performance_score,
+            },
         )
 
         # Update position tracking
@@ -271,7 +292,9 @@ class StrategyEnsembleManager:
 
         return ensemble_signal
 
-    async def update_performance(self, strategy_id: str, performance_data: Dict[str, Any]) -> None:
+    async def update_performance(
+        self, strategy_id: str, performance_data: Dict[str, Any]
+    ) -> None:
         """
         Update performance data for a strategy.
 
@@ -283,8 +306,8 @@ class StrategyEnsembleManager:
             return
 
         # Add timestamp if not present
-        if 'timestamp' not in performance_data:
-            performance_data['timestamp'] = datetime.now()
+        if "timestamp" not in performance_data:
+            performance_data["timestamp"] = datetime.now()
 
         # Store performance data
         self.performance_history[strategy_id].append(performance_data)
@@ -292,13 +315,16 @@ class StrategyEnsembleManager:
         # Keep only recent performance data
         cutoff_date = datetime.now() - timedelta(days=self.performance_window_days)
         self.performance_history[strategy_id] = [
-            p for p in self.performance_history[strategy_id]
-            if p['timestamp'] > cutoff_date
+            p
+            for p in self.performance_history[strategy_id]
+            if p["timestamp"] > cutoff_date
         ]
 
         # Update strategy allocation performance score
         if strategy_id in self.allocations:
-            self.allocations[strategy_id].performance_score = self._calculate_performance_score(strategy_id)
+            self.allocations[
+                strategy_id
+            ].performance_score = self._calculate_performance_score(strategy_id)
 
         # Update ensemble performance
         await self._update_ensemble_performance()
@@ -317,7 +343,7 @@ class StrategyEnsembleManager:
                 "weight": allocation.weight,
                 "capital_allocated": float(allocation.capital_allocated),
                 "performance_score": allocation.performance_score,
-                "last_updated": allocation.last_updated.isoformat()
+                "last_updated": allocation.last_updated.isoformat(),
             }
             for strategy_id, allocation in self.allocations.items()
         }
@@ -328,13 +354,16 @@ class StrategyEnsembleManager:
             "total_capital": float(self.total_capital),
             "active_strategies": len(self.strategies),
             "total_allocations": len(self.allocations),
-            "portfolio_exposure": {symbol: float(exposure) for symbol, exposure in self.portfolio_exposure.items()},
+            "portfolio_exposure": {
+                symbol: float(exposure)
+                for symbol, exposure in self.portfolio_exposure.items()
+            },
             "allocation_method": self.allocation_method,
             "rebalance_interval_sec": self.rebalance_interval_sec,
             "min_weight": self.min_weight,
             "max_weight": self.max_weight,
             "portfolio_risk_limit": self.portfolio_risk_limit,
-            "running": self._running
+            "running": self._running,
         }
 
     async def _initialize_allocations(self) -> None:
@@ -349,7 +378,7 @@ class StrategyEnsembleManager:
             allocation = StrategyAllocation(
                 strategy_id=strategy_id,
                 weight=equal_weight,
-                capital_allocated=self.total_capital * Decimal(str(equal_weight))
+                capital_allocated=self.total_capital * Decimal(str(equal_weight)),
             )
             self.allocations[strategy_id] = allocation
 
@@ -372,9 +401,9 @@ class StrategyEnsembleManager:
             return
 
         # Calculate new weights based on allocation method
-        if self.allocation_method == 'sharpe_weighted':
+        if self.allocation_method == "sharpe_weighted":
             new_weights = await self._calculate_sharpe_weights()
-        elif self.allocation_method == 'equal_weight':
+        elif self.allocation_method == "equal_weight":
             new_weights = await self._calculate_equal_weights()
         else:
             logger.warning(f"Unknown allocation method: {self.allocation_method}")
@@ -392,7 +421,9 @@ class StrategyEnsembleManager:
                     weight_changes.append((strategy_id, old_weight, new_weight))
 
                 self.allocations[strategy_id].weight = new_weight
-                self.allocations[strategy_id].capital_allocated = self.total_capital * Decimal(str(new_weight))
+                self.allocations[
+                    strategy_id
+                ].capital_allocated = self.total_capital * Decimal(str(new_weight))
                 self.allocations[strategy_id].last_updated = datetime.now()
 
         # Log significant changes
@@ -453,10 +484,14 @@ class StrategyEnsembleManager:
 
         for strategy_id, allocation in self.allocations.items():
             original_weight = allocation.weight
-            constrained_weight = max(self.min_weight, min(self.max_weight, original_weight))
+            constrained_weight = max(
+                self.min_weight, min(self.max_weight, original_weight)
+            )
             constrained_weights[strategy_id] = constrained_weight
 
-            if abs(constrained_weight - original_weight) > 0.001:  # Weight was constrained
+            if (
+                abs(constrained_weight - original_weight) > 0.001
+            ):  # Weight was constrained
                 needs_renormalization = True
 
         # Check total weight after constraints
@@ -468,23 +503,35 @@ class StrategyEnsembleManager:
                 for strategy_id in constrained_weights:
                     final_weight = constrained_weights[strategy_id] / total_weight
                     self.allocations[strategy_id].weight = final_weight
-                    self.allocations[strategy_id].capital_allocated = self.total_capital * Decimal(str(final_weight))
+                    self.allocations[
+                        strategy_id
+                    ].capital_allocated = self.total_capital * Decimal(
+                        str(final_weight)
+                    )
                     self.allocations[strategy_id].last_updated = datetime.now()
         else:
             # No renormalization needed, use constrained weights as-is
             for strategy_id in constrained_weights:
                 self.allocations[strategy_id].weight = constrained_weights[strategy_id]
-                self.allocations[strategy_id].capital_allocated = self.total_capital * Decimal(str(constrained_weights[strategy_id]))
+                self.allocations[
+                    strategy_id
+                ].capital_allocated = self.total_capital * Decimal(
+                    str(constrained_weights[strategy_id])
+                )
                 self.allocations[strategy_id].last_updated = datetime.now()
 
-        logger.debug(f"Normalized allocations for {len(self.allocations)} strategies (total_weight={total_weight:.3f})")
+        logger.debug(
+            f"Normalized allocations for {len(self.allocations)} strategies (total_weight={total_weight:.3f})"
+        )
 
     def _apply_weight_constraints(self, weights: Dict[str, float]) -> Dict[str, float]:
         """Apply min/max weight constraints."""
         constrained_weights = {}
 
         for strategy_id, weight in weights.items():
-            constrained_weights[strategy_id] = max(self.min_weight, min(self.max_weight, weight))
+            constrained_weights[strategy_id] = max(
+                self.min_weight, min(self.max_weight, weight)
+            )
 
         # Renormalize after constraints
         total_weight = sum(constrained_weights.values())
@@ -509,8 +556,10 @@ class StrategyEnsembleManager:
 
         try:
             # Extract returns and PnL
-            returns = [p.get('daily_return', 0.0) for p in history if 'daily_return' in p]
-            pnl_values = [p.get('pnl', 0.0) for p in history if 'pnl' in p]
+            returns = [
+                p.get("daily_return", 0.0) for p in history if "daily_return" in p
+            ]
+            pnl_values = [p.get("pnl", 0.0) for p in history if "pnl" in p]
 
             # Calculate metrics even with single data point
             avg_return = statistics.mean(returns) if returns else 0.0
@@ -547,15 +596,21 @@ class StrategyEnsembleManager:
                 return_score = max(0.1, min(0.9, 0.5 + (return_normalized / 0.2) * 0.4))
 
             # Combine scores with weights: Sharpe (40%), PnL (35%), Return (25%)
-            combined_score = (sharpe_score * 0.4) + (pnl_score * 0.35) + (return_score * 0.25)
+            combined_score = (
+                (sharpe_score * 0.4) + (pnl_score * 0.35) + (return_score * 0.25)
+            )
 
             return max(0.1, min(0.9, combined_score))
 
         except Exception as e:
-            logger.warning(f"Error calculating performance score for {strategy_id}: {e}")
+            logger.warning(
+                f"Error calculating performance score for {strategy_id}: {e}"
+            )
             return 0.5  # Default neutral score
 
-    def _calculate_allocated_quantity(self, signal: TradingSignal, allocation: StrategyAllocation) -> Decimal:
+    def _calculate_allocated_quantity(
+        self, signal: TradingSignal, allocation: StrategyAllocation
+    ) -> Decimal:
         """
         Calculate quantity to allocate based on signal and strategy allocation.
 
@@ -568,32 +623,45 @@ class StrategyEnsembleManager:
         # - Market conditions
 
         # Use amount field, fallback to quantity for backward compatibility
-        base_quantity = Decimal(str(signal.amount if signal.amount is not None else (signal.quantity or 0.0)))
+        base_quantity = Decimal(
+            str(
+                signal.amount if signal.amount is not None else (signal.quantity or 0.0)
+            )
+        )
 
         # Scale by allocation weight
         allocated_quantity = base_quantity * Decimal(str(allocation.weight))
 
         # Apply risk scaling (simplified) - better performance = higher risk tolerance
         # Only apply risk scaling if performance_score has been calculated (not 0.0) and is meaningfully different from neutral (0.5)
-        if allocation.performance_score != 0.0 and abs(allocation.performance_score - 0.5) > 0.1:  # Performance significantly different from neutral
+        if (
+            allocation.performance_score != 0.0
+            and abs(allocation.performance_score - 0.5) > 0.1
+        ):  # Performance significantly different from neutral
             risk_factor = max(0.5, min(1.8, allocation.performance_score * 2.0))
             allocated_quantity = allocated_quantity * Decimal(str(risk_factor))
 
         return allocated_quantity
 
-    async def _check_portfolio_risk(self, signal: TradingSignal, quantity: Decimal) -> bool:
+    async def _check_portfolio_risk(
+        self, signal: TradingSignal, quantity: Decimal
+    ) -> bool:
         """Check if the signal respects portfolio risk limits."""
         symbol = signal.symbol
 
         # Calculate potential new exposure
         current_exposure = self._get_portfolio_exposure(symbol)
         # Use current_price, fallback to price for backward compatibility
-        price = signal.current_price if signal.current_price is not None else (signal.price or 0.0)
+        price = (
+            signal.current_price
+            if signal.current_price is not None
+            else (signal.price or 0.0)
+        )
         signal_value = quantity * Decimal(str(price))
 
-        if signal.side and signal.side.lower() == 'buy':
+        if signal.side and signal.side.lower() == "buy":
             new_exposure = current_exposure + signal_value
-        elif signal.side and signal.side.lower() == 'sell':
+        elif signal.side and signal.side.lower() == "sell":
             new_exposure = current_exposure - signal_value
         else:
             # For signals without explicit side, check signal type
@@ -605,7 +673,9 @@ class StrategyEnsembleManager:
                 new_exposure = current_exposure
 
         # Check against portfolio risk limit
-        max_allowed_exposure = self.total_capital * Decimal(str(self.portfolio_risk_limit))
+        max_allowed_exposure = self.total_capital * Decimal(
+            str(self.portfolio_risk_limit)
+        )
 
         if abs(new_exposure) > max_allowed_exposure:
             return False
@@ -614,38 +684,50 @@ class StrategyEnsembleManager:
 
     def _get_portfolio_exposure(self, symbol: str) -> Decimal:
         """Get current portfolio exposure for a symbol."""
-        return self.portfolio_exposure.get(symbol, Decimal('0'))
+        return self.portfolio_exposure.get(symbol, Decimal("0"))
 
-    async def _update_position_tracking(self, strategy_id: str, signal: TradingSignal, quantity: Decimal) -> None:
+    async def _update_position_tracking(
+        self, strategy_id: str, signal: TradingSignal, quantity: Decimal
+    ) -> None:
         """Update position tracking for strategy and portfolio."""
         symbol = signal.symbol
         # Use current_price, fallback to price for backward compatibility
-        price = signal.current_price if signal.current_price is not None else (signal.price or 0.0)
+        price = (
+            signal.current_price
+            if signal.current_price is not None
+            else (signal.price or 0.0)
+        )
         signal_value = quantity * Decimal(str(price))
 
         # Update strategy positions
         if strategy_id not in self.strategy_positions:
             self.strategy_positions[strategy_id] = {}
 
-        current_position = self.strategy_positions[strategy_id].get(symbol, Decimal('0'))
+        current_position = self.strategy_positions[strategy_id].get(
+            symbol, Decimal("0")
+        )
 
-        if signal.side and signal.side.lower() == 'buy':
+        if signal.side and signal.side.lower() == "buy":
             self.strategy_positions[strategy_id][symbol] = current_position + quantity
-        elif signal.side and signal.side.lower() == 'sell':
+        elif signal.side and signal.side.lower() == "sell":
             self.strategy_positions[strategy_id][symbol] = current_position - quantity
         else:
             # For signals without explicit side, check signal type
             if signal.signal_type in [SignalType.ENTRY_LONG, SignalType.EXIT_SHORT]:
-                self.strategy_positions[strategy_id][symbol] = current_position + quantity
+                self.strategy_positions[strategy_id][symbol] = (
+                    current_position + quantity
+                )
             elif signal.signal_type in [SignalType.ENTRY_SHORT, SignalType.EXIT_LONG]:
-                self.strategy_positions[strategy_id][symbol] = current_position - quantity
+                self.strategy_positions[strategy_id][symbol] = (
+                    current_position - quantity
+                )
 
         # Update portfolio exposure
-        current_exposure = self.portfolio_exposure.get(symbol, Decimal('0'))
+        current_exposure = self.portfolio_exposure.get(symbol, Decimal("0"))
 
-        if signal.side and signal.side.lower() == 'buy':
+        if signal.side and signal.side.lower() == "buy":
             self.portfolio_exposure[symbol] = current_exposure + signal_value
-        elif signal.side and signal.side.lower() == 'sell':
+        elif signal.side and signal.side.lower() == "sell":
             self.portfolio_exposure[symbol] = current_exposure - signal_value
         else:
             # For signals without explicit side, check signal type
@@ -665,7 +747,9 @@ class StrategyEnsembleManager:
         for symbol, quantity in positions.items():
             if symbol in self.portfolio_exposure:
                 # Remove this strategy's contribution from portfolio exposure
-                position_value = quantity * Decimal('0')  # Assume closed at current price
+                position_value = quantity * Decimal(
+                    "0"
+                )  # Assume closed at current price
                 self.portfolio_exposure[symbol] -= position_value
 
         self.strategy_positions[strategy_id].clear()
@@ -675,16 +759,16 @@ class StrategyEnsembleManager:
     async def _update_ensemble_performance(self) -> None:
         """Update ensemble performance metrics."""
         try:
-            total_pnl = Decimal('0')
+            total_pnl = Decimal("0")
             total_trades = 0
             winning_trades = 0
 
             # Aggregate performance across all strategies
             for strategy_id, history in self.performance_history.items():
                 for record in history:
-                    pnl = record.get('pnl', 0)
+                    pnl = record.get("pnl", 0)
                     total_pnl += Decimal(str(pnl))
-                    total_trades += record.get('trades', 0)
+                    total_trades += record.get("trades", 0)
 
                     if pnl > 0:
                         winning_trades += 1
@@ -702,25 +786,28 @@ class StrategyEnsembleManager:
             self.ensemble_performance.sharpe_ratio = 1.5  # Placeholder
             self.ensemble_performance.sortino_ratio = 1.8  # Placeholder
             self.ensemble_performance.max_drawdown = 0.05  # Placeholder
-            self.ensemble_performance.calmar_ratio = 2.1   # Placeholder
+            self.ensemble_performance.calmar_ratio = 2.1  # Placeholder
 
         except Exception as e:
             logger.exception(f"Error updating ensemble performance: {e}")
 
-    async def _publish_strategy_event(self, strategy_id: str, event_type: str,
-                                     weight: float, rationale: str) -> None:
+    async def _publish_strategy_event(
+        self, strategy_id: str, event_type: str, weight: float, rationale: str
+    ) -> None:
         """Publish strategy-related events."""
         event = create_strategy_switch_event(
             previous_strategy=None,  # Not applicable for ensemble events
             new_strategy=strategy_id,
             rationale=rationale,
             confidence=weight,
-            market_conditions={"ensemble_event": event_type}
+            market_conditions={"ensemble_event": event_type},
         )
 
         await self.event_bus.publish_event(event)
 
-    async def _publish_allocation_event(self, strategy_id: str, new_weight: float) -> None:
+    async def _publish_allocation_event(
+        self, strategy_id: str, new_weight: float
+    ) -> None:
         """Publish allocation update events."""
         # Create a custom event for allocation updates
         allocation_event = {
@@ -730,19 +817,21 @@ class StrategyEnsembleManager:
             "payload": {
                 "strategy_id": strategy_id,
                 "new_weight": new_weight,
-                "capital_allocated": float(self.total_capital * Decimal(str(new_weight)))
+                "capital_allocated": float(
+                    self.total_capital * Decimal(str(new_weight))
+                ),
             },
             "metadata": {
                 "ensemble_total_capital": float(self.total_capital),
-                "allocation_method": self.allocation_method
-            }
+                "allocation_method": self.allocation_method,
+            },
         }
 
         # For now, log the allocation update
         # In a full implementation, this would be a proper event type
         self.logger.info(
             f"Allocation updated: {strategy_id} = {new_weight:.3f}",
-            extra={"allocation_data": allocation_event}
+            extra={"allocation_data": allocation_event},
         )
 
 
@@ -758,6 +847,8 @@ def get_ensemble_manager() -> StrategyEnsembleManager:
     return _global_ensemble_manager
 
 
-def create_ensemble_manager(config: Optional[Dict[str, Any]] = None) -> StrategyEnsembleManager:
+def create_ensemble_manager(
+    config: Optional[Dict[str, Any]] = None
+) -> StrategyEnsembleManager:
     """Create a new ensemble manager instance."""
     return StrategyEnsembleManager(config)

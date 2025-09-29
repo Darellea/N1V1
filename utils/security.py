@@ -1,17 +1,13 @@
-import re
-import logging
-from typing import Dict, Any, Optional, List, Union
-from pathlib import Path
 import json
+import logging
 import os
-from datetime import datetime, timedelta
-import hashlib
-import hmac
+import re
 import secrets
-import asyncio
-from abc import ABC, abstractmethod
-import base64
 import types
+from abc import ABC, abstractmethod
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 # Safe import for boto3 to allow patching even if not installed
 try:
@@ -19,13 +15,15 @@ try:
 except ImportError:
     import sys
     import types
-    boto3 = types.ModuleType('boto3')
+
+    boto3 = types.ModuleType("boto3")
     boto3.Session = types.SimpleNamespace()
-    sys.modules['boto3'] = boto3
+    sys.modules["boto3"] = boto3
 
 # Safe import for aiohttp to allow patching
 try:
     import aiohttp
+
     AIOHTTP_AVAILABLE = True
 except ImportError:
     aiohttp = None
@@ -41,23 +39,41 @@ SENSITIVE_PATTERNS = [
     (r'secret["\']?\s*:\s*["\']([^"\']+)["\']', 'secret: "***"'),
     (r'key["\']?\s*:\s*["\']([^"\']+)["\']', 'key: "***"'),
     # Environment variable patterns
-    (r'CRYPTOBOT_EXCHANGE_API_KEY["\']?\s*:\s*["\']([^"\']+)["\']', 'CRYPTOBOT_EXCHANGE_API_KEY: "***"'),
-    (r'CRYPTOBOT_EXCHANGE_API_SECRET["\']?\s*:\s*["\']([^"\']+)["\']', 'CRYPTOBOT_EXCHANGE_API_SECRET: "***"'),
-    (r'CRYPTOBOT_EXCHANGE_API_PASSPHRASE["\']?\s*:\s*["\']([^"\']+)["\']', 'CRYPTOBOT_EXCHANGE_API_PASSPHRASE: "***"'),
-    (r'CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN["\']?\s*:\s*["\']([^"\']+)["\']', 'CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN: "***"'),
-    (r'CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL["\']?\s*:\s*["\']([^"\']+)["\']', 'CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL: "***"'),
-    (r'CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID["\']?\s*:\s*["\']([^"\']+)["\']', 'CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID: "***"'),
+    (
+        r'CRYPTOBOT_EXCHANGE_API_KEY["\']?\s*:\s*["\']([^"\']+)["\']',
+        'CRYPTOBOT_EXCHANGE_API_KEY: "***"',
+    ),
+    (
+        r'CRYPTOBOT_EXCHANGE_API_SECRET["\']?\s*:\s*["\']([^"\']+)["\']',
+        'CRYPTOBOT_EXCHANGE_API_SECRET: "***"',
+    ),
+    (
+        r'CRYPTOBOT_EXCHANGE_API_PASSPHRASE["\']?\s*:\s*["\']([^"\']+)["\']',
+        'CRYPTOBOT_EXCHANGE_API_PASSPHRASE: "***"',
+    ),
+    (
+        r'CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN["\']?\s*:\s*["\']([^"\']+)["\']',
+        'CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN: "***"',
+    ),
+    (
+        r'CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL["\']?\s*:\s*["\']([^"\']+)["\']',
+        'CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL: "***"',
+    ),
+    (
+        r'CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID["\']?\s*:\s*["\']([^"\']+)["\']',
+        'CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID: "***"',
+    ),
     (r'API_KEY["\']?\s*:\s*["\']([^"\']+)["\']', 'API_KEY: "***"'),
     # Raw API key patterns (common formats)
-    (r'\b[A-Za-z0-9]{32,}\b', '***'),  # Generic long alphanumeric strings
-    (r'\b[A-Za-z0-9]{64,}\b', '***'),  # Longer keys
+    (r"\b[A-Za-z0-9]{32,}\b", "***"),  # Generic long alphanumeric strings
+    (r"\b[A-Za-z0-9]{64,}\b", "***"),  # Longer keys
 ]
 
 
 class SecurityFormatter(logging.Formatter):
     """Logging formatter that masks sensitive data in log messages."""
 
-    def __init__(self, fmt=None, datefmt=None, style='%', validate=True):
+    def __init__(self, fmt=None, datefmt=None, style="%", validate=True):
         super().__init__(fmt, datefmt, style, validate)
         self.sensitive_patterns = SENSITIVE_PATTERNS
 
@@ -70,7 +86,7 @@ class SecurityFormatter(logging.Formatter):
         masked_message = self._mask_sensitive_data(message)
 
         # Also mask in extra fields if they contain sensitive data
-        if hasattr(record, 'extra') and record.extra:
+        if hasattr(record, "extra") and record.extra:
             for key, value in record.extra.items():
                 if isinstance(value, str):
                     record.extra[key] = self._mask_sensitive_data(value)
@@ -103,8 +119,10 @@ class SecurityFormatter(logging.Formatter):
                 masked_data[key] = self._mask_dict_sensitive_data(value)
             elif isinstance(value, list):
                 masked_data[key] = [
-                    self._mask_dict_sensitive_data(item) if isinstance(item, dict)
-                    else self._mask_sensitive_data(item) if isinstance(item, str)
+                    self._mask_dict_sensitive_data(item)
+                    if isinstance(item, dict)
+                    else self._mask_sensitive_data(item)
+                    if isinstance(item, str)
                     else item
                     for item in value
                 ]
@@ -127,32 +145,36 @@ class CredentialManager:
         """Load credentials from environment variables and config file."""
         # Load from environment variables
         env_creds = {
-            'exchange_api_key': os.getenv('CRYPTOBOT_EXCHANGE_API_KEY'),
-            'exchange_api_secret': os.getenv('CRYPTOBOT_EXCHANGE_API_SECRET'),
-            'exchange_api_passphrase': os.getenv('CRYPTOBOT_EXCHANGE_API_PASSPHRASE'),
-            'discord_bot_token': os.getenv('CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN'),
-            'discord_webhook_url': os.getenv('CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL'),
-            'discord_channel_id': os.getenv('CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID'),
-            'api_key': os.getenv('API_KEY'),
+            "exchange_api_key": os.getenv("CRYPTOBOT_EXCHANGE_API_KEY"),
+            "exchange_api_secret": os.getenv("CRYPTOBOT_EXCHANGE_API_SECRET"),
+            "exchange_api_passphrase": os.getenv("CRYPTOBOT_EXCHANGE_API_PASSPHRASE"),
+            "discord_bot_token": os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN"),
+            "discord_webhook_url": os.getenv(
+                "CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL"
+            ),
+            "discord_channel_id": os.getenv(
+                "CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID"
+            ),
+            "api_key": os.getenv("API_KEY"),
         }
 
         # Load from config file if exists
         if self.config_path and self.config_path.exists():
             try:
-                with open(self.config_path, 'r') as f:
+                with open(self.config_path, "r") as f:
                     config = json.load(f)
 
                 # Extract credentials from config
-                exchange = config.get('exchange', {})
-                discord = config.get('notifications', {}).get('discord', {})
+                exchange = config.get("exchange", {})
+                discord = config.get("notifications", {}).get("discord", {})
 
                 file_creds = {
-                    'exchange_api_key': exchange.get('api_key'),
-                    'exchange_api_secret': exchange.get('api_secret'),
-                    'exchange_api_passphrase': exchange.get('api_passphrase'),
-                    'discord_bot_token': discord.get('bot_token'),
-                    'discord_webhook_url': discord.get('webhook_url'),
-                    'discord_channel_id': discord.get('channel_id'),
+                    "exchange_api_key": exchange.get("api_key"),
+                    "exchange_api_secret": exchange.get("api_secret"),
+                    "exchange_api_passphrase": exchange.get("api_passphrase"),
+                    "discord_bot_token": discord.get("bot_token"),
+                    "discord_webhook_url": discord.get("webhook_url"),
+                    "discord_channel_id": discord.get("channel_id"),
                 }
 
                 # Environment variables take precedence
@@ -161,25 +183,27 @@ class CredentialManager:
                         env_creds[key] = value
 
             except Exception as e:
-                logging.getLogger(__name__).warning(f"Failed to load credentials from config: {e}")
+                logging.getLogger(__name__).warning(
+                    f"Failed to load credentials from config: {e}"
+                )
 
         self.credentials = env_creds
-        self._audit_access('credentials_loaded', 'system')
+        self._audit_access("credentials_loaded", "system")
 
     def get_credential(self, key: str) -> Optional[str]:
         """Get a credential value, logging access for audit."""
         value = self.credentials.get(key)
         if value:
-            self._audit_access(key, 'accessed')
+            self._audit_access(key, "accessed")
         return value
 
     def _audit_access(self, credential_key: str, action: str):
         """Log credential access for audit purposes."""
         audit_entry = {
-            'timestamp': datetime.utcnow().isoformat(),
-            'credential': credential_key,
-            'action': action,
-            'masked_value': '***' if self.credentials.get(credential_key) else None
+            "timestamp": datetime.utcnow().isoformat(),
+            "credential": credential_key,
+            "action": action,
+            "masked_value": "***" if self.credentials.get(credential_key) else None,
         }
         self.audit_log.append(audit_entry)
 
@@ -196,22 +220,29 @@ class CredentialManager:
         validation = {}
 
         # Exchange credentials
-        exchange_creds = ['exchange_api_key', 'exchange_api_secret']
-        validation['exchange'] = all(self.credentials.get(key) for key in exchange_creds)
+        exchange_creds = ["exchange_api_key", "exchange_api_secret"]
+        validation["exchange"] = all(
+            self.credentials.get(key) for key in exchange_creds
+        )
 
         # Discord credentials (optional)
-        discord_creds = ['discord_bot_token', 'discord_channel_id']
-        validation['discord_bot'] = all(self.credentials.get(key) for key in discord_creds)
-        validation['discord_webhook'] = bool(self.credentials.get('discord_webhook_url'))
+        discord_creds = ["discord_bot_token", "discord_channel_id"]
+        validation["discord_bot"] = all(
+            self.credentials.get(key) for key in discord_creds
+        )
+        validation["discord_webhook"] = bool(
+            self.credentials.get("discord_webhook_url")
+        )
 
         # API key for web interface
-        validation['api_key'] = bool(self.credentials.get('api_key'))
+        validation["api_key"] = bool(self.credentials.get("api_key"))
 
         return validation
 
 
 # Global credential manager instance
 _credential_manager = None
+
 
 def get_credential_manager() -> CredentialManager:
     """Get the global credential manager instance."""
@@ -223,21 +254,25 @@ def get_credential_manager() -> CredentialManager:
 
 class SecurityException(Exception):
     """Base class for security-related exceptions."""
+
     pass
 
 
 class CredentialExposureException(SecurityException):
     """Exception raised when sensitive credentials are exposed."""
+
     pass
 
 
 class InvalidCredentialException(SecurityException):
     """Exception raised when credentials are invalid or missing."""
+
     pass
 
 
 class SecurityViolationException(SecurityException):
     """Exception raised when a security violation is detected."""
+
     pass
 
 
@@ -247,6 +282,7 @@ SECRET_PATTERNS = [
     re.compile(r"(SECRET\s*=\s*)([^\s]+)", re.IGNORECASE),
     re.compile(r"(PASSWORD\s*=\s*)([^\s]+)", re.IGNORECASE),
 ]
+
 
 def sanitize_error_message(message: str) -> str:
     """Sanitize error messages to prevent information leakage."""
@@ -258,9 +294,9 @@ def sanitize_error_message(message: str) -> str:
     return sanitized
 
 
-def log_security_event(event_type: str, details: Dict[str, Any], level: str = 'INFO'):
+def log_security_event(event_type: str, details: Dict[str, Any], level: str = "INFO"):
     """Log security-related events with appropriate masking."""
-    logger = logging.getLogger('security')
+    logger = logging.getLogger("security")
     formatter = SecurityFormatter()
 
     # Mask sensitive data in details
@@ -268,14 +304,14 @@ def log_security_event(event_type: str, details: Dict[str, Any], level: str = 'I
 
     message = f"Security event: {event_type}"
 
-    if level.upper() == 'ERROR':
-        logger.error(message, extra={'security_details': masked_details})
-    elif level.upper() == 'WARNING':
-        logger.warning(message, extra={'security_details': masked_details})
-    elif level.upper() == 'DEBUG':
-        logger.debug(message, extra={'security_details': masked_details})
+    if level.upper() == "ERROR":
+        logger.error(message, extra={"security_details": masked_details})
+    elif level.upper() == "WARNING":
+        logger.warning(message, extra={"security_details": masked_details})
+    elif level.upper() == "DEBUG":
+        logger.debug(message, extra={"security_details": masked_details})
     else:
-        logger.info(message, extra={'security_details': masked_details})
+        logger.info(message, extra={"security_details": masked_details})
 
 
 class KeyManagementService(ABC):
@@ -310,14 +346,20 @@ class KeyManagementService(ABC):
 class VaultKeyManager(KeyManagementService):
     """HashiCorp Vault integration for key management."""
 
-    def __init__(self, token: str = None, mount_point: str = "secret", url: Optional[str] = None, **kwargs):
+    def __init__(
+        self,
+        token: str = None,
+        mount_point: str = "secret",
+        url: Optional[str] = None,
+        **kwargs,
+    ):
         # Handle both old and new calling conventions
-        if token is None and 'token' in kwargs:
-            token = kwargs['token']
-        if url is None and 'url' in kwargs:
-            url = kwargs['url']
-        if mount_point == "secret" and 'mount_point' in kwargs:
-            mount_point = kwargs['mount_point']
+        if token is None and "token" in kwargs:
+            token = kwargs["token"]
+        if url is None and "url" in kwargs:
+            url = kwargs["url"]
+        if mount_point == "secret" and "mount_point" in kwargs:
+            mount_point = kwargs["mount_point"]
 
         self.token = token
         self.mount_point = mount_point
@@ -328,6 +370,7 @@ class VaultKeyManager(KeyManagementService):
         """Ensure aiohttp session is available."""
         if self.session is None or self.session.closed:
             import aiohttp
+
             self.session = aiohttp.ClientSession()
 
     async def get_secret(self, service: str, key: str) -> Optional[str]:
@@ -343,12 +386,18 @@ class VaultKeyManager(KeyManagementService):
                     value = data.get("data", {}).get("data", {}).get(key)
                     if value is not None:
                         return value
-                log_security_event("vault_error", {"service": service, "key": key}, "ERROR")
+                log_security_event(
+                    "vault_error", {"service": service, "key": key}, "ERROR"
+                )
                 return None
             finally:
                 response.close()
         except Exception as e:
-            log_security_event("vault_error", {"service": service, "key": key, "error": str(e)}, "ERROR")
+            log_security_event(
+                "vault_error",
+                {"service": service, "key": key, "error": str(e)},
+                "ERROR",
+            )
             return None
 
     async def store_secret(self, service: str, key: str, value: str) -> bool:
@@ -362,12 +411,18 @@ class VaultKeyManager(KeyManagementService):
             try:
                 if response.status == 200:
                     return True
-                log_security_event("vault_error", {"service": service, "key": key}, "ERROR")
+                log_security_event(
+                    "vault_error", {"service": service, "key": key}, "ERROR"
+                )
                 return False
             finally:
                 response.close()
         except Exception as e:
-            log_security_event("vault_error", {"service": service, "key": key, "error": str(e)}, "ERROR")
+            log_security_event(
+                "vault_error",
+                {"service": service, "key": key, "error": str(e)},
+                "ERROR",
+            )
             return False
 
     async def rotate_key(self, service: str, key: str) -> bool:
@@ -388,9 +443,11 @@ class VaultKeyManager(KeyManagementService):
                     return list(data.get("data", {}).get("keys", []))
                 return []
         except Exception as e:
-            log_security_event("vault_error", {
-                "operation": "list_secrets", "path": path, "error": str(e)
-            }, "ERROR")
+            log_security_event(
+                "vault_error",
+                {"operation": "list_secrets", "path": path, "error": str(e)},
+                "ERROR",
+            )
             return []
 
     async def health_check(self) -> bool:
@@ -425,7 +482,12 @@ class AWSKMSKeyManager(KeyManagementService):
         if self.client is None:
             try:
                 import boto3
-                session = boto3.Session(profile_name=self.profile) if self.profile else boto3.Session()
+
+                session = (
+                    boto3.Session(profile_name=self.profile)
+                    if self.profile
+                    else boto3.Session()
+                )
                 self.client = session.client("kms", region_name=self.region)
             except ImportError:
                 raise SecurityException("boto3 required for AWS KMS integration")
@@ -435,15 +497,20 @@ class AWSKMSKeyManager(KeyManagementService):
         await self._ensure_client()
         try:
             import boto3
-            ssm = boto3.Session(profile_name=self.profile).client("ssm", region_name=self.region)
+
+            ssm = boto3.Session(profile_name=self.profile).client(
+                "ssm", region_name=self.region
+            )
             parameter_name = f"/{service}/{key}"
 
             response = ssm.get_parameter(Name=parameter_name, WithDecryption=True)
             return response["Parameter"]["Value"]
         except Exception as e:
-            log_security_event("kms_get_failed", {
-                "service": service, "key": key, "error": str(e)
-            }, "WARNING")
+            log_security_event(
+                "kms_get_failed",
+                {"service": service, "key": key, "error": str(e)},
+                "WARNING",
+            )
             return None
 
     async def store_secret(self, service: str, key: str, value: str) -> bool:
@@ -451,20 +518,22 @@ class AWSKMSKeyManager(KeyManagementService):
         await self._ensure_client()
         try:
             import boto3
-            ssm = boto3.Session(profile_name=self.profile).client("ssm", region_name=self.region)
+
+            ssm = boto3.Session(profile_name=self.profile).client(
+                "ssm", region_name=self.region
+            )
             parameter_name = f"/{service}/{key}"
 
             ssm.put_parameter(
-                Name=parameter_name,
-                Value=value,
-                Type="SecureString",
-                Overwrite=True
+                Name=parameter_name, Value=value, Type="SecureString", Overwrite=True
             )
             return True
         except Exception as e:
-            log_security_event("kms_store_failed", {
-                "service": service, "key": key, "error": str(e)
-            }, "ERROR")
+            log_security_event(
+                "kms_store_failed",
+                {"service": service, "key": key, "error": str(e)},
+                "ERROR",
+            )
             return False
 
     async def rotate_key(self, service: str, key: str) -> bool:
@@ -477,21 +546,28 @@ class AWSKMSKeyManager(KeyManagementService):
         await self._ensure_client()
         try:
             import boto3
-            ssm = boto3.Session(profile_name=self.profile).client("ssm", region_name=self.region)
+
+            ssm = boto3.Session(profile_name=self.profile).client(
+                "ssm", region_name=self.region
+            )
 
             response = ssm.describe_parameters(
                 ParameterFilters=[
                     {"Key": "Name", "Values": [f"/{service}/"]},
-                    {"Key": "Type", "Values": ["SecureString"]}
+                    {"Key": "Type", "Values": ["SecureString"]},
                 ]
             )
 
-            return [param["Name"].replace(f"/{service}/", "")
-                   for param in response.get("Parameters", [])]
+            return [
+                param["Name"].replace(f"/{service}/", "")
+                for param in response.get("Parameters", [])
+            ]
         except Exception as e:
-            log_security_event("kms_error", {
-                "operation": "list_secrets", "service": service, "error": str(e)
-            }, "ERROR")
+            log_security_event(
+                "kms_error",
+                {"operation": "list_secrets", "service": service, "error": str(e)},
+                "ERROR",
+            )
             return []
 
     async def health_check(self) -> bool:
@@ -525,13 +601,12 @@ class SecureCredentialManager:
             self.key_manager = VaultKeyManager(
                 token=vault_config["token"],
                 mount_point=vault_config.get("mount_point", "secret"),
-                url=vault_config.get("url")
+                url=vault_config.get("url"),
             )
         elif security_config.get("kms", {}).get("enabled"):
             kms_config = security_config["kms"]
             self.key_manager = AWSKMSKeyManager(
-                region=kms_config.get("region"),
-                profile=kms_config.get("profile")
+                region=kms_config.get("region"), profile=kms_config.get("profile")
             )
         else:
             # Fallback to local credential manager
@@ -543,14 +618,17 @@ class SecureCredentialManager:
             try:
                 value = await self.key_manager.get_secret(service, key)
                 if value:
-                    log_security_event("credential_retrieved", {
-                        "service": service, "key": key, "source": "key_manager"
-                    })
+                    log_security_event(
+                        "credential_retrieved",
+                        {"service": service, "key": key, "source": "key_manager"},
+                    )
                     return value
             except Exception as e:
-                log_security_event("key_manager_error", {
-                    "service": service, "key": key, "error": str(e)
-                }, "WARNING")
+                log_security_event(
+                    "key_manager_error",
+                    {"service": service, "key": key, "error": str(e)},
+                    "WARNING",
+                )
 
         # Fallback to local credentials
         return self.local_credentials.get(service, {}).get(key)
@@ -561,22 +639,27 @@ class SecureCredentialManager:
             try:
                 success = await self.key_manager.store_secret(service, key, value)
                 if success:
-                    log_security_event("credential_stored", {
-                        "service": service, "key": key, "source": "key_manager"
-                    })
+                    log_security_event(
+                        "credential_stored",
+                        {"service": service, "key": key, "source": "key_manager"},
+                    )
                     return True
             except Exception as e:
-                log_security_event("key_manager_store_error", {
-                    "service": service, "key": key, "error": str(e)
-                }, "ERROR")
+                log_security_event(
+                    "key_manager_store_error",
+                    {"service": service, "key": key, "error": str(e)},
+                    "ERROR",
+                )
 
         # Fallback to local storage (not recommended for production)
         if service not in self.local_credentials:
             self.local_credentials[service] = {}
         self.local_credentials[service][key] = value
-        log_security_event("credential_stored_local", {
-            "service": service, "key": key, "warning": "stored_locally"
-        }, "WARNING")
+        log_security_event(
+            "credential_stored_local",
+            {"service": service, "key": key, "warning": "stored_locally"},
+            "WARNING",
+        )
         return True
 
     async def rotate_key(self, service: str, key: str) -> bool:
@@ -585,35 +668,36 @@ class SecureCredentialManager:
             try:
                 success = await self.key_manager.rotate_key(service, key)
                 if success:
-                    log_security_event("key_rotated", {
-                        "service": service, "key": key
-                    })
+                    log_security_event("key_rotated", {"service": service, "key": key})
                     # Update rotation timestamp
                     rotation_key = f"{service}/{key}"
                     self.key_rotation_schedule[rotation_key] = datetime.utcnow()
                 return success
             except Exception as e:
-                log_security_event("key_rotation_failed", {
-                    "service": service, "key": key, "error": str(e)
-                }, "ERROR")
+                log_security_event(
+                    "key_rotation_failed",
+                    {"service": service, "key": key, "error": str(e)},
+                    "ERROR",
+                )
                 return False
 
         # Handle local credential rotation
         if service in self.local_credentials and key in self.local_credentials[service]:
             import uuid
+
             new_value = str(uuid.uuid4())
             self.local_credentials[service][key] = new_value
-            log_security_event("key_rotated_local", {
-                "service": service, "key": key
-            })
+            log_security_event("key_rotated_local", {"service": service, "key": key})
             # Update rotation timestamp
             rotation_key = f"{service}/{key}"
             self.key_rotation_schedule[rotation_key] = datetime.utcnow()
             return True
 
-        log_security_event("key_rotation_failed", {
-            "service": service, "key": key, "reason": "credential_not_found"
-        }, "ERROR")
+        log_security_event(
+            "key_rotation_failed",
+            {"service": service, "key": key, "reason": "credential_not_found"},
+            "ERROR",
+        )
         return False
 
     async def validate_credentials(self) -> Dict[str, bool]:
@@ -640,7 +724,7 @@ class SecureCredentialManager:
         health_status = {
             "key_manager": False,
             "credentials": False,
-            "encryption": True  # Local encryption always available
+            "encryption": True,  # Local encryption always available
         }
 
         if self.key_manager:
@@ -656,7 +740,7 @@ class SecureCredentialManager:
         """Get status of key rotations."""
         return {
             "rotation_schedule": self.key_rotation_schedule,
-            "next_rotations": self._calculate_next_rotations()
+            "next_rotations": self._calculate_next_rotations(),
         }
 
     def _calculate_next_rotations(self) -> Dict[str, datetime]:
@@ -673,7 +757,10 @@ class SecureCredentialManager:
 # Global secure credential manager instance
 _secure_credential_manager = None
 
-async def get_secure_credential_manager(config: Dict[str, Any]) -> SecureCredentialManager:
+
+async def get_secure_credential_manager(
+    config: Dict[str, Any]
+) -> SecureCredentialManager:
     """Get the global secure credential manager instance."""
     global _secure_credential_manager
     if _secure_credential_manager is None:
@@ -710,13 +797,13 @@ async def get_secret(secret_name: str) -> Optional[str]:
         "discord_token": ("discord", "bot_token"),
         "discord_channel_id": ("discord", "channel_id"),
         "discord_webhook_url": ("discord", "webhook_url"),
-        "api_key": ("api", "key")
+        "api_key": ("api", "key"),
     }
 
     if secret_name not in secret_mapping:
-        log_security_event("invalid_secret_name", {
-            "secret_name": secret_name
-        }, "WARNING")
+        log_security_event(
+            "invalid_secret_name", {"secret_name": secret_name}, "WARNING"
+        )
         return None
 
     service, key = secret_mapping[secret_name]
@@ -732,17 +819,18 @@ async def get_secret(secret_name: str) -> Optional[str]:
             "discord_token": "CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN",
             "discord_channel_id": "CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID",
             "discord_webhook_url": "CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL",
-            "api_key": "API_KEY"
+            "api_key": "API_KEY",
         }
 
         env_var = env_var_mapping.get(secret_name)
         if env_var:
             value = os.getenv(env_var)
             if value:
-                log_security_event("secret_retrieved_from_env", {
-                    "secret_name": secret_name,
-                    "env_var": env_var
-                }, "INFO")
+                log_security_event(
+                    "secret_retrieved_from_env",
+                    {"secret_name": secret_name, "env_var": env_var},
+                    "INFO",
+                )
                 return value
 
     # Try secure credential manager
@@ -756,37 +844,41 @@ async def get_secret(secret_name: str) -> Optional[str]:
             value = await manager.get_credential(service, key)
 
         if value:
-            log_security_event("secret_retrieved_securely", {
-                "secret_name": secret_name,
-                "service": service,
-                "key": key
-            })
+            log_security_event(
+                "secret_retrieved_securely",
+                {"secret_name": secret_name, "service": service, "key": key},
+            )
             return value
 
     except Exception as e:
-        log_security_event("secure_secret_retrieval_failed", {
-            "secret_name": secret_name,
-            "error": str(e)
-        }, "ERROR")
+        log_security_event(
+            "secure_secret_retrieval_failed",
+            {"secret_name": secret_name, "error": str(e)},
+            "ERROR",
+        )
 
     # For production/live mode, raise error if secret not found
     if env_mode in ["live", "production"]:
-        raise SecurityException(f"Required secret '{secret_name}' not found in secure storage")
+        raise SecurityException(
+            f"Required secret '{secret_name}' not found in secure storage"
+        )
 
     # For test/dev modes, return a test secret
     if env_mode in ["test", "dev", "ci"]:
         test_secret = "TEST_SECRET_12345"
-        log_security_event("test_secret_returned", {
-            "secret_name": secret_name,
-            "env_mode": env_mode
-        }, "INFO")
+        log_security_event(
+            "test_secret_returned",
+            {"secret_name": secret_name, "env_mode": env_mode},
+            "INFO",
+        )
         return test_secret
 
     # For other modes, return None
-    log_security_event("secret_not_found", {
-        "secret_name": secret_name,
-        "env_mode": env_mode
-    }, "WARNING")
+    log_security_event(
+        "secret_not_found",
+        {"secret_name": secret_name, "env_mode": env_mode},
+        "WARNING",
+    )
     return None
 
 
@@ -807,13 +899,13 @@ async def rotate_key(secret_name: str) -> bool:
         "discord_token": ("discord", "bot_token"),
         "discord_channel_id": ("discord", "channel_id"),
         "discord_webhook_url": ("discord", "webhook_url"),
-        "api_key": ("api", "key")
+        "api_key": ("api", "key"),
     }
 
     if secret_name not in secret_mapping:
-        log_security_event("invalid_secret_for_rotation", {
-            "secret_name": secret_name
-        }, "WARNING")
+        log_security_event(
+            "invalid_secret_for_rotation", {"secret_name": secret_name}, "WARNING"
+        )
         return False
 
     service, key = secret_mapping[secret_name]
@@ -847,18 +939,20 @@ def _load_security_config() -> Dict[str, Any]:
             "enabled": True,
             "url": os.getenv("VAULT_URL"),
             "token": os.getenv("VAULT_TOKEN"),
-            "mount_point": os.getenv("VAULT_MOUNT_POINT", "secret")
+            "mount_point": os.getenv("VAULT_MOUNT_POINT", "secret"),
         }
 
     if os.getenv("AWS_REGION"):
         config["security"]["kms"] = {
             "enabled": True,
             "region": os.getenv("AWS_REGION"),
-            "profile": os.getenv("AWS_PROFILE")
+            "profile": os.getenv("AWS_PROFILE"),
         }
 
     # Set defaults if no secure storage configured
-    if not config["security"].get("vault", {}).get("enabled") and not config["security"].get("kms", {}).get("enabled"):
+    if not config["security"].get("vault", {}).get("enabled") and not config[
+        "security"
+    ].get("kms", {}).get("enabled"):
         config["security"]["vault"] = {"enabled": False}
         config["security"]["kms"] = {"enabled": False}
 
@@ -880,25 +974,22 @@ class OrderFlowValidator:
         # Check required fields
         for field in required_fields:
             if field not in order:
-                log_security_event("order_schema_validation_failed", {
-                    "order_id": order.get("id", "unknown"),
-                    "missing_field": field
-                }, "WARNING")
+                log_security_event(
+                    "order_schema_validation_failed",
+                    {"order_id": order.get("id", "unknown"), "missing_field": field},
+                    "WARNING",
+                )
                 return False
 
         # Validate order ID format
         order_id = order["id"]
         if not self._is_valid_order_id(order_id):
-            log_security_event("invalid_order_id", {
-                "order_id": order_id
-            }, "WARNING")
+            log_security_event("invalid_order_id", {"order_id": order_id}, "WARNING")
             return False
 
         # Check for duplicate order IDs
         if order_id in self.order_ids:
-            log_security_event("duplicate_order_id", {
-                "order_id": order_id
-            }, "ERROR")
+            log_security_event("duplicate_order_id", {"order_id": order_id}, "ERROR")
             return False
 
         # Validate amount and price
@@ -911,36 +1002,43 @@ class OrderFlowValidator:
         """Validate order ID format."""
         # Order IDs should be alphanumeric with hyphens/underscores
         import re
-        return bool(re.match(r'^[a-zA-Z0-9_-]{8,64}$', str(order_id)))
+
+        return bool(re.match(r"^[a-zA-Z0-9_-]{8,64}$", str(order_id)))
 
     def _validate_numeric_fields(self, order: Dict[str, Any]) -> bool:
         """Validate numeric fields in order."""
         try:
             amount = float(order["amount"])
             if amount <= 0:
-                log_security_event("invalid_order_amount", {
-                    "order_id": order.get("id"),
-                    "amount": amount
-                }, "WARNING")
+                log_security_event(
+                    "invalid_order_amount",
+                    {"order_id": order.get("id"), "amount": amount},
+                    "WARNING",
+                )
                 return False
 
             # Validate price if present
             if "price" in order:
                 price = float(order["price"])
                 if price <= 0:
-                    log_security_event("invalid_order_price", {
-                        "order_id": order.get("id"),
-                        "price": price
-                    }, "WARNING")
+                    log_security_event(
+                        "invalid_order_price",
+                        {"order_id": order.get("id"), "price": price},
+                        "WARNING",
+                    )
                     return False
 
             return True
         except (ValueError, TypeError):
-            log_security_event("non_numeric_order_fields", {
-                "order_id": order.get("id"),
-                "amount": order.get("amount"),
-                "price": order.get("price")
-            }, "WARNING")
+            log_security_event(
+                "non_numeric_order_fields",
+                {
+                    "order_id": order.get("id"),
+                    "amount": order.get("amount"),
+                    "price": order.get("price"),
+                },
+                "WARNING",
+            )
             return False
 
     def register_order(self, order: Dict[str, Any]) -> bool:
@@ -953,23 +1051,27 @@ class OrderFlowValidator:
         self.order_states[order_id] = {
             "status": "pending",
             "created_at": datetime.utcnow(),
-            "last_updated": datetime.utcnow()
+            "last_updated": datetime.utcnow(),
         }
 
-        log_security_event("order_registered", {
-            "order_id": order_id,
-            "symbol": order.get("symbol"),
-            "side": order.get("side")
-        })
+        log_security_event(
+            "order_registered",
+            {
+                "order_id": order_id,
+                "symbol": order.get("symbol"),
+                "side": order.get("side"),
+            },
+        )
         return True
 
     def update_order_state(self, order_id: str, new_status: str) -> bool:
         """Update order state with consistency checks."""
         if order_id not in self.order_states:
-            log_security_event("unknown_order_update", {
-                "order_id": order_id,
-                "new_status": new_status
-            }, "WARNING")
+            log_security_event(
+                "unknown_order_update",
+                {"order_id": order_id, "new_status": new_status},
+                "WARNING",
+            )
             return False
 
         current_state = self.order_states[order_id]["status"]
@@ -977,25 +1079,32 @@ class OrderFlowValidator:
             "pending": ["filled", "cancelled", "rejected"],
             "filled": [],  # Terminal state
             "cancelled": [],  # Terminal state
-            "rejected": []  # Terminal state
+            "rejected": [],  # Terminal state
         }
 
         if new_status not in valid_transitions.get(current_state, []):
-            log_security_event("invalid_state_transition", {
-                "order_id": order_id,
-                "current_state": current_state,
-                "new_status": new_status
-            }, "ERROR")
+            log_security_event(
+                "invalid_state_transition",
+                {
+                    "order_id": order_id,
+                    "current_state": current_state,
+                    "new_status": new_status,
+                },
+                "ERROR",
+            )
             return False
 
         self.order_states[order_id]["status"] = new_status
         self.order_states[order_id]["last_updated"] = datetime.utcnow()
 
-        log_security_event("order_state_updated", {
-            "order_id": order_id,
-            "old_status": current_state,
-            "new_status": new_status
-        })
+        log_security_event(
+            "order_state_updated",
+            {
+                "order_id": order_id,
+                "old_status": current_state,
+                "new_status": new_status,
+            },
+        )
         return True
 
     def validate_state_consistency(self) -> Dict[str, Any]:
@@ -1012,25 +1121,29 @@ class OrderFlowValidator:
             if status not in terminal_states:
                 age_hours = (datetime.utcnow() - created_at).total_seconds() / 3600
                 if age_hours > 24:  # Configurable threshold
-                    inconsistencies.append({
-                        "type": "stale_order",
-                        "order_id": order_id,
-                        "age_hours": age_hours
-                    })
+                    inconsistencies.append(
+                        {
+                            "type": "stale_order",
+                            "order_id": order_id,
+                            "age_hours": age_hours,
+                        }
+                    )
 
             # Check for orders updated before creation
             if last_updated < created_at:
-                inconsistencies.append({
-                    "type": "time_anomaly",
-                    "order_id": order_id,
-                    "created_at": created_at.isoformat(),
-                    "last_updated": last_updated.isoformat()
-                })
+                inconsistencies.append(
+                    {
+                        "type": "time_anomaly",
+                        "order_id": order_id,
+                        "created_at": created_at.isoformat(),
+                        "last_updated": last_updated.isoformat(),
+                    }
+                )
 
         return {
             "consistent": len(inconsistencies) == 0,
             "inconsistencies": inconsistencies,
-            "total_orders": len(self.order_states)
+            "total_orders": len(self.order_states),
         }
 
     def cleanup_completed_orders(self, max_age_days: int = 30):
@@ -1040,8 +1153,10 @@ class OrderFlowValidator:
 
         to_remove = []
         for order_id, state_info in self.order_states.items():
-            if (state_info["status"] in terminal_states and
-                state_info["last_updated"] < cutoff_date):
+            if (
+                state_info["status"] in terminal_states
+                and state_info["last_updated"] < cutoff_date
+            ):
                 to_remove.append(order_id)
 
         for order_id in to_remove:
@@ -1049,14 +1164,15 @@ class OrderFlowValidator:
             self.order_ids.discard(order_id)
 
         if to_remove:
-            log_security_event("orders_cleaned_up", {
-                "removed_count": len(to_remove),
-                "max_age_days": max_age_days
-            })
+            log_security_event(
+                "orders_cleaned_up",
+                {"removed_count": len(to_remove), "max_age_days": max_age_days},
+            )
 
 
 # Global order flow validator instance
 _order_flow_validator = None
+
 
 def get_order_flow_validator() -> OrderFlowValidator:
     """Get the global order flow validator instance."""

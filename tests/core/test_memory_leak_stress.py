@@ -6,19 +6,20 @@ detected and cleaned up automatically.
 """
 
 import asyncio
-import time
-import psutil
 import gc
 import logging
-from typing import List, Dict, Any
-import tempfile
 import os
 import sys
+import tempfile
+import time
+from typing import Any, Dict
+
+import psutil
 
 # Add the project root to the Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from core.async_optimizer import AsyncOptimizer, get_async_optimizer
+from core.async_optimizer import AsyncOptimizer
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +37,13 @@ class MemoryLeakStressTest:
         """Setup test environment."""
         # Create test data
         for i in range(1000):
-            self.test_data.append({
-                "id": i,
-                "data": "x" * 1000,  # 1KB per item
-                "nested": {"value": "y" * 500}
-            })
+            self.test_data.append(
+                {
+                    "id": i,
+                    "data": "x" * 1000,  # 1KB per item
+                    "nested": {"value": "y" * 500},
+                }
+            )
 
         # Record initial memory
         process = psutil.Process()
@@ -103,7 +106,7 @@ class MemoryLeakStressTest:
         def cpu_intensive_task(n: int) -> int:
             result = 0
             for i in range(n):
-                result += i ** 2
+                result += i**2
             return result
 
         # Run many CPU-intensive tasks
@@ -191,14 +194,15 @@ class MemoryLeakStressTest:
             "initial_memory_mb": self.initial_memory,
             "final_memory_mb": final_memory,
             "memory_increase_mb": memory_increase,
-            "memory_leak_detected": memory_increase > 50,  # >50MB increase is concerning
+            "memory_leak_detected": memory_increase
+            > 50,  # >50MB increase is concerning
             "memory_report": memory_report,
             "performance_report": performance_report,
             "gc_stats": {
                 "collections_per_generation": list(gc.get_count()),
-                "gc_thresholds": list(gc.get_threshold())
+                "gc_thresholds": list(gc.get_threshold()),
             },
-            "test_status": "PASSED" if memory_increase < 100 else "FAILED"
+            "test_status": "PASSED" if memory_increase < 100 else "FAILED",
         }
 
         logger.info(f"Stress test completed. Memory increase: {memory_increase:.1f}MB")
@@ -225,8 +229,10 @@ async def run_memory_leak_stress_test() -> Dict[str, Any]:
 
 if __name__ == "__main__":
     # Configure logging
-    logging.basicConfig(level=logging.INFO,
-                       format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
 
     # Run stress test
     results = asyncio.run(run_memory_leak_stress_test())
@@ -238,18 +244,18 @@ if __name__ == "__main__":
     print(".1f")
     print(f"Memory Leak Detected: {results['memory_leak_detected']}")
 
-    if results['memory_leak_detected']:
+    if results["memory_leak_detected"]:
         print("⚠️  WARNING: Potential memory leak detected!")
     else:
         print("✅ No significant memory leak detected")
 
     print("\nMemory Report:")
-    mem_report = results['memory_report']
+    mem_report = results["memory_report"]
     print(f"  Current Memory: {mem_report.get('current_memory_mb', 0):.1f}MB")
     print(f"  Warning Threshold: {mem_report.get('warning_threshold_mb', 0)}MB")
     print(f"  Critical Threshold: {mem_report.get('critical_threshold_mb', 0)}MB")
 
     print("\nPerformance Report:")
-    perf_report = results['performance_report']
+    perf_report = results["performance_report"]
     print(f"  Total Operations: {perf_report.get('total_operations', 0)}")
     print(f"  Async Efficiency: {perf_report.get('async_efficiency', 0):.2%}")

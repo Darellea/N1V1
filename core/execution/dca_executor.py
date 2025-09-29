@@ -5,17 +5,16 @@ Executes orders using Dollar-Cost Averaging strategy.
 """
 
 import logging
-import asyncio
-import uuid
 import time
-from typing import Dict, Any, List, Optional
+import uuid
 from decimal import Decimal
-from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
-from .base_executor import BaseExecutor
-from core.contracts import TradingSignal, SignalType
+from core.contracts import SignalType, TradingSignal
 from core.types.order_types import Order, OrderStatus, OrderType
 from utils.logger import get_trade_logger
+
+from .base_executor import BaseExecutor
 
 logger = logging.getLogger(__name__)
 trade_logger = get_trade_logger()
@@ -49,8 +48,10 @@ class DCAExecutor(BaseExecutor):
         # Calculate timing
         self.interval_seconds = self.interval_minutes * 60
 
-        self.logger.info(f"DCAExecutor initialized: interval={self.interval_minutes}min, "
-                        f"parts={self.parts}, test_mode={self.test_mode}")
+        self.logger.info(
+            f"DCAExecutor initialized: interval={self.interval_minutes}min, "
+            f"parts={self.parts}, test_mode={self.test_mode}"
+        )
 
         # Track DCA sessions
         self.active_sessions: Dict[str, Dict[str, Any]] = {}
@@ -88,40 +89,47 @@ class DCAExecutor(BaseExecutor):
         """
         session_id = str(uuid.uuid4())
 
-        self.logger.info(f"Starting DCA session: {signal.symbol} {signal.amount} "
-                        f"over {self.parts} parts every {self.interval_minutes} minutes")
+        self.logger.info(
+            f"Starting DCA session: {signal.symbol} {signal.amount} "
+            f"over {self.parts} parts every {self.interval_minutes} minutes"
+        )
 
-        trade_logger.trade("DCA Session Start", {
-            "symbol": signal.symbol,
-            "total_amount": float(signal.amount),
-            "parts": self.parts,
-            "interval_minutes": self.interval_minutes,
-            "session_id": session_id
-        })
+        trade_logger.trade(
+            "DCA Session Start",
+            {
+                "symbol": signal.symbol,
+                "total_amount": float(signal.amount),
+                "parts": self.parts,
+                "interval_minutes": self.interval_minutes,
+                "session_id": session_id,
+            },
+        )
 
         # Split the order into parts
         split_amounts = await self.split_order(signal.amount, self.parts)
 
         # Create DCA session
         session = {
-            'session_id': session_id,
-            'symbol': signal.symbol,
-            'total_amount': signal.amount,
-            'remaining_amount': signal.amount,
-            'parts': self.parts,
-            'executed_parts': 0,
-            'split_amounts': split_amounts,
-            'start_time': time.time(),
-            'next_execution': time.time(),  # Execute first part immediately
-            'executed_orders': [],
-            'parent_signal': signal
+            "session_id": session_id,
+            "symbol": signal.symbol,
+            "total_amount": signal.amount,
+            "remaining_amount": signal.amount,
+            "parts": self.parts,
+            "executed_parts": 0,
+            "split_amounts": split_amounts,
+            "start_time": time.time(),
+            "next_execution": time.time(),  # Execute first part immediately
+            "executed_orders": [],
+            "parent_signal": signal,
         }
 
         self.active_sessions[session_id] = session
 
         # In test mode, execute all parts immediately
         if self.test_mode:
-            self.logger.debug(f"Test mode: executing all {self.parts} DCA parts immediately")
+            self.logger.debug(
+                f"Test mode: executing all {self.parts} DCA parts immediately"
+            )
             all_orders = []
             for part_index in range(self.parts):
                 orders = await self._execute_dca_part(session_id, part_index)
@@ -131,7 +139,9 @@ class DCAExecutor(BaseExecutor):
             # Execute first part immediately
             return await self._execute_dca_part(session_id, 0)
 
-    async def _continue_dca_session(self, session_id: str, signal: TradingSignal) -> List[Order]:
+    async def _continue_dca_session(
+        self, session_id: str, signal: TradingSignal
+    ) -> List[Order]:
         """
         Continue an existing DCA session.
 
@@ -150,9 +160,9 @@ class DCAExecutor(BaseExecutor):
         current_time = time.time()
 
         # Check if it's time for next execution
-        if current_time >= session['next_execution']:
-            next_part = session['executed_parts']
-            if next_part < session['parts']:
+        if current_time >= session["next_execution"]:
+            next_part = session["executed_parts"]
+            if next_part < session["parts"]:
                 return await self._execute_dca_part(session_id, next_part)
             else:
                 # Session completed
@@ -160,8 +170,10 @@ class DCAExecutor(BaseExecutor):
                 return []
         else:
             # Not yet time for next execution
-            remaining_time = session['next_execution'] - current_time
-            self.logger.debug(f"DCA session {session_id}: {remaining_time:.0f}s until next execution")
+            remaining_time = session["next_execution"] - current_time
+            self.logger.debug(
+                f"DCA session {session_id}: {remaining_time:.0f}s until next execution"
+            )
             return []
 
     async def _execute_dca_part(self, session_id: str, part_index: int) -> List[Order]:
@@ -179,47 +191,58 @@ class DCAExecutor(BaseExecutor):
         if not session:
             return []
 
-        if part_index >= len(session['split_amounts']):
-            self.logger.warning(f"DCA part {part_index} out of range for session {session_id}")
+        if part_index >= len(session["split_amounts"]):
+            self.logger.warning(
+                f"DCA part {part_index} out of range for session {session_id}"
+            )
             return []
 
-        amount = session['split_amounts'][part_index]
-        parent_signal = session['parent_signal']
+        amount = session["split_amounts"][part_index]
+        parent_signal = session["parent_signal"]
 
         # Create child order
-        child_signal = self._create_child_order(parent_signal, amount, session_id, part_index + 1)
-        child_signal.metadata.update({
-            'dca_session_id': session_id,
-            'dca_part': part_index + 1,
-            'dca_total_parts': session['parts'],
-            'dca_interval_minutes': self.interval_minutes
-        })
+        child_signal = self._create_child_order(
+            parent_signal, amount, session_id, part_index + 1
+        )
+        child_signal.metadata.update(
+            {
+                "dca_session_id": session_id,
+                "dca_part": part_index + 1,
+                "dca_total_parts": session["parts"],
+                "dca_interval_minutes": self.interval_minutes,
+            }
+        )
 
         # Execute the order
         executed_orders = await self._execute_single_order(child_signal)
 
         if executed_orders:
             # Update session
-            session['executed_parts'] += 1
-            session['executed_orders'].extend([order.id for order in executed_orders])
-            session['remaining_amount'] -= amount
+            session["executed_parts"] += 1
+            session["executed_orders"].extend([order.id for order in executed_orders])
+            session["remaining_amount"] -= amount
 
             # Schedule next execution
-            if session['executed_parts'] < session['parts']:
-                session['next_execution'] = time.time() + self.interval_seconds
-                self.logger.info(f"DCA session {session_id}: part {part_index + 1}/{session['parts']} executed, "
-                               f"next in {self.interval_minutes} minutes")
+            if session["executed_parts"] < session["parts"]:
+                session["next_execution"] = time.time() + self.interval_seconds
+                self.logger.info(
+                    f"DCA session {session_id}: part {part_index + 1}/{session['parts']} executed, "
+                    f"next in {self.interval_minutes} minutes"
+                )
             else:
                 # Session completed
                 self._complete_dca_session(session_id)
 
-            trade_logger.trade("DCA Part Executed", {
-                "session_id": session_id,
-                "part": part_index + 1,
-                "total_parts": session['parts'],
-                "amount": float(amount),
-                "remaining": float(session['remaining_amount'])
-            })
+            trade_logger.trade(
+                "DCA Part Executed",
+                {
+                    "session_id": session_id,
+                    "part": part_index + 1,
+                    "total_parts": session["parts"],
+                    "amount": float(amount),
+                    "remaining": float(session["remaining_amount"]),
+                },
+            )
 
         return executed_orders
 
@@ -232,18 +255,23 @@ class DCAExecutor(BaseExecutor):
         """
         session = self.active_sessions.get(session_id)
         if session:
-            duration = time.time() - session['start_time']
-            self.logger.info(f"DCA session {session_id} completed: "
-                           f"{session['executed_parts']}/{session['parts']} parts "
-                           f"in {duration:.1f}s")
+            duration = time.time() - session["start_time"]
+            self.logger.info(
+                f"DCA session {session_id} completed: "
+                f"{session['executed_parts']}/{session['parts']} parts "
+                f"in {duration:.1f}s"
+            )
 
-            trade_logger.trade("DCA Session Complete", {
-                "session_id": session_id,
-                "parts_executed": session['executed_parts'],
-                "total_parts": session['parts'],
-                "duration_seconds": duration,
-                "symbol": session['symbol']
-            })
+            trade_logger.trade(
+                "DCA Session Complete",
+                {
+                    "session_id": session_id,
+                    "parts_executed": session["executed_parts"],
+                    "total_parts": session["parts"],
+                    "duration_seconds": duration,
+                    "symbol": session["symbol"],
+                },
+            )
 
             # Clean up session
             del self.active_sessions[session_id]
@@ -258,8 +286,8 @@ class DCAExecutor(BaseExecutor):
         Returns:
             Session ID if found, None otherwise
         """
-        if signal.metadata and 'dca_session_id' in signal.metadata:
-            return signal.metadata['dca_session_id']
+        if signal.metadata and "dca_session_id" in signal.metadata:
+            return signal.metadata["dca_session_id"]
         return None
 
     async def _execute_single_order(self, signal: TradingSignal) -> List[Order]:
@@ -315,18 +343,18 @@ class DCAExecutor(BaseExecutor):
         order_type = signal.order_type.value if signal.order_type else "market"
 
         params = {
-            'symbol': signal.symbol,
-            'type': order_type,
-            'side': side,
-            'amount': float(signal.amount)
+            "symbol": signal.symbol,
+            "type": order_type,
+            "side": side,
+            "amount": float(signal.amount),
         }
 
         if signal.price and order_type == "limit":
-            params['price'] = float(signal.price)
+            params["price"] = float(signal.price)
 
         # Add DCA metadata
         if signal.metadata:
-            params['metadata'] = signal.metadata
+            params["metadata"] = signal.metadata
 
         # Place the order
         response = await self.exchange_api.create_order(**params)
@@ -343,18 +371,20 @@ class DCAExecutor(BaseExecutor):
             Parsed Order object
         """
         return Order(
-            id=str(response.get('id', '')),
-            symbol=response.get('symbol', ''),
-            type=OrderType(response.get('type', 'market')),
-            side=response.get('side', ''),
-            amount=Decimal(str(response.get('amount', 0))),
-            price=Decimal(str(response.get('price', 0))) if response.get('price') else None,
-            status=OrderStatus(response.get('status', 'open')),
-            timestamp=response.get('timestamp', 0),
-            filled=Decimal(str(response.get('filled', 0))),
-            remaining=Decimal(str(response.get('remaining', 0))),
-            cost=Decimal(str(response.get('cost', 0))),
-            fee=response.get('fee')
+            id=str(response.get("id", "")),
+            symbol=response.get("symbol", ""),
+            type=OrderType(response.get("type", "market")),
+            side=response.get("side", ""),
+            amount=Decimal(str(response.get("amount", 0))),
+            price=Decimal(str(response.get("price", 0)))
+            if response.get("price")
+            else None,
+            status=OrderStatus(response.get("status", "open")),
+            timestamp=response.get("timestamp", 0),
+            filled=Decimal(str(response.get("filled", 0))),
+            remaining=Decimal(str(response.get("remaining", 0))),
+            cost=Decimal(str(response.get("cost", 0))),
+            fee=response.get("fee"),
         )
 
     def _create_mock_order(self, signal: TradingSignal) -> Order:
@@ -391,7 +421,7 @@ class DCAExecutor(BaseExecutor):
             filled=signal.amount,
             remaining=Decimal(0),
             cost=signal.amount * (signal.price or Decimal(1)),
-            fee={'cost': Decimal(0), 'currency': 'USD'}
+            fee={"cost": Decimal(0), "currency": "USD"},
         )
 
     async def cancel_order(self, order_id: str) -> bool:
@@ -430,17 +460,21 @@ class DCAExecutor(BaseExecutor):
 
         # Cancel all pending orders in the session
         cancelled_count = 0
-        for order_id in session.get('executed_orders', []):
+        for order_id in session.get("executed_orders", []):
             try:
                 await self.cancel_order(order_id)
                 cancelled_count += 1
             except Exception as e:
-                self.logger.error(f"Failed to cancel order {order_id} in session {session_id}: {e}")
+                self.logger.error(
+                    f"Failed to cancel order {order_id} in session {session_id}: {e}"
+                )
 
         # Remove session
         del self.active_sessions[session_id]
 
-        self.logger.info(f"Cancelled DCA session {session_id}: {cancelled_count} orders cancelled")
+        self.logger.info(
+            f"Cancelled DCA session {session_id}: {cancelled_count} orders cancelled"
+        )
         return True
 
     def get_dca_sessions(self) -> List[Dict[str, Any]]:
@@ -452,17 +486,19 @@ class DCAExecutor(BaseExecutor):
         """
         sessions = []
         for session_id, session in self.active_sessions.items():
-            sessions.append({
-                'session_id': session_id,
-                'symbol': session['symbol'],
-                'total_amount': float(session['total_amount']),
-                'remaining_amount': float(session['remaining_amount']),
-                'parts': session['parts'],
-                'executed_parts': session['executed_parts'],
-                'progress': session['executed_parts'] / session['parts'],
-                'next_execution': session['next_execution'],
-                'time_until_next': max(0, session['next_execution'] - time.time())
-            })
+            sessions.append(
+                {
+                    "session_id": session_id,
+                    "symbol": session["symbol"],
+                    "total_amount": float(session["total_amount"]),
+                    "remaining_amount": float(session["remaining_amount"]),
+                    "parts": session["parts"],
+                    "executed_parts": session["executed_parts"],
+                    "progress": session["executed_parts"] / session["parts"],
+                    "next_execution": session["next_execution"],
+                    "time_until_next": max(0, session["next_execution"] - time.time()),
+                }
+            )
         return sessions
 
     def get_session_status(self, session_id: str) -> Optional[Dict[str, Any]]:
@@ -480,16 +516,16 @@ class DCAExecutor(BaseExecutor):
             return None
 
         return {
-            'session_id': session_id,
-            'symbol': session['symbol'],
-            'total_amount': float(session['total_amount']),
-            'remaining_amount': float(session['remaining_amount']),
-            'parts': session['parts'],
-            'executed_parts': session['executed_parts'],
-            'progress_percentage': (session['executed_parts'] / session['parts']) * 100,
-            'next_execution_time': session['next_execution'],
-            'seconds_until_next': max(0, session['next_execution'] - time.time()),
-            'executed_orders': session['executed_orders'].copy(),
-            'start_time': session['start_time'],
-            'duration_so_far': time.time() - session['start_time']
+            "session_id": session_id,
+            "symbol": session["symbol"],
+            "total_amount": float(session["total_amount"]),
+            "remaining_amount": float(session["remaining_amount"]),
+            "parts": session["parts"],
+            "executed_parts": session["executed_parts"],
+            "progress_percentage": (session["executed_parts"] / session["parts"]) * 100,
+            "next_execution_time": session["next_execution"],
+            "seconds_until_next": max(0, session["next_execution"] - time.time()),
+            "executed_orders": session["executed_orders"].copy(),
+            "start_time": session["start_time"],
+            "duration_so_far": time.time() - session["start_time"],
         }

@@ -5,19 +5,18 @@ Tests order schema validation, duplicate prevention, state consistency,
 and security monitoring for trading operations.
 """
 
-import pytest
-import asyncio
 import time
-from unittest.mock import Mock, patch, AsyncMock
 from datetime import datetime, timedelta
+from unittest.mock import Mock, patch
 
+import pytest
+
+from core.order_executor import OrderExecutor
 from utils.security import (
     OrderFlowValidator,
     get_order_flow_validator,
-    SecurityViolationException,
-    log_security_event
+    log_security_event,
 )
-from core.order_executor import OrderExecutor
 
 
 class TestOrderFlowValidator:
@@ -35,7 +34,7 @@ class TestOrderFlowValidator:
             "side": "buy",
             "type": "limit",
             "amount": 0.001,
-            "price": 50000.0
+            "price": 50000.0,
         }
 
         result = validator.validate_order_schema(valid_order)
@@ -59,7 +58,7 @@ class TestOrderFlowValidator:
             "symbol": "BTC/USDT",
             "side": "buy",
             "type": "limit",
-            "amount": 0.001
+            "amount": 0.001,
         }
 
         result = validator.validate_order_schema(invalid_order)
@@ -72,7 +71,7 @@ class TestOrderFlowValidator:
             "symbol": "BTC/USDT",
             "side": "buy",
             "type": "limit",
-            "amount": -0.001
+            "amount": -0.001,
         }
 
         result = validator.validate_order_schema(invalid_order)
@@ -86,7 +85,7 @@ class TestOrderFlowValidator:
             "side": "buy",
             "type": "limit",
             "amount": 0.001,
-            "price": 0.0
+            "price": 0.0,
         }
 
         result = validator.validate_order_schema(invalid_order)
@@ -99,7 +98,7 @@ class TestOrderFlowValidator:
             "symbol": "BTC/USDT",
             "side": "buy",
             "type": "limit",
-            "amount": 0.001
+            "amount": 0.001,
         }
 
         result = validator.register_order(order)
@@ -114,7 +113,7 @@ class TestOrderFlowValidator:
             "symbol": "BTC/USDT",
             "side": "buy",
             "type": "limit",
-            "amount": 0.001
+            "amount": 0.001,
         }
 
         # Register first time
@@ -133,7 +132,7 @@ class TestOrderFlowValidator:
         validator.order_states[order_id] = {
             "status": "pending",
             "created_at": datetime.utcnow(),
-            "last_updated": datetime.utcnow()
+            "last_updated": datetime.utcnow(),
         }
 
         result = validator.update_order_state(order_id, "filled")
@@ -148,7 +147,7 @@ class TestOrderFlowValidator:
         validator.order_states[order_id] = {
             "status": "filled",
             "created_at": datetime.utcnow(),
-            "last_updated": datetime.utcnow()
+            "last_updated": datetime.utcnow(),
         }
 
         # Try to transition from terminal state (should fail)
@@ -167,7 +166,7 @@ class TestOrderFlowValidator:
         validator.order_states[order_id] = {
             "status": "pending",
             "created_at": datetime.utcnow() - timedelta(hours=1),
-            "last_updated": datetime.utcnow()
+            "last_updated": datetime.utcnow(),
         }
 
         result = validator.validate_state_consistency()
@@ -181,7 +180,7 @@ class TestOrderFlowValidator:
         validator.order_states[order_id] = {
             "status": "pending",
             "created_at": datetime.utcnow() - timedelta(hours=25),
-            "last_updated": datetime.utcnow() - timedelta(hours=25)
+            "last_updated": datetime.utcnow() - timedelta(hours=25),
         }
 
         result = validator.validate_state_consistency()
@@ -196,7 +195,7 @@ class TestOrderFlowValidator:
         validator.order_states[order_id] = {
             "status": "pending",
             "created_at": datetime.utcnow(),
-            "last_updated": datetime.utcnow() - timedelta(hours=1)  # Before created_at
+            "last_updated": datetime.utcnow() - timedelta(hours=1),  # Before created_at
         }
 
         result = validator.validate_state_consistency()
@@ -216,13 +215,13 @@ class TestOrderFlowValidator:
             old_order_id: {
                 "status": "filled",
                 "created_at": cutoff_date - timedelta(days=10),
-                "last_updated": cutoff_date - timedelta(days=10)
+                "last_updated": cutoff_date - timedelta(days=10),
             },
             new_order_id: {
                 "status": "filled",
                 "created_at": datetime.utcnow() - timedelta(days=1),
-                "last_updated": datetime.utcnow() - timedelta(days=1)
-            }
+                "last_updated": datetime.utcnow() - timedelta(days=1),
+            },
         }
         validator.order_ids = {old_order_id, new_order_id}
 
@@ -247,9 +246,7 @@ class TestOrderExecutorSecurity:
             "retry_base_delay": 1.0,
             "retry_max_delay": 30.0,
             "retry_budget": 5,
-            "security": {
-                "max_orders_per_minute": 10
-            }
+            "security": {"max_orders_per_minute": 10},
         }
 
     @pytest.fixture
@@ -291,7 +288,7 @@ class TestOrderExecutorSecurity:
             "symbol": "BTC/USDT",
             "side": "buy",
             "type": "limit",
-            "amount": 0.001
+            "amount": 0.001,
         }
         validator.register_order(existing_order)
 
@@ -310,10 +307,7 @@ class TestOrderExecutorSecurity:
 
     async def test_check_rate_limits_within_limit(self, order_executor):
         """Test rate limiting within acceptable limits."""
-        signal_data = {
-            "symbol": "BTC/USDT",
-            "amount": 0.001
-        }
+        signal_data = {"symbol": "BTC/USDT", "amount": 0.001}
 
         # Should allow the request
         result = await order_executor._check_rate_limits(signal_data)
@@ -321,13 +315,12 @@ class TestOrderExecutorSecurity:
 
     async def test_check_rate_limits_exceeded(self, order_executor):
         """Test rate limiting when limit is exceeded."""
-        signal_data = {
-            "symbol": "BTC/USDT",
-            "amount": 0.001
-        }
+        signal_data = {"symbol": "BTC/USDT", "amount": 0.001}
 
         # Simulate exceeding the rate limit
-        order_executor._rate_limit_cache = {"BTC/USDT": [time.time()] * 15}  # 15 requests
+        order_executor._rate_limit_cache = {
+            "BTC/USDT": [time.time()] * 15
+        }  # 15 requests
 
         result = await order_executor._check_rate_limits(signal_data)
         assert result is False
@@ -403,7 +396,7 @@ class TestSecurityEventLogging:
 
     def test_log_security_event_info(self):
         """Test logging security event at INFO level."""
-        with patch('utils.security.logging') as mock_logging:
+        with patch("utils.security.logging") as mock_logging:
             log_security_event("test_event", {"key": "value"}, "INFO")
 
             mock_logger = mock_logging.getLogger.return_value
@@ -411,7 +404,7 @@ class TestSecurityEventLogging:
 
     def test_log_security_event_warning(self):
         """Test logging security event at WARNING level."""
-        with patch('utils.security.logging') as mock_logging:
+        with patch("utils.security.logging") as mock_logging:
             log_security_event("test_event", {"key": "value"}, "WARNING")
 
             mock_logger = mock_logging.getLogger.return_value
@@ -419,7 +412,7 @@ class TestSecurityEventLogging:
 
     def test_log_security_event_error(self):
         """Test logging security event at ERROR level."""
-        with patch('utils.security.logging') as mock_logging:
+        with patch("utils.security.logging") as mock_logging:
             log_security_event("test_event", {"key": "value"}, "ERROR")
 
             mock_logger = mock_logging.getLogger.return_value
@@ -447,7 +440,7 @@ class TestOrderFlowIntegration:
             "side": "buy",
             "type": "limit",
             "amount": 0.001,
-            "price": 50000.0
+            "price": 50000.0,
         }
 
         # Test schema validation
@@ -474,11 +467,30 @@ class TestOrderFlowIntegration:
             # Missing required fields
             {"id": "test1", "symbol": "BTC/USDT"},
             # Invalid ID format
-            {"id": "invalid!@#", "symbol": "BTC/USDT", "side": "buy", "type": "limit", "amount": 0.001},
+            {
+                "id": "invalid!@#",
+                "symbol": "BTC/USDT",
+                "side": "buy",
+                "type": "limit",
+                "amount": 0.001,
+            },
             # Negative amount
-            {"id": "test3", "symbol": "BTC/USDT", "side": "buy", "type": "limit", "amount": -0.001},
+            {
+                "id": "test3",
+                "symbol": "BTC/USDT",
+                "side": "buy",
+                "type": "limit",
+                "amount": -0.001,
+            },
             # Zero price
-            {"id": "test4", "symbol": "BTC/USDT", "side": "buy", "type": "limit", "amount": 0.001, "price": 0}
+            {
+                "id": "test4",
+                "symbol": "BTC/USDT",
+                "side": "buy",
+                "type": "limit",
+                "amount": 0.001,
+                "price": 0,
+            },
         ]
 
         for order in malformed_orders:

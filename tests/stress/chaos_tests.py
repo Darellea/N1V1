@@ -18,26 +18,20 @@ Key Features:
 """
 
 import asyncio
-import time
-import logging
-import pytest
-import aiohttp
-import threading
-from typing import Dict, List, Any, Optional, Callable, AsyncContextManager
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 import json
+import time
 import unittest.mock as mock
 from contextlib import asynccontextmanager
-import psutil
-import os
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+import aiohttp
 import numpy as np
+import pytest
 
 from core.order_executor import OrderExecutor
-from core.order_manager import OrderManager
-from core.watchdog import WatchdogService, ComponentStatus
-from core.performance_tracker import PerformanceTracker
-from notifier.discord_bot import DiscordNotifier
+from core.watchdog import WatchdogService
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -53,10 +47,7 @@ class MockOrderManagerWithChaos:
         self.order_history: List[Dict[str, Any]] = []
         self.execution_latencies: List[float] = []
         self.failure_rate = 0.002  # 0.2% baseline failure rate
-        self.latency_distribution = {
-            'mean': 50.0,  # ms
-            'std': 25.0   # ms
-        }
+        self.latency_distribution = {"mean": 50.0, "std": 25.0}  # ms  # ms
         # Chaos state
         self.chaos_active = False
         self.chaos_type = None
@@ -95,14 +86,13 @@ class MockOrderManagerWithChaos:
                 "status": "failed",
                 "error": f"Simulated {self.chaos_type} failure",
                 "timestamp": datetime.now(),
-                "latency_ms": (time.time() - start_time) * 1000
+                "latency_ms": (time.time() - start_time) * 1000,
             }
         else:
             # Successful order
             # Simulate realistic latency with some outliers
             base_latency = np.random.normal(
-                self.latency_distribution['mean'],
-                self.latency_distribution['std']
+                self.latency_distribution["mean"], self.latency_distribution["std"]
             )
             # Add occasional spikes
             if np.random.random() < 0.05:  # 5% chance of spike
@@ -120,7 +110,7 @@ class MockOrderManagerWithChaos:
                 "pnl": np.random.normal(0, 10),  # Simulated P&L
                 "fee": signal["amount"] * 0.001,  # 0.1% fee
                 "timestamp": datetime.now(),
-                "latency_ms": total_latency
+                "latency_ms": total_latency,
             }
 
         self.execution_latencies.append(result["latency_ms"])
@@ -151,6 +141,7 @@ class MockOrderManagerWithChaos:
 @dataclass
 class ChaosScenario:
     """Definition of a chaos scenario."""
+
     name: str
     description: str
     duration_seconds: int
@@ -169,6 +160,7 @@ class ChaosScenario:
 @dataclass
 class ChaosTestMetrics:
     """Metrics collected during chaos testing."""
+
     scenario_name: str
     orders_before_chaos: int = 0
     orders_during_chaos: int = 0
@@ -192,8 +184,16 @@ class ChaosTestMetrics:
     def recovery_successful(self) -> bool:
         """Check if system recovered successfully."""
         # Recovery is successful if post-chaos failure rate is similar to pre-chaos
-        pre_rate = (self.failures_before_chaos / self.orders_before_chaos) * 100 if self.orders_before_chaos > 0 else 0.0
-        post_rate = (self.failures_after_chaos / self.orders_after_chaos) * 100 if self.orders_after_chaos > 0 else 0.0
+        pre_rate = (
+            (self.failures_before_chaos / self.orders_before_chaos) * 100
+            if self.orders_before_chaos > 0
+            else 0.0
+        )
+        post_rate = (
+            (self.failures_after_chaos / self.orders_after_chaos) * 100
+            if self.orders_after_chaos > 0
+            else 0.0
+        )
         return abs(pre_rate - post_rate) < 1.0  # Within 1% tolerance
 
 
@@ -211,10 +211,12 @@ class ChaosInjector:
         self.scenario.failure_injected = True
         self.scenario.start_time = datetime.now()
 
-        logger.warning(f"Injecting chaos: {self.scenario.name} - {self.scenario.description}")
+        logger.warning(
+            f"Injecting chaos: {self.scenario.name} - {self.scenario.description}"
+        )
 
         # Set chaos state on order manager if available
-        if hasattr(self, '_order_manager') and self._order_manager:
+        if hasattr(self, "_order_manager") and self._order_manager:
             self._order_manager.set_chaos_state(True, self.scenario.name)
 
         try:
@@ -224,7 +226,7 @@ class ChaosInjector:
             self.scenario.end_time = datetime.now()
 
             # Clear chaos state on order manager
-            if hasattr(self, '_order_manager') and self._order_manager:
+            if hasattr(self, "_order_manager") and self._order_manager:
                 self._order_manager.set_chaos_state(False)
 
             logger.info(f"Chaos injection ended: {self.scenario.name}")
@@ -248,7 +250,8 @@ class NetworkPartitionInjector(ChaosInjector):
     @asynccontextmanager
     async def inject_chaos(self):
         """Inject network partition by patching aiohttp."""
-        with mock.patch('aiohttp.ClientSession._request') as mock_request:
+        with mock.patch("aiohttp.ClientSession._request") as mock_request:
+
             async def delayed_request(*args, **kwargs):
                 if self.active:
                     # Simulate network timeout
@@ -280,16 +283,21 @@ class RateLimitInjector(ChaosInjector):
     @asynccontextmanager
     async def inject_chaos(self):
         """Inject rate limiting by patching HTTP responses."""
-        with mock.patch('aiohttp.ClientSession._request') as mock_request:
+        with mock.patch("aiohttp.ClientSession._request") as mock_request:
+
             async def rate_limited_request(*args, **kwargs):
                 if self.active and self.response_count < self.rate_limit_responses:
                     self.response_count += 1
                     # Create a mock response with 429 status
                     mock_response = mock.MagicMock()
                     mock_response.status = 429
-                    mock_response.headers = {'Retry-After': '60'}
-                    mock_response.text = mock.AsyncMock(return_value='{"error": "rate limit exceeded"}')
-                    mock_response.json = mock.AsyncMock(return_value={"error": "rate limit exceeded"})
+                    mock_response.headers = {"Retry-After": "60"}
+                    mock_response.text = mock.AsyncMock(
+                        return_value='{"error": "rate limit exceeded"}'
+                    )
+                    mock_response.json = mock.AsyncMock(
+                        return_value={"error": "rate limit exceeded"}
+                    )
                     return mock_response
                 else:
                     # Call original method
@@ -314,7 +322,8 @@ class ExchangeDowntimeInjector(ChaosInjector):
     @asynccontextmanager
     async def inject_chaos(self):
         """Inject exchange downtime by blocking all requests."""
-        with mock.patch('aiohttp.ClientSession._request') as mock_request:
+        with mock.patch("aiohttp.ClientSession._request") as mock_request:
+
             async def downtime_request(*args, **kwargs):
                 if self.active:
                     # Simulate complete downtime
@@ -375,7 +384,7 @@ class ChaosTestRunner:
                 duration_seconds=5,  # Reduced for testing
                 recovery_timeout_seconds=15,  # Reduced for testing
                 expected_failure_rate=100.0,  # All requests should fail
-                sla_recovery_time_seconds=10  # Reduced SLA for testing
+                sla_recovery_time_seconds=10,  # Reduced SLA for testing
             ),
             "rate_limit_flood": ChaosScenario(
                 name="rate_limit_flood",
@@ -383,7 +392,7 @@ class ChaosTestRunner:
                 duration_seconds=3,  # Reduced for testing
                 recovery_timeout_seconds=10,  # Reduced for testing
                 expected_failure_rate=50.0,  # Partial failure expected
-                sla_recovery_time_seconds=5  # Reduced SLA for testing
+                sla_recovery_time_seconds=5,  # Reduced SLA for testing
             ),
             "exchange_downtime": ChaosScenario(
                 name="exchange_downtime",
@@ -391,7 +400,7 @@ class ChaosTestRunner:
                 duration_seconds=5,  # Reduced for testing
                 recovery_timeout_seconds=15,  # Reduced for testing
                 expected_failure_rate=100.0,
-                sla_recovery_time_seconds=8  # Reduced SLA for testing
+                sla_recovery_time_seconds=8,  # Reduced SLA for testing
             ),
             "database_outage": ChaosScenario(
                 name="database_outage",
@@ -399,8 +408,8 @@ class ChaosTestRunner:
                 duration_seconds=4,  # Reduced for testing
                 recovery_timeout_seconds=12,  # Reduced for testing
                 expected_failure_rate=80.0,  # Most operations should fail
-                sla_recovery_time_seconds=6  # Reduced SLA for testing
-            )
+                sla_recovery_time_seconds=6,  # Reduced SLA for testing
+            ),
         }
 
     def _create_injector(self, scenario: ChaosScenario) -> ChaosInjector:
@@ -433,16 +442,13 @@ class ChaosTestRunner:
             {"max_retries": 3, "retry_base_delay": 1.0},
             self.order_manager,
             self.performance_tracker,
-            self.notifier
+            self.notifier,
         )
 
         # Create watchdog
-        self.watchdog = WatchdogService({
-            "failure_detection": {
-                "anomaly_threshold": 2.0,
-                "history_window": 50
-            }
-        })
+        self.watchdog = WatchdogService(
+            {"failure_detection": {"anomaly_threshold": 2.0, "history_window": 50}}
+        )
 
         await self.watchdog.start()
 
@@ -498,7 +504,9 @@ class ChaosTestRunner:
             # Generate report
             report = self._generate_scenario_report(scenario, validation_results)
 
-            logger.info(f"Chaos scenario {scenario_name} completed: {'PASS' if validation_results['sla_met'] else 'FAIL'}")
+            logger.info(
+                f"Chaos scenario {scenario_name} completed: {'PASS' if validation_results['sla_met'] else 'FAIL'}"
+            )
 
             return report
 
@@ -545,7 +553,7 @@ class ChaosTestRunner:
                 "symbol": "BTC/USDT",
                 "side": "buy",
                 "type": "market",
-                "amount": 0.001
+                "amount": 0.001,
             }
 
             result = await self.order_executor._execute_with_retry(test_signal)
@@ -560,12 +568,16 @@ class ChaosTestRunner:
             "recovery_detected": scenario.recovery_detected,
             "recovery_time_seconds": scenario.recovery_time,
             "sla_met": False,
-            "failure_rate_acceptable": self.metrics.chaos_failure_rate <= scenario.expected_failure_rate,
+            "failure_rate_acceptable": self.metrics.chaos_failure_rate
+            <= scenario.expected_failure_rate,
             "watchdog_alerts_fired": len(self.metrics.watchdog_alerts) > 0,
-            "recovery_events_logged": len(self.metrics.recovery_events) > 0
+            "recovery_events_logged": len(self.metrics.recovery_events) > 0,
         }
 
-        if scenario.recovery_time and scenario.recovery_time <= scenario.sla_recovery_time_seconds:
+        if (
+            scenario.recovery_time
+            and scenario.recovery_time <= scenario.sla_recovery_time_seconds
+        ):
             validation["sla_met"] = True
 
         return validation
@@ -584,7 +596,7 @@ class ChaosTestRunner:
                     "side": "buy" if order_count % 2 == 0 else "sell",
                     "type": "market",
                     "amount": 0.001,
-                    "timestamp": datetime.now()
+                    "timestamp": datetime.now(),
                 }
 
                 start_time = time.time()
@@ -635,7 +647,7 @@ class ChaosTestRunner:
                         "timestamp": datetime.now(),
                         "type": "chaos_failure",
                         "component": "order_executor",
-                        "message": f"Chaos scenario {scenario.name} active"
+                        "message": f"Chaos scenario {scenario.name} active",
                     }
                     self.metrics.watchdog_alerts.append(alert)
 
@@ -645,7 +657,7 @@ class ChaosTestRunner:
                         "timestamp": datetime.now(),
                         "type": "recovery_successful",
                         "component": "order_executor",
-                        "message": f"Recovered from {scenario.name}"
+                        "message": f"Recovered from {scenario.name}",
                     }
                     self.metrics.recovery_events.append(event)
 
@@ -656,7 +668,9 @@ class ChaosTestRunner:
             except Exception as e:
                 logger.debug(f"Error monitoring watchdog: {e}")
 
-    def _generate_scenario_report(self, scenario: ChaosScenario, validation: Dict[str, Any]) -> Dict[str, Any]:
+    def _generate_scenario_report(
+        self, scenario: ChaosScenario, validation: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Generate comprehensive report for chaos scenario."""
         report = {
             "scenario": {
@@ -664,14 +678,18 @@ class ChaosTestRunner:
                 "description": scenario.description,
                 "duration_seconds": scenario.duration_seconds,
                 "expected_failure_rate": scenario.expected_failure_rate,
-                "sla_recovery_time_seconds": scenario.sla_recovery_time_seconds
+                "sla_recovery_time_seconds": scenario.sla_recovery_time_seconds,
             },
             "execution": {
-                "start_time": scenario.start_time.isoformat() if scenario.start_time else None,
-                "end_time": scenario.end_time.isoformat() if scenario.end_time else None,
+                "start_time": scenario.start_time.isoformat()
+                if scenario.start_time
+                else None,
+                "end_time": scenario.end_time.isoformat()
+                if scenario.end_time
+                else None,
                 "recovery_time_seconds": scenario.recovery_time,
                 "failure_injected": scenario.failure_injected,
-                "recovery_detected": scenario.recovery_detected
+                "recovery_detected": scenario.recovery_detected,
             },
             "metrics": {
                 "orders_before_chaos": self.metrics.orders_before_chaos,
@@ -681,14 +699,14 @@ class ChaosTestRunner:
                 "failures_during_chaos": self.metrics.failures_during_chaos,
                 "failures_after_chaos": self.metrics.failures_after_chaos,
                 "chaos_failure_rate": self.metrics.chaos_failure_rate,
-                "recovery_successful": self.metrics.recovery_successful
+                "recovery_successful": self.metrics.recovery_successful,
             },
             "validation": validation,
             "watchdog": {
                 "alerts_count": len(self.metrics.watchdog_alerts),
-                "recovery_events_count": len(self.metrics.recovery_events)
+                "recovery_events_count": len(self.metrics.recovery_events),
             },
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
         }
 
         self.chaos_reports.append(report)
@@ -696,13 +714,14 @@ class ChaosTestRunner:
 
     def export_chaos_reports(self, output_file: str = "chaos_reports.json"):
         """Export all chaos test reports."""
-        with open(output_file, 'w') as f:
+        with open(output_file, "w") as f:
             json.dump(self.chaos_reports, f, indent=2, default=str)
 
         logger.info(f"Chaos reports exported to {output_file}")
 
 
 # Pytest fixtures and test cases
+
 
 @pytest.fixture
 async def chaos_runner():
@@ -770,15 +789,26 @@ async def test_database_outage_chaos(chaos_runner):
 async def test_chaos_recovery_assertions(chaos_runner):
     """Test that chaos tests assert recovery, not just failure injection."""
     # Run all scenarios
-    scenarios = ["network_partition", "rate_limit_flood", "exchange_downtime", "database_outage"]
+    scenarios = [
+        "network_partition",
+        "rate_limit_flood",
+        "exchange_downtime",
+        "database_outage",
+    ]
 
     for scenario_name in scenarios:
         report = await chaos_runner.run_chaos_scenario(scenario_name)
 
         # Assert that recovery was tested and validated
-        assert report["validation"]["recovery_detected"] == True, f"Recovery not detected for {scenario_name}"
-        assert report["validation"]["sla_met"] == True, f"SLA not met for {scenario_name}"
-        assert report["metrics"]["recovery_successful"] == True, f"Recovery not successful for {scenario_name}"
+        assert (
+            report["validation"]["recovery_detected"] == True
+        ), f"Recovery not detected for {scenario_name}"
+        assert (
+            report["validation"]["sla_met"] == True
+        ), f"SLA not met for {scenario_name}"
+        assert (
+            report["metrics"]["recovery_successful"] == True
+        ), f"Recovery not successful for {scenario_name}"
 
     # Export final reports
     chaos_runner.export_chaos_reports()

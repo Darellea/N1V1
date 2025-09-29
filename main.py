@@ -4,8 +4,8 @@ Main entry point for the crypto trading bot system.
 Handles initialization, mode selection, and core system startup.
 """
 
-import sys
 import argparse
+import sys
 
 
 def print_status() -> None:
@@ -52,19 +52,19 @@ Examples:
   python main.py --status          # Show current status and exit
   python main.py --api             # Run with FastAPI web interface
   USE_FASTAPI=true python main.py # Run with FastAPI (environment variable)
-        """
+        """,
     )
 
     parser.add_argument(
         "--status",
         action="store_true",
-        help="Show the current trading bot status table and exit"
+        help="Show the current trading bot status table and exit",
     )
 
     parser.add_argument(
         "--api",
         action="store_true",
-        help="Run with FastAPI web interface instead of CLI mode"
+        help="Run with FastAPI web interface instead of CLI mode",
     )
 
     return parser.parse_args()
@@ -76,12 +76,18 @@ async def main(args=None):
         args = parse_arguments()
 
     # Check if FastAPI mode is enabled
-    use_fastapi = args.api or os.getenv("USE_FASTAPI", "").lower() in ("true", "1", "yes")
+    use_fastapi = args.api or os.getenv("USE_FASTAPI", "").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
 
     if use_fastapi:
         if not FASTAPI_AVAILABLE:
             logger = logging.getLogger(__name__)
-            logger.error("FastAPI mode requested but FastAPI dependencies are not installed")
+            logger.error(
+                "FastAPI mode requested but FastAPI dependencies are not installed"
+            )
             logger.error("Install with: pip install fastapi uvicorn")
             sys.exit(1)
         else:
@@ -98,11 +104,7 @@ async def main(args=None):
 
             # Run uvicorn server (this will block)
             uvicorn.run(
-                "api.app:app",
-                host="0.0.0.0",
-                port=8000,
-                reload=False,
-                log_level="info"
+                "api.app:app", host="0.0.0.0", port=8000, reload=False, log_level="info"
             )
             return
 
@@ -131,14 +133,16 @@ import logging
 import os
 from typing import Optional
 
-from utils.config_loader import load_config, ConfigLoader
-from utils.logger import setup_logging
 from core.bot_engine import BotEngine
+from utils.config_loader import load_config
+from utils.logger import setup_logging
 
 # FastAPI imports (optional)
 try:
     import uvicorn
+
     from api.app import app, set_bot_engine
+
     FASTAPI_AVAILABLE = True
 except ImportError:
     FASTAPI_AVAILABLE = False

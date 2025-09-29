@@ -1,12 +1,13 @@
 import asyncio
-import pytest
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
-from ccxt.base.errors import NetworkError, ExchangeError
-from core.contracts import TradingSignal, SignalType, SignalStrength
-from core.types import TradingMode
+
+import pytest
+from ccxt.base.errors import ExchangeError, NetworkError
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
 from core.order_manager import OrderManager
-from notifier.discord_bot import DiscordNotifier
+from core.types import TradingMode
 
 
 class TestRegression:
@@ -16,28 +17,24 @@ class TestRegression:
     def config(self):
         """Config for regression testing."""
         return {
-            "order": {
-                "base_currency": "USDT",
-                "exchange": "binance"
-            },
+            "order": {"base_currency": "USDT", "exchange": "binance"},
             "risk": {},
-            "paper": {
-                "initial_balance": 10000.0
-            },
+            "paper": {"initial_balance": 10000.0},
             "reliability": {},
             "discord": {
                 "alerts": {"enabled": True},
-                "webhook_url": "https://discord.com/api/webhooks/test"
-            }
+                "webhook_url": "https://discord.com/api/webhooks/test",
+            },
         }
 
     @pytest.fixture
     def mock_executors(self):
         """Mock executors for regression testing."""
-        with patch('core.order_manager.LiveOrderExecutor') as mock_live, \
-             patch('core.order_manager.PaperOrderExecutor') as mock_paper, \
-             patch('core.order_manager.BacktestOrderExecutor') as mock_backtest:
-
+        with patch("core.order_manager.LiveOrderExecutor") as mock_live, patch(
+            "core.order_manager.PaperOrderExecutor"
+        ) as mock_paper, patch(
+            "core.order_manager.BacktestOrderExecutor"
+        ) as mock_backtest:
             mock_live_instance = MagicMock()
             mock_paper_instance = MagicMock()
             mock_backtest_instance = MagicMock()
@@ -47,24 +44,27 @@ class TestRegression:
             mock_backtest.return_value = mock_backtest_instance
 
             # Default successful responses
-            mock_paper_instance.execute_paper_order = AsyncMock(return_value={"id": "test_order", "status": "filled"})
+            mock_paper_instance.execute_paper_order = AsyncMock(
+                return_value={"id": "test_order", "status": "filled"}
+            )
             mock_paper_instance.get_balance = MagicMock(return_value=Decimal("10000"))
             mock_paper_instance.set_initial_balance = MagicMock()
             mock_paper_instance.set_portfolio_mode = MagicMock()
 
             yield {
-                'live': mock_live_instance,
-                'paper': mock_paper_instance,
-                'backtest': mock_backtest_instance
+                "live": mock_live_instance,
+                "paper": mock_paper_instance,
+                "backtest": mock_backtest_instance,
             }
 
     @pytest.fixture
     def mock_managers(self):
         """Mock managers for regression testing."""
-        with patch('core.order_manager.ReliabilityManager') as mock_reliability, \
-             patch('core.order_manager.PortfolioManager') as mock_portfolio, \
-             patch('core.order_manager.OrderProcessor') as mock_processor:
-
+        with patch("core.order_manager.ReliabilityManager") as mock_reliability, patch(
+            "core.order_manager.PortfolioManager"
+        ) as mock_portfolio, patch(
+            "core.order_manager.OrderProcessor"
+        ) as mock_processor:
             mock_reliability_instance = MagicMock()
             mock_portfolio_instance = MagicMock()
             mock_processor_instance = MagicMock()
@@ -75,6 +75,7 @@ class TestRegression:
 
             # Default states
             mock_reliability_instance.safe_mode_active = False
+
             # Mock retry_async to actually retry and eventually raise the exception
             async def mock_retry_async(func, **kwargs):
                 try:
@@ -82,14 +83,19 @@ class TestRegression:
                 except Exception as e:
                     # For testing, just re-raise the exception to simulate retry failure
                     raise e
-            mock_reliability_instance.retry_async = AsyncMock(side_effect=mock_retry_async)
+
+            mock_reliability_instance.retry_async = AsyncMock(
+                side_effect=mock_retry_async
+            )
             mock_reliability_instance.record_critical_error = MagicMock()
 
             mock_portfolio_instance.paper_balances = {"USDT": Decimal("10000")}
             mock_portfolio_instance.set_initial_balance = MagicMock()
             mock_portfolio_instance.initialize_portfolio = AsyncMock()
 
-            mock_processor_instance.process_order = AsyncMock(return_value={"id": "processed_order", "status": "filled"})
+            mock_processor_instance.process_order = AsyncMock(
+                return_value={"id": "processed_order", "status": "filled"}
+            )
             mock_processor_instance.open_orders = {}
             mock_processor_instance.closed_orders = {}
             mock_processor_instance.positions = {}
@@ -97,18 +103,22 @@ class TestRegression:
             mock_processor_instance.get_open_position_count = MagicMock(return_value=0)
 
             yield {
-                'reliability': mock_reliability_instance,
-                'portfolio': mock_portfolio_instance,
-                'processor': mock_processor_instance
+                "reliability": mock_reliability_instance,
+                "portfolio": mock_portfolio_instance,
+                "processor": mock_processor_instance,
             }
 
     @pytest.mark.asyncio
-    async def test_network_error_retry_mechanism(self, config, mock_executors, mock_managers):
+    async def test_network_error_retry_mechanism(
+        self, config, mock_executors, mock_managers
+    ):
         """Test that network errors trigger retry mechanism."""
         order_manager = OrderManager(config, TradingMode.LIVE)
 
         # Mock live executor to raise NetworkError
-        mock_executors['live'].execute_live_order = AsyncMock(side_effect=NetworkError("Connection timeout"))
+        mock_executors["live"].execute_live_order = AsyncMock(
+            side_effect=NetworkError("Connection timeout")
+        )
 
         signal = TradingSignal(
             strategy_id="network_error_test",
@@ -116,7 +126,7 @@ class TestRegression:
             signal_type=SignalType.ENTRY_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type="market",
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
         )
 
         # Execute order - should trigger retry
@@ -126,10 +136,10 @@ class TestRegression:
         assert result is None
 
         # Verify retry was attempted
-        mock_managers['reliability'].retry_async.assert_called_once()
+        mock_managers["reliability"].retry_async.assert_called_once()
 
         # Verify error was recorded
-        mock_managers['reliability'].record_critical_error.assert_called_once()
+        mock_managers["reliability"].record_critical_error.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_exchange_error_handling(self, config, mock_executors, mock_managers):
@@ -137,7 +147,9 @@ class TestRegression:
         order_manager = OrderManager(config, TradingMode.LIVE)
 
         # Mock live executor to raise ExchangeError
-        mock_executors['live'].execute_live_order = AsyncMock(side_effect=ExchangeError("Invalid API key"))
+        mock_executors["live"].execute_live_order = AsyncMock(
+            side_effect=ExchangeError("Invalid API key")
+        )
 
         signal = TradingSignal(
             strategy_id="exchange_error_test",
@@ -145,7 +157,7 @@ class TestRegression:
             signal_type=SignalType.ENTRY_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type="market",
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
         )
 
         result = await order_manager.execute_order(signal)
@@ -154,7 +166,7 @@ class TestRegression:
         assert result is None
 
         # Verify error handling
-        mock_managers['reliability'].record_critical_error.assert_called_once()
+        mock_managers["reliability"].record_critical_error.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_timeout_error_recovery(self, config, mock_executors, mock_managers):
@@ -162,7 +174,9 @@ class TestRegression:
         order_manager = OrderManager(config, TradingMode.LIVE)
 
         # Mock live executor to raise TimeoutError
-        mock_executors['live'].execute_live_order = AsyncMock(side_effect=asyncio.TimeoutError("Request timeout"))
+        mock_executors["live"].execute_live_order = AsyncMock(
+            side_effect=asyncio.TimeoutError("Request timeout")
+        )
 
         signal = TradingSignal(
             strategy_id="timeout_test",
@@ -170,7 +184,7 @@ class TestRegression:
             signal_type=SignalType.ENTRY_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type="market",
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
         )
 
         result = await order_manager.execute_order(signal)
@@ -179,10 +193,12 @@ class TestRegression:
         assert result is None
 
         # Verify timeout was handled as network error
-        mock_managers['reliability'].record_critical_error.assert_called_once()
+        mock_managers["reliability"].record_critical_error.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_corrupted_signal_data_handling(self, config, mock_executors, mock_managers):
+    async def test_corrupted_signal_data_handling(
+        self, config, mock_executors, mock_managers
+    ):
         """Test handling of corrupted or invalid signal data."""
         order_manager = OrderManager(config, TradingMode.PAPER)
 
@@ -193,11 +209,13 @@ class TestRegression:
             signal_type=SignalType.ENTRY_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type="market",
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
         )
 
         # Mock executor to raise exception due to corrupted data
-        mock_executors['paper'].execute_paper_order = AsyncMock(side_effect=ValueError("Invalid amount"))
+        mock_executors["paper"].execute_paper_order = AsyncMock(
+            side_effect=ValueError("Invalid amount")
+        )
 
         result = await order_manager.execute_order(signal)
 
@@ -205,14 +223,18 @@ class TestRegression:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_balance_fetch_failure_recovery(self, config, mock_executors, mock_managers):
+    async def test_balance_fetch_failure_recovery(
+        self, config, mock_executors, mock_managers
+    ):
         """Test recovery when balance fetch fails."""
         order_manager = OrderManager(config, TradingMode.LIVE)
 
         # Mock exchange balance fetch to fail
         mock_exchange = MagicMock()
-        mock_exchange.fetch_balance = AsyncMock(side_effect=NetworkError("Balance fetch failed"))
-        mock_executors['live'].exchange = mock_exchange
+        mock_exchange.fetch_balance = AsyncMock(
+            side_effect=NetworkError("Balance fetch failed")
+        )
+        mock_executors["live"].exchange = mock_exchange
 
         balance = await order_manager.get_balance()
 
@@ -220,22 +242,25 @@ class TestRegression:
         assert balance == Decimal("0")
 
     @pytest.mark.asyncio
-    async def test_equity_calculation_with_missing_ticker_data(self, config, mock_executors, mock_managers):
+    async def test_equity_calculation_with_missing_ticker_data(
+        self, config, mock_executors, mock_managers
+    ):
         """Test equity calculation when ticker data is unavailable."""
         order_manager = OrderManager(config, TradingMode.LIVE)
 
         # Mock exchange with missing ticker data
         mock_exchange = MagicMock()
-        mock_exchange.fetch_balance = AsyncMock(return_value={"total": {"USDT": 5000.0}})
-        mock_exchange.fetch_ticker = AsyncMock(side_effect=NetworkError("Ticker unavailable"))
-        mock_executors['live'].exchange = mock_exchange
+        mock_exchange.fetch_balance = AsyncMock(
+            return_value={"total": {"USDT": 5000.0}}
+        )
+        mock_exchange.fetch_ticker = AsyncMock(
+            side_effect=NetworkError("Ticker unavailable")
+        )
+        mock_executors["live"].exchange = mock_exchange
 
         # Add a position to test unrealized PnL calculation
-        mock_managers['processor'].positions = {
-            "BTC/USDT": {
-                "entry_price": Decimal("50000"),
-                "amount": Decimal("1.0")
-            }
+        mock_managers["processor"].positions = {
+            "BTC/USDT": {"entry_price": Decimal("50000"), "amount": Decimal("1.0")}
         }
 
         equity = await order_manager.get_equity()
@@ -244,11 +269,13 @@ class TestRegression:
         assert equity == Decimal("5000")
 
     @pytest.mark.asyncio
-    async def test_discord_notification_failure_does_not_break_flow(self, config, mock_executors, mock_managers):
+    async def test_discord_notification_failure_does_not_break_flow(
+        self, config, mock_executors, mock_managers
+    ):
         """Test that Discord notification failures don't break the main flow."""
         from notifier.discord_bot import DiscordNotifier
 
-        with patch('aiohttp.ClientSession') as mock_session:
+        with patch("aiohttp.ClientSession") as mock_session:
             mock_instance = MagicMock()
             mock_session.return_value = mock_instance
 
@@ -270,7 +297,7 @@ class TestRegression:
                 signal_type=SignalType.ENTRY_LONG,
                 signal_strength=SignalStrength.STRONG,
                 order_type="market",
-                amount=Decimal("1.0")
+                amount=Decimal("1.0"),
             )
             result = await notifier.send_signal_alert(signal)
 
@@ -278,11 +305,13 @@ class TestRegression:
             assert result is False
 
     @pytest.mark.asyncio
-    async def test_discord_rate_limit_handling(self, config, mock_executors, mock_managers):
+    async def test_discord_rate_limit_handling(
+        self, config, mock_executors, mock_managers
+    ):
         """Test Discord rate limit handling."""
         from notifier.discord_bot import DiscordNotifier
 
-        with patch('aiohttp.ClientSession') as mock_session:
+        with patch("aiohttp.ClientSession") as mock_session:
             mock_instance = MagicMock()
             mock_session.return_value = mock_instance
 
@@ -299,7 +328,9 @@ class TestRegression:
             success_response.json = AsyncMock(return_value={})
 
             # First call rate limited, second succeeds
-            mock_instance.post = AsyncMock(side_effect=[rate_limit_response, success_response])
+            mock_instance.post = AsyncMock(
+                side_effect=[rate_limit_response, success_response]
+            )
             mock_instance.close = AsyncMock()
 
             discord_config = config["discord"]
@@ -313,7 +344,7 @@ class TestRegression:
                 signal_type=SignalType.ENTRY_LONG,
                 signal_strength=SignalStrength.STRONG,
                 order_type="market",
-                amount=Decimal("1.0")
+                amount=Decimal("1.0"),
             )
             result = await notifier.send_signal_alert(signal)
 
@@ -322,7 +353,9 @@ class TestRegression:
             assert mock_instance.post.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_portfolio_initialization_with_invalid_data(self, config, mock_executors, mock_managers):
+    async def test_portfolio_initialization_with_invalid_data(
+        self, config, mock_executors, mock_managers
+    ):
         """Test portfolio initialization with invalid data."""
         order_manager = OrderManager(config, TradingMode.PAPER)
 
@@ -331,19 +364,21 @@ class TestRegression:
             await order_manager.initialize_portfolio(None, True, {"INVALID": 1.5})
 
     @pytest.mark.asyncio
-    async def test_concurrent_order_cancellation_stress(self, config, mock_executors, mock_managers):
+    async def test_concurrent_order_cancellation_stress(
+        self, config, mock_executors, mock_managers
+    ):
         """Test concurrent order cancellation under stress."""
         order_manager = OrderManager(config, TradingMode.LIVE)
 
         # Mock exchange cancellation
         mock_exchange = MagicMock()
         mock_exchange.cancel_order = AsyncMock(return_value=True)
-        mock_executors['live'].exchange = mock_exchange
+        mock_executors["live"].exchange = mock_exchange
 
         # Add multiple orders
         order_ids = [f"order_{i}" for i in range(10)]
         for order_id in order_ids:
-            mock_managers['processor'].open_orders[order_id] = MagicMock()
+            mock_managers["processor"].open_orders[order_id] = MagicMock()
 
         # Cancel all orders concurrently
         tasks = [order_manager.cancel_order(order_id) for order_id in order_ids]
@@ -356,7 +391,9 @@ class TestRegression:
         assert mock_exchange.cancel_order.call_count == 10
 
     @pytest.mark.asyncio
-    async def test_memory_leak_prevention_in_long_running_sessions(self, config, mock_executors, mock_managers):
+    async def test_memory_leak_prevention_in_long_running_sessions(
+        self, config, mock_executors, mock_managers
+    ):
         """Test prevention of memory leaks in long-running sessions."""
         order_manager = OrderManager(config, TradingMode.PAPER)
 
@@ -369,7 +406,7 @@ class TestRegression:
                 signal_type=SignalType.ENTRY_LONG,
                 signal_strength=SignalStrength.STRONG,
                 order_type="market",
-                amount=Decimal("0.1")
+                amount=Decimal("0.1"),
             )
             signals.append(signal)
 
@@ -382,27 +419,31 @@ class TestRegression:
         assert all(result is not None for result in results)
 
         # Verify no memory leaks in tracking structures
-        assert len(mock_managers['processor'].open_orders) == 0  # Should be cleaned up
+        assert len(mock_managers["processor"].open_orders) == 0  # Should be cleaned up
 
     @pytest.mark.asyncio
-    async def test_graceful_shutdown_under_load(self, config, mock_executors, mock_managers):
+    async def test_graceful_shutdown_under_load(
+        self, config, mock_executors, mock_managers
+    ):
         """Test graceful shutdown when system is under load."""
         order_manager = OrderManager(config, TradingMode.LIVE)
 
         # Mock live executor shutdown
-        mock_executors['live'].shutdown = AsyncMock()
+        mock_executors["live"].shutdown = AsyncMock()
 
         # Simulate active operations
-        mock_managers['processor'].open_orders = {"active_order": MagicMock()}
+        mock_managers["processor"].open_orders = {"active_order": MagicMock()}
 
         # Shutdown
         await order_manager.shutdown()
 
         # Verify cleanup happened
-        mock_executors['live'].shutdown.assert_called_once()
+        mock_executors["live"].shutdown.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_invalid_trading_mode_fallback(self, config, mock_executors, mock_managers):
+    async def test_invalid_trading_mode_fallback(
+        self, config, mock_executors, mock_managers
+    ):
         """Test fallback behavior for invalid trading modes."""
         # Test with invalid mode
         order_manager = OrderManager(config, "invalid_mode")
@@ -417,14 +458,16 @@ class TestRegression:
             signal_type=SignalType.ENTRY_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type="market",
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
         )
 
         result = await order_manager.execute_order(signal)
         assert result is not None
 
     @pytest.mark.asyncio
-    async def test_extreme_market_conditions_simulation(self, config, mock_executors, mock_managers):
+    async def test_extreme_market_conditions_simulation(
+        self, config, mock_executors, mock_managers
+    ):
         """Test behavior under extreme market conditions."""
         order_manager = OrderManager(config, TradingMode.PAPER)
 
@@ -433,12 +476,17 @@ class TestRegression:
             TradingSignal(
                 strategy_id=f"extreme_{i}",
                 symbol="BTC/USDT",
-                signal_type=SignalType.ENTRY_LONG if i % 2 == 0 else SignalType.ENTRY_SHORT,
+                signal_type=SignalType.ENTRY_LONG
+                if i % 2 == 0
+                else SignalType.ENTRY_SHORT,
                 signal_strength=SignalStrength.EXTREME,
                 order_type="market",
                 amount=Decimal("1000"),  # Large amount
-                price=Decimal("100000") if i % 2 == 0 else Decimal("1000")  # Extreme prices
-            ) for i in range(10)
+                price=Decimal("100000")
+                if i % 2 == 0
+                else Decimal("1000"),  # Extreme prices
+            )
+            for i in range(10)
         ]
 
         # Execute extreme orders

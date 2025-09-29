@@ -14,29 +14,32 @@ Supported indicators:
 - OBV (On-Balance Volume)
 """
 
+import logging
+from typing import Dict, Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
-from typing import Dict, Optional, Tuple, Union
-import logging
 
 logger = logging.getLogger(__name__)
 
 # Centralized configuration for indicator parameters
 # This eliminates hard-coded values and allows easy configuration changes
 INDICATOR_CONFIG = {
-    'rsi_period': 14,
-    'ema_period': 20,
-    'macd_fast': 12,
-    'macd_slow': 26,
-    'macd_signal': 9,
-    'bb_period': 20,
-    'bb_std_dev': 2.0,
-    'atr_period': 14,
-    'adx_period': 14
+    "rsi_period": 14,
+    "ema_period": 20,
+    "macd_fast": 12,
+    "macd_slow": 26,
+    "macd_signal": 9,
+    "bb_period": 20,
+    "bb_std_dev": 2.0,
+    "atr_period": 14,
+    "adx_period": 14,
 }
 
 
-def calculate_rsi(data: pd.DataFrame, period: int = 14, column: str = 'close') -> pd.Series:
+def calculate_rsi(
+    data: pd.DataFrame, period: int = 14, column: str = "close"
+) -> pd.Series:
     """
     Calculate Relative Strength Index (RSI).
 
@@ -68,7 +71,9 @@ def calculate_rsi(data: pd.DataFrame, period: int = 14, column: str = 'close') -
     return rsi
 
 
-def calculate_ema(data: pd.DataFrame, period: int = 20, column: str = 'close') -> pd.Series:
+def calculate_ema(
+    data: pd.DataFrame, period: int = 20, column: str = "close"
+) -> pd.Series:
     """
     Calculate Exponential Moving Average (EMA).
 
@@ -90,8 +95,13 @@ def calculate_ema(data: pd.DataFrame, period: int = 20, column: str = 'close') -
     return data[column].ewm(span=period, adjust=False).mean()
 
 
-def calculate_macd(data: pd.DataFrame, fast_period: int = 12, slow_period: int = 26,
-                   signal_period: int = 9, column: str = 'close') -> Tuple[pd.Series, pd.Series, pd.Series]:
+def calculate_macd(
+    data: pd.DataFrame,
+    fast_period: int = 12,
+    slow_period: int = 26,
+    signal_period: int = 9,
+    column: str = "close",
+) -> Tuple[pd.Series, pd.Series, pd.Series]:
     """
     Calculate MACD (Moving Average Convergence Divergence).
 
@@ -110,7 +120,9 @@ def calculate_macd(data: pd.DataFrame, fast_period: int = 12, slow_period: int =
 
     min_period = max(fast_period, slow_period, signal_period)
     if len(data) < min_period:
-        logger.warning(f"Insufficient data for MACD calculation: {len(data)} < {min_period}")
+        logger.warning(
+            f"Insufficient data for MACD calculation: {len(data)} < {min_period}"
+        )
         nan_series = pd.Series([np.nan] * len(data), index=data.index)
         return nan_series, nan_series, nan_series
 
@@ -123,8 +135,9 @@ def calculate_macd(data: pd.DataFrame, fast_period: int = 12, slow_period: int =
     return macd_line, signal_line, histogram
 
 
-def calculate_bollinger_bands(data: pd.DataFrame, period: int = 20, std_dev: float = 2.0,
-                             column: str = 'close') -> Tuple[pd.Series, pd.Series, pd.Series]:
+def calculate_bollinger_bands(
+    data: pd.DataFrame, period: int = 20, std_dev: float = 2.0, column: str = "close"
+) -> Tuple[pd.Series, pd.Series, pd.Series]:
     """
     Calculate Bollinger Bands.
 
@@ -141,7 +154,9 @@ def calculate_bollinger_bands(data: pd.DataFrame, period: int = 20, std_dev: flo
         raise ValueError(f"Column '{column}' not found in data")
 
     if len(data) < period:
-        logger.warning(f"Insufficient data for Bollinger Bands calculation: {len(data)} < {period}")
+        logger.warning(
+            f"Insufficient data for Bollinger Bands calculation: {len(data)} < {period}"
+        )
         nan_series = pd.Series([np.nan] * len(data), index=data.index)
         return nan_series, nan_series, nan_series
 
@@ -164,7 +179,7 @@ def calculate_atr(data: pd.DataFrame, period: int = 14) -> pd.Series:
     Returns:
         Series with ATR values
     """
-    required_cols = ['high', 'low', 'close']
+    required_cols = ["high", "low", "close"]
     for col in required_cols:
         if col not in data.columns:
             raise ValueError(f"Column '{col}' not found in data")
@@ -173,9 +188,9 @@ def calculate_atr(data: pd.DataFrame, period: int = 14) -> pd.Series:
         logger.warning(f"Insufficient data for ATR calculation: {len(data)} < {period}")
         return pd.Series([np.nan] * len(data), index=data.index)
 
-    high_low = data['high'] - data['low']
-    high_close = (data['high'] - data['close'].shift(1)).abs()
-    low_close = (data['low'] - data['close'].shift(1)).abs()
+    high_low = data["high"] - data["low"]
+    high_close = (data["high"] - data["close"].shift(1)).abs()
+    low_close = (data["low"] - data["close"].shift(1)).abs()
 
     true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     atr = true_range.rolling(window=period).mean()
@@ -194,18 +209,20 @@ def calculate_adx(data: pd.DataFrame, period: int = 14) -> pd.Series:
     Returns:
         Series with ADX values
     """
-    required_cols = ['high', 'low', 'close']
+    required_cols = ["high", "low", "close"]
     for col in required_cols:
         if col not in data.columns:
             raise ValueError(f"Column '{col}' not found in data")
 
     if len(data) < period * 2:
-        logger.warning(f"Insufficient data for ADX calculation: {len(data)} < {period * 2}")
+        logger.warning(
+            f"Insufficient data for ADX calculation: {len(data)} < {period * 2}"
+        )
         return pd.Series([np.nan] * len(data), index=data.index)
 
     # Calculate directional movements
-    delta_high = data['high'].diff()
-    delta_low = data['low'].diff()
+    delta_high = data["high"].diff()
+    delta_low = data["low"].diff()
 
     plus_dm = np.where((delta_high > delta_low) & (delta_high > 0), delta_high, 0)
     minus_dm = np.where((delta_low > delta_high) & (delta_low > 0), delta_low, 0)
@@ -236,30 +253,34 @@ def calculate_obv(data: pd.DataFrame) -> pd.Series:
     Returns:
         Series with OBV values
     """
-    required_cols = ['close', 'volume']
+    required_cols = ["close", "volume"]
     for col in required_cols:
         if col not in data.columns:
             raise ValueError(f"Column '{col}' not found in data")
 
     if len(data) < 2:
-        logger.warning("Insufficient data for OBV calculation: need at least 2 data points")
+        logger.warning(
+            "Insufficient data for OBV calculation: need at least 2 data points"
+        )
         return pd.Series([np.nan] * len(data), index=data.index)
 
     obv = pd.Series([0] * len(data), index=data.index, dtype=int)
-    obv.iloc[0] = int(data['volume'].iloc[0])
+    obv.iloc[0] = int(data["volume"].iloc[0])
 
     for i in range(1, len(data)):
-        if data['close'].iloc[i] > data['close'].iloc[i-1]:
-            obv.iloc[i] = int(obv.iloc[i-1] + data['volume'].iloc[i])
-        elif data['close'].iloc[i] < data['close'].iloc[i-1]:
-            obv.iloc[i] = int(obv.iloc[i-1] - data['volume'].iloc[i])
+        if data["close"].iloc[i] > data["close"].iloc[i - 1]:
+            obv.iloc[i] = int(obv.iloc[i - 1] + data["volume"].iloc[i])
+        elif data["close"].iloc[i] < data["close"].iloc[i - 1]:
+            obv.iloc[i] = int(obv.iloc[i - 1] - data["volume"].iloc[i])
         else:
-            obv.iloc[i] = int(obv.iloc[i-1])
+            obv.iloc[i] = int(obv.iloc[i - 1])
 
     return obv
 
 
-def calculate_stochastic(data: pd.DataFrame, k_period: int = 14, d_period: int = 3) -> Tuple[pd.Series, pd.Series]:
+def calculate_stochastic(
+    data: pd.DataFrame, k_period: int = 14, d_period: int = 3
+) -> Tuple[pd.Series, pd.Series]:
     """
     Calculate Stochastic Oscillator (%K and %D).
 
@@ -271,21 +292,23 @@ def calculate_stochastic(data: pd.DataFrame, k_period: int = 14, d_period: int =
     Returns:
         Tuple of (%K, %D) Series
     """
-    required_cols = ['high', 'low', 'close']
+    required_cols = ["high", "low", "close"]
     for col in required_cols:
         if col not in data.columns:
             raise ValueError(f"Column '{col}' not found in data")
 
     if len(data) < k_period:
-        logger.warning(f"Insufficient data for Stochastic calculation: {len(data)} < {k_period}")
+        logger.warning(
+            f"Insufficient data for Stochastic calculation: {len(data)} < {k_period}"
+        )
         nan_series = pd.Series([np.nan] * len(data), index=data.index)
         return nan_series, nan_series
 
     # Calculate %K
-    lowest_low = data['low'].rolling(window=k_period).min()
-    highest_high = data['high'].rolling(window=k_period).max()
+    lowest_low = data["low"].rolling(window=k_period).min()
+    highest_high = data["high"].rolling(window=k_period).max()
 
-    k_percent = 100 * (data['close'] - lowest_low) / (highest_high - lowest_low)
+    k_percent = 100 * (data["close"] - lowest_low) / (highest_high - lowest_low)
 
     # Calculate %D (SMA of %K)
     d_percent = k_percent.rolling(window=d_period).mean()
@@ -303,7 +326,7 @@ def calculate_vwap(data: pd.DataFrame) -> pd.Series:
     Returns:
         Series with VWAP values
     """
-    required_cols = ['high', 'low', 'close', 'volume']
+    required_cols = ["high", "low", "close", "volume"]
     for col in required_cols:
         if col not in data.columns:
             raise ValueError(f"Column '{col}' not found in data")
@@ -313,16 +336,18 @@ def calculate_vwap(data: pd.DataFrame) -> pd.Series:
         return pd.Series([np.nan] * len(data), index=data.index)
 
     # VWAP = (Cumulative (High + Low + Close)/3 * Volume) / Cumulative Volume
-    typical_price = (data['high'] + data['low'] + data['close']) / 3
-    cumulative_tp_volume = (typical_price * data['volume']).cumsum()
-    cumulative_volume = data['volume'].cumsum()
+    typical_price = (data["high"] + data["low"] + data["close"]) / 3
+    cumulative_tp_volume = (typical_price * data["volume"]).cumsum()
+    cumulative_volume = data["volume"].cumsum()
 
     vwap = cumulative_tp_volume / cumulative_volume
 
     return vwap
 
 
-def calculate_all_indicators(data: pd.DataFrame, config: Optional[Dict[str, Union[int, float]]] = None) -> pd.DataFrame:
+def calculate_all_indicators(
+    data: pd.DataFrame, config: Optional[Dict[str, Union[int, float]]] = None
+) -> pd.DataFrame:
     """
     Calculate all supported technical indicators.
 
@@ -341,42 +366,42 @@ def calculate_all_indicators(data: pd.DataFrame, config: Optional[Dict[str, Unio
 
     try:
         # RSI
-        df['rsi'] = calculate_rsi(df, period=params['rsi_period'])
+        df["rsi"] = calculate_rsi(df, period=params["rsi_period"])
 
         # EMA
-        df['ema'] = calculate_ema(df, period=params['ema_period'])
+        df["ema"] = calculate_ema(df, period=params["ema_period"])
 
         # MACD
         macd_line, signal_line, histogram = calculate_macd(
             df,
-            fast_period=params['macd_fast'],
-            slow_period=params['macd_slow'],
-            signal_period=params['macd_signal']
+            fast_period=params["macd_fast"],
+            slow_period=params["macd_slow"],
+            signal_period=params["macd_signal"],
         )
-        df['macd'] = macd_line
-        df['macd_signal'] = signal_line
-        df['macd_histogram'] = histogram
+        df["macd"] = macd_line
+        df["macd_signal"] = signal_line
+        df["macd_histogram"] = histogram
 
         # Bollinger Bands
         upper_bb, middle_bb, lower_bb = calculate_bollinger_bands(
-            df,
-            period=params['bb_period'],
-            std_dev=params['bb_std_dev']
+            df, period=params["bb_period"], std_dev=params["bb_std_dev"]
         )
-        df['bb_upper'] = upper_bb
-        df['bb_middle'] = middle_bb
-        df['bb_lower'] = lower_bb
+        df["bb_upper"] = upper_bb
+        df["bb_middle"] = middle_bb
+        df["bb_lower"] = lower_bb
 
         # ATR
-        df['atr'] = calculate_atr(df, period=params['atr_period'])
+        df["atr"] = calculate_atr(df, period=params["atr_period"])
 
         # ADX
-        df['adx'] = calculate_adx(df, period=params['adx_period'])
+        df["adx"] = calculate_adx(df, period=params["adx_period"])
 
         # OBV
-        df['obv'] = calculate_obv(df)
+        df["obv"] = calculate_obv(df)
 
-        logger.info(f"Calculated {len(df.columns) - len(data.columns)} indicator columns")
+        logger.info(
+            f"Calculated {len(df.columns) - len(data.columns)} indicator columns"
+        )
 
     except Exception as e:
         logger.error(f"Error calculating indicators: {e}")
@@ -394,8 +419,17 @@ def get_indicator_names() -> list:
         List of indicator column names
     """
     return [
-        'rsi', 'ema', 'macd', 'macd_signal', 'macd_histogram',
-        'bb_upper', 'bb_middle', 'bb_lower', 'atr', 'adx', 'obv'
+        "rsi",
+        "ema",
+        "macd",
+        "macd_signal",
+        "macd_histogram",
+        "bb_upper",
+        "bb_middle",
+        "bb_lower",
+        "atr",
+        "adx",
+        "obv",
     ]
 
 
@@ -409,5 +443,5 @@ def validate_ohlcv_data(data: pd.DataFrame) -> bool:
     Returns:
         True if valid, False otherwise
     """
-    required_cols = ['open', 'high', 'low', 'close', 'volume']
+    required_cols = ["open", "high", "low", "close", "volume"]
     return all(col in data.columns for col in required_cols)

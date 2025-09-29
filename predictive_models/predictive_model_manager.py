@@ -5,12 +5,14 @@ Manages all predictive models and coordinates their predictions.
 """
 
 import logging
+from typing import Any, Dict
+
 import pandas as pd
-from typing import Dict, Any, Optional
+
 from .price_predictor import PricePredictor
+from .types import PredictionContext
 from .volatility_predictor import VolatilityPredictor
 from .volume_predictor import VolumePredictor
-from .types import PredictionContext
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +43,9 @@ class PredictiveModelManager:
         models_config = config.get("models", {})
 
         self.price_predictor = PricePredictor(models_config.get("price_direction", {}))
-        self.volatility_predictor = VolatilityPredictor(models_config.get("volatility", {}))
+        self.volatility_predictor = VolatilityPredictor(
+            models_config.get("volatility", {})
+        )
         self.volume_predictor = VolumePredictor(models_config.get("volume_surge", {}))
 
         logger.info("PredictiveModelManager initialized")
@@ -103,7 +107,9 @@ class PredictiveModelManager:
                 predictions.price_direction = direction
                 predictions.price_confidence = price_conf
                 confidence_scores.append(price_conf)
-                logger.debug(f"Price direction: {direction} (confidence: {price_conf:.3f})")
+                logger.debug(
+                    f"Price direction: {direction} (confidence: {price_conf:.3f})"
+                )
 
             # Volatility prediction
             if self.volatility_predictor:
@@ -111,7 +117,9 @@ class PredictiveModelManager:
                 predictions.volatility = regime
                 predictions.volatility_confidence = vol_conf
                 confidence_scores.append(vol_conf)
-                logger.debug(f"Volatility regime: {regime} (confidence: {vol_conf:.3f})")
+                logger.debug(
+                    f"Volatility regime: {regime} (confidence: {vol_conf:.3f})"
+                )
 
             # Volume surge detection
             if self.volume_predictor:
@@ -119,7 +127,9 @@ class PredictiveModelManager:
                 predictions.volume_surge = is_surge
                 predictions.volume_confidence = volume_conf
                 confidence_scores.append(volume_conf)
-                logger.debug(f"Volume surge: {is_surge} (confidence: {volume_conf:.3f})")
+                logger.debug(
+                    f"Volume surge: {is_surge} (confidence: {volume_conf:.3f})"
+                )
 
             # Calculate overall confidence
             if confidence_scores:
@@ -149,27 +159,29 @@ class PredictiveModelManager:
         if not self.enabled:
             return {"status": "disabled"}
 
-        training_results = {
-            "price_direction": {},
-            "volatility": {},
-            "volume_surge": {}
-        }
+        training_results = {"price_direction": {}, "volatility": {}, "volume_surge": {}}
 
         try:
             # Train price predictor
             if self.price_predictor:
                 logger.info("Training price direction model...")
-                training_results["price_direction"] = self.price_predictor.train(training_data)
+                training_results["price_direction"] = self.price_predictor.train(
+                    training_data
+                )
 
             # Train volatility predictor
             if self.volatility_predictor:
                 logger.info("Training volatility model...")
-                training_results["volatility"] = self.volatility_predictor.train(training_data)
+                training_results["volatility"] = self.volatility_predictor.train(
+                    training_data
+                )
 
             # Train volume predictor
             if self.volume_predictor:
                 logger.info("Training volume surge model...")
-                training_results["volume_surge"] = self.volume_predictor.train(training_data)
+                training_results["volume_surge"] = self.volume_predictor.train(
+                    training_data
+                )
 
             logger.info("All models trained successfully")
             training_results["status"] = "success"
@@ -188,10 +200,7 @@ class PredictiveModelManager:
         Returns:
             Dictionary with model status information
         """
-        status = {
-            "enabled": self.enabled,
-            "models": {}
-        }
+        status = {"enabled": self.enabled, "models": {}}
 
         if not self.enabled:
             return status
@@ -201,7 +210,7 @@ class PredictiveModelManager:
             status["models"]["price_direction"] = {
                 "type": self.price_predictor.model_type,
                 "loaded": self.price_predictor.model is not None,
-                "model_path": self.price_predictor.model_path
+                "model_path": self.price_predictor.model_path,
             }
 
         # Check volatility predictor
@@ -209,20 +218,23 @@ class PredictiveModelManager:
             status["models"]["volatility"] = {
                 "type": self.volatility_predictor.model_type,
                 "loaded": self.volatility_predictor.model is not None,
-                "model_path": self.volatility_predictor.model_path
+                "model_path": self.volatility_predictor.model_path,
             }
 
         # Check volume predictor
         if self.volume_predictor:
             status["models"]["volume_surge"] = {
                 "type": self.volume_predictor.model_type,
-                "loaded": self.volume_predictor.model is not None or self.volume_predictor.model_type == "zscore",
-                "model_path": self.volume_predictor.model_path
+                "loaded": self.volume_predictor.model is not None
+                or self.volume_predictor.model_type == "zscore",
+                "model_path": self.volume_predictor.model_path,
             }
 
         return status
 
-    def should_allow_signal(self, signal_type: str, predictions: PredictionContext) -> bool:
+    def should_allow_signal(
+        self, signal_type: str, predictions: PredictionContext
+    ) -> bool:
         """
         Determine if a trading signal should be allowed based on predictions.
 
@@ -241,7 +253,9 @@ class PredictiveModelManager:
 
         # Check overall confidence
         if predictions.confidence < confidence_threshold:
-            logger.debug(f"Signal blocked: overall confidence {predictions.confidence:.3f} < threshold {confidence_threshold}")
+            logger.debug(
+                f"Signal blocked: overall confidence {predictions.confidence:.3f} < threshold {confidence_threshold}"
+            )
             return False
 
         # Apply model-specific filters
@@ -251,8 +265,13 @@ class PredictiveModelManager:
         price_config = models_config.get("price_direction", {})
         if price_config.get("enabled", True):
             price_threshold = price_config.get("confidence_threshold", 0.6)
-            if predictions.price_confidence and predictions.price_confidence < price_threshold:
-                logger.debug(f"Signal blocked: price confidence {predictions.price_confidence:.3f} < threshold {price_threshold}")
+            if (
+                predictions.price_confidence
+                and predictions.price_confidence < price_threshold
+            ):
+                logger.debug(
+                    f"Signal blocked: price confidence {predictions.price_confidence:.3f} < threshold {price_threshold}"
+                )
                 return False
 
             # Check if signal should be allowed based on trade/skip prediction
@@ -261,28 +280,44 @@ class PredictiveModelManager:
                 return False
 
             # Check for signal-direction conflicts with high confidence predictions
-            if predictions.price_confidence and predictions.price_confidence >= price_threshold:
+            if (
+                predictions.price_confidence
+                and predictions.price_confidence >= price_threshold
+            ):
                 # Map signal types to expected price directions
                 signal_to_direction = {
-                    "BUY": "up",      # BUY signals expect price to go up
-                    "SELL": "down"    # SELL signals expect price to go down
+                    "BUY": "up",  # BUY signals expect price to go up
+                    "SELL": "down",  # SELL signals expect price to go down
                 }
 
                 expected_direction = signal_to_direction.get(signal_type.upper())
-                if expected_direction and predictions.price_direction != expected_direction:
-                    logger.debug(f"Signal blocked: {signal_type} signal conflicts with predicted price direction '{predictions.price_direction}' (confidence: {predictions.price_confidence:.3f})")
+                if (
+                    expected_direction
+                    and predictions.price_direction != expected_direction
+                ):
+                    logger.debug(
+                        f"Signal blocked: {signal_type} signal conflicts with predicted price direction '{predictions.price_direction}' (confidence: {predictions.price_confidence:.3f})"
+                    )
                     return False
 
         # Volatility filter
         vol_config = models_config.get("volatility", {})
         if vol_config.get("enabled", True):
             vol_threshold = vol_config.get("confidence_threshold", 0.6)
-            if predictions.volatility_confidence and predictions.volatility_confidence < vol_threshold:
-                logger.debug(f"Signal blocked: volatility confidence {predictions.volatility_confidence:.3f} < threshold {vol_threshold}")
+            if (
+                predictions.volatility_confidence
+                and predictions.volatility_confidence < vol_threshold
+            ):
+                logger.debug(
+                    f"Signal blocked: volatility confidence {predictions.volatility_confidence:.3f} < threshold {vol_threshold}"
+                )
                 return False
 
             # Optionally block signals in high volatility
-            if vol_config.get("block_high_volatility", False) and predictions.volatility == "high":
+            if (
+                vol_config.get("block_high_volatility", False)
+                and predictions.volatility == "high"
+            ):
                 logger.debug("Signal blocked: high volatility regime")
                 return False
 
@@ -290,12 +325,20 @@ class PredictiveModelManager:
         volume_config = models_config.get("volume_surge", {})
         if volume_config.get("enabled", True):
             volume_threshold = volume_config.get("confidence_threshold", 0.6)
-            if predictions.volume_confidence and predictions.volume_confidence < volume_threshold:
-                logger.debug(f"Signal blocked: volume confidence {predictions.volume_confidence:.3f} < threshold {volume_threshold}")
+            if (
+                predictions.volume_confidence
+                and predictions.volume_confidence < volume_threshold
+            ):
+                logger.debug(
+                    f"Signal blocked: volume confidence {predictions.volume_confidence:.3f} < threshold {volume_threshold}"
+                )
                 return False
 
             # Optionally require volume surge for signals
-            if volume_config.get("require_surge", False) and not predictions.volume_surge:
+            if (
+                volume_config.get("require_surge", False)
+                and not predictions.volume_surge
+            ):
                 logger.debug("Signal blocked: volume surge required but not detected")
                 return False
 

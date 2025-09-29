@@ -6,10 +6,10 @@ that modules use to communicate via the event bus.
 """
 
 from dataclasses import dataclass
-from typing import Dict, Any, Optional
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+from typing import Any, Dict, Optional
 
 
 class EventType(Enum):
@@ -63,7 +63,7 @@ class BaseEvent:
             "source": self.source,
             "timestamp": self.timestamp.isoformat(),
             "payload": self.payload,
-            "metadata": self.metadata or {}
+            "metadata": self.metadata or {},
         }
 
 
@@ -78,7 +78,7 @@ class RegimeChangeEvent(BaseEvent):
         confidence: float,
         market_data: Optional[Dict[str, Any]] = None,
         source: str = "regime_detector",
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             event_type=EventType.REGIME_CHANGE,
@@ -88,9 +88,9 @@ class RegimeChangeEvent(BaseEvent):
                 "old_regime": old_regime,
                 "new_regime": new_regime,
                 "confidence": confidence,
-                "market_data": market_data
+                "market_data": market_data,
             },
-            metadata=metadata
+            metadata=metadata,
         )
 
 
@@ -106,7 +106,7 @@ class StrategySwitchEvent(BaseEvent):
         confidence: float,
         market_conditions: Optional[Dict[str, Any]] = None,
         source: str = "strategy_selector",
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             event_type=EventType.STRATEGY_SWITCH,
@@ -117,9 +117,9 @@ class StrategySwitchEvent(BaseEvent):
                 "new_strategy": new_strategy,
                 "rationale": rationale,
                 "confidence": confidence,
-                "market_conditions": market_conditions
+                "market_conditions": market_conditions,
             },
-            metadata=metadata
+            metadata=metadata,
         )
 
 
@@ -138,7 +138,7 @@ class TradeExecutedEvent(BaseEvent):
         commission: Optional[Decimal] = None,
         strategy: Optional[str] = None,
         source: str = "executor",
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             event_type=EventType.TRADE_EXECUTED,
@@ -152,9 +152,9 @@ class TradeExecutedEvent(BaseEvent):
                 "price": str(price),
                 "slippage": str(slippage) if slippage else None,
                 "commission": str(commission) if commission else None,
-                "strategy": strategy
+                "strategy": strategy,
             },
-            metadata=metadata
+            metadata=metadata,
         )
 
 
@@ -171,7 +171,7 @@ class RiskLimitTriggeredEvent(BaseEvent):
         defensive_action: str,
         symbol: Optional[str] = None,
         source: str = "risk_manager",
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             event_type=EventType.RISK_LIMIT_TRIGGERED,
@@ -183,9 +183,9 @@ class RiskLimitTriggeredEvent(BaseEvent):
                 "current_value": current_value,
                 "threshold_value": threshold_value,
                 "defensive_action": defensive_action,
-                "symbol": symbol
+                "symbol": symbol,
             },
-            metadata=metadata
+            metadata=metadata,
         )
 
 
@@ -200,7 +200,7 @@ class DiagnosticAlertEvent(BaseEvent):
         message: str,
         details: Optional[Dict[str, Any]] = None,
         source: str = "diagnostics",
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             event_type=EventType.DIAGNOSTIC_ALERT,
@@ -210,9 +210,9 @@ class DiagnosticAlertEvent(BaseEvent):
                 "alert_type": alert_type,
                 "component": component,
                 "message": message,
-                "details": details
+                "details": details,
             },
-            metadata=metadata
+            metadata=metadata,
         )
 
 
@@ -228,7 +228,7 @@ class KnowledgeEntryCreatedEvent(BaseEvent):
         performance_metrics: Dict[str, Any],
         outcome: str,
         source: str = "knowledge_base",
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             event_type=EventType.KNOWLEDGE_ENTRY_CREATED,
@@ -239,9 +239,9 @@ class KnowledgeEntryCreatedEvent(BaseEvent):
                 "regime": regime,
                 "strategy": strategy,
                 "performance_metrics": performance_metrics,
-                "outcome": outcome
+                "outcome": outcome,
             },
-            metadata=metadata
+            metadata=metadata,
         )
 
 
@@ -255,18 +255,14 @@ class MarketDataUpdateEvent(BaseEvent):
         data_type: str,  # 'ohlcv', 'indicators', 'orderbook'
         data: Dict[str, Any],
         source: str = "market_data",
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             event_type=EventType.MARKET_DATA_UPDATE,
             source=source,
             timestamp=datetime.now(),
-            payload={
-                "symbol": symbol,
-                "data_type": data_type,
-                "data": data
-            },
-            metadata=metadata
+            payload={"symbol": symbol, "data_type": data_type, "data": data},
+            metadata=metadata,
         )
 
 
@@ -280,18 +276,14 @@ class SystemStatusUpdateEvent(BaseEvent):
         status: str,  # 'starting', 'running', 'stopping', 'error'
         details: Optional[Dict[str, Any]] = None,
         source: str = "system",
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             event_type=EventType.SYSTEM_STATUS_UPDATE,
             source=source,
             timestamp=datetime.now(),
-            payload={
-                "component": component,
-                "status": status,
-                "details": details
-            },
-            metadata=metadata
+            payload={"component": component, "status": status, "details": details},
+            metadata=metadata,
         )
 
 
@@ -300,14 +292,14 @@ def create_regime_change_event(
     old_regime: str,
     new_regime: str,
     confidence: float,
-    market_data: Optional[Dict[str, Any]] = None
+    market_data: Optional[Dict[str, Any]] = None,
 ) -> RegimeChangeEvent:
     """Create a regime change event."""
     return RegimeChangeEvent(
         old_regime=old_regime,
         new_regime=new_regime,
         confidence=confidence,
-        market_data=market_data
+        market_data=market_data,
     )
 
 
@@ -316,7 +308,7 @@ def create_strategy_switch_event(
     new_strategy: str,
     rationale: str,
     confidence: float,
-    market_conditions: Optional[Dict[str, Any]] = None
+    market_conditions: Optional[Dict[str, Any]] = None,
 ) -> StrategySwitchEvent:
     """Create a strategy switch event."""
     return StrategySwitchEvent(
@@ -324,7 +316,7 @@ def create_strategy_switch_event(
         new_strategy=new_strategy,
         rationale=rationale,
         confidence=confidence,
-        market_conditions=market_conditions
+        market_conditions=market_conditions,
     )
 
 
@@ -336,7 +328,7 @@ def create_trade_executed_event(
     price: Decimal,
     slippage: Optional[Decimal] = None,
     commission: Optional[Decimal] = None,
-    strategy: Optional[str] = None
+    strategy: Optional[str] = None,
 ) -> TradeExecutedEvent:
     """Create a trade executed event."""
     return TradeExecutedEvent(
@@ -347,7 +339,7 @@ def create_trade_executed_event(
         price=price,
         slippage=slippage,
         commission=commission,
-        strategy=strategy
+        strategy=strategy,
     )
 
 
@@ -357,7 +349,7 @@ def create_risk_limit_triggered_event(
     current_value: Any,
     threshold_value: Any,
     defensive_action: str,
-    symbol: Optional[str] = None
+    symbol: Optional[str] = None,
 ) -> RiskLimitTriggeredEvent:
     """Create a risk limit triggered event."""
     return RiskLimitTriggeredEvent(
@@ -366,7 +358,7 @@ def create_risk_limit_triggered_event(
         current_value=current_value,
         threshold_value=threshold_value,
         defensive_action=defensive_action,
-        symbol=symbol
+        symbol=symbol,
     )
 
 
@@ -374,14 +366,11 @@ def create_diagnostic_alert_event(
     alert_type: str,
     component: str,
     message: str,
-    details: Optional[Dict[str, Any]] = None
+    details: Optional[Dict[str, Any]] = None,
 ) -> DiagnosticAlertEvent:
     """Create a diagnostic alert event."""
     return DiagnosticAlertEvent(
-        alert_type=alert_type,
-        component=component,
-        message=message,
-        details=details
+        alert_type=alert_type, component=component, message=message, details=details
     )
 
 
@@ -390,7 +379,7 @@ def create_knowledge_entry_created_event(
     regime: str,
     strategy: str,
     performance_metrics: Dict[str, Any],
-    outcome: str
+    outcome: str,
 ) -> KnowledgeEntryCreatedEvent:
     """Create a knowledge entry created event."""
     return KnowledgeEntryCreatedEvent(
@@ -398,5 +387,5 @@ def create_knowledge_entry_created_event(
         regime=regime,
         strategy=strategy,
         performance_metrics=performance_metrics,
-        outcome=outcome
+        outcome=outcome,
     )

@@ -6,19 +6,16 @@ and managing diagnostic reports.
 """
 
 import asyncio
-import logging
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
-from dataclasses import dataclass, field
-from pathlib import Path
 import json
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from core.diagnostics import (
     DiagnosticsManager,
     get_diagnostics_manager,
-    HealthStatus,
-    HealthCheckResult,
-    AnomalyDetection
 )
 from utils.logger import get_trade_logger
 
@@ -28,6 +25,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DiagnosticReport:
     """Daily diagnostic report summary."""
+
     date: str
     total_checks: int = 0
     healthy_checks: int = 0
@@ -134,7 +132,9 @@ class DiagnosticScheduler:
         while self._running:
             try:
                 now = datetime.now()
-                next_report = self.last_report_time + timedelta(hours=self.report_interval_hours)
+                next_report = self.last_report_time + timedelta(
+                    hours=self.report_interval_hours
+                )
 
                 if now >= next_report:
                     await self._generate_daily_report()
@@ -189,7 +189,7 @@ class DiagnosticScheduler:
                         "degraded": 0,
                         "critical": 0,
                         "avg_latency_ms": 0.0,
-                        "last_status": "unknown"
+                        "last_status": "unknown",
                     }
 
                 comp_summary = self.daily_report.component_summaries[component_name]
@@ -219,7 +219,8 @@ class DiagnosticScheduler:
             if latency_count > 0:
                 current_avg = self.daily_report.average_latency_ms
                 self.daily_report.average_latency_ms = (
-                    (current_avg * (self.daily_report.total_checks - 1)) + (total_latency / latency_count)
+                    (current_avg * (self.daily_report.total_checks - 1))
+                    + (total_latency / latency_count)
                 ) / self.daily_report.total_checks
 
             # Update anomalies count
@@ -228,13 +229,16 @@ class DiagnosticScheduler:
             # Calculate uptime percentage (based on healthy checks)
             total_components = len(status.get("components", {}))
             if total_components > 0:
-                healthy_percentage = (healthy_count / (healthy_count + degraded_count + critical_count)) * 100
+                healthy_percentage = (
+                    healthy_count / (healthy_count + degraded_count + critical_count)
+                ) * 100
                 self.daily_report.uptime_percentage = healthy_percentage
 
             # Update top issues
             if critical_count > 0:
                 critical_components = [
-                    name for name, data in status.get("components", {}).items()
+                    name
+                    for name, data in status.get("components", {}).items()
                     if data.get("status") == "critical"
                 ]
                 self.daily_report.top_issues = critical_components[:5]  # Top 5 issues
@@ -258,12 +262,14 @@ class DiagnosticScheduler:
                 "top_issues": self.daily_report.top_issues,
                 "component_summaries": self.daily_report.component_summaries,
                 "created_at": self.daily_report.created_at.isoformat(),
-                "generated_at": datetime.now().isoformat()
+                "generated_at": datetime.now().isoformat(),
             }
 
             # Save to file
-            report_file = self.reports_dir / f"diagnostic_report_{self.daily_report.date}.json"
-            with open(report_file, 'w', encoding='utf-8') as f:
+            report_file = (
+                self.reports_dir / f"diagnostic_report_{self.daily_report.date}.json"
+            )
+            with open(report_file, "w", encoding="utf-8") as f:
                 json.dump(report_dict, f, indent=2, default=str)
 
             # Log summary
@@ -274,9 +280,9 @@ class DiagnosticScheduler:
                         "total_checks": self.daily_report.total_checks,
                         "uptime_percentage": f"{self.daily_report.uptime_percentage:.1f}%",
                         "critical_issues": len(self.daily_report.top_issues),
-                        "anomalies": self.daily_report.anomalies_detected
+                        "anomalies": self.daily_report.anomalies_detected,
                     }
-                }
+                },
             )
 
             logger.info(f"Diagnostic report saved to {report_file}")
@@ -297,7 +303,7 @@ class DiagnosticScheduler:
             "uptime_percentage": round(self.daily_report.uptime_percentage, 2),
             "top_issues": self.daily_report.top_issues,
             "component_summaries": self.daily_report.component_summaries,
-            "last_updated": datetime.now().isoformat()
+            "last_updated": datetime.now().isoformat(),
         }
 
     def get_recent_reports(self, days: int = 7) -> List[Dict[str, Any]]:
@@ -307,7 +313,7 @@ class DiagnosticScheduler:
         try:
             for report_file in self.reports_dir.glob("diagnostic_report_*.json"):
                 try:
-                    with open(report_file, 'r', encoding='utf-8') as f:
+                    with open(report_file, "r", encoding="utf-8") as f:
                         report_data = json.load(f)
                         reports.append(report_data)
                 except Exception as e:
@@ -331,7 +337,7 @@ class DiagnosticScheduler:
             return {
                 "error": str(e),
                 "overall_status": "critical",
-                "last_check": datetime.now().isoformat()
+                "last_check": datetime.now().isoformat(),
             }
 
     def get_scheduler_status(self) -> Dict[str, Any]:
@@ -342,7 +348,7 @@ class DiagnosticScheduler:
             "report_interval_hours": self.report_interval_hours,
             "last_report_time": self.last_report_time.isoformat(),
             "reports_directory": str(self.reports_dir),
-            "current_report": self.get_current_report()
+            "current_report": self.get_current_report(),
         }
 
 
@@ -358,6 +364,8 @@ def get_diagnostic_scheduler() -> DiagnosticScheduler:
     return _global_scheduler
 
 
-def create_diagnostic_scheduler(diagnostics_manager: Optional[DiagnosticsManager] = None) -> DiagnosticScheduler:
+def create_diagnostic_scheduler(
+    diagnostics_manager: Optional[DiagnosticsManager] = None,
+) -> DiagnosticScheduler:
     """Create a new diagnostic scheduler instance."""
     return DiagnosticScheduler(diagnostics_manager)

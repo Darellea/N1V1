@@ -4,11 +4,13 @@ Comprehensive tests for AlertRulesManager.
 Tests alert rule creation, evaluation, deduplication, and notification delivery.
 """
 
-import pytest
 import asyncio
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
-from core.alert_rules_manager import AlertRulesManager, AlertRule
+from unittest.mock import patch
+
+import pytest
+
+from core.alert_rules_manager import AlertRule, AlertRulesManager
 
 
 class TestAlertRule:
@@ -21,7 +23,7 @@ class TestAlertRule:
             "query": "cpu_usage > 80",
             "duration": "5m",
             "severity": "warning",
-            "description": "High CPU usage detected"
+            "description": "High CPU usage detected",
         }
         self.manager = AlertRulesManager({})
         self.rule = AlertRule(
@@ -30,7 +32,7 @@ class TestAlertRule:
             duration=self.config["duration"],
             severity=self.config["severity"],
             description=self.config["description"],
-            manager=self.manager
+            manager=self.manager,
         )
 
     def test_alert_rule_initialization(self):
@@ -64,7 +66,7 @@ class TestAlertRule:
             query="memory_usage < 20",
             duration="5m",
             severity="critical",
-            manager=self.manager
+            manager=self.manager,
         )
 
         # Test trigger condition
@@ -85,7 +87,7 @@ class TestAlertRule:
             query="load_average >= 5.0",
             duration="1m",
             severity="warning",
-            manager=self.manager
+            manager=self.manager,
         )
 
         # Test trigger conditions
@@ -103,7 +105,7 @@ class TestAlertRule:
             query="disk_usage <= 10",
             duration="1m",
             severity="critical",
-            manager=self.manager
+            manager=self.manager,
         )
 
         # Test trigger conditions
@@ -121,7 +123,7 @@ class TestAlertRule:
             query="service_status == 0",
             duration="1m",
             severity="critical",
-            manager=self.manager
+            manager=self.manager,
         )
 
         # Test trigger condition
@@ -146,7 +148,7 @@ class TestAlertRule:
             query="invalid query format",
             duration="1m",
             severity="warning",
-            manager=self.manager
+            manager=self.manager,
         )
 
         metrics_data = {"cpu_usage": 90}
@@ -171,13 +173,15 @@ class TestAlertRule:
         assert not self.rule._is_deduplicated()
 
         # After recording an alert, should be deduplicated
-        self.rule._record_alert({
-            'rule_name': self.rule.name,
-            'severity': self.rule.severity,
-            'description': self.rule.description,
-            'timestamp': time.time(),
-            'metrics_data': {"cpu_usage": 85}
-        })
+        self.rule._record_alert(
+            {
+                "rule_name": self.rule.name,
+                "severity": self.rule.severity,
+                "description": self.rule.description,
+                "timestamp": time.time(),
+                "metrics_data": {"cpu_usage": 85},
+            }
+        )
 
         assert self.rule._is_deduplicated()
 
@@ -187,10 +191,7 @@ class TestAlertRulesManager:
 
     def setup_method(self):
         """Setup test fixtures."""
-        self.config = {
-            'deduplication_window': 300,
-            'max_history_size': 1000
-        }
+        self.config = {"deduplication_window": 300, "max_history_size": 1000}
         self.manager = AlertRulesManager(self.config)
 
     def test_manager_initialization(self):
@@ -209,7 +210,7 @@ class TestAlertRulesManager:
             "duration": "5m",
             "severity": "warning",
             "description": "High CPU usage detected",
-            "channels": ["log", "email"]
+            "channels": ["log", "email"],
         }
 
         rule = await self.manager.create_rule(rule_config)
@@ -231,7 +232,7 @@ class TestAlertRulesManager:
             "name": "duplicate_rule",
             "query": "cpu_usage > 80",
             "duration": "5m",
-            "severity": "warning"
+            "severity": "warning",
         }
 
         # Create first rule
@@ -252,14 +253,14 @@ class TestAlertRulesManager:
             "name": "high_cpu",
             "query": "cpu_usage > 80",
             "duration": "5m",
-            "severity": "warning"
+            "severity": "warning",
         }
 
         rule2_config = {
             "name": "low_memory",
             "query": "memory_usage < 20",
             "duration": "5m",
-            "severity": "critical"
+            "severity": "critical",
         }
 
         await self.manager.create_rule(rule1_config)
@@ -270,8 +271,8 @@ class TestAlertRulesManager:
         alerts = await self.manager.evaluate_rules(metrics_data)
 
         assert len(alerts) == 2
-        assert alerts[0]['rule_name'] == 'high_cpu'
-        assert alerts[1]['rule_name'] == 'low_memory'
+        assert alerts[0]["rule_name"] == "high_cpu"
+        assert alerts[1]["rule_name"] == "low_memory"
 
     @pytest.mark.asyncio
     async def test_evaluate_rules_with_disabled_rule(self):
@@ -280,7 +281,7 @@ class TestAlertRulesManager:
             "name": "disabled_rule",
             "query": "cpu_usage > 80",
             "duration": "5m",
-            "severity": "warning"
+            "severity": "warning",
         }
 
         rule = await self.manager.create_rule(rule_config)
@@ -298,7 +299,7 @@ class TestAlertRulesManager:
             "name": "dedup_test",
             "query": "cpu_usage > 80",
             "duration": "5m",
-            "severity": "warning"
+            "severity": "warning",
         }
 
         await self.manager.create_rule(rule_config)
@@ -315,16 +316,16 @@ class TestAlertRulesManager:
     @pytest.mark.asyncio
     async def test_notification_delivery_log(self):
         """Test log notification delivery."""
-        with patch('core.alert_rules_manager.logger') as mock_logger:
+        with patch("core.alert_rules_manager.logger") as mock_logger:
             alert = {
-                'rule_name': 'test_alert',
-                'severity': 'warning',
-                'description': 'Test alert',
-                'timestamp': time.time(),
-                'metrics_data': {'cpu_usage': 85}
+                "rule_name": "test_alert",
+                "severity": "warning",
+                "description": "Test alert",
+                "timestamp": time.time(),
+                "metrics_data": {"cpu_usage": 85},
             }
 
-            await self.manager._deliver_notifications(alert, ['log'])
+            await self.manager._deliver_notifications(alert, ["log"])
 
             mock_logger.warning.assert_called_once_with(
                 "ALERT: test_alert - Test alert"
@@ -333,42 +334,42 @@ class TestAlertRulesManager:
     @pytest.mark.asyncio
     async def test_notification_delivery_discord(self):
         """Test Discord notification delivery."""
-        with patch.object(self.manager, '_send_discord_notification') as mock_discord:
+        with patch.object(self.manager, "_send_discord_notification") as mock_discord:
             alert = {
-                'rule_name': 'test_alert',
-                'severity': 'warning',
-                'description': 'Test alert'
+                "rule_name": "test_alert",
+                "severity": "warning",
+                "description": "Test alert",
             }
 
-            await self.manager._deliver_notifications(alert, ['discord'])
+            await self.manager._deliver_notifications(alert, ["discord"])
 
             mock_discord.assert_called_once_with(alert)
 
     @pytest.mark.asyncio
     async def test_notification_delivery_email(self):
         """Test email notification delivery."""
-        with patch.object(self.manager, '_send_email_notification') as mock_email:
+        with patch.object(self.manager, "_send_email_notification") as mock_email:
             alert = {
-                'rule_name': 'test_alert',
-                'severity': 'warning',
-                'description': 'Test alert'
+                "rule_name": "test_alert",
+                "severity": "warning",
+                "description": "Test alert",
             }
 
-            await self.manager._deliver_notifications(alert, ['email'])
+            await self.manager._deliver_notifications(alert, ["email"])
 
             mock_email.assert_called_once_with(alert)
 
     @pytest.mark.asyncio
     async def test_notification_delivery_unknown_channel(self):
         """Test notification delivery with unknown channel."""
-        with patch('core.alert_rules_manager.logger') as mock_logger:
+        with patch("core.alert_rules_manager.logger") as mock_logger:
             alert = {
-                'rule_name': 'test_alert',
-                'severity': 'warning',
-                'description': 'Test alert'
+                "rule_name": "test_alert",
+                "severity": "warning",
+                "description": "Test alert",
             }
 
-            await self.manager._deliver_notifications(alert, ['unknown'])
+            await self.manager._deliver_notifications(alert, ["unknown"])
 
             mock_logger.warning.assert_called_once_with(
                 "Unknown notification channel: unknown"
@@ -377,16 +378,18 @@ class TestAlertRulesManager:
     @pytest.mark.asyncio
     async def test_notification_delivery_multiple_channels(self):
         """Test notification delivery to multiple channels."""
-        with patch.object(self.manager, '_send_discord_notification') as mock_discord, \
-             patch.object(self.manager, '_send_email_notification') as mock_email:
-
+        with patch.object(
+            self.manager, "_send_discord_notification"
+        ) as mock_discord, patch.object(
+            self.manager, "_send_email_notification"
+        ) as mock_email:
             alert = {
-                'rule_name': 'test_alert',
-                'severity': 'warning',
-                'description': 'Test alert'
+                "rule_name": "test_alert",
+                "severity": "warning",
+                "description": "Test alert",
             }
 
-            await self.manager._deliver_notifications(alert, ['discord', 'email'])
+            await self.manager._deliver_notifications(alert, ["discord", "email"])
 
             mock_discord.assert_called_once_with(alert)
             mock_email.assert_called_once_with(alert)
@@ -401,7 +404,7 @@ class TestAlertRulesManager:
             "name": "test_rule",
             "query": "cpu_usage > 80",
             "duration": "5m",
-            "severity": "warning"
+            "severity": "warning",
         }
 
         # Create rule synchronously for this test
@@ -410,7 +413,7 @@ class TestAlertRulesManager:
 
         rules = self.manager.get_rules()
         assert len(rules) == 1
-        assert 'test_rule' in rules
+        assert "test_rule" in rules
 
     def test_get_alert_history(self):
         """Test getting alert history."""
@@ -418,8 +421,8 @@ class TestAlertRulesManager:
         assert self.manager.get_alert_history() == []
 
         # Add alerts to history
-        alert1 = {'rule_name': 'rule1', 'timestamp': time.time()}
-        alert2 = {'rule_name': 'rule2', 'timestamp': time.time()}
+        alert1 = {"rule_name": "rule1", "timestamp": time.time()}
+        alert2 = {"rule_name": "rule2", "timestamp": time.time()}
 
         self.manager.alert_history = [alert1, alert2]
 
@@ -438,7 +441,7 @@ class TestAlertRulesManager:
             "name": "test_rule",
             "query": "cpu_usage > 80",
             "duration": "5m",
-            "severity": "warning"
+            "severity": "warning",
         }
 
         # Create rule synchronously
@@ -449,11 +452,11 @@ class TestAlertRulesManager:
         assert rule.enabled
 
         # Disable rule
-        self.manager.disable_rule('test_rule')
+        self.manager.disable_rule("test_rule")
         assert not rule.enabled
 
         # Enable rule
-        self.manager.enable_rule('test_rule')
+        self.manager.enable_rule("test_rule")
         assert rule.enabled
 
     def test_delete_rule(self):
@@ -462,7 +465,7 @@ class TestAlertRulesManager:
             "name": "test_rule",
             "query": "cpu_usage > 80",
             "duration": "5m",
-            "severity": "warning"
+            "severity": "warning",
         }
 
         # Create rule synchronously
@@ -470,32 +473,32 @@ class TestAlertRulesManager:
         self.manager.rules[rule.name] = rule
 
         # Verify rule exists
-        assert 'test_rule' in self.manager.rules
+        assert "test_rule" in self.manager.rules
 
         # Delete rule
-        self.manager.delete_rule('test_rule')
+        self.manager.delete_rule("test_rule")
 
         # Verify rule is deleted
-        assert 'test_rule' not in self.manager.rules
+        assert "test_rule" not in self.manager.rules
 
     def test_delete_nonexistent_rule(self):
         """Test deleting a non-existent rule."""
         # Should not raise an exception
-        self.manager.delete_rule('nonexistent_rule')
+        self.manager.delete_rule("nonexistent_rule")
 
     def test_enable_disable_nonexistent_rule(self):
         """Test enabling/disabling a non-existent rule."""
         # Should not raise an exception
-        self.manager.enable_rule('nonexistent_rule')
-        self.manager.disable_rule('nonexistent_rule')
+        self.manager.enable_rule("nonexistent_rule")
+        self.manager.disable_rule("nonexistent_rule")
 
     def test_alert_history_size_limit(self):
         """Test alert history size limiting."""
-        manager = AlertRulesManager({'max_history_size': 3})
+        manager = AlertRulesManager({"max_history_size": 3})
 
         # Add more alerts than the limit
         for i in range(5):
-            alert = {'rule_name': f'rule{i}', 'timestamp': time.time()}
+            alert = {"rule_name": f"rule{i}", "timestamp": time.time()}
             manager._record_alert(alert)
 
         # Should only keep the most recent alerts
@@ -508,14 +511,14 @@ class TestAlertRulesManager:
             "name": "error_rule",
             "query": "cpu_usage > 80",
             "duration": "5m",
-            "severity": "warning"
+            "severity": "warning",
         }
 
         rule = await self.manager.create_rule(rule_config)
 
         # Mock evaluate to raise an exception
-        with patch.object(rule, 'evaluate', side_effect=Exception("Test error")):
-            with patch('core.alert_rules_manager.logger') as mock_logger:
+        with patch.object(rule, "evaluate", side_effect=Exception("Test error")):
+            with patch("core.alert_rules_manager.logger") as mock_logger:
                 metrics_data = {"cpu_usage": 85}
                 alerts = await self.manager.evaluate_rules(metrics_data)
 
@@ -539,7 +542,7 @@ class TestAlertRuleEdgeCases:
             query="",
             duration="5m",
             severity="warning",
-            manager=self.manager
+            manager=self.manager,
         )
 
         metrics_data = {"cpu_usage": 85}
@@ -554,7 +557,7 @@ class TestAlertRuleEdgeCases:
             query="   ",
             duration="5m",
             severity="warning",
-            manager=self.manager
+            manager=self.manager,
         )
 
         metrics_data = {"cpu_usage": 85}
@@ -578,7 +581,7 @@ class TestAlertRuleEdgeCases:
                 query=query,
                 duration="5m",
                 severity="warning",
-                manager=self.manager
+                manager=self.manager,
             )
 
             metrics_data = {"cpu_usage": 85}
@@ -593,7 +596,7 @@ class TestAlertRuleEdgeCases:
             query="temperature > 98.6",
             duration="5m",
             severity="warning",
-            manager=self.manager
+            manager=self.manager,
         )
 
         # Test with float values
@@ -609,7 +612,7 @@ class TestAlertRuleEdgeCases:
             query="status == down",
             duration="5m",
             severity="critical",
-            manager=self.manager
+            manager=self.manager,
         )
 
         # Test with string values
@@ -623,10 +626,9 @@ class TestAlertRulesManagerIntegration:
 
     def setup_method(self):
         """Setup test fixtures."""
-        self.manager = AlertRulesManager({
-            'deduplication_window': 60,  # 1 minute
-            'max_history_size': 10
-        })
+        self.manager = AlertRulesManager(
+            {"deduplication_window": 60, "max_history_size": 10}  # 1 minute
+        )
 
     @pytest.mark.asyncio
     async def test_multiple_rules_same_metric(self):
@@ -636,14 +638,14 @@ class TestAlertRulesManagerIntegration:
             "name": "warning_rule",
             "query": "cpu_usage > 70",
             "duration": "5m",
-            "severity": "warning"
+            "severity": "warning",
         }
 
         rule2_config = {
             "name": "critical_rule",
             "query": "cpu_usage > 90",
             "duration": "5m",
-            "severity": "critical"
+            "severity": "critical",
         }
 
         await self.manager.create_rule(rule1_config)
@@ -654,8 +656,8 @@ class TestAlertRulesManagerIntegration:
         alerts = await self.manager.evaluate_rules(metrics_data)
 
         assert len(alerts) == 1
-        assert alerts[0]['rule_name'] == 'warning_rule'
-        assert alerts[0]['severity'] == 'warning'
+        assert alerts[0]["rule_name"] == "warning_rule"
+        assert alerts[0]["severity"] == "warning"
 
         # Clear alert history to test deduplication doesn't prevent different rules
         self.manager.alert_history.clear()
@@ -665,9 +667,9 @@ class TestAlertRulesManagerIntegration:
         alerts = await self.manager.evaluate_rules(metrics_data)
 
         assert len(alerts) == 2
-        rule_names = [alert['rule_name'] for alert in alerts]
-        assert 'warning_rule' in rule_names
-        assert 'critical_rule' in rule_names
+        rule_names = [alert["rule_name"] for alert in alerts]
+        assert "warning_rule" in rule_names
+        assert "critical_rule" in rule_names
 
     @pytest.mark.asyncio
     async def test_complex_metrics_evaluation(self):
@@ -676,7 +678,7 @@ class TestAlertRulesManagerIntegration:
             "name": "complex_rule",
             "query": "error_rate > 0.05",
             "duration": "5m",
-            "severity": "warning"
+            "severity": "warning",
         }
 
         await self.manager.create_rule(rule_config)
@@ -688,14 +690,14 @@ class TestAlertRulesManagerIntegration:
             "disk_usage": 45.1,
             "error_rate": 0.08,
             "response_time": 2.5,
-            "throughput": 150.0
+            "throughput": 150.0,
         }
 
         alerts = await self.manager.evaluate_rules(metrics_data)
 
         assert len(alerts) == 1
-        assert alerts[0]['rule_name'] == 'complex_rule'
-        assert alerts[0]['severity'] == 'warning'
+        assert alerts[0]["rule_name"] == "complex_rule"
+        assert alerts[0]["severity"] == "warning"
 
     @pytest.mark.asyncio
     async def test_deduplication_window_expiration(self):
@@ -704,7 +706,7 @@ class TestAlertRulesManagerIntegration:
             "name": "dedup_test",
             "query": "cpu_usage > 80",
             "duration": "5m",
-            "severity": "warning"
+            "severity": "warning",
         }
 
         await self.manager.create_rule(rule_config)

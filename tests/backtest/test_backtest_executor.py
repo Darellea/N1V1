@@ -1,10 +1,11 @@
-import pytest
-import asyncio
 from decimal import Decimal
 from unittest.mock import MagicMock
+
+import pytest
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
 from core.execution.backtest_executor import BacktestOrderExecutor
-from core.contracts import TradingSignal, SignalType, SignalStrength
-from core.types.order_types import OrderType, OrderStatus
+from core.types.order_types import OrderStatus, OrderType
 
 
 class TestBacktestOrderExecutor:
@@ -43,7 +44,9 @@ class TestBacktestOrderExecutor:
         assert backtest_executor.trade_count == 0
 
     @pytest.mark.asyncio
-    async def test_execute_backtest_order_buy_signal(self, backtest_executor, sample_signal):
+    async def test_execute_backtest_order_buy_signal(
+        self, backtest_executor, sample_signal
+    ):
         """Test executing a buy order in backtest mode."""
         result = await backtest_executor.execute_backtest_order(sample_signal)
 
@@ -165,7 +168,9 @@ class TestBacktestOrderExecutor:
         assert result.trailing_stop == Decimal("49500")
 
     @pytest.mark.asyncio
-    async def test_execute_backtest_order_with_invalid_trailing_stop(self, backtest_executor):
+    async def test_execute_backtest_order_with_invalid_trailing_stop(
+        self, backtest_executor
+    ):
         """Test executing order with invalid trailing stop (should be None)."""
         signal = TradingSignal(
             strategy_id="test_strategy",
@@ -219,7 +224,9 @@ class TestBacktestOrderExecutor:
         assert backtest_executor.trade_count == 2
 
     @pytest.mark.asyncio
-    async def test_execute_backtest_order_different_order_types(self, backtest_executor):
+    async def test_execute_backtest_order_different_order_types(
+        self, backtest_executor
+    ):
         """Test executing orders with different order types."""
         limit_signal = TradingSignal(
             strategy_id="test_strategy",
@@ -345,7 +352,9 @@ class TestBacktestOrderExecutor:
         assert result.params == {"stop_loss": "49000"}
 
     @pytest.mark.asyncio
-    async def test_execute_backtest_order_with_none_trailing_stop(self, backtest_executor):
+    async def test_execute_backtest_order_with_none_trailing_stop(
+        self, backtest_executor
+    ):
         """Test executing order when signal has None trailing_stop."""
         signal = TradingSignal(
             strategy_id="test_strategy",

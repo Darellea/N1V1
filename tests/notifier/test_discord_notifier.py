@@ -1,12 +1,13 @@
 import asyncio
 import os
-import warnings
-from dotenv import load_dotenv
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, mock_open
-from notifier.discord_bot import DiscordNotifier
-from core.contracts import TradingSignal, SignalType, SignalStrength
 from decimal import Decimal
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from dotenv import load_dotenv
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
+from notifier.discord_bot import DiscordNotifier
 
 
 class MockAsyncContextManager:
@@ -39,7 +40,7 @@ load_dotenv()
 @pytest.fixture
 def discord_notifier(discord_config, mock_aiohttp_session, mock_discord_imports):
     """Fixture to create and properly cleanup DiscordNotifier instances."""
-    with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+    with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
         notifier = DiscordNotifier(discord_config)
         # Initialize synchronously for fixture
         notifier.session = mock_aiohttp_session
@@ -54,16 +55,19 @@ async def discord_bot_notifier(mock_discord_imports):
         "alerts": {"enabled": True},
         "commands": {"enabled": True},
         "bot_token": "test_token",
-        "channel_id": "123456"
+        "channel_id": "123456",
     }
 
-    with patch.dict(os.environ, {
-        "CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN": "test_token",
-        "CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID": "123456"
-    }, clear=False), \
-         patch('notifier.discord_bot.discord.Intents') as mock_intents, \
-         patch('notifier.discord_bot.commands.Bot') as mock_bot:
-
+    with patch.dict(
+        os.environ,
+        {
+            "CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN": "test_token",
+            "CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID": "123456",
+        },
+        clear=False,
+    ), patch("notifier.discord_bot.discord.Intents") as mock_intents, patch(
+        "notifier.discord_bot.commands.Bot"
+    ) as mock_bot:
         mock_intents_instance = MagicMock()
         mock_intents.default.return_value = mock_intents_instance
         mock_bot_instance = MagicMock()
@@ -88,15 +92,11 @@ class TestDiscordNotifier:
     def discord_config(self):
         """Basic Discord config for testing."""
         return {
-            "alerts": {
-                "enabled": True
-            },
-            "commands": {
-                "enabled": False
-            },
+            "alerts": {"enabled": True},
+            "commands": {"enabled": False},
             "webhook_url": "https://discord.com/api/webhooks/test",
             "bot_token": "test_bot_token",
-            "channel_id": "123456789"
+            "channel_id": "123456789",
         }
 
     @pytest.fixture
@@ -119,16 +119,21 @@ class TestDiscordNotifier:
     @pytest.fixture
     def mock_discord_imports(self):
         """Mock discord imports to avoid import errors."""
-        with patch.dict('sys.modules', {
-            'discord': MagicMock(),
-            'discord.Webhook': MagicMock(),
-            'discord.AsyncWebhookAdapter': MagicMock(),
-            'discord.ext': MagicMock(),
-            'discord.ext.commands': MagicMock(),
-        }):
+        with patch.dict(
+            "sys.modules",
+            {
+                "discord": MagicMock(),
+                "discord.Webhook": MagicMock(),
+                "discord.AsyncWebhookAdapter": MagicMock(),
+                "discord.ext": MagicMock(),
+                "discord.ext.commands": MagicMock(),
+            },
+        ):
             yield
 
-    def test_init_webhook_mode(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    def test_init_webhook_mode(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test DiscordNotifier initialization in webhook mode."""
         with patch.dict(os.environ, {}, clear=True):
             notifier = DiscordNotifier(discord_config)
@@ -142,9 +147,10 @@ class TestDiscordNotifier:
             assert notifier.bot is None
         finally:
             # Ensure proper cleanup to prevent SSL warnings
-            if hasattr(notifier, 'session') and notifier.session:
+            if hasattr(notifier, "session") and notifier.session:
                 # Use asyncio.create_task to avoid blocking in sync test
                 import asyncio
+
                 if asyncio.iscoroutinefunction(notifier.session.close):
                     asyncio.create_task(notifier.session.close())
                 else:
@@ -157,12 +163,12 @@ class TestDiscordNotifier:
             "alerts": {"enabled": True},
             "commands": {"enabled": True},
             "bot_token": "test_token",
-            "channel_id": "123456"
+            "channel_id": "123456",
         }
 
-        with patch('notifier.discord_bot.discord.Intents') as mock_intents, \
-             patch('notifier.discord_bot.commands.Bot') as mock_bot:
-
+        with patch("notifier.discord_bot.discord.Intents") as mock_intents, patch(
+            "notifier.discord_bot.commands.Bot"
+        ) as mock_bot:
             mock_intents_instance = MagicMock()
             mock_intents.default.return_value = mock_intents_instance
             mock_bot_instance = MagicMock()
@@ -175,10 +181,11 @@ class TestDiscordNotifier:
             mock_bot.assert_called_once()
 
             # Ensure proper cleanup to prevent SSL warnings
-            if hasattr(notifier, 'session') and notifier.session:
+            if hasattr(notifier, "session") and notifier.session:
                 try:
                     # Use asyncio.create_task to avoid blocking in sync test
                     import asyncio
+
                     if asyncio.iscoroutinefunction(notifier.session.close):
                         asyncio.create_task(notifier.session.close())
                     else:
@@ -191,7 +198,9 @@ class TestDiscordNotifier:
                     notifier.session = None
 
     @pytest.mark.asyncio
-    async def test_send_notification_webhook_success(self, discord_notifier, mock_aiohttp_session):
+    async def test_send_notification_webhook_success(
+        self, discord_notifier, mock_aiohttp_session
+    ):
         """Test successful notification sending via webhook."""
         result = await discord_notifier.send_notification("Test message")
 
@@ -199,18 +208,23 @@ class TestDiscordNotifier:
         mock_aiohttp_session.post.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_send_notification_bot_rest_success(self, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_notification_bot_rest_success(
+        self, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test successful notification sending via bot REST API."""
         config = {
             "alerts": {"enabled": True},
             "bot_token": "test_token",
-            "channel_id": "123456"
+            "channel_id": "123456",
         }
-        with patch.dict(os.environ, {
-            "CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN": "test_token",
-            "CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID": "123456"
-        }, clear=False), \
-             patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch.dict(
+            os.environ,
+            {
+                "CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN": "test_token",
+                "CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID": "123456",
+            },
+            clear=False,
+        ), patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(config)
 
             try:
@@ -223,7 +237,7 @@ class TestDiscordNotifier:
                 assert "channels/123456/messages" in call_args[0][0]
             finally:
                 # Ensure proper cleanup to prevent aiohttp session warnings
-                if hasattr(notifier, 'session') and notifier.session:
+                if hasattr(notifier, "session") and notifier.session:
                     try:
                         await notifier.session.close()
                     except Exception:
@@ -233,24 +247,28 @@ class TestDiscordNotifier:
                         notifier.session = None
 
     @pytest.mark.asyncio
-    async def test_send_notification_with_embed(self, discord_notifier, mock_aiohttp_session):
+    async def test_send_notification_with_embed(
+        self, discord_notifier, mock_aiohttp_session
+    ):
         """Test notification sending with embed data."""
         embed_data = {
             "title": "Test Embed",
             "description": "Test description",
-            "color": 0x00FF00
+            "color": 0x00FF00,
         }
 
         result = await discord_notifier.send_notification("Test message", embed_data)
 
         assert result is True
         call_args = mock_aiohttp_session.post.call_args
-        payload = call_args[1]['json']
-        assert payload['content'] == "Test message"
-        assert payload['embeds'] == [embed_data]
+        payload = call_args[1]["json"]
+        assert payload["content"] == "Test message"
+        assert payload["embeds"] == [embed_data]
 
     @pytest.mark.asyncio
-    async def test_send_notification_disabled_alerts(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_notification_disabled_alerts(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test that notifications are not sent when alerts are disabled."""
         discord_config["alerts"]["enabled"] = False
         notifier = DiscordNotifier(discord_config)
@@ -261,9 +279,11 @@ class TestDiscordNotifier:
         mock_aiohttp_session.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_send_notification_rate_limit_retry(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_notification_rate_limit_retry(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test handling of rate limit with retry."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
@@ -280,7 +300,10 @@ class TestDiscordNotifier:
             mock_response_204.json = AsyncMock(return_value={})
 
             # First call returns 429, second succeeds
-            mock_aiohttp_session.post.side_effect = [mock_response_429, mock_response_204]
+            mock_aiohttp_session.post.side_effect = [
+                mock_response_429,
+                mock_response_204,
+            ]
 
             result = await notifier.send_notification("Test message")
 
@@ -288,9 +311,11 @@ class TestDiscordNotifier:
             assert mock_aiohttp_session.post.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_send_notification_server_error_retry(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_notification_server_error_retry(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test handling of server errors with retry."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
@@ -307,7 +332,10 @@ class TestDiscordNotifier:
             mock_response_204.json = AsyncMock(return_value={})
 
             # First call returns 500, second succeeds
-            mock_aiohttp_session.post.side_effect = [mock_response_500, mock_response_204]
+            mock_aiohttp_session.post.side_effect = [
+                mock_response_500,
+                mock_response_204,
+            ]
 
             result = await notifier.send_notification("Test message")
 
@@ -315,9 +343,11 @@ class TestDiscordNotifier:
             assert mock_aiohttp_session.post.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_send_notification_max_retries_exceeded(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_notification_max_retries_exceeded(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test that notification fails after max retries."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
@@ -344,22 +374,24 @@ class TestDiscordNotifier:
             "price": 50000.0,
             "pnl": 100.0,
             "status": "filled",
-            "mode": "live"
+            "mode": "live",
         }
 
         result = await discord_notifier.send_trade_alert(trade_data)
 
         assert result is True
         call_args = mock_aiohttp_session.post.call_args
-        payload = call_args[1]['json']
-        assert "New Trade Execution" in payload['embeds'][0]['title']
-        assert payload['embeds'][0]['fields'][0]['name'] == "Symbol"
-        assert payload['embeds'][0]['fields'][0]['value'] == "BTC/USDT"
+        payload = call_args[1]["json"]
+        assert "New Trade Execution" in payload["embeds"][0]["title"]
+        assert payload["embeds"][0]["fields"][0]["name"] == "Symbol"
+        assert payload["embeds"][0]["fields"][0]["value"] == "BTC/USDT"
 
     @pytest.mark.asyncio
-    async def test_send_signal_alert(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_signal_alert(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test sending signal alert notification."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
@@ -370,44 +402,48 @@ class TestDiscordNotifier:
                 signal_strength=SignalStrength.STRONG,
                 order_type="market",
                 amount=Decimal("1.0"),
-                price=Decimal("50000")
+                price=Decimal("50000"),
             )
 
             result = await notifier.send_signal_alert(signal)
 
             assert result is True
             call_args = mock_aiohttp_session.post.call_args
-            payload = call_args[1]['json']
-            assert "New Trading Signal" in payload['embeds'][0]['title']
-            assert payload['embeds'][0]['fields'][0]['name'] == "Symbol"
-            assert payload['embeds'][0]['fields'][0]['value'] == "BTC/USDT"
+            payload = call_args[1]["json"]
+            assert "New Trading Signal" in payload["embeds"][0]["title"]
+            assert payload["embeds"][0]["fields"][0]["name"] == "Symbol"
+            assert payload["embeds"][0]["fields"][0]["value"] == "BTC/USDT"
 
     @pytest.mark.asyncio
-    async def test_send_error_alert(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_error_alert(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test sending error alert notification."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
             error_data = {
                 "error": "Test error",
                 "component": "OrderManager",
-                "timestamp": "2023-01-01T00:00:00Z"
+                "timestamp": "2023-01-01T00:00:00Z",
             }
 
             result = await notifier.send_error_alert(error_data)
 
             assert result is True
             call_args = mock_aiohttp_session.post.call_args
-            payload = call_args[1]['json']
-            assert payload['embeds'][0]['title'] == "🚨 System Error"
-            assert payload['embeds'][0]['fields'][0]['name'] == "Error"
-            assert payload['embeds'][0]['fields'][0]['value'] == "Test error"
+            payload = call_args[1]["json"]
+            assert payload["embeds"][0]["title"] == "🚨 System Error"
+            assert payload["embeds"][0]["fields"][0]["name"] == "Error"
+            assert payload["embeds"][0]["fields"][0]["value"] == "Test error"
 
     @pytest.mark.asyncio
-    async def test_send_performance_report(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_performance_report(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test sending performance report notification."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
@@ -417,17 +453,17 @@ class TestDiscordNotifier:
                 "total_pnl": 5000.0,
                 "max_win": 1000.0,
                 "max_loss": -500.0,
-                "sharpe_ratio": 1.2
+                "sharpe_ratio": 1.2,
             }
 
             result = await notifier.send_performance_report(performance_data)
 
             assert result is True
             call_args = mock_aiohttp_session.post.call_args
-            payload = call_args[1]['json']
-            assert payload['embeds'][0]['title'] == "📈 Performance Report"
-            assert payload['embeds'][0]['fields'][0]['name'] == "Total Trades"
-            assert payload['embeds'][0]['fields'][0]['value'] == 100
+            payload = call_args[1]["json"]
+            assert payload["embeds"][0]["title"] == "📈 Performance Report"
+            assert payload["embeds"][0]["fields"][0]["name"] == "Total Trades"
+            assert payload["embeds"][0]["fields"][0]["value"] == 100
 
     @pytest.mark.asyncio
     async def test_initialize_bot_mode(self):
@@ -436,16 +472,19 @@ class TestDiscordNotifier:
             "alerts": {"enabled": True},
             "commands": {"enabled": True},
             "bot_token": "test_token",
-            "channel_id": "123456"
+            "channel_id": "123456",
         }
 
-        with patch.dict(os.environ, {
-            "CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN": "test_token",
-            "CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID": "123456"
-        }, clear=False), \
-             patch('notifier.discord_bot.discord.Intents') as mock_intents, \
-             patch('notifier.discord_bot.commands.Bot') as mock_bot:
-
+        with patch.dict(
+            os.environ,
+            {
+                "CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN": "test_token",
+                "CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID": "123456",
+            },
+            clear=False,
+        ), patch("notifier.discord_bot.discord.Intents") as mock_intents, patch(
+            "notifier.discord_bot.commands.Bot"
+        ) as mock_bot:
             mock_intents_instance = MagicMock()
             mock_intents.default.return_value = mock_intents_instance
             mock_bot_instance = MagicMock()
@@ -459,9 +498,11 @@ class TestDiscordNotifier:
             mock_bot_instance.start.assert_called_once_with("test_token")
 
     @pytest.mark.asyncio
-    async def test_shutdown(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_shutdown(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test shutdown functionality."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             # Initialize the notifier to create the session
             await notifier.initialize()
@@ -482,12 +523,14 @@ class TestDiscordNotifier:
         config = {
             "alerts": {"enabled": True},
             "commands": {"enabled": True},
-            "bot_token": os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN", "test_token")
+            "bot_token": os.getenv(
+                "CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN", "test_token"
+            ),
         }
 
-        with patch('notifier.discord_bot.discord.Intents') as mock_intents, \
-             patch('notifier.discord_bot.commands.Bot') as mock_bot:
-
+        with patch("notifier.discord_bot.discord.Intents") as mock_intents, patch(
+            "notifier.discord_bot.commands.Bot"
+        ) as mock_bot:
             mock_intents_instance = MagicMock()
             mock_intents.default.return_value = mock_intents_instance
             mock_bot_instance = MagicMock()
@@ -501,7 +544,7 @@ class TestDiscordNotifier:
             mock_task.done.return_value = False  # Task is not done
             mock_task.cancel = MagicMock()  # Mock cancel method
             # Make sure hasattr works correctly
-            mock_task.configure_mock(**{'done.return_value': False})
+            mock_task.configure_mock(**{"done.return_value": False})
             notifier._bot_task = mock_task
 
             await notifier.shutdown()
@@ -518,15 +561,16 @@ class TestDiscordNotifier:
             "alerts": {"enabled": True},
             "commands": {"enabled": True},
             "bot_token": "test_token",
-            "channel_id": "123456"
+            "channel_id": "123456",
         }
 
-        with patch('notifier.discord_bot.discord.Intents') as mock_intents, \
-             patch('notifier.discord_bot.commands.Bot') as mock_bot, \
-             patch('notifier.discord_bot.discord.Embed') as mock_embed, \
-             patch('notifier.discord_bot.get_config') as mock_get_config, \
-             patch('utils.logger.get_trade_logger') as mock_get_logger:
-
+        with patch("notifier.discord_bot.discord.Intents") as mock_intents, patch(
+            "notifier.discord_bot.commands.Bot"
+        ) as mock_bot, patch("notifier.discord_bot.discord.Embed") as mock_embed, patch(
+            "notifier.discord_bot.get_config"
+        ) as mock_get_config, patch(
+            "utils.logger.get_trade_logger"
+        ) as mock_get_logger:
             # Setup mocks
             mock_intents_instance = MagicMock()
             mock_intents.default.return_value = mock_intents_instance
@@ -534,11 +578,11 @@ class TestDiscordNotifier:
             mock_bot.return_value = mock_bot_instance
 
             # Make bot commands async
-            mock_bot_instance.cogs = {'DiscordNotifier': MagicMock()}
-            mock_bot_instance.cogs['DiscordNotifier'].status = AsyncMock()
-            mock_bot_instance.cogs['DiscordNotifier'].pause = AsyncMock()
-            mock_bot_instance.cogs['DiscordNotifier'].resume = AsyncMock()
-            mock_bot_instance.cogs['DiscordNotifier'].trades = AsyncMock()
+            mock_bot_instance.cogs = {"DiscordNotifier": MagicMock()}
+            mock_bot_instance.cogs["DiscordNotifier"].status = AsyncMock()
+            mock_bot_instance.cogs["DiscordNotifier"].pause = AsyncMock()
+            mock_bot_instance.cogs["DiscordNotifier"].resume = AsyncMock()
+            mock_bot_instance.cogs["DiscordNotifier"].trades = AsyncMock()
 
             mock_embed_instance = MagicMock()
             mock_embed.return_value = mock_embed_instance
@@ -546,9 +590,9 @@ class TestDiscordNotifier:
             mock_get_config.return_value = "LIVE"
             mock_logger = MagicMock()
             mock_logger.get_performance_stats.return_value = {
-                'total_trades': 10,
-                'win_rate': 0.7,
-                'total_pnl': 500.0
+                "total_trades": 10,
+                "win_rate": 0.7,
+                "total_pnl": 500.0,
             }
             mock_get_logger.return_value = mock_logger
 
@@ -558,10 +602,12 @@ class TestDiscordNotifier:
             ctx = MockDiscordContext(channel_id="123456")
 
             # Call the status command directly
-            await mock_bot_instance.cogs['DiscordNotifier'].status(ctx)
+            await mock_bot_instance.cogs["DiscordNotifier"].status(ctx)
 
             # Verify the command was called
-            mock_bot_instance.cogs['DiscordNotifier'].status.assert_called_once_with(ctx)
+            mock_bot_instance.cogs["DiscordNotifier"].status.assert_called_once_with(
+                ctx
+            )
 
     @pytest.mark.asyncio
     async def test_bot_commands_pause(self, mock_discord_imports):
@@ -570,21 +616,20 @@ class TestDiscordNotifier:
             "alerts": {"enabled": True},
             "commands": {"enabled": True},
             "bot_token": "test_token",
-            "channel_id": "123456"
+            "channel_id": "123456",
         }
 
-        with patch('notifier.discord_bot.discord.Intents') as mock_intents, \
-             patch('notifier.discord_bot.commands.Bot') as mock_bot, \
-             patch('notifier.discord_bot.discord.Embed') as mock_embed:
-
+        with patch("notifier.discord_bot.discord.Intents") as mock_intents, patch(
+            "notifier.discord_bot.commands.Bot"
+        ) as mock_bot, patch("notifier.discord_bot.discord.Embed") as mock_embed:
             mock_intents_instance = MagicMock()
             mock_intents.default.return_value = mock_intents_instance
             mock_bot_instance = MagicMock()
             mock_bot.return_value = mock_bot_instance
 
             # Make bot commands async
-            mock_bot_instance.cogs = {'DiscordNotifier': MagicMock()}
-            mock_bot_instance.cogs['DiscordNotifier'].pause = AsyncMock()
+            mock_bot_instance.cogs = {"DiscordNotifier": MagicMock()}
+            mock_bot_instance.cogs["DiscordNotifier"].pause = AsyncMock()
 
             mock_embed_instance = MagicMock()
             mock_embed.return_value = mock_embed_instance
@@ -595,10 +640,10 @@ class TestDiscordNotifier:
             ctx = MockDiscordContext(channel_id="123456")
 
             # Call the pause command directly
-            await mock_bot_instance.cogs['DiscordNotifier'].pause(ctx)
+            await mock_bot_instance.cogs["DiscordNotifier"].pause(ctx)
 
             # Verify the command was called
-            mock_bot_instance.cogs['DiscordNotifier'].pause.assert_called_once_with(ctx)
+            mock_bot_instance.cogs["DiscordNotifier"].pause.assert_called_once_with(ctx)
 
     @pytest.mark.asyncio
     async def test_bot_commands_resume(self, mock_discord_imports):
@@ -607,21 +652,20 @@ class TestDiscordNotifier:
             "alerts": {"enabled": True},
             "commands": {"enabled": True},
             "bot_token": "test_token",
-            "channel_id": "123456"
+            "channel_id": "123456",
         }
 
-        with patch('notifier.discord_bot.discord.Intents') as mock_intents, \
-             patch('notifier.discord_bot.commands.Bot') as mock_bot, \
-             patch('notifier.discord_bot.discord.Embed') as mock_embed:
-
+        with patch("notifier.discord_bot.discord.Intents") as mock_intents, patch(
+            "notifier.discord_bot.commands.Bot"
+        ) as mock_bot, patch("notifier.discord_bot.discord.Embed") as mock_embed:
             mock_intents_instance = MagicMock()
             mock_intents.default.return_value = mock_intents_instance
             mock_bot_instance = MagicMock()
             mock_bot.return_value = mock_bot_instance
 
             # Make bot commands async
-            mock_bot_instance.cogs = {'DiscordNotifier': MagicMock()}
-            mock_bot_instance.cogs['DiscordNotifier'].resume = AsyncMock()
+            mock_bot_instance.cogs = {"DiscordNotifier": MagicMock()}
+            mock_bot_instance.cogs["DiscordNotifier"].resume = AsyncMock()
 
             mock_embed_instance = MagicMock()
             mock_embed.return_value = mock_embed_instance
@@ -632,10 +676,12 @@ class TestDiscordNotifier:
             ctx = MockDiscordContext(channel_id="123456")
 
             # Call the resume command directly
-            await mock_bot_instance.cogs['DiscordNotifier'].resume(ctx)
+            await mock_bot_instance.cogs["DiscordNotifier"].resume(ctx)
 
             # Verify the command was called
-            mock_bot_instance.cogs['DiscordNotifier'].resume.assert_called_once_with(ctx)
+            mock_bot_instance.cogs["DiscordNotifier"].resume.assert_called_once_with(
+                ctx
+            )
 
     @pytest.mark.asyncio
     async def test_bot_commands_trades(self, mock_discord_imports):
@@ -644,22 +690,22 @@ class TestDiscordNotifier:
             "alerts": {"enabled": True},
             "commands": {"enabled": True},
             "bot_token": "test_token",
-            "channel_id": "123456"
+            "channel_id": "123456",
         }
 
-        with patch('notifier.discord_bot.discord.Intents') as mock_intents, \
-             patch('notifier.discord_bot.commands.Bot') as mock_bot, \
-             patch('notifier.discord_bot.discord.Embed') as mock_embed, \
-             patch('utils.logger.get_trade_logger') as mock_get_logger:
-
+        with patch("notifier.discord_bot.discord.Intents") as mock_intents, patch(
+            "notifier.discord_bot.commands.Bot"
+        ) as mock_bot, patch("notifier.discord_bot.discord.Embed") as mock_embed, patch(
+            "utils.logger.get_trade_logger"
+        ) as mock_get_logger:
             mock_intents_instance = MagicMock()
             mock_intents.default.return_value = mock_intents_instance
             mock_bot_instance = MagicMock()
             mock_bot.return_value = mock_bot_instance
 
             # Make bot commands async
-            mock_bot_instance.cogs = {'DiscordNotifier': MagicMock()}
-            mock_bot_instance.cogs['DiscordNotifier'].trades = AsyncMock()
+            mock_bot_instance.cogs = {"DiscordNotifier": MagicMock()}
+            mock_bot_instance.cogs["DiscordNotifier"].trades = AsyncMock()
 
             mock_embed_instance = MagicMock()
             mock_embed.return_value = mock_embed_instance
@@ -668,12 +714,12 @@ class TestDiscordNotifier:
             mock_logger = MagicMock()
             mock_logger.get_trade_history.return_value = [
                 {
-                    'symbol': 'BTC/USDT',
-                    'type': 'BUY',
-                    'price': 50000.0,
-                    'amount': 1.0,
-                    'pnl': 100.0,
-                    'timestamp': '2023-01-01T00:00:00Z'
+                    "symbol": "BTC/USDT",
+                    "type": "BUY",
+                    "price": 50000.0,
+                    "amount": 1.0,
+                    "pnl": 100.0,
+                    "timestamp": "2023-01-01T00:00:00Z",
                 }
             ]
             mock_get_logger.return_value = mock_logger
@@ -684,10 +730,12 @@ class TestDiscordNotifier:
             ctx = MockDiscordContext(channel_id="123456")
 
             # Call the trades command directly
-            await mock_bot_instance.cogs['DiscordNotifier'].trades(ctx, limit=5)
+            await mock_bot_instance.cogs["DiscordNotifier"].trades(ctx, limit=5)
 
             # Verify the command was called
-            mock_bot_instance.cogs['DiscordNotifier'].trades.assert_called_once_with(ctx, limit=5)
+            mock_bot_instance.cogs["DiscordNotifier"].trades.assert_called_once_with(
+                ctx, limit=5
+            )
 
     @pytest.mark.asyncio
     async def test_bot_commands_trades_no_history(self, mock_discord_imports):
@@ -696,21 +744,20 @@ class TestDiscordNotifier:
             "alerts": {"enabled": True},
             "commands": {"enabled": True},
             "bot_token": "test_token",
-            "channel_id": "123456"
+            "channel_id": "123456",
         }
 
-        with patch('notifier.discord_bot.discord.Intents') as mock_intents, \
-             patch('notifier.discord_bot.commands.Bot') as mock_bot, \
-             patch('utils.logger.get_trade_logger') as mock_get_logger:
-
+        with patch("notifier.discord_bot.discord.Intents") as mock_intents, patch(
+            "notifier.discord_bot.commands.Bot"
+        ) as mock_bot, patch("utils.logger.get_trade_logger") as mock_get_logger:
             mock_intents_instance = MagicMock()
             mock_intents.default.return_value = mock_intents_instance
             mock_bot_instance = MagicMock()
             mock_bot.return_value = mock_bot_instance
 
             # Make bot commands async
-            mock_bot_instance.cogs = {'DiscordNotifier': MagicMock()}
-            mock_bot_instance.cogs['DiscordNotifier'].trades = AsyncMock()
+            mock_bot_instance.cogs = {"DiscordNotifier": MagicMock()}
+            mock_bot_instance.cogs["DiscordNotifier"].trades = AsyncMock()
 
             # Mock trade logger with empty history
             mock_logger = MagicMock()
@@ -723,10 +770,12 @@ class TestDiscordNotifier:
             ctx = MockDiscordContext(channel_id="123456")
 
             # Call the trades command directly
-            await mock_bot_instance.cogs['DiscordNotifier'].trades(ctx, limit=5)
+            await mock_bot_instance.cogs["DiscordNotifier"].trades(ctx, limit=5)
 
             # Verify the command was called
-            mock_bot_instance.cogs['DiscordNotifier'].trades.assert_called_once_with(ctx, limit=5)
+            mock_bot_instance.cogs["DiscordNotifier"].trades.assert_called_once_with(
+                ctx, limit=5
+            )
 
     @pytest.mark.asyncio
     async def test_verify_channel_correct(self, mock_discord_imports):
@@ -735,12 +784,12 @@ class TestDiscordNotifier:
             "alerts": {"enabled": True},
             "commands": {"enabled": True},
             "bot_token": "test_token",
-            "channel_id": "123456"
+            "channel_id": "123456",
         }
 
-        with patch('notifier.discord_bot.discord.Intents') as mock_intents, \
-             patch('notifier.discord_bot.commands.Bot') as mock_bot:
-
+        with patch("notifier.discord_bot.discord.Intents") as mock_intents, patch(
+            "notifier.discord_bot.commands.Bot"
+        ) as mock_bot:
             mock_intents_instance = MagicMock()
             mock_intents.default.return_value = mock_intents_instance
             mock_bot_instance = MagicMock()
@@ -766,12 +815,12 @@ class TestDiscordNotifier:
             "alerts": {"enabled": True},
             "commands": {"enabled": True},
             "bot_token": "test_token",
-            "channel_id": "123456"
+            "channel_id": "123456",
         }
 
-        with patch('notifier.discord_bot.discord.Intents') as mock_intents, \
-             patch('notifier.discord_bot.commands.Bot') as mock_bot:
-
+        with patch("notifier.discord_bot.discord.Intents") as mock_intents, patch(
+            "notifier.discord_bot.commands.Bot"
+        ) as mock_bot:
             mock_intents_instance = MagicMock()
             mock_intents.default_return_value = mock_intents_instance
             mock_bot_instance = MagicMock()
@@ -797,18 +846,18 @@ class TestDiscordNotifier:
             "alerts": {"enabled": True},
             "commands": {"enabled": True},
             "bot_token": "test_token",
-            "channel_id": "123456"
+            "channel_id": "123456",
         }
 
-        with patch('notifier.discord_bot.get_config') as mock_get_config, \
-             patch('utils.logger.get_trade_logger') as mock_get_logger:
-
+        with patch("notifier.discord_bot.get_config") as mock_get_config, patch(
+            "utils.logger.get_trade_logger"
+        ) as mock_get_logger:
             mock_get_config.return_value = "PAPER"
             mock_logger = MagicMock()
             mock_logger.get_performance_stats.return_value = {
-                'total_trades': 25,
-                'win_rate': 0.8,
-                'total_pnl': 1250.0
+                "total_trades": 25,
+                "win_rate": 0.8,
+                "total_pnl": 1250.0,
             }
             mock_get_logger.return_value = mock_logger
 
@@ -824,9 +873,11 @@ class TestDiscordNotifier:
             assert "**Status:** 🟢 Running" in message
 
     @pytest.mark.asyncio
-    async def test_initialize_webhook_mode(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_initialize_webhook_mode(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test webhook mode initialization (lines 218)."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
 
             await notifier.initialize()
@@ -835,10 +886,11 @@ class TestDiscordNotifier:
             assert notifier.session is not None
 
     @pytest.mark.asyncio
-    async def test_shutdown_timeout_handling(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_shutdown_timeout_handling(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test shutdown with timeout handling (lines 238-239, 247, 249, 252-253)."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
-
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
@@ -852,11 +904,13 @@ class TestDiscordNotifier:
             mock_aiohttp_session.close.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_shutdown_exception_handling(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_shutdown_exception_handling(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test shutdown with exception handling (lines 263-267, 270-275, 284-294)."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session), \
-             patch('asyncio.wait_for') as mock_wait_for:
-
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session), patch(
+            "asyncio.wait_for"
+        ) as mock_wait_for:
             # Mock various exceptions
             mock_wait_for.side_effect = Exception("Test exception")
 
@@ -883,11 +937,13 @@ class TestDiscordNotifier:
         assert isinstance(result, bool)
 
     @pytest.mark.asyncio
-    async def test_send_notification_network_error_retry(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_notification_network_error_retry(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test network error retry mechanism (lines 343-344)."""
         import aiohttp
 
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
@@ -899,7 +955,7 @@ class TestDiscordNotifier:
 
             mock_aiohttp_session.post.side_effect = [
                 aiohttp.ClientError("Network error"),
-                mock_response_success
+                mock_response_success,
             ]
 
             result = await notifier.send_notification("Test message")
@@ -908,9 +964,11 @@ class TestDiscordNotifier:
             assert mock_aiohttp_session.post.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_send_notification_timeout_retry(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_notification_timeout_retry(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test timeout error retry mechanism (lines 357-359)."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
@@ -922,7 +980,7 @@ class TestDiscordNotifier:
 
             mock_aiohttp_session.post.side_effect = [
                 asyncio.TimeoutError(),
-                mock_response_success
+                mock_response_success,
             ]
 
             result = await notifier.send_notification("Test message")
@@ -931,9 +989,11 @@ class TestDiscordNotifier:
             assert mock_aiohttp_session.post.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_send_notification_4xx_error_no_retry(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_notification_4xx_error_no_retry(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test that 4xx errors don't trigger retry (lines 366)."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
@@ -950,9 +1010,11 @@ class TestDiscordNotifier:
             assert mock_aiohttp_session.post.call_count == 1  # No retry
 
     @pytest.mark.asyncio
-    async def test_send_notification_rate_limit_no_retry_after(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_notification_rate_limit_no_retry_after(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test rate limit handling when retry_after is missing (lines 383-395)."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
@@ -967,7 +1029,10 @@ class TestDiscordNotifier:
             mock_response_success.text = AsyncMock(return_value="OK")
             mock_response_success.json = AsyncMock(return_value={})
 
-            mock_aiohttp_session.post.side_effect = [mock_response_429, mock_response_success]
+            mock_aiohttp_session.post.side_effect = [
+                mock_response_429,
+                mock_response_success,
+            ]
 
             result = await notifier.send_notification("Test message")
 
@@ -975,9 +1040,11 @@ class TestDiscordNotifier:
             assert mock_aiohttp_session.post.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_send_notification_unexpected_error(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_notification_unexpected_error(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test handling of unexpected errors (lines 411)."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
@@ -989,7 +1056,9 @@ class TestDiscordNotifier:
             assert result is False
 
     @pytest.mark.asyncio
-    async def test_send_trade_alert_disabled_alerts(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_trade_alert_disabled_alerts(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test trade alert when alerts are disabled."""
         discord_config["alerts"]["enabled"] = False
         notifier = DiscordNotifier(discord_config)
@@ -1002,7 +1071,7 @@ class TestDiscordNotifier:
             "price": 50000.0,
             "pnl": 100.0,
             "status": "filled",
-            "mode": "live"
+            "mode": "live",
         }
 
         result = await notifier.send_trade_alert(trade_data)
@@ -1021,19 +1090,21 @@ class TestDiscordNotifier:
             "price": 45000.0,
             "pnl": -200.0,
             "status": "filled",
-            "mode": "live"
+            "mode": "live",
         }
 
         result = await discord_notifier.send_trade_alert(trade_data)
 
         assert result is True
         call_args = mock_aiohttp_session.post.call_args
-        payload = call_args[1]['json']
-        embed = payload['embeds'][0]
-        assert embed['color'] == 0xFF0000  # Red for loss
+        payload = call_args[1]["json"]
+        embed = payload["embeds"][0]
+        assert embed["color"] == 0xFF0000  # Red for loss
 
     @pytest.mark.asyncio
-    async def test_send_signal_alert_disabled_alerts(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_signal_alert_disabled_alerts(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test signal alert when alerts are disabled."""
         discord_config["alerts"]["enabled"] = False
         notifier = DiscordNotifier(discord_config)
@@ -1045,7 +1116,7 @@ class TestDiscordNotifier:
             signal_strength=SignalStrength.STRONG,
             order_type="market",
             amount=Decimal("1.0"),
-            price=Decimal("50000")
+            price=Decimal("50000"),
         )
 
         result = await notifier.send_signal_alert(signal)
@@ -1054,7 +1125,9 @@ class TestDiscordNotifier:
         mock_aiohttp_session.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_send_signal_alert_dict_input(self, discord_notifier, mock_aiohttp_session):
+    async def test_send_signal_alert_dict_input(
+        self, discord_notifier, mock_aiohttp_session
+    ):
         """Test signal alert with dictionary input."""
         signal_dict = {
             "symbol": "ETH/USDT",
@@ -1063,18 +1136,20 @@ class TestDiscordNotifier:
             "price": 3000.0,
             "amount": 2.0,
             "stop_loss": 3100.0,
-            "take_profit": 2900.0
+            "take_profit": 2900.0,
         }
 
         result = await discord_notifier.send_signal_alert(signal_dict)
 
         assert result is True
         call_args = mock_aiohttp_session.post.call_args
-        payload = call_args[1]['json']
-        assert "New Trading Signal" in payload['embeds'][0]['title']
+        payload = call_args[1]["json"]
+        assert "New Trading Signal" in payload["embeds"][0]["title"]
 
     @pytest.mark.asyncio
-    async def test_send_error_alert_disabled_alerts(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_error_alert_disabled_alerts(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test error alert when alerts are disabled."""
         discord_config["alerts"]["enabled"] = False
         notifier = DiscordNotifier(discord_config)
@@ -1082,7 +1157,7 @@ class TestDiscordNotifier:
         error_data = {
             "error": "Test error",
             "component": "OrderManager",
-            "timestamp": "2023-01-01T00:00:00Z"
+            "timestamp": "2023-01-01T00:00:00Z",
         }
 
         result = await notifier.send_error_alert(error_data)
@@ -1091,7 +1166,9 @@ class TestDiscordNotifier:
         mock_aiohttp_session.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_send_performance_report_disabled_alerts(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_performance_report_disabled_alerts(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test performance report when alerts are disabled."""
         discord_config["alerts"]["enabled"] = False
         notifier = DiscordNotifier(discord_config)
@@ -1102,7 +1179,7 @@ class TestDiscordNotifier:
             "total_pnl": 5000.0,
             "max_win": 1000.0,
             "max_loss": -500.0,
-            "sharpe_ratio": 1.2
+            "sharpe_ratio": 1.2,
         }
 
         result = await notifier.send_performance_report(performance_data)
@@ -1111,11 +1188,13 @@ class TestDiscordNotifier:
         mock_aiohttp_session.post.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_send_notification_exponential_backoff(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_notification_exponential_backoff(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test exponential backoff timing in retries."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session), \
-             patch('asyncio.sleep') as mock_sleep:
-
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session), patch(
+            "asyncio.sleep"
+        ) as mock_sleep:
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
@@ -1138,12 +1217,13 @@ class TestDiscordNotifier:
             assert sleep_calls[3] > sleep_calls[2]
 
     @pytest.mark.asyncio
-    async def test_send_notification_jitter(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_notification_jitter(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test that jitter is added to backoff timing."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session), \
-             patch('asyncio.sleep') as mock_sleep, \
-             patch('random.random') as mock_random:
-
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session), patch(
+            "asyncio.sleep"
+        ) as mock_sleep, patch("random.random") as mock_random:
             mock_random.return_value = 0.5  # Fixed jitter value for testing
 
             notifier = DiscordNotifier(discord_config)
@@ -1161,7 +1241,9 @@ class TestDiscordNotifier:
             # Verify jitter was added to sleep times
             sleep_calls = [call[0][0] for call in mock_sleep.call_args_list]
             for sleep_time in sleep_calls:
-                assert isinstance(sleep_time, float) and sleep_time >= 0.5  # Jitter value should be included
+                assert (
+                    isinstance(sleep_time, float) and sleep_time >= 0.5
+                )  # Jitter value should be included
 
     @pytest.mark.asyncio
     async def test_init_environment_variables_priority(self):
@@ -1170,14 +1252,18 @@ class TestDiscordNotifier:
             "alerts": {"enabled": True},
             "webhook_url": "config_webhook",
             "bot_token": "config_token",
-            "channel_id": "config_channel"
+            "channel_id": "config_channel",
         }
 
-        with patch.dict(os.environ, {
-            "CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL": "env_webhook",
-            "CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN": "env_token",
-            "CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID": "env_channel"
-        }, clear=False):
+        with patch.dict(
+            os.environ,
+            {
+                "CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL": "env_webhook",
+                "CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN": "env_token",
+                "CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID": "env_channel",
+            },
+            clear=False,
+        ):
             notifier = DiscordNotifier(config)
 
             assert notifier.webhook_url == "env_webhook"
@@ -1185,7 +1271,9 @@ class TestDiscordNotifier:
             assert notifier.channel_id == "env_channel"
 
     @pytest.mark.asyncio
-    async def test_send_notification_payload_structure(self, discord_notifier, mock_aiohttp_session):
+    async def test_send_notification_payload_structure(
+        self, discord_notifier, mock_aiohttp_session
+    ):
         """Test that notification payload has correct structure."""
         embed_data = {
             "title": "Test Title",
@@ -1193,29 +1281,31 @@ class TestDiscordNotifier:
             "color": 0x00FF00,
             "fields": [
                 {"name": "Field1", "value": "Value1", "inline": True},
-                {"name": "Field2", "value": "Value2", "inline": False}
+                {"name": "Field2", "value": "Value2", "inline": False},
             ],
             "footer": {"text": "Test Footer"},
-            "timestamp": "2023-01-01T00:00:00Z"
+            "timestamp": "2023-01-01T00:00:00Z",
         }
 
         result = await discord_notifier.send_notification("Test message", embed_data)
 
         assert result is True
         call_args = mock_aiohttp_session.post.call_args
-        payload = call_args[1]['json']
+        payload = call_args[1]["json"]
 
-        assert payload['content'] == "Test message"
-        assert len(payload['embeds']) == 1
-        assert payload['embeds'][0]['title'] == "Test Title"
-        assert payload['embeds'][0]['description'] == "Test Description"
-        assert payload['embeds'][0]['color'] == 0x00FF00
-        assert len(payload['embeds'][0]['fields']) == 2
+        assert payload["content"] == "Test message"
+        assert len(payload["embeds"]) == 1
+        assert payload["embeds"][0]["title"] == "Test Title"
+        assert payload["embeds"][0]["description"] == "Test Description"
+        assert payload["embeds"][0]["color"] == 0x00FF00
+        assert len(payload["embeds"][0]["fields"]) == 2
 
     @pytest.mark.asyncio
-    async def test_shutdown_already_closed_session(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_shutdown_already_closed_session(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test shutdown when session is already closed."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
@@ -1235,20 +1325,20 @@ class TestDiscordNotifier:
             "alerts": {"enabled": True},
             "commands": {"enabled": True},
             "bot_token": "test_token",
-            "channel_id": "123456"
+            "channel_id": "123456",
         }
 
-        with patch('notifier.discord_bot.discord.Intents') as mock_intents, \
-             patch('notifier.discord_bot.commands.Bot') as mock_bot:
-
+        with patch("notifier.discord_bot.discord.Intents") as mock_intents, patch(
+            "notifier.discord_bot.commands.Bot"
+        ) as mock_bot:
             mock_intents_instance = MagicMock()
             mock_intents.default.return_value = mock_intents_instance
             mock_bot_instance = MagicMock()
             mock_bot.return_value = mock_bot_instance
 
             # Make bot commands async
-            mock_bot_instance.cogs = {'DiscordNotifier': MagicMock()}
-            mock_bot_instance.cogs['DiscordNotifier'].status = AsyncMock()
+            mock_bot_instance.cogs = {"DiscordNotifier": MagicMock()}
+            mock_bot_instance.cogs["DiscordNotifier"].status = AsyncMock()
 
             notifier = DiscordNotifier(config)
 
@@ -1256,27 +1346,33 @@ class TestDiscordNotifier:
             ctx = MockDiscordContext(channel_id="999999")
 
             # Try to call status command
-            await mock_bot_instance.cogs['DiscordNotifier'].status(ctx)
+            await mock_bot_instance.cogs["DiscordNotifier"].status(ctx)
 
             # Verify the command was called
-            mock_bot_instance.cogs['DiscordNotifier'].status.assert_called_once_with(ctx)
+            mock_bot_instance.cogs["DiscordNotifier"].status.assert_called_once_with(
+                ctx
+            )
 
     @pytest.mark.asyncio
-    async def test_send_notification_mixed_mode_priority(self, mock_aiohttp_session, mock_discord_imports):
+    async def test_send_notification_mixed_mode_priority(
+        self, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test that bot REST mode takes priority over webhook when both are configured."""
         config = {
             "alerts": {"enabled": True},
             "webhook_url": "https://discord.com/api/webhooks/test",
             "bot_token": "test_token",
-            "channel_id": "123456"
+            "channel_id": "123456",
         }
 
-        with patch.dict(os.environ, {
-            "CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN": "test_token",
-            "CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID": "123456"
-        }, clear=False), \
-             patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
-
+        with patch.dict(
+            os.environ,
+            {
+                "CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN": "test_token",
+                "CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID": "123456",
+            },
+            clear=False,
+        ), patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(config)
 
             result = await notifier.send_notification("Test message")
@@ -1289,24 +1385,31 @@ class TestDiscordNotifier:
             assert "webhooks" not in call_args[0][0]
 
     @pytest.mark.asyncio
-    async def test_initialize_sets_shutdown_complete_flag(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_initialize_sets_shutdown_complete_flag(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test that initialize() sets the _shutdown_complete flag to False."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
 
             # Initially, _shutdown_complete should not be set
-            assert not hasattr(notifier, '_shutdown_complete') or not notifier._shutdown_complete
+            assert (
+                not hasattr(notifier, "_shutdown_complete")
+                or not notifier._shutdown_complete
+            )
 
             await notifier.initialize()
 
             # After initialize, _shutdown_complete should be False
-            assert hasattr(notifier, '_shutdown_complete')
+            assert hasattr(notifier, "_shutdown_complete")
             assert notifier._shutdown_complete is False
 
     @pytest.mark.asyncio
-    async def test_shutdown_sets_complete_flag(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_shutdown_sets_complete_flag(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test that shutdown() sets the _shutdown_complete flag to True."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
@@ -1319,9 +1422,11 @@ class TestDiscordNotifier:
             assert notifier._shutdown_complete is True
 
     @pytest.mark.asyncio
-    async def test_shutdown_idempotent(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_shutdown_idempotent(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test that calling shutdown() multiple times is safe."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
@@ -1334,11 +1439,13 @@ class TestDiscordNotifier:
             assert notifier._shutdown_complete is True
 
     @pytest.mark.asyncio
-    async def test_shutdown_with_closed_loop(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_shutdown_with_closed_loop(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test shutdown behavior when event loop is closed."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session), \
-             patch('asyncio.get_running_loop') as mock_get_loop:
-
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session), patch(
+            "asyncio.get_running_loop"
+        ) as mock_get_loop:
             # Mock RuntimeError when getting running loop (simulating closed loop)
             mock_get_loop.side_effect = RuntimeError("no running event loop")
 
@@ -1352,18 +1459,26 @@ class TestDiscordNotifier:
             assert notifier._shutdown_complete is True
 
     @pytest.mark.asyncio
-    async def test_shutdown_with_logging_failures(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_shutdown_with_logging_failures(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test shutdown handles logging failures gracefully."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
             # Now patch the logger after initialization
-            with patch('notifier.discord_bot.logger') as mock_logger:
+            with patch("notifier.discord_bot.logger") as mock_logger:
                 # Mock logger to raise exceptions
-                mock_logger.warning.side_effect = ValueError("I/O operation on closed file")
-                mock_logger.exception.side_effect = ValueError("I/O operation on closed file")
-                mock_logger.info.side_effect = ValueError("I/O operation on closed file")
+                mock_logger.warning.side_effect = ValueError(
+                    "I/O operation on closed file"
+                )
+                mock_logger.exception.side_effect = ValueError(
+                    "I/O operation on closed file"
+                )
+                mock_logger.info.side_effect = ValueError(
+                    "I/O operation on closed file"
+                )
 
                 # Should not raise exception despite logging failures
                 await notifier.shutdown()
@@ -1372,9 +1487,11 @@ class TestDiscordNotifier:
                 assert notifier._shutdown_complete is True
 
     @pytest.mark.asyncio
-    async def test_destructor_safe_with_shutdown_complete(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_destructor_safe_with_shutdown_complete(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test that __del__ is safe when shutdown was completed properly."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
             await notifier.shutdown()
@@ -1383,12 +1500,16 @@ class TestDiscordNotifier:
             try:
                 notifier.__del__()
             except Exception:
-                pytest.fail("__del__ should not raise exceptions when shutdown was completed")
+                pytest.fail(
+                    "__del__ should not raise exceptions when shutdown was completed"
+                )
 
     @pytest.mark.asyncio
-    async def test_destructor_safe_without_shutdown(self, discord_config, mock_aiohttp_session, mock_discord_imports):
+    async def test_destructor_safe_without_shutdown(
+        self, discord_config, mock_aiohttp_session, mock_discord_imports
+    ):
         """Test that __del__ is safe even when shutdown was not called."""
-        with patch('aiohttp.ClientSession', return_value=mock_aiohttp_session):
+        with patch("aiohttp.ClientSession", return_value=mock_aiohttp_session):
             notifier = DiscordNotifier(discord_config)
             await notifier.initialize()
 
@@ -1396,4 +1517,6 @@ class TestDiscordNotifier:
             try:
                 notifier.__del__()
             except Exception:
-                pytest.fail("__del__ should not raise exceptions even when shutdown was not called")
+                pytest.fail(
+                    "__del__ should not raise exceptions even when shutdown was not called"
+                )

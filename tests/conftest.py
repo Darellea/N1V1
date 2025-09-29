@@ -13,34 +13,35 @@ Test Categories:
 - Reliability Tests: Long-running stability testing
 - End-to-End Tests: Complete workflow validation
 """
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 
 # Set testing environment variable for API tests
 os.environ["TESTING"] = "1"
 
 import asyncio
-import pytest
+import os
+import tempfile
+from datetime import datetime
+from typing import Any, Dict
+from unittest.mock import AsyncMock, Mock
+
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional, AsyncGenerator
-from unittest.mock import Mock, AsyncMock
-import tempfile
-import os
-from pathlib import Path
+import pytest
 
-from core.utils.config_utils import ConfigLoader
-from data.data_fetcher import DataFetcher
-from strategies.base_strategy import BaseStrategy
 from core.bot_engine import BotEngine
 from core.order_manager import OrderManager
+from core.self_healing_engine import SelfHealingEngine
 from core.signal_router import SignalRouter
 from core.timeframe_manager import TimeframeManager
-from strategies.regime.strategy_selector import StrategySelector
-from strategies.regime.market_regime import MarketRegimeDetector
+from data.data_fetcher import DataFetcher
 from optimization.strategy_generator import StrategyGenerator
-from core.self_healing_engine import SelfHealingEngine
+from strategies.base_strategy import BaseStrategy
+from strategies.regime.market_regime import MarketRegimeDetector
+from strategies.regime.strategy_selector import StrategySelector
 
 
 # Test Configuration
@@ -48,73 +49,74 @@ from core.self_healing_engine import SelfHealingEngine
 def test_config() -> Dict[str, Any]:
     """Load test configuration with isolated settings."""
     config = {
-        "environment": {
-            "mode": "backtest",
-            "test_mode": True
-        },
+        "environment": {"mode": "backtest", "test_mode": True},
         "exchange": {
             "name": "test_exchange",
             "base_currency": "USDT",
             "markets": ["BTC/USDT", "ETH/USDT"],
-            "testnet": True
+            "testnet": True,
         },
         "trading": {
             "portfolio_mode": True,
             "initial_balance": 10000.0,
             "max_position_size": 0.1,
-            "risk_per_trade": 0.02
+            "risk_per_trade": 0.02,
         },
         "strategies": {
             "active_strategies": ["rsi_strategy", "macd_strategy"],
             "strategy_config": {
                 "rsi_strategy": {"period": 14, "overbought": 70, "oversold": 30},
-                "macd_strategy": {"fast_period": 12, "slow_period": 26, "signal_period": 9}
-            }
+                "macd_strategy": {
+                    "fast_period": 12,
+                    "slow_period": 26,
+                    "signal_period": 9,
+                },
+            },
         },
         "risk_management": {
             "max_drawdown": 0.1,
             "max_daily_loss": 0.05,
             "position_sizing": "fixed_percentage",
-            "stop_loss_percentage": 0.02
+            "stop_loss_percentage": 0.02,
         },
         "multi_timeframe": {
             "enabled": True,
             "timeframes": ["5m", "15m", "1h", "4h"],
-            "max_history_days": 30
+            "max_history_days": 30,
         },
         "regime_forecasting": {
             "enabled": True,
             "model_path": "models/test_regime_forecaster",
             "forecast_horizon": 24,
-            "confidence_threshold": 0.7
+            "confidence_threshold": 0.7,
         },
         "strategy_generator": {
             "enabled": True,
             "population_size": 10,  # Smaller for testing
             "generations": 5,
-            "mutation_rate": 0.1
+            "mutation_rate": 0.1,
         },
         "self_healing": {
             "enabled": True,
             "heartbeat_interval": 5,  # Faster for testing
-            "failure_detection_threshold": 2.0
+            "failure_detection_threshold": 2.0,
         },
         "notifications": {
             "discord": {
                 "enabled": False,  # Disabled for testing
-                "webhook_url": "https://discord.com/api/webhooks/test"
+                "webhook_url": "https://discord.com/api/webhooks/test",
             }
         },
         "monitoring": {
             "terminal_display": False,
             "update_interval": 1.0,
-            "performance_tracking": True
+            "performance_tracking": True,
         },
         "backtesting": {
             "timeframe": "1h",
             "start_date": "2024-01-01",
-            "end_date": "2024-01-31"
-        }
+            "end_date": "2024-01-31",
+        },
     }
     return config
 
@@ -135,28 +137,34 @@ def mock_exchange():
     exchange.markets = ["BTC/USDT", "ETH/USDT"]
 
     # Mock market data methods
-    exchange.get_ticker = AsyncMock(return_value={
-        'symbol': 'BTC/USDT',
-        'last': 50000.0,
-        'bid': 49950.0,
-        'ask': 50050.0,
-        'volume': 1000.0
-    })
+    exchange.get_ticker = AsyncMock(
+        return_value={
+            "symbol": "BTC/USDT",
+            "last": 50000.0,
+            "bid": 49950.0,
+            "ask": 50050.0,
+            "volume": 1000.0,
+        }
+    )
 
-    exchange.get_balance = AsyncMock(return_value={
-        'USDT': {'free': 10000.0, 'used': 0.0, 'total': 10000.0},
-        'BTC': {'free': 0.0, 'used': 0.0, 'total': 0.0}
-    })
+    exchange.get_balance = AsyncMock(
+        return_value={
+            "USDT": {"free": 10000.0, "used": 0.0, "total": 10000.0},
+            "BTC": {"free": 0.0, "used": 0.0, "total": 0.0},
+        }
+    )
 
-    exchange.create_order = AsyncMock(return_value={
-        'id': 'test_order_123',
-        'symbol': 'BTC/USDT',
-        'type': 'limit',
-        'side': 'buy',
-        'amount': 0.001,
-        'price': 50000.0,
-        'status': 'filled'
-    })
+    exchange.create_order = AsyncMock(
+        return_value={
+            "id": "test_order_123",
+            "symbol": "BTC/USDT",
+            "type": "limit",
+            "side": "buy",
+            "amount": 0.001,
+            "price": 50000.0,
+            "status": "filled",
+        }
+    )
 
     exchange.cancel_order = AsyncMock(return_value=True)
     exchange.get_open_orders = AsyncMock(return_value=[])
@@ -188,11 +196,7 @@ def synthetic_market_data():
 
     # Generate 1000 data points (approximately 40 days of 1h data)
     n_points = 1000
-    timestamps = pd.date_range(
-        start=datetime(2024, 1, 1),
-        periods=n_points,
-        freq='1h'
-    )
+    timestamps = pd.date_range(start=datetime(2024, 1, 1), periods=n_points, freq="1h")
 
     # Generate realistic price data with trends and volatility
     base_price = 50000.0
@@ -200,7 +204,7 @@ def synthetic_market_data():
     volatility = 0.02  # 2% daily volatility
 
     # Create price series
-    price_changes = np.random.normal(drift, volatility/np.sqrt(24), n_points)
+    price_changes = np.random.normal(drift, volatility / np.sqrt(24), n_points)
     prices = base_price * np.exp(np.cumsum(price_changes))
 
     # Add some regime-like behavior
@@ -221,19 +225,21 @@ def synthetic_market_data():
 
     volumes = np.random.uniform(100, 1000, n_points)
 
-    data = pd.DataFrame({
-        'timestamp': timestamps,
-        'open': open_prices,
-        'high': close_prices * high_mult,
-        'low': close_prices * low_mult,
-        'close': close_prices,
-        'volume': volumes
-    })
+    data = pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "open": open_prices,
+            "high": close_prices * high_mult,
+            "low": close_prices * low_mult,
+            "close": close_prices,
+            "volume": volumes,
+        }
+    )
 
-    data.set_index('timestamp', inplace=True)
+    data.set_index("timestamp", inplace=True)
 
     # Set regime type attribute for test compatibility
-    data.attrs['regime_type'] = 'bull_market'
+    data.attrs["regime_type"] = "bull_market"
 
     return data
 
@@ -245,31 +251,40 @@ def multi_timeframe_data(synthetic_market_data):
 
     # Resample to different timeframes
     timeframes = {
-        '5m': data.resample('5min').agg({
-            'open': 'first',
-            'high': 'max',
-            'low': 'min',
-            'close': 'last',
-            'volume': 'sum'
-        }).dropna(),
-
-        '15m': data.resample('15min').agg({
-            'open': 'first',
-            'high': 'max',
-            'low': 'min',
-            'close': 'last',
-            'volume': 'sum'
-        }).dropna(),
-
-        '1h': data,  # Original 1h data
-
-        '4h': data.resample('4h').agg({
-            'open': 'first',
-            'high': 'max',
-            'low': 'min',
-            'close': 'last',
-            'volume': 'sum'
-        }).dropna()
+        "5m": data.resample("5min")
+        .agg(
+            {
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum",
+            }
+        )
+        .dropna(),
+        "15m": data.resample("15min")
+        .agg(
+            {
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum",
+            }
+        )
+        .dropna(),
+        "1h": data,  # Original 1h data
+        "4h": data.resample("4h")
+        .agg(
+            {
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "volume": "sum",
+            }
+        )
+        .dropna(),
     }
 
     return timeframes
@@ -305,13 +320,15 @@ def mock_order_manager(mock_exchange):
     """Mock order manager for testing."""
     order_manager = Mock(spec=OrderManager)
     order_manager.exchange = mock_exchange
-    order_manager.execute_order = AsyncMock(return_value={
-        'id': 'test_order_123',
-        'status': 'filled',
-        'amount': 0.001,
-        'price': 50000.0,
-        'pnl': 0.0
-    })
+    order_manager.execute_order = AsyncMock(
+        return_value={
+            "id": "test_order_123",
+            "status": "filled",
+            "amount": 0.001,
+            "price": 50000.0,
+            "pnl": 0.0,
+        }
+    )
     order_manager.get_balance = AsyncMock(return_value=10000.0)
     order_manager.get_equity = AsyncMock(return_value=10000.0)
     order_manager.get_active_order_count = AsyncMock(return_value=0)
@@ -364,11 +381,9 @@ def mock_regime_detector():
     detector = Mock(spec=MarketRegimeDetector)
     detector.detect_regime = Mock(return_value="bull_market")
     detector.get_regime_confidence = Mock(return_value=0.85)
-    detector.get_regime_features = Mock(return_value={
-        'trend_strength': 0.7,
-        'volatility': 0.15,
-        'volume_trend': 0.3
-    })
+    detector.get_regime_features = Mock(
+        return_value={"trend_strength": 0.7, "volatility": 0.15, "volume_trend": 0.3}
+    )
 
     return detector
 
@@ -378,7 +393,9 @@ def mock_strategy_selector():
     """Mock strategy selector for testing."""
     selector = Mock(spec=StrategySelector)
     selector.enabled = True
-    selector.select_strategy = Mock(return_value=None)  # Return None to use all strategies
+    selector.select_strategy = Mock(
+        return_value=None
+    )  # Return None to use all strategies
     selector.update_performance = Mock()
 
     return selector
@@ -388,12 +405,14 @@ def mock_strategy_selector():
 def mock_regime_forecaster():
     """Mock regime forecaster for testing."""
     forecaster = Mock()
-    forecaster.predict_regime = AsyncMock(return_value={
-        'predicted_regime': 'bull_market',
-        'confidence': 0.82,
-        'forecast_horizon': 24,
-        'features_used': ['trend_strength', 'volatility', 'volume_trend']
-    })
+    forecaster.predict_regime = AsyncMock(
+        return_value={
+            "predicted_regime": "bull_market",
+            "confidence": 0.82,
+            "forecast_horizon": 24,
+            "features_used": ["trend_strength", "volatility", "volume_trend"],
+        }
+    )
     forecaster.get_forecast_accuracy = Mock(return_value=0.78)
     forecaster.update_model = AsyncMock()
 
@@ -420,20 +439,24 @@ def mock_self_healing_engine():
     engine = Mock(spec=SelfHealingEngine)
     engine.register_component = Mock()
     engine.send_heartbeat = AsyncMock()
-    engine.get_engine_stats = Mock(return_value={
-        'uptime': '1:00:00',
-        'total_failures_handled': 0,
-        'total_recoveries_successful': 0
-    })
-    engine.monitoring_dashboard.get_dashboard_data = Mock(return_value={
-        'system_health': {
-            'overall_health': 'HEALTHY',
-            'health_score': 98.5,
-            'total_components': 5,
-            'healthy_components': 5,
-            'failing_components': 0
+    engine.get_engine_stats = Mock(
+        return_value={
+            "uptime": "1:00:00",
+            "total_failures_handled": 0,
+            "total_recoveries_successful": 0,
         }
-    })
+    )
+    engine.monitoring_dashboard.get_dashboard_data = Mock(
+        return_value={
+            "system_health": {
+                "overall_health": "HEALTHY",
+                "health_score": 98.5,
+                "total_components": 5,
+                "healthy_components": 5,
+                "failing_components": 0,
+            }
+        }
+    )
 
     return engine
 
@@ -464,11 +487,19 @@ def mock_bot_engine_simple(test_config, mock_data_fetcher, mock_order_manager):
 
 
 @pytest.fixture
-async def mock_bot_engine_full(test_config, mock_data_fetcher, mock_risk_manager,
-                              mock_order_manager, mock_signal_router, mock_timeframe_manager,
-                              mock_regime_detector, mock_strategy_selector,
-                              mock_regime_forecaster, mock_strategy_generator,
-                              mock_self_healing_engine):
+async def mock_bot_engine_full(
+    test_config,
+    mock_data_fetcher,
+    mock_risk_manager,
+    mock_order_manager,
+    mock_signal_router,
+    mock_timeframe_manager,
+    mock_regime_detector,
+    mock_strategy_selector,
+    mock_regime_forecaster,
+    mock_strategy_generator,
+    mock_self_healing_engine,
+):
     """Full mock bot engine with all dependencies for comprehensive tests."""
     bot_engine = Mock(spec=BotEngine)
     bot_engine.config = test_config
@@ -510,6 +541,7 @@ async def mock_bot_engine_full(test_config, mock_data_fetcher, mock_risk_manager
 @pytest.fixture
 def performance_timer():
     """Timer fixture for performance testing."""
+
     class PerformanceTimer:
         def __init__(self):
             self.start_time = None
@@ -537,8 +569,9 @@ def performance_timer():
 @pytest.fixture
 def memory_monitor():
     """Memory monitoring fixture for performance testing."""
-    import psutil
     import os
+
+    import psutil
 
     class MemoryMonitor:
         def __init__(self):
@@ -563,13 +596,12 @@ def memory_monitor():
 @pytest.fixture
 def generate_regime_data():
     """Generate test data for different market regimes."""
+
     def _generate_regime_data(regime_type: str, n_points: int = 500) -> pd.DataFrame:
         np.random.seed(42)
 
         timestamps = pd.date_range(
-            start=datetime(2024, 1, 1),
-            periods=n_points,
-            freq='1h'
+            start=datetime(2024, 1, 1), periods=n_points, freq="1h"
         )
 
         if regime_type == "bull_market":
@@ -606,31 +638,33 @@ def generate_regime_data():
             raise ValueError(f"Unknown regime type: {regime_type}")
 
         # Generate price series
-        price_changes = np.random.normal(trend, volatility/np.sqrt(24), n_points)
+        price_changes = np.random.normal(trend, volatility / np.sqrt(24), n_points)
         prices = base_price * np.exp(np.cumsum(price_changes))
 
         # Create OHLCV data
-        high_mult = 1 + np.random.uniform(0, volatility*2, n_points)
-        low_mult = 1 - np.random.uniform(0, volatility*2, n_points)
+        high_mult = 1 + np.random.uniform(0, volatility * 2, n_points)
+        low_mult = 1 - np.random.uniform(0, volatility * 2, n_points)
         close_prices = prices
         open_prices = np.roll(close_prices, 1)
         open_prices[0] = base_price
 
         volumes = np.random.uniform(100, 1000, n_points)
 
-        data = pd.DataFrame({
-            'timestamp': timestamps,
-            'open': open_prices,
-            'high': close_prices * high_mult,
-            'low': close_prices * low_mult,
-            'close': close_prices,
-            'volume': volumes
-        })
+        data = pd.DataFrame(
+            {
+                "timestamp": timestamps,
+                "open": open_prices,
+                "high": close_prices * high_mult,
+                "low": close_prices * low_mult,
+                "close": close_prices,
+                "volume": volumes,
+            }
+        )
 
-        data.set_index('timestamp', inplace=True)
+        data.set_index("timestamp", inplace=True)
 
         # Set regime type attribute for test compatibility
-        data.attrs['regime_type'] = regime_type
+        data.attrs["regime_type"] = regime_type
 
         return data
 
@@ -640,10 +674,16 @@ def generate_regime_data():
 @pytest.fixture
 def generate_strategy_population():
     """Generate test strategy population for AI strategy generator."""
+
     def _generate_population(size: int = 20):
         """Generate a population of test strategies."""
-        from optimization.strategy_generator import StrategyGenome, StrategyGene
-        from optimization.strategy_generator import StrategyComponent, IndicatorType, SignalLogic
+        from optimization.strategy_generator import (
+            IndicatorType,
+            SignalLogic,
+            StrategyComponent,
+            StrategyGene,
+            StrategyGenome,
+        )
 
         population = []
 
@@ -659,14 +699,14 @@ def generate_strategy_population():
                     gene = StrategyGene(
                         component_type=StrategyComponent.INDICATOR,
                         indicator_type=indicator_type,
-                        parameters={'period': np.random.randint(5, 30)}
+                        parameters={"period": np.random.randint(5, 30)},
                     )
                 else:  # 40% chance of signal logic gene
                     signal_logic = np.random.choice(list(SignalLogic))
                     gene = StrategyGene(
                         component_type=StrategyComponent.SIGNAL_LOGIC,
                         signal_logic=signal_logic,
-                        parameters={'threshold': np.random.uniform(0.1, 0.9)}
+                        parameters={"threshold": np.random.uniform(0.1, 0.9)},
                     )
 
                 genome.genes.append(gene)
@@ -685,10 +725,13 @@ def generate_strategy_population():
 @pytest.fixture
 def assert_performance_bounds():
     """Assert that performance is within acceptable bounds."""
+
     def _assert_bounds(actual: float, expected_max: float, tolerance: float = 0.1):
         """Assert that actual performance is within bounds."""
         upper_bound = expected_max * (1 + tolerance)
-        assert actual <= upper_bound, f"Performance {actual} exceeds bound {upper_bound}"
+        assert (
+            actual <= upper_bound
+        ), f"Performance {actual} exceeds bound {upper_bound}"
 
     return _assert_bounds
 
@@ -696,6 +739,7 @@ def assert_performance_bounds():
 @pytest.fixture
 def assert_memory_usage():
     """Assert memory usage is within acceptable bounds."""
+
     def _assert_memory(usage_mb: float, max_mb: float):
         """Assert memory usage is acceptable."""
         assert usage_mb <= max_mb, f"Memory usage {usage_mb}MB exceeds limit {max_mb}MB"
@@ -706,6 +750,7 @@ def assert_memory_usage():
 @pytest.fixture
 def simulate_network_failure():
     """Simulate network failures for testing."""
+
     class NetworkFailureSimulator:
         def __init__(self):
             self.failure_mode = None
@@ -766,13 +811,13 @@ def configure_test_logging():
     import logging
 
     # Reduce log levels for cleaner test output
-    logging.getLogger('core').setLevel(logging.WARNING)
-    logging.getLogger('data').setLevel(logging.WARNING)
-    logging.getLogger('strategies').setLevel(logging.WARNING)
-    logging.getLogger('optimization').setLevel(logging.WARNING)
+    logging.getLogger("core").setLevel(logging.WARNING)
+    logging.getLogger("data").setLevel(logging.WARNING)
+    logging.getLogger("strategies").setLevel(logging.WARNING)
+    logging.getLogger("optimization").setLevel(logging.WARNING)
 
     # Set test logger to INFO
-    logging.getLogger('test').setLevel(logging.INFO)
+    logging.getLogger("test").setLevel(logging.INFO)
 
 
 # Cleanup fixture
@@ -790,6 +835,7 @@ def cleanup_test_artifacts():
 def reset_rate_limiter():
     """Reset the rate limiter before each test to ensure isolation."""
     from api.app import limiter
+
     limiter.reset()
     yield
 
@@ -798,12 +844,12 @@ def reset_rate_limiter():
 def ensemble_config() -> Dict[str, Any]:
     """Create test configuration for ensemble manager."""
     return {
-        'total_capital': 10000.0,
-        'rebalance_interval_sec': 60,  # Faster for testing
-        'allocation_method': 'equal_weighted',
-        'min_weight': 0.1,
-        'max_weight': 0.5,
-        'portfolio_risk_limit': 0.1
+        "total_capital": 10000.0,
+        "rebalance_interval_sec": 60,  # Faster for testing
+        "allocation_method": "equal_weighted",
+        "min_weight": 0.1,
+        "max_weight": 0.5,
+        "portfolio_risk_limit": 0.1,
     }
 
 
@@ -811,11 +857,11 @@ def ensemble_config() -> Dict[str, Any]:
 def allocation_config() -> Dict[str, Any]:
     """Create test configuration for allocation engine."""
     return {
-        'min_weight': 0.05,
-        'max_weight': 0.4,
-        'risk_free_rate': 0.02,
-        'performance_window_days': 30,
-        'rebalance_threshold': 0.05
+        "min_weight": 0.05,
+        "max_weight": 0.4,
+        "risk_free_rate": 0.02,
+        "performance_window_days": 30,
+        "rebalance_threshold": 0.05,
     }
 
 
@@ -835,12 +881,14 @@ def mock_component_registry():
     registry.get_components_by_type = Mock(return_value=[])
     registry.get_critical_components = Mock(return_value=[])
     registry.update_component_status = Mock()
-    registry.get_registry_stats = Mock(return_value={
-        'total_components': 5,
-        'critical_components': 2,
-        'healthy_components': 5,
-        'failing_components': 0
-    })
+    registry.get_registry_stats = Mock(
+        return_value={
+            "total_components": 5,
+            "critical_components": 2,
+            "healthy_components": 5,
+            "failing_components": 0,
+        }
+    )
     return registry
 
 
@@ -848,6 +896,7 @@ def mock_component_registry():
 def mock_heartbeat_message():
     """Mock heartbeat message for testing."""
     from datetime import datetime
+
     message = Mock()
     message.component_id = "test_comp"
     message.component_type = "test_type"
@@ -874,6 +923,7 @@ def mock_failure_diagnosis():
 def mock_trading_signal():
     """Mock trading signal for testing."""
     from decimal import Decimal
+
     signal = Mock()
     signal.symbol = "BTC/USDT"
     signal.signal_type = Mock()  # SignalType.BUY
@@ -895,7 +945,7 @@ def mock_order_result():
         "amount": 0.001,
         "price": 50000.0,
         "pnl": 50.0,
-        "timestamp": 1234567890000
+        "timestamp": 1234567890000,
     }
     return result
 
@@ -903,22 +953,22 @@ def mock_order_result():
 @pytest.fixture
 def mock_dataframe():
     """Mock pandas DataFrame for testing."""
+    from datetime import datetime
+
     import pandas as pd
-    from datetime import datetime, timedelta
 
-    timestamps = pd.date_range(
-        start=datetime(2024, 1, 1),
-        periods=100,
-        freq='1h'
+    timestamps = pd.date_range(start=datetime(2024, 1, 1), periods=100, freq="1h")
+
+    df = pd.DataFrame(
+        {
+            "open": [50000 + i for i in range(100)],
+            "high": [50100 + i for i in range(100)],
+            "low": [49900 + i for i in range(100)],
+            "close": [50050 + i for i in range(100)],
+            "volume": [1000 + i * 10 for i in range(100)],
+        },
+        index=timestamps,
     )
-
-    df = pd.DataFrame({
-        'open': [50000 + i for i in range(100)],
-        'high': [50100 + i for i in range(100)],
-        'low': [49900 + i for i in range(100)],
-        'close': [50050 + i for i in range(100)],
-        'volume': [1000 + i * 10 for i in range(100)]
-    }, index=timestamps)
 
     return df
 
@@ -932,29 +982,19 @@ def mock_config() -> Dict[str, Any]:
             "portfolio_mode": False,
             "symbol": "BTC/USDT",
             "initial_balance": 10000.0,
-            "pair_allocation": {"BTC/USDT": 0.6, "ETH/USDT": 0.4}
+            "pair_allocation": {"BTC/USDT": 0.6, "ETH/USDT": 0.4},
         },
-        "exchange": {
-            "markets": ["BTC/USDT"],
-            "base_currency": "USDT"
-        },
+        "exchange": {"markets": ["BTC/USDT"], "base_currency": "USDT"},
         "strategies": {
             "active_strategies": ["TestStrategy"],
-            "strategy_config": {
-                "TestStrategy": {"param1": "value1"}
-            }
+            "strategy_config": {"TestStrategy": {"param1": "value1"}},
         },
-        "notifications": {
-            "discord": {"enabled": False}
-        },
-        "monitoring": {
-            "update_interval": 1.0,
-            "terminal_display": False
-        },
+        "notifications": {"discord": {"enabled": False}},
+        "monitoring": {"update_interval": 1.0, "terminal_display": False},
         "risk_management": {},
         "backtesting": {"timeframe": "1h"},
         "cache": {"enabled": False},
-        "multi_timeframe": {}
+        "multi_timeframe": {},
     }
 
 
@@ -962,13 +1002,15 @@ def mock_config() -> Dict[str, Any]:
 def mock_config_loader():
     """Mock configuration loader for testing."""
     loader = Mock()
-    loader.load_config = Mock(return_value={
-        "environment": {"mode": "paper"},
-        "trading": {"initial_balance": 10000.0},
-        "exchange": {"name": "binance", "markets": ["BTC/USDT"]},
-        "strategies": {"active_strategies": []},
-        "notifications": {"discord": {"enabled": False}}
-    })
+    loader.load_config = Mock(
+        return_value={
+            "environment": {"mode": "paper"},
+            "trading": {"initial_balance": 10000.0},
+            "exchange": {"name": "binance", "markets": ["BTC/USDT"]},
+            "strategies": {"active_strategies": []},
+            "notifications": {"discord": {"enabled": False}},
+        }
+    )
     return loader
 
 
@@ -988,7 +1030,8 @@ def mock_redis():
 @pytest.fixture
 def cache_config():
     """Cache configuration for testing."""
-    from core.cache import CacheConfig, MemoryConfig, EvictionPolicy
+    from core.cache import CacheConfig, EvictionPolicy, MemoryConfig
+
     return CacheConfig(
         host="localhost",
         port=6379,
@@ -1000,7 +1043,7 @@ def cache_config():
             "default": 300,
             "market_ticker": 60,
             "ohlcv": 600,
-            "account_balance": 30
+            "account_balance": 30,
         },
         eviction_policy=EvictionPolicy.TTL,
         max_cache_size=10000,
@@ -1009,8 +1052,8 @@ def cache_config():
             warning_memory_mb=400.0,
             cleanup_memory_mb=350.0,
             eviction_batch_size=100,
-            memory_check_interval=60.0
-        )
+            memory_check_interval=60.0,
+        ),
     )
 
 
@@ -1018,6 +1061,7 @@ def cache_config():
 def cache_instance(cache_config, mock_redis):
     """Cache instance with mocked Redis client."""
     from core.cache import RedisCache
+
     cache = RedisCache(cache_config)
     cache._redis_client = mock_redis
     cache._connected = True

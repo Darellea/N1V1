@@ -5,15 +5,16 @@ Tests division by zero handling, floating point precision issues,
 and statistical edge case handling in core modules.
 """
 
-import pytest
-import numpy as np
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from unittest.mock import Mock, patch
 
-from core.performance_tracker import PerformanceTracker
-from core.performance_monitor import RealTimePerformanceMonitor, PerformanceBaseline
-from core.performance_reports import PerformanceReportGenerator
+import numpy as np
+import pytest
+
 from core.order_manager import OrderManager
+from core.performance_monitor import PerformanceBaseline, RealTimePerformanceMonitor
+from core.performance_reports import PerformanceReportGenerator
+from core.performance_tracker import PerformanceTracker
 from core.types import TradingMode
 
 
@@ -24,14 +25,16 @@ class TestPerformanceTrackerCorrectness:
         """Set up test fixtures."""
         self.config = {
             "trading": {"initial_balance": 1000.0},
-            "environment": {"mode": "paper"}
+            "environment": {"mode": "paper"},
         }
         # Mock config manager to avoid security issues
-        with patch('core.config_manager.get_config_manager') as mock_get_config:
+        with patch("core.config_manager.get_config_manager") as mock_get_config:
             mock_config_manager = Mock()
             mock_pt_config = Mock()
             mock_pt_config.starting_balance = 1000.0
-            mock_config_manager.get_performance_tracker_config.return_value = mock_pt_config
+            mock_config_manager.get_performance_tracker_config.return_value = (
+                mock_pt_config
+            )
             mock_get_config.return_value = mock_config_manager
             self.tracker = PerformanceTracker(self.config)
 
@@ -58,22 +61,32 @@ class TestPerformanceTrackerCorrectness:
         """Test profit factor calculation in various edge cases."""
         # Test case 1: Only wins, no losses
         self.tracker.performance_stats = {
-            "wins": 0, "losses": 0, "win_rate": 0.0, "sharpe_ratio": 0.0,
-            "max_drawdown": 0.0, "total_pnl": 0.0, "equity_history": [],
-            "returns_history": [], "equity_progression": []
+            "wins": 0,
+            "losses": 0,
+            "win_rate": 0.0,
+            "sharpe_ratio": 0.0,
+            "max_drawdown": 0.0,
+            "total_pnl": 0.0,
+            "equity_history": [],
+            "returns_history": [],
+            "equity_progression": [],
         }
 
         # Add some winning trades
         self.tracker.performance_stats["equity_progression"] = [
-            {"pnl": 10.0}, {"pnl": 20.0}, {"pnl": 15.0}
+            {"pnl": 10.0},
+            {"pnl": 20.0},
+            {"pnl": 15.0},
         ]
 
         metrics = self.tracker.calculate_additional_metrics()
-        assert metrics["profit_factor"] == float('inf')
+        assert metrics["profit_factor"] == float("inf")
 
         # Test case 2: Only losses, no wins
         self.tracker.performance_stats["equity_progression"] = [
-            {"pnl": -10.0}, {"pnl": -20.0}, {"pnl": -15.0}
+            {"pnl": -10.0},
+            {"pnl": -20.0},
+            {"pnl": -15.0},
         ]
 
         metrics = self.tracker.calculate_additional_metrics()
@@ -118,7 +131,7 @@ class TestPerformanceMonitorCorrectness:
             percentile_95=0.0,
             percentile_99=0.0,
             sample_count=10,
-            last_updated=0.0
+            last_updated=0.0,
         )
 
         # Test with zero mean - should handle gracefully
@@ -139,7 +152,7 @@ class TestPerformanceMonitorCorrectness:
             percentile_95=10.0,
             percentile_99=10.0,
             sample_count=100,
-            last_updated=0.0
+            last_updated=0.0,
         )
 
         self.monitor.baselines["constant_metric"] = baseline
@@ -165,7 +178,7 @@ class TestPerformanceMonitorCorrectness:
             percentile_95=14.0,
             percentile_99=14.9,  # Same as percentile_95
             sample_count=100,
-            last_updated=0.0
+            last_updated=0.0,
         )
 
         self.monitor.baselines["test_metric"] = baseline
@@ -196,14 +209,17 @@ class TestPerformanceReportsCorrectness:
             report_id="current",
             timestamp=1000.0,
             duration=10.0,
-            summary={"total_functions": 100, "performance_score": 80.0}
+            summary={"total_functions": 100, "performance_score": 80.0},
         )
 
         previous = PerformanceReport(
             report_id="previous",
             timestamp=900.0,
             duration=0.0,  # Zero duration - edge case
-            summary={"total_functions": 0, "performance_score": 0.0}  # Zero values - edge cases
+            summary={
+                "total_functions": 0,
+                "performance_score": 0.0,
+            },  # Zero values - edge cases
         )
 
         # Mock report history
@@ -231,7 +247,7 @@ class TestPerformanceReportsCorrectness:
         profiler_report = {
             "functions": {
                 "func1": {"total_time": 0.0, "avg_time": 0.0, "call_count": 1},
-                "func2": {"total_time": 0.0, "avg_time": 0.0, "call_count": 1}
+                "func2": {"total_time": 0.0, "avg_time": 0.0, "call_count": 1},
             }
         }
 
@@ -239,7 +255,7 @@ class TestPerformanceReportsCorrectness:
         self.generator.profiler = Mock()
         self.generator.profiler.get_hotspots.return_value = [
             {"function": "func1", "total_time": 0.0, "avg_time": 0.0, "call_count": 1},
-            {"function": "func2", "total_time": 0.0, "avg_time": 0.0, "call_count": 1}
+            {"function": "func2", "total_time": 0.0, "avg_time": 0.0, "call_count": 1},
         ]
 
         hotspots = self.generator._identify_hotspots(profiler_report)
@@ -254,25 +270,27 @@ class TestOrderManagerPrecision:
 
     def test_decimal_initial_balance_conversion(self):
         """Test that initial balance is properly converted to Decimal."""
-        config = {
-            "order": {},
-            "paper": {"initial_balance": "1234.56"},
-            "risk": {}
-        }
+        config = {"order": {}, "paper": {"initial_balance": "1234.56"}, "risk": {}}
 
         # Mock dependencies to avoid complex setup
-        with patch('core.order_manager.LiveOrderExecutor'), \
-             patch('core.order_manager.PaperOrderExecutor') as mock_paper_executor, \
-             patch('core.order_manager.BacktestOrderExecutor'), \
-             patch('core.order_manager.OrderProcessor'), \
-             patch('core.order_manager.ReliabilityManager'), \
-             patch('core.order_manager.PortfolioManager'):
-
+        with patch("core.order_manager.LiveOrderExecutor"), patch(
+            "core.order_manager.PaperOrderExecutor"
+        ) as mock_paper_executor, patch(
+            "core.order_manager.BacktestOrderExecutor"
+        ), patch(
+            "core.order_manager.OrderProcessor"
+        ), patch(
+            "core.order_manager.ReliabilityManager"
+        ), patch(
+            "core.order_manager.PortfolioManager"
+        ):
             order_manager = OrderManager(config, TradingMode.PAPER)
 
             # Check that set_initial_balance was called with a Decimal
             mock_paper_executor.return_value.set_initial_balance.assert_called_once()
-            call_args = mock_paper_executor.return_value.set_initial_balance.call_args[0]
+            call_args = mock_paper_executor.return_value.set_initial_balance.call_args[
+                0
+            ]
             assert len(call_args) == 1
             balance = call_args[0]
             assert isinstance(balance, Decimal)
@@ -280,25 +298,27 @@ class TestOrderManagerPrecision:
 
     def test_invalid_initial_balance_fallback(self):
         """Test fallback behavior for invalid initial balance values."""
-        config = {
-            "order": {},
-            "paper": {"initial_balance": "invalid"},
-            "risk": {}
-        }
+        config = {"order": {}, "paper": {"initial_balance": "invalid"}, "risk": {}}
 
         # Mock dependencies
-        with patch('core.order_manager.LiveOrderExecutor'), \
-             patch('core.order_manager.PaperOrderExecutor') as mock_paper_executor, \
-             patch('core.order_manager.BacktestOrderExecutor'), \
-             patch('core.order_manager.OrderProcessor'), \
-             patch('core.order_manager.ReliabilityManager'), \
-             patch('core.order_manager.PortfolioManager'):
-
+        with patch("core.order_manager.LiveOrderExecutor"), patch(
+            "core.order_manager.PaperOrderExecutor"
+        ) as mock_paper_executor, patch(
+            "core.order_manager.BacktestOrderExecutor"
+        ), patch(
+            "core.order_manager.OrderProcessor"
+        ), patch(
+            "core.order_manager.ReliabilityManager"
+        ), patch(
+            "core.order_manager.PortfolioManager"
+        ):
             order_manager = OrderManager(config, TradingMode.PAPER)
 
             # Should fallback to default Decimal balance
             mock_paper_executor.return_value.set_initial_balance.assert_called_once()
-            call_args = mock_paper_executor.return_value.set_initial_balance.call_args[0]
+            call_args = mock_paper_executor.return_value.set_initial_balance.call_args[
+                0
+            ]
             assert len(call_args) == 1
             balance = call_args[0]
             assert isinstance(balance, Decimal)
@@ -306,25 +326,27 @@ class TestOrderManagerPrecision:
 
     def test_none_initial_balance_fallback(self):
         """Test fallback behavior when initial balance is None."""
-        config = {
-            "order": {},
-            "paper": {"initial_balance": None},
-            "risk": {}
-        }
+        config = {"order": {}, "paper": {"initial_balance": None}, "risk": {}}
 
         # Mock dependencies
-        with patch('core.order_manager.LiveOrderExecutor'), \
-             patch('core.order_manager.PaperOrderExecutor') as mock_paper_executor, \
-             patch('core.order_manager.BacktestOrderExecutor'), \
-             patch('core.order_manager.OrderProcessor'), \
-             patch('core.order_manager.ReliabilityManager'), \
-             patch('core.order_manager.PortfolioManager'):
-
+        with patch("core.order_manager.LiveOrderExecutor"), patch(
+            "core.order_manager.PaperOrderExecutor"
+        ) as mock_paper_executor, patch(
+            "core.order_manager.BacktestOrderExecutor"
+        ), patch(
+            "core.order_manager.OrderProcessor"
+        ), patch(
+            "core.order_manager.ReliabilityManager"
+        ), patch(
+            "core.order_manager.PortfolioManager"
+        ):
             order_manager = OrderManager(config, TradingMode.PAPER)
 
             # Should fallback to default Decimal balance
             mock_paper_executor.return_value.set_initial_balance.assert_called_once()
-            call_args = mock_paper_executor.return_value.set_initial_balance.call_args[0]
+            call_args = mock_paper_executor.return_value.set_initial_balance.call_args[
+                0
+            ]
             assert len(call_args) == 1
             balance = call_args[0]
             assert isinstance(balance, Decimal)

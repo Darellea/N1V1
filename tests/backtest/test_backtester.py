@@ -2,25 +2,24 @@
 Unit tests for backtest/backtester.py to verify algorithmic correctness fixes.
 Tests division by zero protection, edge case handling, and statistical integrity.
 """
-import pytest
-import tempfile
-import os
 import json
-import time
+import os
+from math import inf, isfinite, nan
 from unittest.mock import Mock
-from math import inf, nan, isfinite
+
+import pytest
 
 from backtest.backtester import (
-    compute_backtest_metrics,
-    _calculate_sharpe_ratio,
-    _calculate_profit_factor,
+    BacktestSecurityError,
+    BacktestValidationError,
     _calculate_max_drawdown,
+    _calculate_profit_factor,
+    _calculate_sharpe_ratio,
     _compute_returns,
+    compute_backtest_metrics,
+    compute_regime_aware_metrics,
     export_equity_progression,
     export_metrics,
-    compute_regime_aware_metrics,
-    BacktestValidationError,
-    BacktestSecurityError
 )
 
 
@@ -46,43 +45,37 @@ class TestBacktestMetrics:
         """Test Sharpe ratio handles NaN and infinite values safely."""
         returns = [0.01, nan, 0.02, inf, -inf]
         sharpe = _calculate_sharpe_ratio(returns)
-        assert sharpe == 0.0 or isinstance(sharpe, float), "Should handle NaN/inf gracefully"
+        assert sharpe == 0.0 or isinstance(
+            sharpe, float
+        ), "Should handle NaN/inf gracefully"
 
     def test_profit_factor_division_by_zero_protection(self):
         """Test profit factor handles zero losses safely."""
         # Test with profits but no losses
-        equity_data = [
-            {'pnl': 100.0},
-            {'pnl': 200.0},
-            {'pnl': 50.0}
-        ]
+        equity_data = [{"pnl": 100.0}, {"pnl": 200.0}, {"pnl": 50.0}]
         profit_factor = _calculate_profit_factor(equity_data)
-        assert profit_factor == float('inf'), "Should return inf for profits with no losses"
+        assert profit_factor == float(
+            "inf"
+        ), "Should return inf for profits with no losses"
 
         # Test with no profits or losses
-        equity_data = [
-            {'pnl': 0.0},
-            {'pnl': 0.0}
-        ]
+        equity_data = [{"pnl": 0.0}, {"pnl": 0.0}]
         profit_factor = _calculate_profit_factor(equity_data)
         assert profit_factor == 0.0, "Should return 0.0 for no profits/losses"
 
     def test_max_drawdown_division_by_zero_protection(self):
         """Test max drawdown handles zero peak equity safely."""
         # Test with zero equity values
-        equity_data = [
-            {'equity': 0.0},
-            {'equity': 0.0}
-        ]
+        equity_data = [{"equity": 0.0}, {"equity": 0.0}]
         max_dd = _calculate_max_drawdown(equity_data)
         assert max_dd == 0.0, "Should return 0.0 for zero equity"
 
     def test_returns_calculation_with_zero_equity(self):
         """Test returns calculation handles zero equity safely."""
         equity_data = [
-            {'equity': 100.0},
-            {'equity': 0.0},  # Zero equity
-            {'equity': 50.0}
+            {"equity": 100.0},
+            {"equity": 0.0},  # Zero equity
+            {"equity": 50.0},
         ]
         returns = _compute_returns(equity_data)
         assert len(returns) == 2, "Should have 2 return values"
@@ -92,59 +85,67 @@ class TestBacktestMetrics:
     def test_returns_calculation_with_nan_inf_equity(self):
         """Test returns calculation handles NaN/infinite equity safely."""
         equity_data = [
-            {'equity': 100.0},
-            {'equity': nan},
-            {'equity': inf},
-            {'equity': 150.0}
+            {"equity": 100.0},
+            {"equity": nan},
+            {"equity": inf},
+            {"equity": 150.0},
         ]
         returns = _compute_returns(equity_data)
         assert len(returns) == 3, "Should have 3 return values"
         # Should use safe defaults for non-finite values
-        assert all(isinstance(r, float) for r in returns), "All returns should be finite floats"
+        assert all(
+            isinstance(r, float) for r in returns
+        ), "All returns should be finite floats"
 
     def test_complete_metrics_with_edge_cases(self):
         """Test complete metrics calculation with various edge cases."""
         # Test with empty data
         metrics = compute_backtest_metrics([])
-        assert metrics['sharpe_ratio'] == 0.0
-        assert metrics['profit_factor'] == 0.0
-        assert metrics['max_drawdown'] == 0.0
-        assert metrics['total_trades'] == 0
+        assert metrics["sharpe_ratio"] == 0.0
+        assert metrics["profit_factor"] == 0.0
+        assert metrics["max_drawdown"] == 0.0
+        assert metrics["total_trades"] == 0
 
         # Test with single data point
-        equity_data = [{'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 100.0, 'pnl': 0.0}]
+        equity_data = [
+            {"trade_id": 1, "timestamp": "2023-01-01", "equity": 100.0, "pnl": 0.0}
+        ]
         metrics = compute_backtest_metrics(equity_data)
-        assert metrics['sharpe_ratio'] == 0.0  # Not enough data for Sharpe
-        assert metrics['total_trades'] == 0  # No winning/losing trades
+        assert metrics["sharpe_ratio"] == 0.0  # Not enough data for Sharpe
+        assert metrics["total_trades"] == 0  # No winning/losing trades
 
         # Test with constant equity (no volatility)
         equity_data = [
-            {'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 100.0, 'pnl': 0.0},
-            {'trade_id': 2, 'timestamp': '2023-01-02', 'equity': 100.0, 'pnl': 0.0},
-            {'trade_id': 3, 'timestamp': '2023-01-03', 'equity': 100.0, 'pnl': 0.0}
+            {"trade_id": 1, "timestamp": "2023-01-01", "equity": 100.0, "pnl": 0.0},
+            {"trade_id": 2, "timestamp": "2023-01-02", "equity": 100.0, "pnl": 0.0},
+            {"trade_id": 3, "timestamp": "2023-01-03", "equity": 100.0, "pnl": 0.0},
         ]
         metrics = compute_backtest_metrics(equity_data)
-        assert metrics['sharpe_ratio'] == 0.0, "Should be 0.0 for zero volatility"
-        assert metrics['max_drawdown'] == 0.0, "Should be 0.0 for constant equity"
+        assert metrics["sharpe_ratio"] == 0.0, "Should be 0.0 for zero volatility"
+        assert metrics["max_drawdown"] == 0.0, "Should be 0.0 for constant equity"
 
     def test_total_return_calculation_safety(self):
         """Test total return calculation handles zero initial equity safely."""
         # Test with zero initial equity
         equity_data = [
-            {'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 0.0},
-            {'trade_id': 2, 'timestamp': '2023-01-02', 'equity': 100.0}
+            {"trade_id": 1, "timestamp": "2023-01-01", "equity": 0.0},
+            {"trade_id": 2, "timestamp": "2023-01-02", "equity": 100.0},
         ]
         metrics = compute_backtest_metrics(equity_data)
-        assert metrics['total_return'] == 0.0, "Should return 0.0 for zero initial equity"
+        assert (
+            metrics["total_return"] == 0.0
+        ), "Should return 0.0 for zero initial equity"
 
     def test_win_rate_calculation_safety(self):
         """Test win rate calculation handles zero trades safely."""
         equity_data = [
-            {'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 100.0, 'pnl': 0.0},
-            {'trade_id': 2, 'timestamp': '2023-01-02', 'equity': 100.0, 'pnl': 0.0}
+            {"trade_id": 1, "timestamp": "2023-01-01", "equity": 100.0, "pnl": 0.0},
+            {"trade_id": 2, "timestamp": "2023-01-02", "equity": 100.0, "pnl": 0.0},
         ]
         metrics = compute_backtest_metrics(equity_data)
-        assert metrics['win_rate'] == 0.0, "Should return 0.0 for no winning/losing trades"
+        assert (
+            metrics["win_rate"] == 0.0
+        ), "Should return 0.0 for no winning/losing trades"
 
 
 class TestRegimeAwareMetrics:
@@ -153,33 +154,29 @@ class TestRegimeAwareMetrics:
     def test_regime_aware_with_mismatched_lengths(self):
         """Test regime-aware metrics handles mismatched data lengths safely."""
         equity_data = [
-            {'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 100.0},
-            {'trade_id': 2, 'timestamp': '2023-01-02', 'equity': 110.0}
+            {"trade_id": 1, "timestamp": "2023-01-01", "equity": 100.0},
+            {"trade_id": 2, "timestamp": "2023-01-02", "equity": 110.0},
         ]
         regime_data = [
-            {'regime_name': 'bull'},  # Only one regime record
+            {"regime_name": "bull"},  # Only one regime record
         ]
 
         # Should handle length mismatch gracefully
         result = compute_regime_aware_metrics(equity_data, regime_data)
-        assert 'per_regime_metrics' in result
-        assert len(result['per_regime_metrics']) >= 0  # Should have some metrics
+        assert "per_regime_metrics" in result
+        assert len(result["per_regime_metrics"]) >= 0  # Should have some metrics
 
     def test_regime_aware_with_insufficient_data(self):
         """Test regime-aware metrics handles regimes with insufficient data."""
-        equity_data = [
-            {'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 100.0}
-        ]
-        regime_data = [
-            {'regime_name': 'bull'}
-        ]
+        equity_data = [{"trade_id": 1, "timestamp": "2023-01-01", "equity": 100.0}]
+        regime_data = [{"regime_name": "bull"}]
 
         result = compute_regime_aware_metrics(equity_data, regime_data)
-        assert 'per_regime_metrics' in result
+        assert "per_regime_metrics" in result
         # Should have safe defaults for insufficient data
-        assert 'bull' in result['per_regime_metrics']
-        bull_metrics = result['per_regime_metrics']['bull']
-        assert bull_metrics['sharpe_ratio'] == 0.0
+        assert "bull" in result["per_regime_metrics"]
+        bull_metrics = result["per_regime_metrics"]["bull"]
+        assert bull_metrics["sharpe_ratio"] == 0.0
 
 
 class TestExportFunctions:
@@ -188,8 +185,8 @@ class TestExportFunctions:
     def test_export_equity_progression_sanitization(self):
         """Test equity progression export handles non-finite values safely."""
         equity_data = [
-            {'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 100.0, 'pnl': nan},
-            {'trade_id': 2, 'timestamp': '2023-01-02', 'equity': inf, 'pnl': 10.0}
+            {"trade_id": 1, "timestamp": "2023-01-01", "equity": 100.0, "pnl": nan},
+            {"trade_id": 2, "timestamp": "2023-01-02", "equity": inf, "pnl": 10.0},
         ]
 
         # Use results directory which is allowed
@@ -199,9 +196,9 @@ class TestExportFunctions:
 
             # Verify file was created and contains safe values
             assert os.path.exists(out_path)
-            with open(out_path, 'r') as f:
+            with open(out_path, "r") as f:
                 content = f.read()
-                assert '0.0' in content  # Non-finite values should be replaced
+                assert "0.0" in content  # Non-finite values should be replaced
         finally:
             # Clean up test file
             if os.path.exists(out_path):
@@ -210,10 +207,10 @@ class TestExportFunctions:
     def test_export_metrics_sanitization(self):
         """Test metrics export handles non-finite values safely."""
         metrics = {
-            'sharpe_ratio': nan,
-            'profit_factor': inf,
-            'max_drawdown': 0.1,
-            'equity_curve': [100.0, nan, 110.0, inf]
+            "sharpe_ratio": nan,
+            "profit_factor": inf,
+            "max_drawdown": 0.1,
+            "equity_curve": [100.0, nan, 110.0, inf],
         }
 
         # Use results directory which is allowed
@@ -223,12 +220,12 @@ class TestExportFunctions:
 
             # Verify file was created and contains safe values
             assert os.path.exists(out_path)
-            with open(out_path, 'r') as f:
+            with open(out_path, "r") as f:
                 data = json.load(f)
-                assert data['sharpe_ratio'] == 0.0
-                assert data['profit_factor'] == 0.0
-                assert data['max_drawdown'] == 0.1
-                assert data['equity_curve'] == [100.0, 0.0, 110.0, 0.0]
+                assert data["sharpe_ratio"] == 0.0
+                assert data["profit_factor"] == 0.0
+                assert data["max_drawdown"] == 0.1
+                assert data["equity_curve"] == [100.0, 0.0, 110.0, 0.0]
         finally:
             # Clean up test file
             if os.path.exists(out_path):
@@ -236,7 +233,7 @@ class TestExportFunctions:
 
     def test_path_traversal_protection(self):
         """Test export functions prevent path traversal attacks."""
-        equity_data = [{'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 100.0}]
+        equity_data = [{"trade_id": 1, "timestamp": "2023-01-01", "equity": 100.0}]
 
         # Test path traversal attempt
         malicious_path = "../../../etc/passwd"
@@ -257,12 +254,16 @@ class TestValidation:
             _validate_equity_progression("not a list")
 
         # Test with missing required keys
-        invalid_data = [{'timestamp': '2023-01-01', 'equity': 100.0}]  # Missing trade_id
+        invalid_data = [
+            {"timestamp": "2023-01-01", "equity": 100.0}
+        ]  # Missing trade_id
         with pytest.raises(BacktestValidationError):
             _validate_equity_progression(invalid_data)
 
         # Test with invalid equity range
-        invalid_data = [{'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 1e10}]  # Too large
+        invalid_data = [
+            {"trade_id": 1, "timestamp": "2023-01-01", "equity": 1e10}
+        ]  # Too large
         with pytest.raises(BacktestValidationError):
             _validate_equity_progression(invalid_data)
 
@@ -276,7 +277,11 @@ class TestPerformanceOptimizations:
 
         # Create larger test dataset
         equity_data = [
-            {'equity': 100.0 + i * 0.5, 'trade_id': i, 'timestamp': f'2023-01-{i+1:02d}'}
+            {
+                "equity": 100.0 + i * 0.5,
+                "trade_id": i,
+                "timestamp": f"2023-01-{i+1:02d}",
+            }
             for i in range(1000)
         ]
 
@@ -286,14 +291,20 @@ class TestPerformanceOptimizations:
         optimized_time = time.time() - start_time
 
         # Verify results are reasonable
-        assert len(returns_optimized) == 999, "Should have 999 returns for 1000 equity points"
-        assert all(isinstance(r, float) for r in returns_optimized), "All returns should be floats"
-        assert all(isfinite(r) for r in returns_optimized), "All returns should be finite"
+        assert (
+            len(returns_optimized) == 999
+        ), "Should have 999 returns for 1000 equity points"
+        assert all(
+            isinstance(r, float) for r in returns_optimized
+        ), "All returns should be floats"
+        assert all(
+            isfinite(r) for r in returns_optimized
+        ), "All returns should be finite"
 
         # Test with edge cases
         edge_cases = [
-            {'equity': 0.0, 'trade_id': 1, 'timestamp': '2023-01-01'},
-            {'equity': 100.0, 'trade_id': 2, 'timestamp': '2023-01-02'}
+            {"equity": 0.0, "trade_id": 1, "timestamp": "2023-01-01"},
+            {"equity": 100.0, "trade_id": 2, "timestamp": "2023-01-02"},
         ]
         returns_edge = _compute_returns(edge_cases)
         assert returns_edge == [0.0], "Should handle zero equity safely"
@@ -304,10 +315,10 @@ class TestPerformanceOptimizations:
 
         # Create test data with known profit factor
         equity_data = [
-            {'pnl': 100.0},
-            {'pnl': -50.0},
-            {'pnl': 75.0},
-            {'pnl': -25.0}
+            {"pnl": 100.0},
+            {"pnl": -50.0},
+            {"pnl": 75.0},
+            {"pnl": -25.0},
         ] * 100  # Repeat for performance testing
 
         # Time the calculation
@@ -317,7 +328,9 @@ class TestPerformanceOptimizations:
 
         # Verify correctness: gross_profit / gross_loss = (100 + 75) / (50 + 25) = 175 / 75 = 2.333...
         expected = (100 + 75) / (50 + 25)
-        assert abs(profit_factor - expected) < 1e-10, "Profit factor should match expected calculation"
+        assert (
+            abs(profit_factor - expected) < 1e-10
+        ), "Profit factor should match expected calculation"
 
     def test_vectorized_max_drawdown_calculation(self):
         """Test that vectorized max drawdown calculation produces correct results."""
@@ -325,11 +338,11 @@ class TestPerformanceOptimizations:
 
         # Create test data with known max drawdown
         equity_data = [
-            {'equity': 100.0},
-            {'equity': 110.0},  # Peak
-            {'equity': 95.0},   # Drawdown of 13.636%
-            {'equity': 105.0},  # Recovery
-            {'equity': 90.0}    # Larger drawdown of 18.182%
+            {"equity": 100.0},
+            {"equity": 110.0},  # Peak
+            {"equity": 95.0},  # Drawdown of 13.636%
+            {"equity": 105.0},  # Recovery
+            {"equity": 90.0},  # Larger drawdown of 18.182%
         ] * 50  # Repeat for performance testing
 
         # Time the calculation
@@ -339,7 +352,9 @@ class TestPerformanceOptimizations:
 
         # Verify correctness: max drawdown from peak 110 to low 90 = (110-90)/110 = 18.182%
         expected = (110 - 90) / 110
-        assert abs(max_dd - expected) < 1e-10, "Max drawdown should match expected calculation"
+        assert (
+            abs(max_dd - expected) < 1e-10
+        ), "Max drawdown should match expected calculation"
 
     def test_single_pass_data_extraction(self):
         """Test that single-pass data extraction in compute_backtest_metrics works correctly."""
@@ -349,12 +364,14 @@ class TestPerformanceOptimizations:
         equity_data = []
         for i in range(100):
             pnl = 10.0 if i % 3 == 0 else (-5.0 if i % 3 == 1 else 0.0)
-            equity_data.append({
-                'trade_id': i,
-                'timestamp': f'2023-01-{i+1:02d}',
-                'equity': 1000.0 + pnl,
-                'pnl': pnl
-            })
+            equity_data.append(
+                {
+                    "trade_id": i,
+                    "timestamp": f"2023-01-{i+1:02d}",
+                    "equity": 1000.0 + pnl,
+                    "pnl": pnl,
+                }
+            )
 
         # Time the optimized calculation
         start_time = time.time()
@@ -362,12 +379,14 @@ class TestPerformanceOptimizations:
         calc_time = time.time() - start_time
 
         # Verify correctness
-        expected_wins = sum(1 for record in equity_data if record['pnl'] > 0)
-        expected_losses = sum(1 for record in equity_data if record['pnl'] < 0)
+        expected_wins = sum(1 for record in equity_data if record["pnl"] > 0)
+        expected_losses = sum(1 for record in equity_data if record["pnl"] < 0)
 
-        assert metrics['wins'] == expected_wins, "Wins count should match"
-        assert metrics['losses'] == expected_losses, "Losses count should match"
-        assert metrics['total_trades'] == expected_wins + expected_losses, "Total trades should match"
+        assert metrics["wins"] == expected_wins, "Wins count should match"
+        assert metrics["losses"] == expected_losses, "Losses count should match"
+        assert (
+            metrics["total_trades"] == expected_wins + expected_losses
+        ), "Total trades should match"
 
     def test_pandas_regime_grouping_performance(self):
         """Test that pandas-based regime grouping works correctly."""
@@ -375,13 +394,17 @@ class TestPerformanceOptimizations:
 
         # Create test data
         equity_data = [
-            {'trade_id': i, 'timestamp': f'2023-01-{i+1:02d}', 'equity': 1000.0 + i, 'pnl': 1.0}
+            {
+                "trade_id": i,
+                "timestamp": f"2023-01-{i+1:02d}",
+                "equity": 1000.0 + i,
+                "pnl": 1.0,
+            }
             for i in range(200)
         ]
 
         regime_data = [
-            {'regime_name': 'bull' if i % 2 == 0 else 'bear'}
-            for i in range(200)
+            {"regime_name": "bull" if i % 2 == 0 else "bear"} for i in range(200)
         ]
 
         # Time the optimized calculation
@@ -390,15 +413,15 @@ class TestPerformanceOptimizations:
         calc_time = time.time() - start_time
 
         # Verify structure
-        assert 'per_regime_metrics' in result
-        assert 'bull' in result['per_regime_metrics']
-        assert 'bear' in result['per_regime_metrics']
+        assert "per_regime_metrics" in result
+        assert "bull" in result["per_regime_metrics"]
+        assert "bear" in result["per_regime_metrics"]
 
         # Verify metrics are calculated
-        bull_metrics = result['per_regime_metrics']['bull']
-        assert 'sharpe_ratio' in bull_metrics
-        assert 'profit_factor' in bull_metrics
-        assert 'max_drawdown' in bull_metrics
+        bull_metrics = result["per_regime_metrics"]["bull"]
+        assert "sharpe_ratio" in bull_metrics
+        assert "profit_factor" in bull_metrics
+        assert "max_drawdown" in bull_metrics
 
 
 class TestStatisticalIntegrity:
@@ -414,35 +437,36 @@ class TestStatisticalIntegrity:
 
         # Manual calculation for verification
         avg_return = sum(returns) / len(returns)
-        std_return = (sum((r - avg_return) ** 2 for r in returns) / (len(returns) - 1)) ** 0.5
-        expected_sharpe = (avg_return / std_return) * (252 ** 0.5)  # Annualized
+        std_return = (
+            sum((r - avg_return) ** 2 for r in returns) / (len(returns) - 1)
+        ) ** 0.5
+        expected_sharpe = (avg_return / std_return) * (252**0.5)  # Annualized
 
-        assert abs(sharpe - expected_sharpe) < 1e-10, "Sharpe ratio should match manual calculation"
+        assert (
+            abs(sharpe - expected_sharpe) < 1e-10
+        ), "Sharpe ratio should match manual calculation"
 
     def test_profit_factor_mathematical_correctness(self):
         """Test profit factor calculation matches expected formula."""
-        equity_data = [
-            {'pnl': 100.0},
-            {'pnl': -50.0},
-            {'pnl': 75.0},
-            {'pnl': -25.0}
-        ]
+        equity_data = [{"pnl": 100.0}, {"pnl": -50.0}, {"pnl": 75.0}, {"pnl": -25.0}]
 
         profit_factor = _calculate_profit_factor(equity_data)
 
         # Manual calculation: gross_profit / gross_loss = (100 + 75) / (50 + 25) = 175 / 75 = 2.333...
         expected = (100 + 75) / (50 + 25)
 
-        assert abs(profit_factor - expected) < 1e-10, "Profit factor should match manual calculation"
+        assert (
+            abs(profit_factor - expected) < 1e-10
+        ), "Profit factor should match manual calculation"
 
     def test_max_drawdown_mathematical_correctness(self):
         """Test max drawdown calculation matches expected formula."""
         equity_data = [
-            {'equity': 100.0},
-            {'equity': 110.0},  # Peak
-            {'equity': 95.0},   # Drawdown of 13.636%
-            {'equity': 105.0},  # Recovery
-            {'equity': 90.0}    # Larger drawdown of 18.182%
+            {"equity": 100.0},
+            {"equity": 110.0},  # Peak
+            {"equity": 95.0},  # Drawdown of 13.636%
+            {"equity": 105.0},  # Recovery
+            {"equity": 90.0},  # Larger drawdown of 18.182%
         ]
 
         max_dd = _calculate_max_drawdown(equity_data)
@@ -450,7 +474,9 @@ class TestStatisticalIntegrity:
         # Manual calculation: max drawdown from peak 110 to low 90 = (110-90)/110 = 18.182%
         expected = (110 - 90) / 110
 
-        assert abs(max_dd - expected) < 1e-10, "Max drawdown should match manual calculation"
+        assert (
+            abs(max_dd - expected) < 1e-10
+        ), "Max drawdown should match manual calculation"
 
 
 class TestValidationFunctions:
@@ -461,8 +487,8 @@ class TestValidationFunctions:
         from backtest.backtester import _validate_equity_progression
 
         valid_data = [
-            {'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 100.0, 'pnl': 10.0},
-            {'trade_id': 2, 'timestamp': '2023-01-02', 'equity': 110.0, 'pnl': -5.0}
+            {"trade_id": 1, "timestamp": "2023-01-01", "equity": 100.0, "pnl": 10.0},
+            {"trade_id": 2, "timestamp": "2023-01-02", "equity": 110.0, "pnl": -5.0},
         ]
 
         # Should not raise exception
@@ -473,7 +499,7 @@ class TestValidationFunctions:
         from backtest.backtester import _validate_equity_progression
 
         invalid_data = [
-            {'timestamp': '2023-01-01', 'equity': 100.0}  # Missing trade_id
+            {"timestamp": "2023-01-01", "equity": 100.0}  # Missing trade_id
         ]
 
         with pytest.raises(BacktestValidationError):
@@ -484,7 +510,7 @@ class TestValidationFunctions:
         from backtest.backtester import _validate_equity_progression
 
         invalid_data = [
-            {'trade_id': 'invalid', 'timestamp': '2023-01-01', 'equity': 100.0}
+            {"trade_id": "invalid", "timestamp": "2023-01-01", "equity": 100.0}
         ]
 
         with pytest.raises(BacktestValidationError):
@@ -495,8 +521,8 @@ class TestValidationFunctions:
         from backtest.backtester import _validate_regime_data
 
         valid_data = [
-            {'regime_name': 'bull', 'confidence_score': 0.8},
-            {'regime_name': 'bear', 'confidence_score': 0.6}
+            {"regime_name": "bull", "confidence_score": 0.8},
+            {"regime_name": "bear", "confidence_score": 0.6},
         ]
 
         # Should not raise exception
@@ -506,9 +532,7 @@ class TestValidationFunctions:
         """Test regime data validation with missing regime_name."""
         from backtest.backtester import _validate_regime_data
 
-        invalid_data = [
-            {'confidence_score': 0.8}  # Missing regime_name
-        ]
+        invalid_data = [{"confidence_score": 0.8}]  # Missing regime_name
 
         with pytest.raises(BacktestValidationError):
             _validate_regime_data(invalid_data)
@@ -542,8 +566,9 @@ class TestSecurityFunctions:
 
     def test_ensure_results_dir_creates_directory(self):
         """Test that _ensure_results_dir creates parent directories."""
-        from backtest.backtester import _ensure_results_dir
         import tempfile
+
+        from backtest.backtester import _ensure_results_dir
 
         with tempfile.TemporaryDirectory() as temp_dir:
             test_path = os.path.join(temp_dir, "nested", "dir", "test.csv")
@@ -561,7 +586,7 @@ class TestExportFunctionsExtended:
             export_equity_progression([], out_path)
             assert os.path.exists(out_path)
 
-            with open(out_path, 'r') as f:
+            with open(out_path, "r") as f:
                 content = f.read()
                 assert "trade_id" in content  # Should have header
         finally:
@@ -572,12 +597,12 @@ class TestExportFunctionsExtended:
         """Test export with regime information."""
         equity_data = [
             {
-                'trade_id': 1,
-                'timestamp': '2023-01-01',
-                'equity': 100.0,
-                'pnl': 10.0,
-                'regime_name': 'bull',
-                'confidence_score': 0.8
+                "trade_id": 1,
+                "timestamp": "2023-01-01",
+                "equity": 100.0,
+                "pnl": 10.0,
+                "regime_name": "bull",
+                "confidence_score": 0.8,
             }
         ]
 
@@ -586,7 +611,7 @@ class TestExportFunctionsExtended:
             export_equity_progression(equity_data, out_path)
             assert os.path.exists(out_path)
 
-            with open(out_path, 'r') as f:
+            with open(out_path, "r") as f:
                 content = f.read()
                 assert "bull" in content
                 assert "0.8" in content
@@ -601,7 +626,7 @@ class TestExportFunctionsExtended:
             export_metrics({}, out_path)
             assert os.path.exists(out_path)
 
-            with open(out_path, 'r') as f:
+            with open(out_path, "r") as f:
                 data = json.load(f)
                 assert isinstance(data, dict)
         finally:
@@ -627,35 +652,33 @@ class TestRegimeAwareFunctions:
     def test_compute_regime_aware_metrics_with_empty_equity(self):
         """Test regime-aware metrics with empty equity data."""
         result = compute_regime_aware_metrics([], None)
-        assert 'overall' in result
-        assert 'per_regime' in result
-        assert 'regime_summary' in result
+        assert "overall" in result
+        assert "per_regime" in result
+        assert "regime_summary" in result
 
     def test_compute_regime_aware_metrics_with_no_regime_data(self):
         """Test regime-aware metrics with equity data but no regime data."""
-        equity_data = [
-            {'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 100.0}
-        ]
+        equity_data = [{"trade_id": 1, "timestamp": "2023-01-01", "equity": 100.0}]
 
         result = compute_regime_aware_metrics(equity_data, None)
-        assert 'overall' in result
-        assert result['per_regime'] == {}
-        assert result['regime_summary']['total_regimes'] == 0
+        assert "overall" in result
+        assert result["per_regime"] == {}
+        assert result["regime_summary"]["total_regimes"] == 0
 
     def test_align_regime_data_lengths_with_mismatch(self):
         """Test data length alignment with mismatched lengths."""
         from backtest.backtester import _align_regime_data_lengths
 
         equity_data = [
-            {'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 100.0},
-            {'trade_id': 2, 'timestamp': '2023-01-02', 'equity': 110.0}
+            {"trade_id": 1, "timestamp": "2023-01-01", "equity": 100.0},
+            {"trade_id": 2, "timestamp": "2023-01-02", "equity": 110.0},
         ]
 
-        regime_data = [
-            {'regime_name': 'bull'}
-        ]
+        regime_data = [{"regime_name": "bull"}]
 
-        aligned_equity, aligned_regime = _align_regime_data_lengths(equity_data, regime_data)
+        aligned_equity, aligned_regime = _align_regime_data_lengths(
+            equity_data, regime_data
+        )
         assert len(aligned_equity) == 1
         assert len(aligned_regime) == 1
 
@@ -664,22 +687,22 @@ class TestRegimeAwareFunctions:
         from backtest.backtester import _create_default_regime_metrics
 
         default_metrics = _create_default_regime_metrics()
-        assert default_metrics['sharpe_ratio'] == 0.0
-        assert default_metrics['profit_factor'] == 0.0
-        assert default_metrics['max_drawdown'] == 0.0
-        assert default_metrics['total_trades'] == 0
+        assert default_metrics["sharpe_ratio"] == 0.0
+        assert default_metrics["profit_factor"] == 0.0
+        assert default_metrics["max_drawdown"] == 0.0
+        assert default_metrics["total_trades"] == 0
 
     def test_compute_regime_metrics_safe_with_insufficient_data(self):
         """Test safe regime metrics computation with insufficient data."""
         from backtest.backtester import _compute_regime_metrics_safe
 
         insufficient_data = [
-            {'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 100.0}
+            {"trade_id": 1, "timestamp": "2023-01-01", "equity": 100.0}
         ]
 
-        result = _compute_regime_metrics_safe(insufficient_data, 'test_regime')
-        assert result['sharpe_ratio'] == 0.0
-        assert result['total_trades'] == 0
+        result = _compute_regime_metrics_safe(insufficient_data, "test_regime")
+        assert result["sharpe_ratio"] == 0.0
+        assert result["total_trades"] == 0
 
 
 class TestHelperFunctions:
@@ -690,25 +713,37 @@ class TestHelperFunctions:
         from backtest.backtester import _generate_regime_recommendations
 
         metrics = {
-            'per_regime': {
-                'bull': {'total_return': 0.15, 'sharpe_ratio': 1.2},
-                'bear': {'total_return': -0.05, 'sharpe_ratio': 0.8}
+            "per_regime": {
+                "bull": {"total_return": 0.15, "sharpe_ratio": 1.2},
+                "bear": {"total_return": -0.05, "sharpe_ratio": 0.8},
             }
         }
 
         recommendations = _generate_regime_recommendations(metrics)
-        assert 'best_regime' in recommendations
-        assert 'worst_regime' in recommendations
+        assert "best_regime" in recommendations
+        assert "worst_regime" in recommendations
 
     def test_export_regime_csv_summary(self):
         """Test regime CSV summary export."""
         from backtest.backtester import _export_regime_csv_summary
 
         metrics = {
-            'overall': {'total_return': 0.10, 'sharpe_ratio': 1.0, 'win_rate': 0.6, 'max_drawdown': 0.05, 'total_trades': 100},
-            'per_regime': {
-                'bull': {'total_return': 0.15, 'sharpe_ratio': 1.2, 'win_rate': 0.7, 'max_drawdown': 0.03, 'total_trades': 50}
-            }
+            "overall": {
+                "total_return": 0.10,
+                "sharpe_ratio": 1.0,
+                "win_rate": 0.6,
+                "max_drawdown": 0.05,
+                "total_trades": 100,
+            },
+            "per_regime": {
+                "bull": {
+                    "total_return": 0.15,
+                    "sharpe_ratio": 1.2,
+                    "win_rate": 0.7,
+                    "max_drawdown": 0.03,
+                    "total_trades": 50,
+                }
+            },
         }
 
         out_path = "results/test_regime_summary.csv"
@@ -716,7 +751,7 @@ class TestHelperFunctions:
             _export_regime_csv_summary(metrics, out_path)
             assert os.path.exists(out_path)
 
-            with open(out_path, 'r') as f:
+            with open(out_path, "r") as f:
                 content = f.read()
                 assert "OVERALL" in content
                 assert "bull" in content
@@ -732,7 +767,7 @@ class TestBacktesterClass:
         """Test Backtester class initialization."""
         from backtest.backtester import Backtester
 
-        config = {'test': 'config'}
+        config = {"test": "config"}
         backtester = Backtester(config)
         assert backtester.config == config
 
@@ -749,25 +784,25 @@ class TestBacktesterClass:
         from backtest.backtester import Backtester
 
         backtester = Backtester()
-        strategy_genome = {'type': 'test_strategy'}
-        market_data = {'symbol': 'BTC/USDT', 'data': []}
+        strategy_genome = {"type": "test_strategy"}
+        market_data = {"symbol": "BTC/USDT", "data": []}
 
         result = await backtester.run_backtest(strategy_genome, market_data)
-        assert 'total_return' in result
-        assert 'sharpe_ratio' in result
-        assert 'equity_progression' in result
+        assert "total_return" in result
+        assert "sharpe_ratio" in result
+        assert "equity_progression" in result
 
     def test_run_backtest_sync_with_mock_data(self):
         """Test synchronous run_backtest method."""
         from backtest.backtester import Backtester
 
         backtester = Backtester()
-        strategy_genome = {'type': 'test_strategy'}
-        market_data = {'symbol': 'BTC/USDT', 'data': []}
+        strategy_genome = {"type": "test_strategy"}
+        market_data = {"symbol": "BTC/USDT", "data": []}
 
         result = backtester.run_backtest_sync(strategy_genome, market_data)
-        assert 'total_return' in result
-        assert 'sharpe_ratio' in result
+        assert "total_return" in result
+        assert "sharpe_ratio" in result
 
 
 class TestAsyncExportFunctions:
@@ -778,9 +813,7 @@ class TestAsyncExportFunctions:
         """Test async equity progression export."""
         from backtest.backtester import export_equity_progression_async
 
-        equity_data = [
-            {'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 100.0}
-        ]
+        equity_data = [{"trade_id": 1, "timestamp": "2023-01-01", "equity": 100.0}]
 
         out_path = "results/test_async.csv"
         try:
@@ -795,7 +828,7 @@ class TestAsyncExportFunctions:
         """Test async metrics export."""
         from backtest.backtester import export_metrics_async
 
-        metrics = {'sharpe_ratio': 1.0, 'total_return': 0.1}
+        metrics = {"sharpe_ratio": 1.0, "total_return": 0.1}
 
         out_path = "results/test_async_metrics.json"
         try:
@@ -811,9 +844,9 @@ class TestAsyncExportFunctions:
         from backtest.backtester import export_regime_aware_report_async
 
         metrics = {
-            'overall': {'total_return': 0.1},
-            'per_regime': {},
-            'regime_summary': {}
+            "overall": {"total_return": 0.1},
+            "per_regime": {},
+            "regime_summary": {},
         }
 
         out_path = "results/test_async_regime.json"
@@ -835,7 +868,13 @@ class TestExportFromBotEngine:
         # Create mock bot engine
         mock_engine = Mock()
         mock_engine.performance_history = [
-            {'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 100.0, 'pnl': 10.0, 'cumulative_return': 0.1}
+            {
+                "trade_id": 1,
+                "timestamp": "2023-01-01",
+                "equity": 100.0,
+                "pnl": 10.0,
+                "cumulative_return": 0.1,
+            }
         ]
 
         out_path = "results/test_bot_engine.csv"
@@ -859,29 +898,30 @@ class TestExportFromBotEngine:
 
     def test_export_regime_aware_equity_from_botengine(self):
         """Test regime-aware export from bot engine."""
-        from backtest.backtester import export_regime_aware_equity_from_botengine
         import pandas as pd
+
+        from backtest.backtester import export_regime_aware_equity_from_botengine
 
         # Create mock objects
         mock_engine = Mock()
         mock_engine.performance_stats = {
-            'equity_progression': [
-                {'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 100.0}
+            "equity_progression": [
+                {"trade_id": 1, "timestamp": "2023-01-01", "equity": 100.0}
             ]
         }
 
         mock_detector = Mock()
         mock_detector.detect_enhanced_regime.return_value = Mock(
-            regime_name='bull',
-            confidence_score=0.8,
-            reasons={}
+            regime_name="bull", confidence_score=0.8, reasons={}
         )
 
-        mock_data = pd.DataFrame({'close': [100.0]})
+        mock_data = pd.DataFrame({"close": [100.0]})
 
         out_path = "results/test_regime_bot_engine.csv"
         try:
-            result_path = export_regime_aware_equity_from_botengine(mock_engine, mock_detector, mock_data, out_path)
+            result_path = export_regime_aware_equity_from_botengine(
+                mock_engine, mock_detector, mock_data, out_path
+            )
             # Should return the path or empty string
             assert isinstance(result_path, str)
         except Exception:
@@ -894,44 +934,38 @@ class TestErrorHandling:
 
     def test_export_equity_progression_with_io_error(self):
         """Test export equity progression handles I/O errors."""
-        from backtest.backtester import export_equity_progression
         import unittest.mock
 
-        equity_data = [{'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 100.0}]
+        from backtest.backtester import export_equity_progression
 
-        with unittest.mock.patch('builtins.open', side_effect=IOError("Disk full")):
+        equity_data = [{"trade_id": 1, "timestamp": "2023-01-01", "equity": 100.0}]
+
+        with unittest.mock.patch("builtins.open", side_effect=IOError("Disk full")):
             with pytest.raises(BacktestSecurityError):
                 export_equity_progression(equity_data, "results/test_io_error.csv")
 
     def test_compute_backtest_metrics_with_invalid_data(self):
         """Test compute_backtest_metrics handles invalid data gracefully."""
         # Test with data that has invalid equity values
-        invalid_data = [
-            {'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 'invalid'}
-        ]
+        invalid_data = [{"trade_id": 1, "timestamp": "2023-01-01", "equity": "invalid"}]
 
         # Should handle gracefully and return safe defaults
         metrics = compute_backtest_metrics(invalid_data)
         assert isinstance(metrics, dict)
-        assert 'sharpe_ratio' in metrics
+        assert "sharpe_ratio" in metrics
 
     def test_regime_aware_metrics_with_pandas_import_error(self):
         """Test regime-aware metrics handles pandas import error."""
-        import sys
         from unittest.mock import patch
 
-        equity_data = [
-            {'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 100.0}
-        ]
-        regime_data = [
-            {'regime_name': 'bull'}
-        ]
+        equity_data = [{"trade_id": 1, "timestamp": "2023-01-01", "equity": 100.0}]
+        regime_data = [{"regime_name": "bull"}]
 
         # Mock pandas import to fail
-        with patch.dict('sys.modules', {'pandas': None}):
+        with patch.dict("sys.modules", {"pandas": None}):
             result = compute_regime_aware_metrics(equity_data, regime_data)
-            assert 'per_regime' in result
-            assert isinstance(result['per_regime'], dict)
+            assert "per_regime" in result
+            assert isinstance(result["per_regime"], dict)
 
 
 class TestFileOperations:
@@ -939,12 +973,15 @@ class TestFileOperations:
 
     def test_export_with_permission_denied(self):
         """Test export functions handle permission denied errors."""
-        from backtest.backtester import export_equity_progression
         import unittest.mock
 
-        equity_data = [{'trade_id': 1, 'timestamp': '2023-01-01', 'equity': 100.0}]
+        from backtest.backtester import export_equity_progression
 
-        with unittest.mock.patch('builtins.open', side_effect=PermissionError("Permission denied")):
+        equity_data = [{"trade_id": 1, "timestamp": "2023-01-01", "equity": 100.0}]
+
+        with unittest.mock.patch(
+            "builtins.open", side_effect=PermissionError("Permission denied")
+        ):
             with pytest.raises(BacktestSecurityError):
                 export_equity_progression(equity_data, "results/test_permission.csv")
 
@@ -972,15 +1009,15 @@ class TestDataSanitization:
 
         # Data with non-finite values
         equity_data = [
-            {'trade_id': 1, 'timestamp': '2023-01-01', 'equity': inf, 'pnl': nan},
-            {'trade_id': 2, 'timestamp': '2023-01-02', 'equity': 100.0, 'pnl': 10.0}
+            {"trade_id": 1, "timestamp": "2023-01-01", "equity": inf, "pnl": nan},
+            {"trade_id": 2, "timestamp": "2023-01-02", "equity": 100.0, "pnl": 10.0},
         ]
 
         out_path = "results/test_sanitized.csv"
         try:
             export_equity_progression(equity_data, out_path)
 
-            with open(out_path, 'r') as f:
+            with open(out_path, "r") as f:
                 content = f.read()
                 # Should contain sanitized values (0.0 for non-finite)
                 assert "0.0" in content
@@ -994,25 +1031,25 @@ class TestDataSanitization:
 
         # Metrics with non-finite values
         metrics = {
-            'sharpe_ratio': inf,
-            'profit_factor': nan,
-            'max_drawdown': 0.1,
-            'equity_curve': [100.0, inf, nan, 110.0]
+            "sharpe_ratio": inf,
+            "profit_factor": nan,
+            "max_drawdown": 0.1,
+            "equity_curve": [100.0, inf, nan, 110.0],
         }
 
         out_path = "results/test_sanitized_metrics.json"
         try:
             export_metrics(metrics, out_path)
 
-            with open(out_path, 'r') as f:
+            with open(out_path, "r") as f:
                 data = json.load(f)
-                assert data['sharpe_ratio'] == 0.0
-                assert data['profit_factor'] == 0.0
-                assert data['equity_curve'] == [100.0, 0.0, 0.0, 110.0]
+                assert data["sharpe_ratio"] == 0.0
+                assert data["profit_factor"] == 0.0
+                assert data["equity_curve"] == [100.0, 0.0, 0.0, 110.0]
         finally:
             if os.path.exists(out_path):
                 os.remove(out_path)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pytest.main([__file__])

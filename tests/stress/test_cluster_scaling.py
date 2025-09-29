@@ -13,28 +13,29 @@ Usage:
     python tests/stress/test_cluster_scaling.py --duration 300 --concurrency 50
 """
 
-import asyncio
-import aiohttp
-import logging
-import time
 import argparse
+import asyncio
 import json
+import logging
 import statistics
-from typing import Dict, List, Any, Optional
+import time
 from dataclasses import dataclass
-from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List, Optional
+
+import aiohttp
 import numpy as np
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class StressTestConfig:
     """Configuration for stress testing."""
+
     api_url: str = "http://localhost:8000"
     duration: int = 300  # seconds
     concurrency: int = 10
@@ -45,9 +46,11 @@ class StressTestConfig:
         if self.strategies is None:
             self.strategies = ["ml_strategy", "technical_strategy", "momentum_strategy"]
 
+
 @dataclass
 class MetricsHelper:
     """Metrics collected during stress testing."""
+
     total_requests: int = 0
     successful_requests: int = 0
     failed_requests: int = 0
@@ -74,6 +77,7 @@ class MetricsHelper:
             self.error_rate = (self.failed_requests / total) * 100
             self.throughput = total / self.duration
 
+
 class LoadGenerator:
     """Generates load on the N1V1 API endpoints."""
 
@@ -92,7 +96,9 @@ class LoadGenerator:
 
     async def run_stress_test(self) -> MetricsHelper:
         """Run the complete stress test."""
-        logger.info(f"Starting stress test: duration={self.config.duration}s, concurrency={self.config.concurrency}")
+        logger.info(
+            f"Starting stress test: duration={self.config.duration}s, concurrency={self.config.concurrency}"
+        )
 
         start_time = time.time()
         end_time = start_time + self.config.duration
@@ -109,9 +115,11 @@ class LoadGenerator:
         # Calculate final metrics
         self.metrics.calculate_stats()
 
-        logger.info(f"Stress test completed: {self.metrics.total_requests} requests, "
-                   f"{self.metrics.error_rate:.2f}% error rate, "
-                   f"{self.metrics.throughput:.2f} req/s")
+        logger.info(
+            f"Stress test completed: {self.metrics.total_requests} requests, "
+            f"{self.metrics.error_rate:.2f}% error rate, "
+            f"{self.metrics.throughput:.2f} req/s"
+        )
 
         return self.metrics
 
@@ -143,7 +151,7 @@ class LoadGenerator:
             async with self.session.get(
                 f"{self.config.api_url}{endpoint}",
                 params={"strategy": strategy} if "status" not in endpoint else None,
-                timeout=aiohttp.ClientTimeout(total=10)
+                timeout=aiohttp.ClientTimeout(total=10),
             ) as response:
                 response_time = time.time() - start_time
                 self.metrics.response_times.append(response_time)
@@ -169,9 +177,10 @@ class LoadGenerator:
             "/api/v1/orders",
             "/api/v1/signals",
             "/api/v1/equity",
-            "/api/v1/performance"
+            "/api/v1/performance",
         ]
         return np.random.choice(endpoints)
+
 
 class ClusterMonitor:
     """Monitors cluster scaling behavior during stress test."""
@@ -213,7 +222,7 @@ class ClusterMonitor:
             "timestamp": timestamp,
             "api_pods": 2,  # Would be fetched from k8s API
             "core_pods": 1,
-            "ml_pods": 1
+            "ml_pods": 1,
         }
 
         resource_metrics = {
@@ -221,7 +230,7 @@ class ClusterMonitor:
             "api_cpu_percent": 65.0,
             "api_memory_percent": 70.0,
             "core_cpu_percent": 45.0,
-            "core_memory_percent": 55.0
+            "core_memory_percent": 55.0,
         }
 
         self.pod_counts.append(pod_metrics)
@@ -229,11 +238,7 @@ class ClusterMonitor:
 
     def analyze_scaling_behavior(self) -> Dict[str, Any]:
         """Analyze the scaling behavior during the test."""
-        analysis = {
-            "scaling_events": [],
-            "resource_trends": {},
-            "recommendations": []
-        }
+        analysis = {"scaling_events": [], "resource_trends": {}, "recommendations": []}
 
         if len(self.pod_counts) < 2:
             return analysis
@@ -243,31 +248,40 @@ class ClusterMonitor:
         max_api_pods = max(p["api_pods"] for p in self.pod_counts)
 
         if max_api_pods > initial_api_pods:
-            analysis["scaling_events"].append({
-                "type": "scale_up",
-                "component": "api",
-                "from": initial_api_pods,
-                "to": max_api_pods,
-                "timestamp": self.pod_counts[-1]["timestamp"]
-            })
+            analysis["scaling_events"].append(
+                {
+                    "type": "scale_up",
+                    "component": "api",
+                    "from": initial_api_pods,
+                    "to": max_api_pods,
+                    "timestamp": self.pod_counts[-1]["timestamp"],
+                }
+            )
 
         # Analyze resource trends
         if self.resource_usage:
             avg_cpu = statistics.mean(r["api_cpu_percent"] for r in self.resource_usage)
-            avg_memory = statistics.mean(r["api_memory_percent"] for r in self.resource_usage)
+            avg_memory = statistics.mean(
+                r["api_memory_percent"] for r in self.resource_usage
+            )
 
             analysis["resource_trends"] = {
                 "avg_api_cpu_percent": avg_cpu,
-                "avg_api_memory_percent": avg_memory
+                "avg_api_memory_percent": avg_memory,
             }
 
             # Generate recommendations
             if avg_cpu > 80:
-                analysis["recommendations"].append("Consider increasing CPU limits for API pods")
+                analysis["recommendations"].append(
+                    "Consider increasing CPU limits for API pods"
+                )
             if avg_memory > 85:
-                analysis["recommendations"].append("Consider increasing memory limits for API pods")
+                analysis["recommendations"].append(
+                    "Consider increasing memory limits for API pods"
+                )
 
         return analysis
+
 
 async def validate_zero_downtime_updates(api_url: str) -> Dict[str, Any]:
     """Validate that rolling updates don't cause downtime."""
@@ -278,14 +292,16 @@ async def validate_zero_downtime_updates(api_url: str) -> Dict[str, Any]:
         "successful_checks": 0,
         "failed_checks": 0,
         "downtime_detected": False,
-        "downtime_duration": 0
+        "downtime_duration": 0,
     }
 
     async with aiohttp.ClientSession() as session:
         for i in range(60):  # Check for 1 minute
             try:
                 start_time = time.time()
-                async with session.get(f"{api_url}/health", timeout=aiohttp.ClientTimeout(total=5)) as response:
+                async with session.get(
+                    f"{api_url}/health", timeout=aiohttp.ClientTimeout(total=5)
+                ) as response:
                     response_time = time.time() - start_time
                     results["total_checks"] += 1
 
@@ -301,11 +317,16 @@ async def validate_zero_downtime_updates(api_url: str) -> Dict[str, Any]:
 
             await asyncio.sleep(1)
 
-    success_rate = (results["successful_checks"] / results["total_checks"]) * 100 if results["total_checks"] > 0 else 0
+    success_rate = (
+        (results["successful_checks"] / results["total_checks"]) * 100
+        if results["total_checks"] > 0
+        else 0
+    )
 
     logger.info(f"Zero-downtime validation: {success_rate:.1f}% success rate")
 
     return results
+
 
 async def validate_statefulset_persistence(api_url: str) -> Dict[str, Any]:
     """Validate StatefulSet persistence across pod restarts."""
@@ -314,13 +335,15 @@ async def validate_statefulset_persistence(api_url: str) -> Dict[str, Any]:
     results = {
         "ml_service_available": False,
         "model_data_persistent": False,
-        "restart_handled_gracefully": False
+        "restart_handled_gracefully": False,
     }
 
     async with aiohttp.ClientSession() as session:
         try:
             # Check if ML service is available
-            async with session.get(f"{api_url}/api/v1/status", timeout=aiohttp.ClientTimeout(total=10)) as response:
+            async with session.get(
+                f"{api_url}/api/v1/status", timeout=aiohttp.ClientTimeout(total=10)
+            ) as response:
                 if response.status == 200:
                     data = await response.json()
                     if "ml_service" in data and data["ml_service"]:
@@ -335,32 +358,41 @@ async def validate_statefulset_persistence(api_url: str) -> Dict[str, Any]:
         except Exception as e:
             logger.error(f"StatefulSet validation error: {e}")
 
-    logger.info(f"StatefulSet validation: service_available={results['ml_service_available']}")
+    logger.info(
+        f"StatefulSet validation: service_available={results['ml_service_available']}"
+    )
 
     return results
+
 
 async def main():
     """Main stress testing function."""
     parser = argparse.ArgumentParser(description="N1V1 Cluster Scaling Stress Test")
-    parser.add_argument("--api-url", default="http://localhost:8000",
-                       help="API endpoint URL")
-    parser.add_argument("--duration", type=int, default=300,
-                       help="Test duration in seconds")
-    parser.add_argument("--concurrency", type=int, default=10,
-                       help="Number of concurrent requests")
-    parser.add_argument("--validate-updates", action="store_true",
-                       help="Validate zero-downtime updates")
-    parser.add_argument("--validate-persistence", action="store_true",
-                       help="Validate StatefulSet persistence")
-    parser.add_argument("--output", default="stress_test_results.json",
-                       help="Output file for results")
+    parser.add_argument(
+        "--api-url", default="http://localhost:8000", help="API endpoint URL"
+    )
+    parser.add_argument(
+        "--duration", type=int, default=300, help="Test duration in seconds"
+    )
+    parser.add_argument(
+        "--concurrency", type=int, default=10, help="Number of concurrent requests"
+    )
+    parser.add_argument(
+        "--validate-updates", action="store_true", help="Validate zero-downtime updates"
+    )
+    parser.add_argument(
+        "--validate-persistence",
+        action="store_true",
+        help="Validate StatefulSet persistence",
+    )
+    parser.add_argument(
+        "--output", default="stress_test_results.json", help="Output file for results"
+    )
 
     args = parser.parse_args()
 
     config = StressTestConfig(
-        api_url=args.api_url,
-        duration=args.duration,
-        concurrency=args.concurrency
+        api_url=args.api_url, duration=args.duration, concurrency=args.concurrency
     )
 
     logger.info("Starting N1V1 cluster scaling stress test")
@@ -373,7 +405,9 @@ async def main():
     # Run stress test with monitoring
     async with load_generator:
         # Start cluster monitoring
-        monitor_task = asyncio.create_task(cluster_monitor.monitor_cluster(config.duration))
+        monitor_task = asyncio.create_task(
+            cluster_monitor.monitor_cluster(config.duration)
+        )
 
         # Run load test
         metrics = await load_generator.run_stress_test()
@@ -400,7 +434,7 @@ async def main():
             "api_url": config.api_url,
             "duration": config.duration,
             "concurrency": config.concurrency,
-            "strategies": config.strategies
+            "strategies": config.strategies,
         },
         "performance_metrics": {
             "total_requests": metrics.total_requests,
@@ -410,27 +444,27 @@ async def main():
             "throughput_req_per_sec": metrics.throughput,
             "avg_response_time_sec": metrics.avg_response_time,
             "p95_response_time_sec": metrics.p95_response_time,
-            "p99_response_time_sec": metrics.p99_response_time
+            "p99_response_time_sec": metrics.p99_response_time,
         },
         "scaling_analysis": scaling_analysis,
         "validations": {
             "zero_downtime_updates": update_validation,
-            "statefulset_persistence": persistence_validation
+            "statefulset_persistence": persistence_validation,
         },
         "timestamp": time.time(),
-        "test_duration_actual": config.duration
+        "test_duration_actual": config.duration,
     }
 
     # Save results
-    with open(args.output, 'w') as f:
+    with open(args.output, "w") as f:
         json.dump(results, f, indent=2, default=str)
 
     logger.info(f"Stress test completed. Results saved to {args.output}")
 
     # Print summary
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("STRESS TEST SUMMARY")
-    print("="*60)
+    print("=" * 60)
     print(f"Duration: {config.duration} seconds")
     print(f"Concurrency: {config.concurrency}")
     print(f"Total Requests: {metrics.total_requests}")
@@ -443,10 +477,13 @@ async def main():
         print(f"Scaling Events: {len(scaling_analysis['scaling_events'])} detected")
 
     if update_validation:
-        success_rate = (update_validation["successful_checks"] / update_validation["total_checks"]) * 100
+        success_rate = (
+            update_validation["successful_checks"] / update_validation["total_checks"]
+        ) * 100
         print(f"Zero-downtime Success Rate: {success_rate:.1f}%")
 
-    print("="*60)
+    print("=" * 60)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

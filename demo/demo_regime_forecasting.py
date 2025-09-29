@@ -16,23 +16,23 @@ Usage:
 
 import asyncio
 import logging
-import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta
-from pathlib import Path
-import json
+
+import numpy as np
+import pandas as pd
+
+from core.timeframe_manager import TimeframeManager
+from data.data_fetcher import DataFetcher
+from strategies.regime.market_regime import detect_enhanced_market_regime
 
 # Import N1V1 components
 from strategies.regime.regime_forecaster import (
-    get_regime_forecaster, RegimeForecaster, ForecastingResult
+    ForecastingResult,
+    RegimeForecaster,
 )
-from strategies.regime.market_regime import detect_enhanced_market_regime
 from strategies.regime.strategy_selector import (
-    get_strategy_selector, get_recommended_strategies_from_forecast
+    get_strategy_selector,
 )
-from core.timeframe_manager import TimeframeManager
-from data.data_fetcher import DataFetcher
-from utils.logger import setup_logging
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -53,11 +53,9 @@ class RegimeForecastingDemo:
         logger.info("Initializing Predictive Regime Forecasting Demo")
 
         # Initialize data fetcher
-        self.data_fetcher = DataFetcher({
-            "name": "kucoin",
-            "sandbox": True,
-            "markets": ["BTC/USDT"]
-        })
+        self.data_fetcher = DataFetcher(
+            {"name": "kucoin", "sandbox": True, "markets": ["BTC/USDT"]}
+        )
         await self.data_fetcher.initialize()
 
         # Initialize timeframe manager
@@ -65,7 +63,7 @@ class RegimeForecastingDemo:
             "cache_ttl_seconds": 300,
             "max_concurrent_fetches": 2,
             "timestamp_alignment_tolerance_ms": 60000,
-            "missing_data_threshold": 0.8
+            "missing_data_threshold": 0.8,
         }
         self.timeframe_manager = TimeframeManager(self.data_fetcher, tf_config)
         await self.timeframe_manager.initialize()
@@ -78,10 +76,7 @@ class RegimeForecastingDemo:
             "sequence_length": 30,  # Shorter for demo
             "forecasting_horizons": [5, 10],
             "models_enabled": {"xgboost": True, "lstm": False},
-            "training": {
-                "epochs": 50,  # Fewer epochs for demo
-                "batch_size": 16
-            }
+            "training": {"epochs": 50, "batch_size": 16},  # Fewer epochs for demo
         }
         self.forecaster = RegimeForecaster(forecast_config)
 
@@ -90,8 +85,9 @@ class RegimeForecastingDemo:
 
         logger.info("Demo initialization complete")
 
-    async def generate_synthetic_data(self, symbol: str = "BTC/USDT",
-                                    days: int = 30) -> pd.DataFrame:
+    async def generate_synthetic_data(
+        self, symbol: str = "BTC/USDT", days: int = 30
+    ) -> pd.DataFrame:
         """
         Generate synthetic OHLCV data for demonstration.
 
@@ -107,7 +103,7 @@ class RegimeForecastingDemo:
         # Generate timestamps (1-hour intervals)
         end_time = datetime.now()
         start_time = end_time - timedelta(days=days)
-        timestamps = pd.date_range(start=start_time, end=end_time, freq='1h')
+        timestamps = pd.date_range(start=start_time, end=end_time, freq="1h")
 
         np.random.seed(42)  # For reproducible results
 
@@ -122,7 +118,7 @@ class RegimeForecastingDemo:
         volatility = 0.02  # 2% daily volatility
 
         # Create price series
-        price_changes = np.random.normal(drift, volatility/np.sqrt(24), n_points)
+        price_changes = np.random.normal(drift, volatility / np.sqrt(24), n_points)
         prices = base_price * np.exp(np.cumsum(price_changes))
 
         # Add some regime-like behavior (trends and ranges)
@@ -131,7 +127,9 @@ class RegimeForecastingDemo:
                 trend_length = np.random.randint(24, 72)  # 1-3 days
                 trend_strength = np.random.normal(0.001, 0.0005)
                 end_idx = min(i + trend_length, n_points)
-                trend_changes = np.linspace(0, trend_strength * trend_length, end_idx - i)
+                trend_changes = np.linspace(
+                    0, trend_strength * trend_length, end_idx - i
+                )
                 prices[i:end_idx] *= np.exp(trend_changes)
 
         # Create OHLCV data
@@ -148,17 +146,19 @@ class RegimeForecastingDemo:
             # Volume (simulated)
             volume = np.random.uniform(100, 1000)
 
-            data.append({
-                'timestamp': timestamps[i],
-                'open': open_price,
-                'high': high_price,
-                'low': low_price,
-                'close': close_price,
-                'volume': volume
-            })
+            data.append(
+                {
+                    "timestamp": timestamps[i],
+                    "open": open_price,
+                    "high": high_price,
+                    "low": low_price,
+                    "close": close_price,
+                    "volume": volume,
+                }
+            )
 
         df = pd.DataFrame(data)
-        df.set_index('timestamp', inplace=True)
+        df.set_index("timestamp", inplace=True)
 
         logger.info(f"Generated {len(df)} data points")
         return df
@@ -179,7 +179,7 @@ class RegimeForecastingDemo:
         window_size = 50  # Same as sequence length
 
         for i in range(window_size, len(data), 10):  # Sample every 10 points
-            window = data.iloc[i-window_size:i]
+            window = data.iloc[i - window_size : i]
 
             try:
                 regime_result = detect_enhanced_market_regime(window)
@@ -200,7 +200,9 @@ class RegimeForecastingDemo:
         training_labels = await self.create_training_labels(training_data)
 
         # Train the models
-        training_metrics = await self.forecaster.train_models(training_data, training_labels)
+        training_metrics = await self.forecaster.train_models(
+            training_data, training_labels
+        )
 
         if training_metrics:
             logger.info("Training completed successfully!")
@@ -222,12 +224,16 @@ class RegimeForecastingDemo:
         recent_data = await self.generate_synthetic_data(days=2)
 
         # Get multi-timeframe data
-        multi_tf_data = await self.timeframe_manager.fetch_multi_timeframe_data("BTC/USDT")
+        multi_tf_data = await self.timeframe_manager.fetch_multi_timeframe_data(
+            "BTC/USDT"
+        )
 
         if multi_tf_data:
             logger.info("Multi-timeframe data fetched successfully")
         else:
-            logger.warning("Failed to fetch multi-timeframe data, using single timeframe")
+            logger.warning(
+                "Failed to fetch multi-timeframe data, using single timeframe"
+            )
 
         # Generate forecast
         forecast_result = await self.forecaster.forecast_next_regime(recent_data)
@@ -254,7 +260,9 @@ class RegimeForecastingDemo:
         else:
             logger.warning("No forecast generated")
 
-    async def demonstrate_strategy_integration(self, forecast_result: ForecastingResult):
+    async def demonstrate_strategy_integration(
+        self, forecast_result: ForecastingResult
+    ):
         """Demonstrate how forecasts integrate with strategy selection."""
         logger.info("🔄 Demonstrating Strategy Integration")
 
@@ -263,25 +271,43 @@ class RegimeForecastingDemo:
 
         # Get base strategy selection
         base_strategy = self.selector.select_strategy(market_data)
-        logger.info(f"Base Strategy Selection: {base_strategy.__name__ if base_strategy else 'None'}")
+        logger.info(
+            f"Base Strategy Selection: {base_strategy.__name__ if base_strategy else 'None'}"
+        )
 
         # Get forecast-influenced selection
-        forecast_strategy = self.selector.select_strategy_with_forecast(market_data, forecast_result)
-        logger.info(f"Forecast-Influenced Selection: {forecast_strategy.__name__ if forecast_strategy else 'None'}")
+        forecast_strategy = self.selector.select_strategy_with_forecast(
+            market_data, forecast_result
+        )
+        logger.info(
+            f"Forecast-Influenced Selection: {forecast_strategy.__name__ if forecast_strategy else 'None'}"
+        )
 
         # Analyze forecast impact
         impact_analysis = self.selector.get_forecast_impact_analysis(forecast_result)
 
         logger.info("📊 Forecast Impact Analysis:")
-        logger.info(f"Forecast Available: {impact_analysis.get('forecast_available', False)}")
-        logger.info(f"Recommended Regime: {impact_analysis.get('recommended_regime', 'N/A')}")
-        logger.info(f"Confidence Level: {impact_analysis.get('confidence_level', 0):.3f}")
-        logger.info(f"Recommended Strategies: {impact_analysis.get('recommended_strategies', [])}")
+        logger.info(
+            f"Forecast Available: {impact_analysis.get('forecast_available', False)}"
+        )
+        logger.info(
+            f"Recommended Regime: {impact_analysis.get('recommended_regime', 'N/A')}"
+        )
+        logger.info(
+            f"Confidence Level: {impact_analysis.get('confidence_level', 0):.3f}"
+        )
+        logger.info(
+            f"Recommended Strategies: {impact_analysis.get('recommended_strategies', [])}"
+        )
 
-        risk_implications = impact_analysis.get('risk_implications', {})
+        risk_implications = impact_analysis.get("risk_implications", {})
         if risk_implications:
-            logger.info(f"Risk Assessment: {risk_implications.get('confidence', 'Unknown')}")
-            logger.info(f"Recommended Action: {risk_implications.get('action', 'Monitor')}")
+            logger.info(
+                f"Risk Assessment: {risk_implications.get('confidence', 'Unknown')}"
+            )
+            logger.info(
+                f"Recommended Action: {risk_implications.get('action', 'Monitor')}"
+            )
 
     async def run_performance_analysis(self):
         """Run performance analysis of the forecasting system."""
@@ -294,7 +320,7 @@ class RegimeForecastingDemo:
         logger.info(f"Trained Models: {performance.get('models_trained', [])}")
         logger.info(f"Is Trained: {performance.get('is_trained', False)}")
 
-        training_history = performance.get('training_history', [])
+        training_history = performance.get("training_history", [])
         if training_history:
             logger.info("Training History:")
             for i, metrics in enumerate(training_history):
@@ -337,6 +363,7 @@ class RegimeForecastingDemo:
         except Exception as e:
             logger.error(f"Demo failed: {e}")
             import traceback
+
             logger.debug(traceback.format_exc())
 
         finally:

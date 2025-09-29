@@ -1,18 +1,20 @@
-import os
-import joblib
-import logging
-from typing import Tuple, Dict, Any, Optional
-import pandas as pd
-import numpy as np
 import json
-import requests
+import logging
+import os
 import time
+from typing import Any, Dict, Optional, Tuple
+
+import joblib
+import numpy as np
+import pandas as pd
+import requests
 
 # Optional MLflow import
 try:
     import mlflow
     import mlflow.sklearn
     from mlflow.tracking import MlflowClient
+
     MLFLOW_AVAILABLE = True
 except ImportError:
     mlflow = None
@@ -22,7 +24,9 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Configuration for remote inference
-REMOTE_INFERENCE_ENABLED = os.getenv("REMOTE_INFERENCE_ENABLED", "false").lower() == "true"
+REMOTE_INFERENCE_ENABLED = (
+    os.getenv("REMOTE_INFERENCE_ENABLED", "false").lower() == "true"
+)
 REMOTE_INFERENCE_URL = os.getenv("REMOTE_INFERENCE_URL", "http://localhost:8000")
 REMOTE_INFERENCE_TIMEOUT = int(os.getenv("REMOTE_INFERENCE_TIMEOUT", "30"))  # seconds
 
@@ -41,7 +45,9 @@ def load_model(path: str):
         return model
     except (Exception, TypeError) as e:
         logger.error(f"Failed to load model from {path}: {e}")
-        raise ValueError(f"Model file at {path} is corrupted or of wrong format: {e}") from e
+        raise ValueError(
+            f"Model file at {path} is corrupted or of wrong format: {e}"
+        ) from e
 
 
 def load_model_with_card(identifier: str) -> Tuple[Any, Optional[Dict[str, Any]]]:
@@ -102,13 +108,17 @@ def _align_features(model, features: pd.DataFrame) -> pd.DataFrame:
     if feature_names and isinstance(feature_names, (list, tuple)):
         missing = [f for f in feature_names if f not in features.columns]
         if missing:
-            logger.warning(f"Model expects features not present in input: {missing}. Missing features will be filled with 0.")
+            logger.warning(
+                f"Model expects features not present in input: {missing}. Missing features will be filled with 0."
+            )
             for m in missing:
                 features[m] = 0.0
         # Reindex to model feature order (any extra columns will be dropped)
         features = features.reindex(columns=feature_names, fill_value=0.0)
     else:
-        logger.debug("No feature ordering information found on model; using provided DataFrame column order.")
+        logger.debug(
+            "No feature ordering information found on model; using provided DataFrame column order."
+        )
 
     return features
 
@@ -131,20 +141,22 @@ def remote_predict(model_name: str, features: pd.DataFrame) -> pd.DataFrame:
         payload = {
             "model_name": model_name,
             "features": features_dict,
-            "correlation_id": str(np.random.randint(1000000))  # Simple correlation ID
+            "correlation_id": str(np.random.randint(1000000)),  # Simple correlation ID
         }
 
         start_time = time.time()
         response = requests.post(
             f"{REMOTE_INFERENCE_URL}/predict",
             json=payload,
-            timeout=REMOTE_INFERENCE_TIMEOUT
+            timeout=REMOTE_INFERENCE_TIMEOUT,
         )
         latency = time.time() - start_time
 
         if response.status_code == 200:
             result = response.json()
-            logger.info(f"Remote prediction successful for {model_name}, latency: {latency:.3f}s")
+            logger.info(
+                f"Remote prediction successful for {model_name}, latency: {latency:.3f}s"
+            )
 
             # Convert response back to DataFrame
             out = pd.DataFrame(index=features.index)
@@ -157,7 +169,9 @@ def remote_predict(model_name: str, features: pd.DataFrame) -> pd.DataFrame:
 
             return out
         else:
-            logger.warning(f"Remote prediction failed with status {response.status_code}: {response.text}")
+            logger.warning(
+                f"Remote prediction failed with status {response.status_code}: {response.text}"
+            )
             raise Exception(f"Remote inference failed: {response.status_code}")
 
     except requests.exceptions.RequestException as e:
@@ -165,7 +179,9 @@ def remote_predict(model_name: str, features: pd.DataFrame) -> pd.DataFrame:
         raise Exception(f"Remote inference unavailable: {e}")
 
 
-def predict(model, features: pd.DataFrame, model_name: Optional[str] = None) -> pd.DataFrame:
+def predict(
+    model, features: pd.DataFrame, model_name: Optional[str] = None
+) -> pd.DataFrame:
     """
     Make predictions using the loaded model or remote inference.
 
@@ -194,7 +210,7 @@ def predict(model, features: pd.DataFrame, model_name: Optional[str] = None) -> 
     X = _align_features(model, X)
 
     # Convert to numpy array for sklearn models
-    X_array = X.values if hasattr(X, 'values') else X
+    X_array = X.values if hasattr(X, "values") else X
 
     # If model supports predict_proba
     proba = None
@@ -248,7 +264,9 @@ def predict(model, features: pd.DataFrame, model_name: Optional[str] = None) -> 
     return out
 
 
-def load_model_from_registry(model_name: str, version: str = None, experiment_name: str = None) -> Tuple[Any, Optional[Dict[str, Any]]]:
+def load_model_from_registry(
+    model_name: str, version: str = None, experiment_name: str = None
+) -> Tuple[Any, Optional[Dict[str, Any]]]:
     """
     Load a model from MLflow model registry with fallback to local files.
 
@@ -283,7 +301,9 @@ def load_model_from_registry(model_name: str, version: str = None, experiment_na
                 run_id = mv.run_id
             else:
                 # Get latest version
-                latest_version = client.get_latest_versions(model_name, stages=["Production", "Staging", "None"])[0]
+                latest_version = client.get_latest_versions(
+                    model_name, stages=["Production", "Staging", "None"]
+                )[0]
                 run_id = latest_version.run_id
 
             # Try to download environment snapshot artifact
@@ -311,7 +331,9 @@ def load_model_from_registry(model_name: str, version: str = None, experiment_na
         return load_model_with_card(model_name)
 
 
-def load_model_with_fallback(model_path_or_name: str, use_registry: bool = True) -> Tuple[Any, Optional[Dict[str, Any]]]:
+def load_model_with_fallback(
+    model_path_or_name: str, use_registry: bool = True
+) -> Tuple[Any, Optional[Dict[str, Any]]]:
     """
     Load a model with intelligent fallback: registry first, then local files.
 

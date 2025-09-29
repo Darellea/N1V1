@@ -17,14 +17,14 @@ breaker protects trading capital while maintaining operational integrity.
 """
 
 import asyncio
-import time
 import random
-from typing import Dict, Any
-from datetime import datetime, timedelta
+import time
 
 from core.circuit_breaker import (
-    get_circuit_breaker, create_circuit_breaker,
-    CircuitBreakerState, TriggerSeverity
+    CircuitBreakerState,
+    TriggerSeverity,
+    create_circuit_breaker,
+    get_circuit_breaker,
 )
 from core.metrics_collector import get_metrics_collector
 from utils.logger import get_logger
@@ -48,7 +48,7 @@ class CircuitBreakerDemo:
 
         # Risk simulation parameters
         self.volatility_factor = 0.02  # 2% daily volatility
-        self.trend_factor = 0.001      # Slight upward trend
+        self.trend_factor = 0.001  # Slight upward trend
         self.crash_probability = 0.05  # 5% chance of significant drawdown
 
     async def setup_circuit_breaker(self):
@@ -60,13 +60,13 @@ class CircuitBreakerDemo:
             "account_id": "demo_account",
             "monitoring_interval": 2.0,  # Check every 2 seconds for demo
             "cooling_period_minutes": 1,  # 1 minute cooling period for demo
-            "max_daily_drawdown": 0.03,   # 3% daily drawdown limit
+            "max_daily_drawdown": 0.03,  # 3% daily drawdown limit
             "max_weekly_drawdown": 0.08,  # 8% weekly drawdown limit
             "max_consecutive_losses": 3,  # Max 3 consecutive losses
-            "min_sharpe_ratio": 0.3,      # Minimum Sharpe ratio
+            "min_sharpe_ratio": 0.3,  # Minimum Sharpe ratio
             "max_volatility_multiplier": 2.5,  # Max volatility multiplier
             "recovery_phases": 3,
-            "recovery_position_multiplier": 0.5
+            "recovery_position_multiplier": 0.5,
         }
 
         self.circuit_breaker = create_circuit_breaker(config)
@@ -80,10 +80,13 @@ class CircuitBreakerDemo:
 
         logger.info("✅ Circuit Breaker configured and initialized")
 
-    async def _on_state_change(self, old_state: CircuitBreakerState,
-                              new_state: CircuitBreakerState, event):
+    async def _on_state_change(
+        self, old_state: CircuitBreakerState, new_state: CircuitBreakerState, event
+    ):
         """Handle circuit breaker state changes."""
-        logger.info(f"🔄 Circuit Breaker State Change: {old_state.value} → {new_state.value}")
+        logger.info(
+            f"🔄 Circuit Breaker State Change: {old_state.value} → {new_state.value}"
+        )
 
         # Record state change metric
         await self.metrics_collector.record_metric(
@@ -93,14 +96,16 @@ class CircuitBreakerDemo:
                 "account": "demo_account",
                 "old_state": old_state.value,
                 "new_state": new_state.value,
-                "severity": event.severity.value
-            }
+                "severity": event.severity.value,
+            },
         )
 
     async def _on_trigger(self, event):
         """Handle circuit breaker trigger events."""
         logger.warning(f"🚨 Circuit Breaker Triggered: {event.trigger_name}")
-        logger.warning(f"   Value: {event.trigger_value:.4f}, Threshold: {event.threshold:.4f}")
+        logger.warning(
+            f"   Value: {event.trigger_value:.4f}, Threshold: {event.threshold:.4f}"
+        )
         logger.warning(f"   Severity: {event.severity.value}")
 
         # Record trigger metric
@@ -110,8 +115,8 @@ class CircuitBreakerDemo:
             {
                 "account": "demo_account",
                 "trigger_name": event.trigger_name,
-                "severity": event.severity.value
-            }
+                "severity": event.severity.value,
+            },
         )
 
     async def run_demo_simulation(self):
@@ -143,12 +148,12 @@ class CircuitBreakerDemo:
         for i in range(10):
             # Simulate normal market movement
             return_pct = random.gauss(self.trend_factor, self.volatility_factor)
-            self.current_equity *= (1 + return_pct)
+            self.current_equity *= 1 + return_pct
 
             await self.circuit_breaker.update_equity(
                 self.current_equity,
                 realized_pnl=(self.current_equity - self.initial_equity) * 0.1,
-                trade_count=i + 1
+                trade_count=i + 1,
             )
 
             logger.info(f"📊 Equity: ${self.current_equity:,.2f} | Trades: {i + 1}")
@@ -167,18 +172,18 @@ class CircuitBreakerDemo:
             trend = self.trend_factor - (i * 0.002)  # Gradual downward trend
 
             return_pct = random.gauss(trend, volatility)
-            self.current_equity *= (1 + return_pct)
+            self.current_equity *= 1 + return_pct
 
             await self.circuit_breaker.update_equity(
                 self.current_equity,
                 realized_pnl=(self.current_equity - self.initial_equity) * 0.1,
-                trade_count=10 + i + 1
+                trade_count=10 + i + 1,
             )
 
             logger.info(f"📊 Equity: ${self.current_equity:,.2f} | Trades: {i + 1}")
             # Check if we're approaching limits
             status = self.circuit_breaker.get_status()
-            if status['current_state'] == 'monitoring':
+            if status["current_state"] == "monitoring":
                 logger.warning("🔶 Circuit breaker entered MONITORING state")
                 break
 
@@ -192,12 +197,12 @@ class CircuitBreakerDemo:
 
         # Force a significant drawdown to trigger circuit breaker
         trigger_drawdown = 0.05  # 5% immediate drawdown
-        self.current_equity *= (1 - trigger_drawdown)
+        self.current_equity *= 1 - trigger_drawdown
 
         await self.circuit_breaker.update_equity(
             self.current_equity,
             realized_pnl=(self.current_equity - self.initial_equity) * 0.1,
-            trade_count=20
+            trade_count=20,
         )
 
         logger.info(f"📊 Equity: ${self.current_equity:,.2f} | Trades: 20")
@@ -206,7 +211,7 @@ class CircuitBreakerDemo:
 
         # Check if triggered
         status = self.circuit_breaker.get_status()
-        if status['current_state'] == 'triggered':
+        if status["current_state"] == "triggered":
             logger.critical("🚨 Circuit breaker successfully triggered!")
         else:
             logger.warning("⚠️ Circuit breaker did not trigger as expected")
@@ -230,15 +235,17 @@ class CircuitBreakerDemo:
             # Simulate gradual equity recovery
             for i in range(5):
                 recovery_return = 0.01  # 1% recovery per step
-                self.current_equity *= (1 + recovery_return)
+                self.current_equity *= 1 + recovery_return
 
                 await self.circuit_breaker.update_equity(
                     self.current_equity,
                     realized_pnl=(self.current_equity - self.initial_equity) * 0.1,
-                    trade_count=20 + i + 1
+                    trade_count=20 + i + 1,
                 )
 
-                logger.info(f"📊 Equity: ${self.current_equity:,.2f} | Trades: {20 + i + 1}")
+                logger.info(
+                    f"📊 Equity: ${self.current_equity:,.2f} | Trades: {20 + i + 1}"
+                )
                 await asyncio.sleep(2)
 
             # Wait for recovery completion
@@ -256,8 +263,7 @@ class CircuitBreakerDemo:
         # Scenario 1: Manual trigger
         logger.info("Manual trigger demonstration...")
         await self.circuit_breaker.manual_trigger(
-            "Manual emergency trigger for demonstration",
-            TriggerSeverity.EMERGENCY
+            "Manual emergency trigger for demonstration", TriggerSeverity.EMERGENCY
         )
 
         await asyncio.sleep(3)
@@ -282,9 +288,9 @@ class CircuitBreakerDemo:
         # Get final status
         status = self.circuit_breaker.get_status()
 
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("🎯 N1V1 CIRCUIT BREAKER DEMO RESULTS")
-        print("="*70)
+        print("=" * 70)
 
         print("\n🏦 Account Information:")
         print(f"  • Account ID: {status['account_id']}")
@@ -292,31 +298,41 @@ class CircuitBreakerDemo:
         print(f"  • Final Equity: ${status['current_equity']:,.2f}")
         print(f"  • Peak Equity: ${status['peak_equity']:,.2f}")
 
-        equity_change = ((status['current_equity'] - self.initial_equity) / self.initial_equity) * 100
+        equity_change = (
+            (status["current_equity"] - self.initial_equity) / self.initial_equity
+        ) * 100
         print(f"  • Total Return: {equity_change:+.2f}%")
 
         print("\n🔧 Circuit Breaker Status:")
         print(f"  • Current State: {status['current_state'].upper()}")
         print(f"  • Trigger Count: {status['trigger_count']}")
-        if status['last_trigger_time']:
+        if status["last_trigger_time"]:
             print(f"  • Last Trigger: {status['last_trigger_time']}")
         print(f"  • Active Triggers: {len(status['active_triggers'])}")
-        for trigger in status['active_triggers']:
+        for trigger in status["active_triggers"]:
             print(f"    - {trigger}")
 
         print("\n📋 Recent Events:")
-        for event in status['recent_events'][-3:]:  # Show last 3 events
-            print(f"  • {event['timestamp'][:19]} | {event['event_type']} | {event['trigger_name']} | {event['severity']}")
+        for event in status["recent_events"][-3:]:  # Show last 3 events
+            print(
+                f"  • {event['timestamp'][:19]} | {event['event_type']} | {event['trigger_name']} | {event['severity']}"
+            )
 
         print("\n📊 Performance Metrics:")
         # Get some key metrics
-        trigger_count = await self.metrics_collector.get_metric_value(
-            "circuit_breaker_triggers_total", {"account": "demo_account"}
-        ) or 0
+        trigger_count = (
+            await self.metrics_collector.get_metric_value(
+                "circuit_breaker_triggers_total", {"account": "demo_account"}
+            )
+            or 0
+        )
 
-        state_changes = await self.metrics_collector.get_metric_value(
-            "circuit_breaker_state_changes_total", {"account": "demo_account"}
-        ) or 0
+        state_changes = (
+            await self.metrics_collector.get_metric_value(
+                "circuit_breaker_state_changes_total", {"account": "demo_account"}
+            )
+            or 0
+        )
 
         print(f"  • Total Triggers: {int(trigger_count)}")
         print(f"  • State Changes: {int(state_changes)}")
@@ -336,10 +352,10 @@ class CircuitBreakerDemo:
         print("  • Manual intervention capabilities for emergency situations")
         print("  • Comprehensive logging enables incident analysis")
 
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("✅ Circuit Breaker Demo Completed Successfully!")
         print("🔗 Circuit breaker is now protecting your trading capital!")
-        print("="*70)
+        print("=" * 70)
 
     async def run_health_check(self):
         """Run a health check on the circuit breaker system."""
@@ -349,17 +365,23 @@ class CircuitBreakerDemo:
             status = self.circuit_breaker.get_status()
 
             checks = [
-                ("Circuit Breaker State", status['current_state'] in ['normal', 'monitoring', 'triggered', 'cooling', 'recovery']),
-                ("Equity Tracking", status['current_equity'] > 0),
-                ("Trigger Conditions", len(status['active_triggers']) > 0),
-                ("Event History", len(status['recent_events']) >= 0),
+                (
+                    "Circuit Breaker State",
+                    status["current_state"]
+                    in ["normal", "monitoring", "triggered", "cooling", "recovery"],
+                ),
+                ("Equity Tracking", status["current_equity"] > 0),
+                ("Trigger Conditions", len(status["active_triggers"]) > 0),
+                ("Event History", len(status["recent_events"]) >= 0),
                 ("Metrics Integration", self.metrics_collector is not None),
             ]
 
             all_passed = True
             for check_name, check_result in checks:
                 status_icon = "✅" if check_result else "❌"
-                print(f"{status_icon} {check_name}: {'PASS' if check_result else 'FAIL'}")
+                print(
+                    f"{status_icon} {check_name}: {'PASS' if check_result else 'FAIL'}"
+                )
                 if not check_result:
                     all_passed = False
 
@@ -410,9 +432,11 @@ async def main():
             await asyncio.sleep(10)
             # Periodic status update
             status = demo.circuit_breaker.get_status()
-            print(f"🔄 Status: {status['current_state'].upper()} | "
-                  f"Equity: ${status['current_equity']:,.2f} | "
-                  f"Triggers: {status['trigger_count']}")
+            print(
+                f"🔄 Status: {status['current_state'].upper()} | "
+                f"Equity: ${status['current_equity']:,.2f} | "
+                f"Triggers: {status['trigger_count']}"
+            )
 
     except KeyboardInterrupt:
         logger.info("🛑 Demo interrupted by user")

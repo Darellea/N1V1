@@ -19,7 +19,7 @@ from data.dataset_versioning import (
     validate_dataframe,
     DataValidationError,
     migrate_legacy_dataset,
-    PathTraversalError as VersionPathTraversalError
+    PathTraversalError as VersionPathTraversalError,
 )
 from data.historical_loader import HistoricalDataLoader, ConfigurationError
 
@@ -29,70 +29,74 @@ class TestPathTraversalPrevention:
 
     def test_sanitize_cache_path_valid_relative(self):
         """Test sanitizing valid relative cache paths."""
-        config = {'name': 'binance', 'cache_enabled': True, 'cache_dir': 'my_cache'}
+        config = {"name": "binance", "cache_enabled": True, "cache_dir": "my_cache"}
         fetcher = DataFetcher(config)
 
         # Should resolve to data/cache/my_cache
-        expected_base = os.path.join(os.getcwd(), 'data', 'cache')
-        expected_path = os.path.join(expected_base, 'my_cache')
+        expected_base = os.path.join(os.getcwd(), "data", "cache")
+        expected_path = os.path.join(expected_base, "my_cache")
 
         assert fetcher.cache_dir_path == expected_path
 
     def test_sanitize_cache_path_traversal_dots(self):
         """Test blocking path traversal with .. patterns."""
-        config = {'cache_enabled': True, 'cache_dir': '../../../etc/passwd'}
+        config = {"cache_enabled": True, "cache_dir": "../../../etc/passwd"}
 
         with pytest.raises(PathTraversalError, match="Invalid cache directory path"):
             DataFetcher(config)
 
     def test_sanitize_cache_path_absolute_path(self):
         """Test blocking absolute paths."""
-        config = {'cache_enabled': True, 'cache_dir': '/etc/passwd'}
+        config = {"cache_enabled": True, "cache_dir": "/etc/passwd"}
 
         with pytest.raises(PathTraversalError, match="Invalid cache directory path"):
             DataFetcher(config)
 
     def test_sanitize_cache_path_backslash_traversal(self):
         """Test blocking backslash path traversal on Windows."""
-        config = {'cache_enabled': True, 'cache_dir': '..\\..\\etc\\passwd'}
+        config = {"cache_enabled": True, "cache_dir": "..\\..\\etc\\passwd"}
 
         with pytest.raises(PathTraversalError, match="Invalid cache directory path"):
             DataFetcher(config)
 
     def test_sanitize_cache_path_complex_traversal(self):
         """Test blocking complex traversal patterns."""
-        config = {'cache_enabled': True, 'cache_dir': 'cache/../../../etc/passwd'}
+        config = {"cache_enabled": True, "cache_dir": "cache/../../../etc/passwd"}
 
         with pytest.raises(PathTraversalError, match="Invalid cache directory path"):
             DataFetcher(config)
 
     def test_sanitize_cache_path_valid_nested(self):
         """Test allowing valid nested paths."""
-        config = {'name': 'binance', 'cache_enabled': True, 'cache_dir': 'nested/cache/dir'}
+        config = {
+            "name": "binance",
+            "cache_enabled": True,
+            "cache_dir": "nested/cache/dir",
+        }
         fetcher = DataFetcher(config)
 
-        expected_base = os.path.join(os.getcwd(), 'data', 'cache')
-        expected_path = os.path.join(expected_base, 'nested', 'cache', 'dir')
+        expected_base = os.path.join(os.getcwd(), "data", "cache")
+        expected_path = os.path.join(expected_base, "nested", "cache", "dir")
 
         assert fetcher.cache_dir_path == expected_path
 
     def test_sanitize_cache_path_empty_string(self):
         """Test handling empty cache directory string."""
-        config = {'name': 'binance', 'cache_enabled': True, 'cache_dir': ''}
+        config = {"name": "binance", "cache_enabled": True, "cache_dir": ""}
         fetcher = DataFetcher(config)
 
-        expected_base = os.path.join(os.getcwd(), 'data', 'cache')
+        expected_base = os.path.join(os.getcwd(), "data", "cache")
         expected_path = expected_base  # Should resolve to base cache dir
 
         assert fetcher.cache_dir_path == expected_path
 
     def test_cache_disabled_no_validation(self):
         """Test that path validation is skipped when cache is disabled."""
-        config = {'cache_enabled': False, 'cache_dir': '../../../etc/passwd'}
+        config = {"cache_enabled": False, "cache_dir": "../../../etc/passwd"}
         fetcher = DataFetcher(config)
 
         # Should not raise exception when cache is disabled
-        assert fetcher.cache_dir == '../../../etc/passwd'
+        assert fetcher.cache_dir == "../../../etc/passwd"
 
 
 class TestDataFrameValidation:
@@ -101,28 +105,30 @@ class TestDataFrameValidation:
     def create_valid_ohlcv_df(self, rows=100):
         """Create a valid OHLCV DataFrame for testing."""
         np.random.seed(42)
-        timestamps = pd.date_range('2023-01-01', periods=rows, freq='1h')
+        timestamps = pd.date_range("2023-01-01", periods=rows, freq="1h")
 
         # Generate realistic OHLCV data
         base_price = 50000
         prices = []
         for i in range(rows):
             change = np.random.normal(0, 0.02)  # 2% volatility
-            base_price *= (1 + change)
+            base_price *= 1 + change
             high = base_price * (1 + abs(np.random.normal(0, 0.005)))
             low = base_price * (1 - abs(np.random.normal(0, 0.005)))
             open_price = base_price * (1 + np.random.normal(0, 0.002))
             close = base_price
             volume = np.random.uniform(100, 1000)
 
-            prices.append({
-                'timestamp': timestamps[i],
-                'open': round(open_price, 2),
-                'high': round(high, 2),
-                'low': round(low, 2),
-                'close': round(close, 2),
-                'volume': round(volume, 2)
-            })
+            prices.append(
+                {
+                    "timestamp": timestamps[i],
+                    "open": round(open_price, 2),
+                    "high": round(high, 2),
+                    "low": round(low, 2),
+                    "close": round(close, 2),
+                    "volume": round(volume, 2),
+                }
+            )
 
         return pd.DataFrame(prices)
 
@@ -148,7 +154,7 @@ class TestDataFrameValidation:
     def test_validate_dataframe_missing_columns(self):
         """Test validation with missing required columns."""
         df = self.create_valid_ohlcv_df()
-        df = df.drop('timestamp', axis=1)  # Remove required column
+        df = df.drop("timestamp", axis=1)  # Remove required column
 
         with pytest.raises(DataValidationError, match="Missing required columns"):
             validate_dataframe(df)
@@ -156,7 +162,7 @@ class TestDataFrameValidation:
     def test_validate_dataframe_nan_in_key_columns(self):
         """Test validation with NaN values in key columns."""
         df = self.create_valid_ohlcv_df()
-        df.loc[0, 'timestamp'] = pd.NaT  # Add NaN to timestamp
+        df.loc[0, "timestamp"] = pd.NaT  # Add NaN to timestamp
 
         with pytest.raises(DataValidationError, match="contains.*NaN values"):
             validate_dataframe(df)
@@ -164,7 +170,7 @@ class TestDataFrameValidation:
     def test_validate_dataframe_negative_volume(self):
         """Test validation with negative volume values."""
         df = self.create_valid_ohlcv_df()
-        df.loc[0, 'volume'] = -100  # Negative volume
+        df.loc[0, "volume"] = -100  # Negative volume
 
         with pytest.raises(DataValidationError, match="contains.*negative values"):
             validate_dataframe(df)
@@ -173,30 +179,27 @@ class TestDataFrameValidation:
         """Test validation with high < low (invalid price order)."""
         df = self.create_valid_ohlcv_df()
         # Swap high and low for first row
-        temp = df.loc[0, 'high']
-        df.loc[0, 'high'] = df.loc[0, 'low']
-        df.loc[0, 'low'] = temp
+        temp = df.loc[0, "high"]
+        df.loc[0, "high"] = df.loc[0, "low"]
+        df.loc[0, "low"] = temp
 
         with pytest.raises(DataValidationError, match="high < low"):
             validate_dataframe(df)
 
     def test_validate_dataframe_custom_schema(self):
         """Test validation with custom schema."""
-        df = pd.DataFrame({
-            'id': [1, 2, 3],
-            'name': ['Alice', 'Bob', 'Charlie'],
-            'score': [95.5, 87.2, 91.8]
-        })
+        df = pd.DataFrame(
+            {
+                "id": [1, 2, 3],
+                "name": ["Alice", "Bob", "Charlie"],
+                "score": [95.5, 87.2, 91.8],
+            }
+        )
 
         custom_schema = {
-            'required_columns': ['id', 'name'],
-            'column_types': {
-                'id': ['int64'],
-                'score': ['float64']
-            },
-            'constraints': {
-                'positive_values': ['score']
-            }
+            "required_columns": ["id", "name"],
+            "column_types": {"id": ["int64"], "score": ["float64"]},
+            "constraints": {"positive_values": ["score"]},
         }
 
         # Should not raise exception with valid custom schema
@@ -204,13 +207,12 @@ class TestDataFrameValidation:
 
     def test_validate_dataframe_missing_custom_required_column(self):
         """Test validation with missing custom required column."""
-        df = pd.DataFrame({
-            'name': ['Alice', 'Bob', 'Charlie'],
-            'score': [95.5, 87.2, 91.8]
-        })
+        df = pd.DataFrame(
+            {"name": ["Alice", "Bob", "Charlie"], "score": [95.5, 87.2, 91.8]}
+        )
 
         custom_schema = {
-            'required_columns': ['id', 'name'],  # 'id' is missing
+            "required_columns": ["id", "name"],  # 'id' is missing
         }
 
         with pytest.raises(DataValidationError, match="Missing required columns"):
@@ -226,14 +228,16 @@ class TestDatasetVersionManagerSecurity:
             manager = DatasetVersionManager(temp_dir)
 
             # Create valid DataFrame
-            df = pd.DataFrame({
-                'timestamp': pd.date_range('2023-01-01', periods=10, freq='1h'),
-                'open': [100 + i for i in range(10)],
-                'high': [105 + i for i in range(10)],
-                'low': [95 + i for i in range(10)],
-                'close': [102 + i for i in range(10)],
-                'volume': [1000 + i*10 for i in range(10)]
-            })
+            df = pd.DataFrame(
+                {
+                    "timestamp": pd.date_range("2023-01-01", periods=10, freq="1h"),
+                    "open": [100 + i for i in range(10)],
+                    "high": [105 + i for i in range(10)],
+                    "low": [95 + i for i in range(10)],
+                    "close": [102 + i for i in range(10)],
+                    "volume": [1000 + i * 10 for i in range(10)],
+                }
+            )
 
             # Should succeed with valid DataFrame
             version_id = manager.create_version(df, "test_version", "Test version")
@@ -241,7 +245,7 @@ class TestDatasetVersionManagerSecurity:
 
             # Verify validation_passed flag in metadata
             info = manager.get_version_info(version_id)
-            assert info['validation_passed'] is True
+            assert info["validation_passed"] is True
 
     def test_create_version_with_invalid_dataframe(self):
         """Test create_version with invalid DataFrame."""
@@ -249,13 +253,15 @@ class TestDatasetVersionManagerSecurity:
             manager = DatasetVersionManager(temp_dir)
 
             # Create invalid DataFrame (missing required column)
-            df = pd.DataFrame({
-                'open': [100 + i for i in range(10)],
-                'high': [105 + i for i in range(10)],
-                'low': [95 + i for i in range(10)],
-                'close': [102 + i for i in range(10)],
-                'volume': [1000 + i*10 for i in range(10)]
-            })
+            df = pd.DataFrame(
+                {
+                    "open": [100 + i for i in range(10)],
+                    "high": [105 + i for i in range(10)],
+                    "low": [95 + i for i in range(10)],
+                    "close": [102 + i for i in range(10)],
+                    "volume": [1000 + i * 10 for i in range(10)],
+                }
+            )
 
             # Should raise DataValidationError
             with pytest.raises(DataValidationError):
@@ -267,17 +273,21 @@ class TestDatasetVersionManagerSecurity:
             manager = DatasetVersionManager(temp_dir)
 
             # Create legacy DataFrame
-            df = pd.DataFrame({
-                'timestamp': pd.date_range('2023-01-01', periods=10, freq='1h'),
-                'open': [100 + i for i in range(10)],
-                'high': [105 + i for i in range(10)],
-                'low': [95 + i for i in range(10)],
-                'close': [102 + i for i in range(10)],
-                'volume': [1000 + i*10 for i in range(10)]
-            })
+            df = pd.DataFrame(
+                {
+                    "timestamp": pd.date_range("2023-01-01", periods=10, freq="1h"),
+                    "open": [100 + i for i in range(10)],
+                    "high": [105 + i for i in range(10)],
+                    "low": [95 + i for i in range(10)],
+                    "close": [102 + i for i in range(10)],
+                    "volume": [1000 + i * 10 for i in range(10)],
+                }
+            )
 
             # Mock the create_binary_labels function
-            with patch('data.dataset_versioning.create_binary_labels') as mock_create_labels:
+            with patch(
+                "data.dataset_versioning.create_binary_labels"
+            ) as mock_create_labels:
                 mock_create_labels.return_value = df.copy()  # Return same DataFrame
 
                 # Should succeed with valid DataFrame
@@ -286,7 +296,7 @@ class TestDatasetVersionManagerSecurity:
 
                 # Verify validation_passed flag in metadata
                 info = manager.get_version_info(version_id)
-                assert info['validation_passed'] is True
+                assert info["validation_passed"] is True
 
     def test_migrate_legacy_dataset_invalid_input(self):
         """Test migrate_legacy_dataset with invalid input DataFrame."""
@@ -294,13 +304,15 @@ class TestDatasetVersionManagerSecurity:
             manager = DatasetVersionManager(temp_dir)
 
             # Create invalid DataFrame
-            df = pd.DataFrame({
-                'open': [100 + i for i in range(10)],  # Missing timestamp
-                'high': [105 + i for i in range(10)],
-                'low': [95 + i for i in range(10)],
-                'close': [102 + i for i in range(10)],
-                'volume': [1000 + i*10 for i in range(10)]
-            })
+            df = pd.DataFrame(
+                {
+                    "open": [100 + i for i in range(10)],  # Missing timestamp
+                    "high": [105 + i for i in range(10)],
+                    "low": [95 + i for i in range(10)],
+                    "close": [102 + i for i in range(10)],
+                    "volume": [1000 + i * 10 for i in range(10)],
+                }
+            )
 
             # Should raise DataValidationError
             with pytest.raises(DataValidationError):
@@ -326,13 +338,19 @@ class TestVersionNameSanitization:
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = DatasetVersionManager(temp_dir)
 
-            with pytest.raises(VersionPathTraversalError, match="Path traversal detected"):
+            with pytest.raises(
+                VersionPathTraversalError, match="Path traversal detected"
+            ):
                 manager._sanitize_version_name("../../etc/passwd")
 
-            with pytest.raises(VersionPathTraversalError, match="Path traversal detected"):
+            with pytest.raises(
+                VersionPathTraversalError, match="Path traversal detected"
+            ):
                 manager._sanitize_version_name("../../../hack")
 
-            with pytest.raises(VersionPathTraversalError, match="Path traversal detected"):
+            with pytest.raises(
+                VersionPathTraversalError, match="Path traversal detected"
+            ):
                 manager._sanitize_version_name("version/../escape")
 
     def test_sanitize_version_name_path_separators(self):
@@ -340,13 +358,19 @@ class TestVersionNameSanitization:
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = DatasetVersionManager(temp_dir)
 
-            with pytest.raises(VersionPathTraversalError, match="Path separators not allowed"):
+            with pytest.raises(
+                VersionPathTraversalError, match="Path separators not allowed"
+            ):
                 manager._sanitize_version_name("version/hack")
 
-            with pytest.raises(VersionPathTraversalError, match="Path separators not allowed"):
+            with pytest.raises(
+                VersionPathTraversalError, match="Path separators not allowed"
+            ):
                 manager._sanitize_version_name("version\\hack")
 
-            with pytest.raises(VersionPathTraversalError, match="Path separators not allowed"):
+            with pytest.raises(
+                VersionPathTraversalError, match="Path separators not allowed"
+            ):
                 manager._sanitize_version_name("path/to/file")
 
     def test_sanitize_version_name_absolute_paths(self):
@@ -354,13 +378,19 @@ class TestVersionNameSanitization:
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = DatasetVersionManager(temp_dir)
 
-            with pytest.raises(VersionPathTraversalError, match="Absolute path detected"):
+            with pytest.raises(
+                VersionPathTraversalError, match="Absolute path detected"
+            ):
                 manager._sanitize_version_name("/etc/passwd")
 
-            with pytest.raises(VersionPathTraversalError, match="Absolute path detected"):
+            with pytest.raises(
+                VersionPathTraversalError, match="Absolute path detected"
+            ):
                 manager._sanitize_version_name("\\Windows\\System32")
 
-            with pytest.raises(VersionPathTraversalError, match="Absolute path detected"):
+            with pytest.raises(
+                VersionPathTraversalError, match="Absolute path detected"
+            ):
                 manager._sanitize_version_name("C:\\Windows\\System32")
 
     def test_sanitize_version_name_invalid_characters(self):
@@ -385,13 +415,19 @@ class TestVersionNameSanitization:
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = DatasetVersionManager(temp_dir)
 
-            with pytest.raises(VersionPathTraversalError, match="must be a non-empty string"):
+            with pytest.raises(
+                VersionPathTraversalError, match="must be a non-empty string"
+            ):
                 manager._sanitize_version_name("")
 
-            with pytest.raises(VersionPathTraversalError, match="must be a non-empty string"):
+            with pytest.raises(
+                VersionPathTraversalError, match="must be a non-empty string"
+            ):
                 manager._sanitize_version_name(None)
 
-            with pytest.raises(VersionPathTraversalError, match="must be a non-empty string"):
+            with pytest.raises(
+                VersionPathTraversalError, match="must be a non-empty string"
+            ):
                 manager._sanitize_version_name(123)  # integer
 
     def test_sanitize_version_name_too_long(self):
@@ -409,14 +445,16 @@ class TestVersionNameSanitization:
             manager = DatasetVersionManager(temp_dir)
 
             # Create valid DataFrame
-            df = pd.DataFrame({
-                'timestamp': pd.date_range('2023-01-01', periods=5, freq='1h'),
-                'open': [100, 102, 104, 106, 108],
-                'high': [105, 107, 109, 111, 113],
-                'low': [95, 97, 99, 101, 103],
-                'close': [102, 104, 106, 108, 110],
-                'volume': [1000, 1100, 1200, 1300, 1400]
-            })
+            df = pd.DataFrame(
+                {
+                    "timestamp": pd.date_range("2023-01-01", periods=5, freq="1h"),
+                    "open": [100, 102, 104, 106, 108],
+                    "high": [105, 107, 109, 111, 113],
+                    "low": [95, 97, 99, 101, 103],
+                    "close": [102, 104, 106, 108, 110],
+                    "volume": [1000, 1100, 1200, 1300, 1400],
+                }
+            )
 
             # Test various malicious names
             malicious_names = [
@@ -427,7 +465,7 @@ class TestVersionNameSanitization:
                 "C:\\Windows\\System32",
                 "version@hack",
                 "version hack",
-                ""  # empty string
+                "",  # empty string
             ]
 
             for malicious_name in malicious_names:
@@ -440,14 +478,16 @@ class TestVersionNameSanitization:
             manager = DatasetVersionManager(temp_dir)
 
             # Create valid DataFrame
-            df = pd.DataFrame({
-                'timestamp': pd.date_range('2023-01-01', periods=5, freq='1h'),
-                'open': [100, 102, 104, 106, 108],
-                'high': [105, 107, 109, 111, 113],
-                'low': [95, 97, 99, 101, 103],
-                'close': [102, 104, 106, 108, 110],
-                'volume': [1000, 1100, 1200, 1300, 1400]
-            })
+            df = pd.DataFrame(
+                {
+                    "timestamp": pd.date_range("2023-01-01", periods=5, freq="1h"),
+                    "open": [100, 102, 104, 106, 108],
+                    "high": [105, 107, 109, 111, 113],
+                    "low": [95, 97, 99, 101, 103],
+                    "close": [102, 104, 106, 108, 110],
+                    "volume": [1000, 1100, 1200, 1300, 1400],
+                }
+            )
 
             # Test valid names
             valid_names = ["version1", "test_version", "my-version-2", "Version123"]
@@ -463,7 +503,7 @@ class TestConfigurationValidation:
 
     def test_validate_data_directory_valid_names(self):
         """Test validating valid data directory names."""
-        config = {'backtesting': {'data_dir': 'historical_data'}}
+        config = {"backtesting": {"data_dir": "historical_data"}}
         data_fetcher = MagicMock()
         loader = HistoricalDataLoader(config, data_fetcher)
 
@@ -475,7 +515,7 @@ class TestConfigurationValidation:
 
     def test_validate_data_directory_path_traversal_dots(self):
         """Test blocking path traversal with .. patterns."""
-        config = {'backtesting': {'data_dir': 'historical_data'}}
+        config = {"backtesting": {"data_dir": "historical_data"}}
         data_fetcher = MagicMock()
         loader = HistoricalDataLoader(config, data_fetcher)
 
@@ -490,7 +530,7 @@ class TestConfigurationValidation:
 
     def test_validate_data_directory_path_separators(self):
         """Test blocking path separators."""
-        config = {'backtesting': {'data_dir': 'historical_data'}}
+        config = {"backtesting": {"data_dir": "historical_data"}}
         data_fetcher = MagicMock()
         loader = HistoricalDataLoader(config, data_fetcher)
 
@@ -505,7 +545,7 @@ class TestConfigurationValidation:
 
     def test_validate_data_directory_absolute_paths(self):
         """Test blocking absolute paths."""
-        config = {'backtesting': {'data_dir': 'historical_data'}}
+        config = {"backtesting": {"data_dir": "historical_data"}}
         data_fetcher = MagicMock()
         loader = HistoricalDataLoader(config, data_fetcher)
 
@@ -520,7 +560,7 @@ class TestConfigurationValidation:
 
     def test_validate_data_directory_invalid_characters(self):
         """Test blocking invalid characters."""
-        config = {'backtesting': {'data_dir': 'historical_data'}}
+        config = {"backtesting": {"data_dir": "historical_data"}}
         data_fetcher = MagicMock()
         loader = HistoricalDataLoader(config, data_fetcher)
 
@@ -538,7 +578,7 @@ class TestConfigurationValidation:
 
     def test_validate_data_directory_empty_and_invalid_types(self):
         """Test handling empty strings and invalid types."""
-        config = {'backtesting': {'data_dir': 'historical_data'}}
+        config = {"backtesting": {"data_dir": "historical_data"}}
         data_fetcher = MagicMock()
         loader = HistoricalDataLoader(config, data_fetcher)
 
@@ -553,7 +593,7 @@ class TestConfigurationValidation:
 
     def test_validate_data_directory_too_long(self):
         """Test blocking overly long data directory names."""
-        config = {'backtesting': {'data_dir': 'historical_data'}}
+        config = {"backtesting": {"data_dir": "historical_data"}}
         data_fetcher = MagicMock()
         loader = HistoricalDataLoader(config, data_fetcher)
 
@@ -567,14 +607,14 @@ class TestConfigurationValidation:
 
         # Test various malicious configurations
         malicious_configs = [
-            {'backtesting': {'data_dir': '../../etc/passwd'}},
-            {'backtesting': {'data_dir': '../../../hack'}},
-            {'backtesting': {'data_dir': 'data/../escape'}},
-            {'backtesting': {'data_dir': '/absolute/path'}},
-            {'backtesting': {'data_dir': 'C:\\Windows\\System32'}},
-            {'backtesting': {'data_dir': 'data@hack'}},
-            {'backtesting': {'data_dir': 'data hack'}},
-            {'backtesting': {'data_dir': ''}}  # empty string
+            {"backtesting": {"data_dir": "../../etc/passwd"}},
+            {"backtesting": {"data_dir": "../../../hack"}},
+            {"backtesting": {"data_dir": "data/../escape"}},
+            {"backtesting": {"data_dir": "/absolute/path"}},
+            {"backtesting": {"data_dir": "C:\\Windows\\System32"}},
+            {"backtesting": {"data_dir": "data@hack"}},
+            {"backtesting": {"data_dir": "data hack"}},
+            {"backtesting": {"data_dir": ""}},  # empty string
         ]
 
         for config in malicious_configs:
@@ -587,18 +627,18 @@ class TestConfigurationValidation:
 
         # Test valid configurations
         valid_configs = [
-            {'backtesting': {'data_dir': 'historical_data'}},
-            {'backtesting': {'data_dir': 'my_data_dir'}},
-            {'backtesting': {'data_dir': 'data-2023'}},
-            {'backtesting': {'data_dir': 'DataDir123'}}
+            {"backtesting": {"data_dir": "historical_data"}},
+            {"backtesting": {"data_dir": "my_data_dir"}},
+            {"backtesting": {"data_dir": "data-2023"}},
+            {"backtesting": {"data_dir": "DataDir123"}},
         ]
 
         for config in valid_configs:
             loader = HistoricalDataLoader(config, data_fetcher)
             # Should create directory under data/historical/
-            expected_base = os.path.join(os.getcwd(), 'data', 'historical')
+            expected_base = os.path.join(os.getcwd(), "data", "historical")
             assert loader.data_dir.startswith(expected_base)
-            assert config['backtesting']['data_dir'] in loader.data_dir
+            assert config["backtesting"]["data_dir"] in loader.data_dir
 
 
 class TestIntegrationSecurity:
@@ -608,31 +648,35 @@ class TestIntegrationSecurity:
         """Test the full data pipeline with security features."""
         # Test DataFetcher with safe cache path
         config = {
-            'name': 'binance',
-            'cache_enabled': True,
-            'cache_dir': 'safe_cache_dir'
+            "name": "binance",
+            "cache_enabled": True,
+            "cache_dir": "safe_cache_dir",
         }
 
         fetcher = DataFetcher(config)
-        assert 'safe_cache_dir' in fetcher.cache_dir
-        assert fetcher.cache_dir.startswith(os.path.join(os.getcwd(), 'data', 'cache'))
+        assert "safe_cache_dir" in fetcher.cache_dir
+        assert fetcher.cache_dir.startswith(os.path.join(os.getcwd(), "data", "cache"))
 
         # Test DatasetVersionManager with validation
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = DatasetVersionManager(temp_dir)
 
             # Create valid DataFrame
-            df = pd.DataFrame({
-                'timestamp': pd.date_range('2023-01-01', periods=5, freq='1h'),
-                'open': [100, 102, 104, 106, 108],
-                'high': [105, 107, 109, 111, 113],
-                'low': [95, 97, 99, 101, 103],
-                'close': [102, 104, 106, 108, 110],
-                'volume': [1000, 1100, 1200, 1300, 1400]
-            })
+            df = pd.DataFrame(
+                {
+                    "timestamp": pd.date_range("2023-01-01", periods=5, freq="1h"),
+                    "open": [100, 102, 104, 106, 108],
+                    "high": [105, 107, 109, 111, 113],
+                    "low": [95, 97, 99, 101, 103],
+                    "close": [102, 104, 106, 108, 110],
+                    "volume": [1000, 1100, 1200, 1300, 1400],
+                }
+            )
 
             # Test successful creation
-            version_id = manager.create_version(df, "integration_test", "Integration test")
+            version_id = manager.create_version(
+                df, "integration_test", "Integration test"
+            )
             assert version_id is not None
 
             # Test loading and validation
@@ -644,22 +688,22 @@ class TestIntegrationSecurity:
             assert len(loaded_df) == len(df)
             assert isinstance(loaded_df.index, pd.DatetimeIndex)
             # Check that all expected columns exist
-            expected_cols = ['open', 'high', 'low', 'close', 'volume']
+            expected_cols = ["open", "high", "low", "close", "volume"]
             for col in expected_cols:
                 assert col in loaded_df.columns, f"Missing column: {col}"
             # Compare data values (loaded_df has timestamp as index, original df has it as column)
             original_reset = df.reset_index(drop=True)
             loaded_reset = loaded_df.reset_index()
-            assert loaded_reset['timestamp'].equals(original_reset['timestamp'])
-            assert loaded_reset['open'].equals(original_reset['open'])
-            assert loaded_reset['close'].equals(original_reset['close'])
-            assert loaded_reset['volume'].equals(original_reset['volume'])
+            assert loaded_reset["timestamp"].equals(original_reset["timestamp"])
+            assert loaded_reset["open"].equals(original_reset["open"])
+            assert loaded_reset["close"].equals(original_reset["close"])
+            assert loaded_reset["volume"].equals(original_reset["volume"])
 
     def test_error_handling_and_logging(self):
         """Test that errors are properly logged and handled."""
-        with patch('data.data_fetcher.logger') as mock_logger:
+        with patch("data.data_fetcher.logger") as mock_logger:
             # Test path traversal error logging - exception raised during __init__
-            config = {'cache_enabled': True, 'cache_dir': '../../../etc/passwd'}
+            config = {"cache_enabled": True, "cache_dir": "../../../etc/passwd"}
 
             with pytest.raises(PathTraversalError):
                 DataFetcher(config)
@@ -667,7 +711,7 @@ class TestIntegrationSecurity:
             # Verify error was logged
             mock_logger.error.assert_called()
 
-        with patch('data.dataset_versioning.logger') as mock_logger:
+        with patch("data.dataset_versioning.logger") as mock_logger:
             # Test DataFrame validation error logging
             df = pd.DataFrame()  # Empty DataFrame
 

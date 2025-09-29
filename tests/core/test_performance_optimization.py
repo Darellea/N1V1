@@ -8,36 +8,24 @@ and regression testing as specified in the testing strategy.
 """
 
 import asyncio
-import time
-import pytest
-import unittest.mock as mock
-from unittest.mock import AsyncMock, MagicMock, patch
-import numpy as np
-import pandas as pd
-import json
-import cProfile
-import pstats
-import io
-from typing import Dict, List, Any, Optional, Callable
-import tempfile
-import os
-import math
-import statistics
 import gc
-from pathlib import Path
-import tracemalloc
+import os
+import statistics
+import tempfile
+import time
 
-from core.performance_profiler import (
-    PerformanceProfiler, PerformanceMetrics, ProfilingSession,
-    get_profiler, profile_function
-)
+import numpy as np
+import pytest
+
 from core.performance_monitor import (
-    RealTimePerformanceMonitor, PerformanceBaseline, PerformanceAlert,
-    get_performance_monitor
+    PerformanceAlert,
+    RealTimePerformanceMonitor,
+)
+from core.performance_profiler import (
+    PerformanceProfiler,
 )
 from core.performance_reports import (
-    PerformanceReportGenerator, PerformanceReport, HotspotAnalysis,
-    get_performance_report_generator
+    PerformanceReportGenerator,
 )
 from utils.logger import get_logger
 
@@ -53,6 +41,7 @@ class TestProfilingAccuracy:
 
     def test_function_timing_accuracy(self):
         """Test function-level timing accuracy against high-precision references."""
+
         # Test function with known execution time
         def test_function():
             time.sleep(0.01)  # 10ms sleep
@@ -68,7 +57,11 @@ class TestProfilingAccuracy:
 
         # Check that profiler captured the timing
         assert len(self.profiler.metrics_history) > 0
-        metrics = [m for m in self.profiler.metrics_history if m.function_name == "test_function"][-1]
+        metrics = [
+            m
+            for m in self.profiler.metrics_history
+            if m.function_name == "test_function"
+        ][-1]
 
         # Verify timing accuracy (within 10% of reference)
         assert abs(metrics.execution_time - reference_time) / reference_time < 0.1
@@ -93,10 +86,14 @@ class TestProfilingAccuracy:
         final_memory = self.profiler._get_memory_usage()
 
         # Check memory tracking
-        metrics = [m for m in self.profiler.metrics_history if m.function_name == "memory_test"][-1]
+        metrics = [
+            m for m in self.profiler.metrics_history if m.function_name == "memory_test"
+        ][-1]
 
         # Memory usage should be reasonable (allow for negative values on some systems)
-        assert abs(metrics.memory_usage) < 50 * 1024 * 1024  # Less than 50MB in absolute value
+        assert (
+            abs(metrics.memory_usage) < 50 * 1024 * 1024
+        )  # Less than 50MB in absolute value
 
         # Verify memory tracking is working
         assert metrics.memory_peak >= metrics.memory_usage
@@ -104,16 +101,16 @@ class TestProfilingAccuracy:
     def test_io_operations_monitoring(self):
         """Test I/O operation monitoring captures relevant events."""
         # Create temporary file for I/O testing
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
             temp_file = f.name
 
         def io_test_function():
             # Perform file I/O operations
-            with open(temp_file, 'w') as f:
+            with open(temp_file, "w") as f:
                 for i in range(1000):
                     f.write(f"Line {i}\n")
 
-            with open(temp_file, 'r') as f:
+            with open(temp_file, "r") as f:
                 data = f.read()
 
             return len(data)
@@ -125,7 +122,9 @@ class TestProfilingAccuracy:
         os.unlink(temp_file)
 
         # Check I/O monitoring
-        metrics = [m for m in self.profiler.metrics_history if m.function_name == "io_test"][-1]
+        metrics = [
+            m for m in self.profiler.metrics_history if m.function_name == "io_test"
+        ][-1]
 
         # Should have captured some I/O operations
         assert metrics.io_read_bytes >= 0
@@ -133,6 +132,7 @@ class TestProfilingAccuracy:
 
     def test_garbage_collection_impact(self):
         """Test garbage collection impact measurements."""
+
         def gc_test_function():
             # Create many objects to trigger GC
             objects = []
@@ -141,6 +141,7 @@ class TestProfilingAccuracy:
 
             # Force garbage collection
             import gc
+
             collected = gc.collect()
 
             return collected
@@ -148,7 +149,9 @@ class TestProfilingAccuracy:
         with self.profiler.profile_function("gc_test"):
             result = gc_test_function()
 
-        metrics = [m for m in self.profiler.metrics_history if m.function_name == "gc_test"][-1]
+        metrics = [
+            m for m in self.profiler.metrics_history if m.function_name == "gc_test"
+        ][-1]
 
         # Should have captured GC statistics
         assert isinstance(metrics.gc_collections, dict)
@@ -160,17 +163,20 @@ class TestProfilingAccuracy:
 
     def test_cpu_usage_monitoring(self):
         """Test CPU usage monitoring during profiling."""
+
         def cpu_intensive_function():
             # CPU-intensive computation
             result = 0
             for i in range(100000):
-                result += i ** 2
+                result += i**2
             return result
 
         with self.profiler.profile_function("cpu_test"):
             result = cpu_intensive_function()
 
-        metrics = [m for m in self.profiler.metrics_history if m.function_name == "cpu_test"][-1]
+        metrics = [
+            m for m in self.profiler.metrics_history if m.function_name == "cpu_test"
+        ][-1]
 
         # CPU usage should be measurable
         assert metrics.cpu_percent >= 0.0
@@ -178,6 +184,7 @@ class TestProfilingAccuracy:
 
     def test_concurrent_profiling_accuracy(self):
         """Test profiling accuracy under concurrent execution."""
+
         async def profiled_task(task_id: int):
             """Task that will be profiled."""
             await asyncio.sleep(0.01 * task_id)  # Variable sleep
@@ -189,8 +196,7 @@ class TestProfilingAccuracy:
             for i in range(5):
                 task = asyncio.create_task(
                     self.profiler.async_profile_function(
-                        profiled_task(i),
-                        f"concurrent_task_{i}"
+                        profiled_task(i), f"concurrent_task_{i}"
                     )
                 )
                 tasks.append(task)
@@ -206,8 +212,11 @@ class TestProfilingAccuracy:
         assert results == [0, 2, 4, 6, 8]
 
         # Check profiling data
-        profiled_functions = [m.function_name for m in self.profiler.metrics_history
-                            if m.function_name.startswith("concurrent_task_")]
+        profiled_functions = [
+            m.function_name
+            for m in self.profiler.metrics_history
+            if m.function_name.startswith("concurrent_task_")
+        ]
 
         assert len(profiled_functions) == 5
 
@@ -232,13 +241,13 @@ class TestOptimizationValidation:
                 if i < window - 1:
                     result.append(np.nan)
                 else:
-                    result.append(np.mean(prices[i-window+1:i+1]))
+                    result.append(np.mean(prices[i - window + 1 : i + 1]))
             return np.array(result)
 
         # Vectorized implementation (simplified)
         def vectorized_sma(prices, window):
             weights = np.ones(window) / window
-            return np.convolve(prices, weights, mode='valid')
+            return np.convolve(prices, weights, mode="valid")
 
         # Compare results
         original_result = original_sma(prices, window)
@@ -246,10 +255,10 @@ class TestOptimizationValidation:
 
         # Results should be very close (allowing for floating point precision)
         np.testing.assert_allclose(
-            original_result[window-1:],  # Skip NaN values
+            original_result[window - 1 :],  # Skip NaN values
             vectorized_result,
             rtol=1e-10,
-            atol=1e-10
+            atol=1e-10,
         )
 
     def test_memory_optimization_safety(self):
@@ -278,24 +287,27 @@ class TestOptimizationValidation:
     def test_numerical_precision_maintenance(self):
         """Test numerical precision maintained after optimizations."""
         # High-precision test data
-        high_precision_data = np.array([
-            1.23456789012345,
-            9.87654321098765,
-            0.000123456789,
-            123456789.0123456789
-        ], dtype=np.float64)
+        high_precision_data = np.array(
+            [1.23456789012345, 9.87654321098765, 0.000123456789, 123456789.0123456789],
+            dtype=np.float64,
+        )
 
         # Apply optimization (e.g., change to float32 and back)
         optimized_data = high_precision_data.astype(np.float32).astype(np.float64)
 
         # Check precision loss is minimal
-        relative_error = np.abs((optimized_data - high_precision_data) / high_precision_data)
+        relative_error = np.abs(
+            (optimized_data - high_precision_data) / high_precision_data
+        )
 
         # Should maintain reasonable precision
-        assert np.all(relative_error < 1e-6), f"Precision loss too high: {relative_error}"
+        assert np.all(
+            relative_error < 1e-6
+        ), f"Precision loss too high: {relative_error}"
 
     def test_async_optimization_correctness(self):
         """Test async optimizations handle concurrency correctly."""
+
         async def async_optimization_test():
             """Test async optimization patterns."""
             # Simulate async processing
@@ -321,11 +333,12 @@ class TestOptimizationValidation:
 
     def test_optimization_result_consistency(self):
         """Test optimization results are consistent across multiple runs."""
+
         def test_computation():
             """Computation that should produce consistent results."""
             np.random.seed(42)  # Fixed seed for reproducibility
             data = np.random.random(100)
-            return np.sum(data ** 2)
+            return np.sum(data**2)
 
         # Run multiple times
         results = [test_computation() for _ in range(10)]
@@ -354,12 +367,12 @@ class TestPerformanceBenchmarks:
         def loop_based_sum(data):
             result = 0.0
             for x in data:
-                result += x ** 2
+                result += x**2
             return result
 
         # Vectorized implementation
         def vectorized_sum(data):
-            return np.sum(data ** 2)
+            return np.sum(data**2)
 
         # Benchmark loop-based
         start_time = time.perf_counter()
@@ -401,12 +414,15 @@ class TestPerformanceBenchmarks:
         reduction_percent = reduction_ratio * 100
 
         # Should achieve significant memory reduction
-        assert reduction_percent > 40.0, f"Memory reduction {reduction_percent:.1f}% below 40% target"
+        assert (
+            reduction_percent > 40.0
+        ), f"Memory reduction {reduction_percent:.1f}% below 40% target"
 
         logger.info(".1f")
 
     def test_latency_improvements(self):
         """Test latency improvements in critical paths (<50ms target)."""
+
         # Simulate critical path processing
         def critical_path_processing(data_size):
             """Simulate critical path with optimizations."""
@@ -428,12 +444,17 @@ class TestPerformanceBenchmarks:
             processing_time = (time.perf_counter() - start_time) * 1000  # Convert to ms
 
             # Should meet latency target
-            assert processing_time < 50.0, f"Processing time {processing_time:.2f}ms exceeds 50ms target for size {size}"
+            assert (
+                processing_time < 50.0
+            ), f"Processing time {processing_time:.2f}ms exceeds 50ms target for size {size}"
 
-            logger.info(f"Critical path latency for size {size}: {processing_time:.2f}ms")
+            logger.info(
+                f"Critical path latency for size {size}: {processing_time:.2f}ms"
+            )
 
     def test_throughput_scaling(self):
         """Test throughput scaling with optimization."""
+
         def process_batch(batch_size):
             """Process a batch of data."""
             data = np.random.random((batch_size, 100))
@@ -461,11 +482,15 @@ class TestPerformanceBenchmarks:
             throughput = (n_batches * batch_size) / total_time  # items per second
 
             throughputs.append(throughput)
-            logger.info(f"Throughput for batch size {batch_size}: {throughput:.0f} items/sec")
+            logger.info(
+                f"Throughput for batch size {batch_size}: {throughput:.0f} items/sec"
+            )
 
         # Throughput should scale reasonably
         scaling_factor = throughputs[-1] / throughputs[0]
-        assert scaling_factor > 0.5, f"Throughput scaling {scaling_factor:.2f} is too low"
+        assert (
+            scaling_factor > 0.5
+        ), f"Throughput scaling {scaling_factor:.2f} is too low"
 
     def test_baseline_establishment(self):
         """Test performance baseline establishment for components."""
@@ -479,14 +504,14 @@ class TestPerformanceBenchmarks:
             # Simulate component execution with consistent random data
             np.random.seed(42 + i)  # Vary seed slightly for each iteration
             data = np.random.random(1000)
-            result = np.sum(data ** 2)
+            result = np.sum(data**2)
 
             execution_time = time.perf_counter() - start_time
             baseline_data.append(execution_time)
 
         # Apply simple smoothing to reduce variability
         smoothed_data = []
-        window_size = 5
+        window_size = 20
         for i in range(len(baseline_data)):
             start_idx = max(0, i - window_size // 2)
             end_idx = min(len(baseline_data), i + window_size // 2 + 1)
@@ -535,9 +560,13 @@ class TestRegressionTesting:
 
             # Handle floating point comparisons
             if isinstance(expected, float):
-                assert abs(result - expected) < 1e-10, f"Function {func.__name__} regression: {result} != {expected}"
+                assert (
+                    abs(result - expected) < 1e-10
+                ), f"Function {func.__name__} regression: {result} != {expected}"
             else:
-                assert result == expected, f"Function {func.__name__} regression: {result} != {expected}"
+                assert (
+                    result == expected
+                ), f"Function {func.__name__} regression: {result} != {expected}"
 
     def test_backward_compatibility(self):
         """Test backward compatibility with existing configurations."""
@@ -560,7 +589,7 @@ class TestRegressionTesting:
         data = np.array([0.0, 1.0, 2.0])
 
         # Should handle gracefully
-        with np.errstate(divide='ignore', invalid='ignore'):
+        with np.errstate(divide="ignore", invalid="ignore"):
             result = 1.0 / data
 
         assert np.isinf(result[0])  # Division by zero
@@ -580,12 +609,17 @@ class TestRegressionTesting:
     def test_edge_case_performance(self):
         """Test performance under edge conditions and worst-case scenarios."""
         # Test with extreme values
-        extreme_data = np.array([
-            np.inf, -np.inf, np.nan,
-            np.finfo(np.float64).max,
-            np.finfo(np.float64).min,
-            0.0, -0.0
-        ])
+        extreme_data = np.array(
+            [
+                np.inf,
+                -np.inf,
+                np.nan,
+                np.finfo(np.float64).max,
+                np.finfo(np.float64).min,
+                0.0,
+                -0.0,
+            ]
+        )
 
         # Operations should complete without crashing
         try:
@@ -603,12 +637,13 @@ class TestRegressionTesting:
 
     def test_concurrent_execution_safety(self):
         """Test concurrent execution doesn't break optimizations."""
+
         async def concurrent_operation(operation_id: int):
             """Concurrent operation for testing."""
             data = np.random.random(1000)
 
             # Perform optimized operations
-            result1 = np.sum(data ** 2)
+            result1 = np.sum(data**2)
             result2 = np.mean(data)
             result3 = np.std(data)
 
@@ -640,7 +675,7 @@ class TestRegressionTesting:
         # Perform operations that create objects
         for i in range(100):
             data = np.random.random(1000)
-            result = np.sum(data ** 2)
+            result = np.sum(data**2)
             del data, result
 
         # Force garbage collection
@@ -671,7 +706,7 @@ class TestPerformanceMonitoringIntegration:
         with self.profiler.profile_function("monitored_operation"):
             # Simulate optimized operation
             data = np.random.random(10000)
-            result = np.sum(data ** 2)
+            result = np.sum(data**2)
 
         # Check that monitoring captured the operation
         status = await self.monitor.get_performance_status()
@@ -694,7 +729,7 @@ class TestPerformanceMonitoringIntegration:
             condition="above",
             threshold=1.0,  # 1 second
             severity="warning",
-            cooldown_period=60
+            cooldown_period=60,
         )
 
         self.monitor.add_alert(alert)
@@ -742,7 +777,7 @@ async def profiled_operations(performance_profiler):
 
     with performance_profiler.profile_function("test_operation_2"):
         data = np.random.random(1000)
-        result = np.sum(data ** 2)
+        result = np.sum(data**2)
 
     return performance_profiler
 

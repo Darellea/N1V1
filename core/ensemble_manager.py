@@ -10,14 +10,13 @@ Supports dynamic weight updates based on backtest/live performance metrics.
 """
 
 import logging
-from typing import Dict, List, Optional, Any, Callable
-from decimal import Decimal
 from dataclasses import dataclass
 from enum import Enum
-import pandas as pd
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 
-from core.contracts import TradingSignal, SignalType, SignalStrength
+from core.contracts import SignalStrength, SignalType, TradingSignal
 from utils.config_loader import get_config
 from utils.logger import get_trade_logger
 
@@ -27,6 +26,7 @@ trade_logger = get_trade_logger()
 
 class VotingMode(Enum):
     """Voting mechanisms for ensemble decisions."""
+
     MAJORITY_VOTE = "majority_vote"
     WEIGHTED_VOTE = "weighted_vote"
     CONFIDENCE_AVERAGE = "confidence_average"
@@ -34,6 +34,7 @@ class VotingMode(Enum):
 
 class EnsembleDecision(Enum):
     """Possible ensemble decisions."""
+
     BUY = "buy"
     SELL = "sell"
     HOLD = "hold"
@@ -43,6 +44,7 @@ class EnsembleDecision(Enum):
 @dataclass
 class StrategySignal:
     """Represents a signal from a single strategy."""
+
     strategy_id: str
     signal: Optional[TradingSignal]
     confidence: float = 0.5
@@ -53,6 +55,7 @@ class StrategySignal:
 @dataclass
 class EnsembleResult:
     """Result of ensemble decision-making."""
+
     decision: EnsembleDecision
     final_signal: Optional[TradingSignal]
     contributing_strategies: List[str]
@@ -78,10 +81,9 @@ class EnsembleManager:
         self.enabled = self.config.get("enabled", False)
         self.voting_mode = VotingMode(self.config.get("mode", "weighted_vote"))
         self.dynamic_weights = self.config.get("dynamic_weights", True)
-        self.thresholds = self.config.get("thresholds", {
-            "confidence": 0.6,
-            "vote_ratio": 0.66
-        })
+        self.thresholds = self.config.get(
+            "thresholds", {"confidence": 0.6, "vote_ratio": 0.66}
+        )
 
         # Strategy registry
         self.strategies: Dict[str, Any] = {}
@@ -95,8 +97,10 @@ class EnsembleManager:
         # Initialize from config
         self._load_from_config()
 
-        logger.info(f"EnsembleManager initialized: mode={self.voting_mode.value}, "
-                   f"dynamic_weights={self.dynamic_weights}, enabled={self.enabled}")
+        logger.info(
+            f"EnsembleManager initialized: mode={self.voting_mode.value}, "
+            f"dynamic_weights={self.dynamic_weights}, enabled={self.enabled}"
+        )
 
     def _load_from_config(self) -> None:
         """Load strategy configurations from config."""
@@ -112,7 +116,7 @@ class EnsembleManager:
                     "win_rate": 0.5,
                     "expectancy": 0.0,
                     "profit_factor": 1.0,
-                    "total_trades": 0
+                    "total_trades": 0,
                 }
 
     def register_strategy(self, strategy_id: str, strategy_object: Any) -> None:
@@ -136,12 +140,14 @@ class EnsembleManager:
                 "win_rate": 0.5,
                 "expectancy": 0.0,
                 "profit_factor": 1.0,
-                "total_trades": 0
+                "total_trades": 0,
             }
 
         logger.info(f"Strategy registered: {strategy_id}")
 
-    def get_ensemble_signal(self, market_data: Dict[str, Any]) -> Optional[TradingSignal]:
+    def get_ensemble_signal(
+        self, market_data: Dict[str, Any]
+    ) -> Optional[TradingSignal]:
         """
         Generate ensemble signal from all registered strategies.
 
@@ -171,7 +177,7 @@ class EnsembleManager:
                         signal=signal,
                         confidence=confidence,
                         weight=weight,
-                        metadata=getattr(signal, 'metadata', {})
+                        metadata=getattr(signal, "metadata", {}),
                     )
                     strategy_signals.append(strategy_signal)
             except Exception as e:
@@ -189,7 +195,9 @@ class EnsembleManager:
 
         return result.final_signal
 
-    def _extract_confidence(self, signal: TradingSignal, market_data: Dict[str, Any]) -> float:
+    def _extract_confidence(
+        self, signal: TradingSignal, market_data: Dict[str, Any]
+    ) -> float:
         """
         Extract confidence score from signal metadata or market data.
 
@@ -201,14 +209,14 @@ class EnsembleManager:
             Confidence score between 0 and 1
         """
         # Check market data for ML predictions first (higher priority)
-        if 'ml_prediction' in market_data:
-            pred = market_data['ml_prediction']
-            if isinstance(pred, dict) and 'confidence' in pred:
-                return float(pred['confidence'])
+        if "ml_prediction" in market_data:
+            pred = market_data["ml_prediction"]
+            if isinstance(pred, dict) and "confidence" in pred:
+                return float(pred["confidence"])
 
         # Check signal metadata for confidence
-        if hasattr(signal, 'metadata') and signal.metadata:
-            confidence = signal.metadata.get('confidence', 0.5)
+        if hasattr(signal, "metadata") and signal.metadata:
+            confidence = signal.metadata.get("confidence", 0.5)
             if isinstance(confidence, (int, float)):
                 return float(confidence)
 
@@ -217,11 +225,13 @@ class EnsembleManager:
             SignalStrength.WEAK: 0.3,
             SignalStrength.MODERATE: 0.6,
             SignalStrength.STRONG: 0.9,
-            SignalStrength.EXTREME: 1.0
+            SignalStrength.EXTREME: 1.0,
         }
         return strength_confidence.get(signal.signal_strength, 0.5)
 
-    def _make_ensemble_decision(self, strategy_signals: List[StrategySignal]) -> EnsembleResult:
+    def _make_ensemble_decision(
+        self, strategy_signals: List[StrategySignal]
+    ) -> EnsembleResult:
         """
         Make ensemble decision based on voting mode.
 
@@ -247,7 +257,7 @@ class EnsembleManager:
                 total_weight=0.0,
                 confidence_score=0.0,
                 voting_mode=self.voting_mode,
-                strategy_weights={}
+                strategy_weights={},
             )
 
     def _majority_vote(self, strategy_signals: List[StrategySignal]) -> EnsembleResult:
@@ -261,7 +271,7 @@ class EnsembleManager:
                 total_weight=0.0,
                 confidence_score=0.0,
                 voting_mode=VotingMode.MAJORITY_VOTE,
-                strategy_weights={}
+                strategy_weights={},
             )
 
         # Vectorized signal type extraction and weight calculation
@@ -275,7 +285,7 @@ class EnsembleManager:
                 total_weight=0.0,
                 confidence_score=0.0,
                 voting_mode=VotingMode.MAJORITY_VOTE,
-                strategy_weights={}
+                strategy_weights={},
             )
 
         # Extract signal types and weights using vectorized operations
@@ -296,7 +306,7 @@ class EnsembleManager:
         vote_counts = {
             "buy": np.sum(buy_mask),
             "sell": np.sum(sell_mask),
-            "hold": np.sum(hold_mask)
+            "hold": np.sum(hold_mask),
         }
 
         # Check majority threshold
@@ -306,10 +316,14 @@ class EnsembleManager:
         if max_votes >= threshold:
             if buy_votes == max_votes:
                 decision = EnsembleDecision.BUY
-                final_signal = self._create_ensemble_signal(strategy_signals, SignalType.ENTRY_LONG)
+                final_signal = self._create_ensemble_signal(
+                    strategy_signals, SignalType.ENTRY_LONG
+                )
             elif sell_votes == max_votes:
                 decision = EnsembleDecision.SELL
-                final_signal = self._create_ensemble_signal(strategy_signals, SignalType.ENTRY_SHORT)
+                final_signal = self._create_ensemble_signal(
+                    strategy_signals, SignalType.ENTRY_SHORT
+                )
             else:
                 decision = EnsembleDecision.HOLD
                 final_signal = None
@@ -327,7 +341,7 @@ class EnsembleManager:
             total_weight=total_weight,
             confidence_score=confidence_score,
             voting_mode=VotingMode.MAJORITY_VOTE,
-            strategy_weights={s.strategy_id: s.weight for s in strategy_signals}
+            strategy_weights={s.strategy_id: s.weight for s in strategy_signals},
         )
 
     def _weighted_vote(self, strategy_signals: List[StrategySignal]) -> EnsembleResult:
@@ -341,7 +355,7 @@ class EnsembleManager:
                 total_weight=0.0,
                 confidence_score=0.0,
                 voting_mode=VotingMode.WEIGHTED_VOTE,
-                strategy_weights={}
+                strategy_weights={},
             )
 
         # Vectorized signal type extraction and weight calculation
@@ -355,7 +369,7 @@ class EnsembleManager:
                 total_weight=0.0,
                 confidence_score=0.0,
                 voting_mode=VotingMode.WEIGHTED_VOTE,
-                strategy_weights={}
+                strategy_weights={},
             )
 
         # Extract signal types and weights using vectorized operations
@@ -376,7 +390,7 @@ class EnsembleManager:
         vote_counts = {
             "buy": np.sum(buy_mask),
             "sell": np.sum(sell_mask),
-            "hold": np.sum(hold_mask)
+            "hold": np.sum(hold_mask),
         }
 
         # Find winning direction
@@ -387,10 +401,14 @@ class EnsembleManager:
         if max_weight > total_weight * self.thresholds["vote_ratio"]:
             if max_direction == "buy":
                 decision = EnsembleDecision.BUY
-                final_signal = self._create_ensemble_signal(strategy_signals, SignalType.ENTRY_LONG)
+                final_signal = self._create_ensemble_signal(
+                    strategy_signals, SignalType.ENTRY_LONG
+                )
             elif max_direction == "sell":
                 decision = EnsembleDecision.SELL
-                final_signal = self._create_ensemble_signal(strategy_signals, SignalType.ENTRY_SHORT)
+                final_signal = self._create_ensemble_signal(
+                    strategy_signals, SignalType.ENTRY_SHORT
+                )
             else:
                 decision = EnsembleDecision.HOLD
                 final_signal = None
@@ -408,10 +426,12 @@ class EnsembleManager:
             total_weight=total_weight,
             confidence_score=confidence_score,
             voting_mode=VotingMode.WEIGHTED_VOTE,
-            strategy_weights={s.strategy_id: s.weight for s in strategy_signals}
+            strategy_weights={s.strategy_id: s.weight for s in strategy_signals},
         )
 
-    def _confidence_average(self, strategy_signals: List[StrategySignal]) -> EnsembleResult:
+    def _confidence_average(
+        self, strategy_signals: List[StrategySignal]
+    ) -> EnsembleResult:
         """Implement confidence averaging mechanism using vectorized operations."""
         if not strategy_signals:
             return EnsembleResult(
@@ -422,7 +442,7 @@ class EnsembleManager:
                 total_weight=0.0,
                 confidence_score=0.0,
                 voting_mode=VotingMode.CONFIDENCE_AVERAGE,
-                strategy_weights={}
+                strategy_weights={},
             )
 
         # Vectorized signal type extraction and confidence calculation
@@ -436,7 +456,7 @@ class EnsembleManager:
                 total_weight=0.0,
                 confidence_score=0.0,
                 voting_mode=VotingMode.CONFIDENCE_AVERAGE,
-                strategy_weights={}
+                strategy_weights={},
             )
 
         # Extract signal types, confidences, and weights using vectorized operations
@@ -459,7 +479,7 @@ class EnsembleManager:
         vote_counts = {
             "buy": np.sum(buy_mask),
             "sell": np.sum(sell_mask),
-            "hold": np.sum(hold_mask)
+            "hold": np.sum(hold_mask),
         }
 
         # Check if we have any entry signals (buy or sell)
@@ -475,7 +495,7 @@ class EnsembleManager:
                 total_weight=total_weight,
                 confidence_score=0.0,
                 voting_mode=VotingMode.CONFIDENCE_AVERAGE,
-                strategy_weights={s.strategy_id: s.weight for s in strategy_signals}
+                strategy_weights={s.strategy_id: s.weight for s in strategy_signals},
             )
 
         # Find direction with highest average confidence
@@ -486,10 +506,14 @@ class EnsembleManager:
         if max_confidence >= self.thresholds["confidence"]:
             if max_direction == "buy":
                 decision = EnsembleDecision.BUY
-                final_signal = self._create_ensemble_signal(strategy_signals, SignalType.ENTRY_LONG)
+                final_signal = self._create_ensemble_signal(
+                    strategy_signals, SignalType.ENTRY_LONG
+                )
             elif max_direction == "sell":
                 decision = EnsembleDecision.SELL
-                final_signal = self._create_ensemble_signal(strategy_signals, SignalType.ENTRY_SHORT)
+                final_signal = self._create_ensemble_signal(
+                    strategy_signals, SignalType.ENTRY_SHORT
+                )
             else:
                 decision = EnsembleDecision.HOLD
                 final_signal = None
@@ -505,11 +529,12 @@ class EnsembleManager:
             total_weight=total_weight,
             confidence_score=max_confidence,
             voting_mode=VotingMode.CONFIDENCE_AVERAGE,
-            strategy_weights={s.strategy_id: s.weight for s in strategy_signals}
+            strategy_weights={s.strategy_id: s.weight for s in strategy_signals},
         )
 
-    def _create_ensemble_signal(self, strategy_signals: List[StrategySignal],
-                               signal_type: SignalType) -> TradingSignal:
+    def _create_ensemble_signal(
+        self, strategy_signals: List[StrategySignal], signal_type: SignalType
+    ) -> TradingSignal:
         """
         Create ensemble signal by combining relevant strategy signals.
 
@@ -522,7 +547,8 @@ class EnsembleManager:
         """
         # Filter signals matching the desired type
         relevant_signals = [
-            s for s in strategy_signals
+            s
+            for s in strategy_signals
             if s.signal and s.signal.signal_type == signal_type
         ]
 
@@ -530,8 +556,9 @@ class EnsembleManager:
             return None
 
         # Use the signal with highest confidence/weight as base
-        base_signal = max(relevant_signals,
-                         key=lambda s: s.confidence * s.weight).signal
+        base_signal = max(
+            relevant_signals, key=lambda s: s.confidence * s.weight
+        ).signal
 
         # Create ensemble metadata
         ensemble_metadata = {
@@ -539,7 +566,7 @@ class EnsembleManager:
             "contributing_strategies": [s.strategy_id for s in relevant_signals],
             "strategy_weights": {s.strategy_id: s.weight for s in relevant_signals},
             "average_confidence": np.mean([s.confidence for s in relevant_signals]),
-            "voting_mode": self.voting_mode.value
+            "voting_mode": self.voting_mode.value,
         }
 
         # Merge metadata
@@ -560,7 +587,7 @@ class EnsembleManager:
             take_profit=base_signal.take_profit,
             trailing_stop=base_signal.trailing_stop,
             timestamp=base_signal.timestamp,
-            metadata=combined_metadata
+            metadata=combined_metadata,
         )
 
         return ensemble_signal
@@ -581,13 +608,32 @@ class EnsembleManager:
         strategy_ids = list(self.strategy_weights.keys())
 
         # Extract metrics arrays for vectorized computation
-        sharpe_ratios = np.array([self.performance_metrics.get(sid, {}).get("sharpe_ratio", 0.0) for sid in strategy_ids])
-        win_rates = np.array([self.performance_metrics.get(sid, {}).get("win_rate", 0.5) for sid in strategy_ids])
-        profit_factors = np.array([self.performance_metrics.get(sid, {}).get("profit_factor", 1.0) for sid in strategy_ids])
+        sharpe_ratios = np.array(
+            [
+                self.performance_metrics.get(sid, {}).get("sharpe_ratio", 0.0)
+                for sid in strategy_ids
+            ]
+        )
+        win_rates = np.array(
+            [
+                self.performance_metrics.get(sid, {}).get("win_rate", 0.5)
+                for sid in strategy_ids
+            ]
+        )
+        profit_factors = np.array(
+            [
+                self.performance_metrics.get(sid, {}).get("profit_factor", 1.0)
+                for sid in strategy_ids
+            ]
+        )
 
         # Vectorized weight calculations
         normalized_sharpes = np.maximum(0, (sharpe_ratios + 3) / 6)
-        weights = (normalized_sharpes * 0.4 + win_rates * 0.4 + np.minimum(profit_factors / 2, 1.0) * 0.2)
+        weights = (
+            normalized_sharpes * 0.4
+            + win_rates * 0.4
+            + np.minimum(profit_factors / 2, 1.0) * 0.2
+        )
         final_weights = np.maximum(weights, 0.1)
 
         # Update weights dictionary
@@ -615,7 +661,9 @@ class EnsembleManager:
         normalized_sharpe = max(0, (sharpe + 3) / 6)
 
         # Combine factors
-        weight = (normalized_sharpe * 0.4 + win_rate * 0.4 + min(profit_factor / 2, 1.0) * 0.2)
+        weight = (
+            normalized_sharpe * 0.4 + win_rate * 0.4 + min(profit_factor / 2, 1.0) * 0.2
+        )
 
         # Ensure minimum weight
         return max(weight, 0.1)
@@ -623,16 +671,21 @@ class EnsembleManager:
     def _log_ensemble_decision(self, result: EnsembleResult) -> None:
         """Log ensemble decision details."""
         if result.final_signal:
-            trade_logger.trade("Ensemble Decision", {
-                "decision": result.decision.value,
-                "contributing_strategies": result.contributing_strategies,
-                "vote_counts": result.vote_counts,
-                "total_weight": result.total_weight,
-                "confidence_score": result.confidence_score,
-                "voting_mode": result.voting_mode.value,
-                "strategy_weights": result.strategy_weights,
-                "symbol": result.final_signal.symbol if result.final_signal else None
-            })
+            trade_logger.trade(
+                "Ensemble Decision",
+                {
+                    "decision": result.decision.value,
+                    "contributing_strategies": result.contributing_strategies,
+                    "vote_counts": result.vote_counts,
+                    "total_weight": result.total_weight,
+                    "confidence_score": result.confidence_score,
+                    "voting_mode": result.voting_mode.value,
+                    "strategy_weights": result.strategy_weights,
+                    "symbol": result.final_signal.symbol
+                    if result.final_signal
+                    else None,
+                },
+            )
 
     def get_strategy_performance(self) -> Dict[str, Dict[str, float]]:
         """Get current performance metrics for all strategies."""

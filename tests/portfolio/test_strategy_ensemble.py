@@ -4,22 +4,20 @@ Test suite for the Strategy Ensemble Manager.
 Tests cover strategy management, signal routing, allocation updates, and ensemble coordination.
 """
 
-import asyncio
-import pytest
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, patch
-from typing import Dict, Any, List
+from typing import Any, Dict
 
+import pytest
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
 from portfolio.strategy_ensemble import (
-    StrategyEnsembleManager,
-    StrategyAllocation,
     EnsemblePerformance,
     EnsembleSignal,
-    create_ensemble_manager
+    StrategyAllocation,
+    StrategyEnsembleManager,
+    create_ensemble_manager,
 )
-from core.contracts import TradingSignal, SignalType, SignalStrength
-from core.signal_router.events import EventType
 
 
 class MockStrategy:
@@ -40,7 +38,7 @@ class MockStrategy:
             quantity=1.0,
             side="buy",
             price=50000.0,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
         self.signals_generated.append(signal)
         return signal
@@ -50,15 +48,19 @@ class TestStrategyEnsembleManager:
     """Test the main strategy ensemble manager."""
 
     @pytest.fixture
-    def ensemble_manager(self, ensemble_config: Dict[str, Any]) -> StrategyEnsembleManager:
+    def ensemble_manager(
+        self, ensemble_config: Dict[str, Any]
+    ) -> StrategyEnsembleManager:
         """Create ensemble manager for testing."""
         return StrategyEnsembleManager(ensemble_config)
 
-    def test_initialization(self, ensemble_manager: StrategyEnsembleManager, ensemble_config: Dict[str, Any]):
+    def test_initialization(
+        self, ensemble_manager: StrategyEnsembleManager, ensemble_config: Dict[str, Any]
+    ):
         """Test ensemble manager initialization."""
-        assert ensemble_manager.total_capital == Decimal('10000.0')
+        assert ensemble_manager.total_capital == Decimal("10000.0")
         assert ensemble_manager.rebalance_interval_sec == 60
-        assert ensemble_manager.allocation_method == 'equal_weighted'
+        assert ensemble_manager.allocation_method == "equal_weighted"
         assert ensemble_manager.min_weight == 0.1
         assert ensemble_manager.max_weight == 0.5
         assert len(ensemble_manager.strategies) == 0
@@ -75,16 +77,22 @@ class TestStrategyEnsembleManager:
         assert "test_strategy" in ensemble_manager.strategies
         assert "test_strategy" in ensemble_manager.allocations
         assert ensemble_manager.allocations["test_strategy"].weight == 0.5
-        assert ensemble_manager.allocations["test_strategy"].capital_allocated == Decimal('5000.0')
+        assert ensemble_manager.allocations[
+            "test_strategy"
+        ].capital_allocated == Decimal("5000.0")
 
     @pytest.mark.asyncio
-    async def test_add_duplicate_strategy(self, ensemble_manager: StrategyEnsembleManager):
+    async def test_add_duplicate_strategy(
+        self, ensemble_manager: StrategyEnsembleManager
+    ):
         """Test adding a duplicate strategy."""
         strategy1 = MockStrategy("test_strategy")
         strategy2 = MockStrategy("test_strategy")
 
         await ensemble_manager.add_strategy("test_strategy", strategy1)
-        await ensemble_manager.add_strategy("test_strategy", strategy2)  # Should not add
+        await ensemble_manager.add_strategy(
+            "test_strategy", strategy2
+        )  # Should not add
 
         assert len(ensemble_manager.strategies) == 1
         assert ensemble_manager.strategies["test_strategy"] is strategy1
@@ -101,7 +109,9 @@ class TestStrategyEnsembleManager:
         assert "test_strategy" not in ensemble_manager.allocations
 
     @pytest.mark.asyncio
-    async def test_remove_nonexistent_strategy(self, ensemble_manager: StrategyEnsembleManager):
+    async def test_remove_nonexistent_strategy(
+        self, ensemble_manager: StrategyEnsembleManager
+    ):
         """Test removing a strategy that doesn't exist."""
         # Should not raise an exception
         await ensemble_manager.remove_strategy("nonexistent")
@@ -109,7 +119,9 @@ class TestStrategyEnsembleManager:
         assert len(ensemble_manager.strategies) == 0
 
     @pytest.mark.asyncio
-    async def test_route_signal_success(self, ensemble_manager: StrategyEnsembleManager):
+    async def test_route_signal_success(
+        self, ensemble_manager: StrategyEnsembleManager
+    ):
         """Test successful signal routing."""
         strategy = MockStrategy("test_strategy")
         await ensemble_manager.add_strategy("test_strategy", strategy)
@@ -123,7 +135,7 @@ class TestStrategyEnsembleManager:
             quantity=0.01,  # Reduced quantity to stay within risk limits
             side="buy",
             price=50000.0,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         ensemble_signal = await ensemble_manager.route_signal(signal, "test_strategy")
@@ -131,11 +143,15 @@ class TestStrategyEnsembleManager:
         assert ensemble_signal is not None
         assert ensemble_signal.original_signal == signal
         assert ensemble_signal.strategy_id == "test_strategy"
-        assert ensemble_signal.allocated_weight == 1.0  # Single strategy gets full weight
-        assert ensemble_signal.allocated_quantity == Decimal('0.01')  # 0.01 * 1.0
+        assert (
+            ensemble_signal.allocated_weight == 1.0
+        )  # Single strategy gets full weight
+        assert ensemble_signal.allocated_quantity == Decimal("0.01")  # 0.01 * 1.0
 
     @pytest.mark.asyncio
-    async def test_route_signal_unknown_strategy(self, ensemble_manager: StrategyEnsembleManager):
+    async def test_route_signal_unknown_strategy(
+        self, ensemble_manager: StrategyEnsembleManager
+    ):
         """Test routing signal from unknown strategy."""
         signal = TradingSignal(
             strategy_id="unknown",
@@ -146,7 +162,7 @@ class TestStrategyEnsembleManager:
             quantity=1.0,
             side="buy",
             price=50000.0,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         ensemble_signal = await ensemble_manager.route_signal(signal, "unknown")
@@ -154,7 +170,9 @@ class TestStrategyEnsembleManager:
         assert ensemble_signal is None
 
     @pytest.mark.asyncio
-    async def test_route_signal_risk_limit_exceeded(self, ensemble_manager: StrategyEnsembleManager):
+    async def test_route_signal_risk_limit_exceeded(
+        self, ensemble_manager: StrategyEnsembleManager
+    ):
         """Test signal rejection due to risk limits."""
         strategy = MockStrategy("test_strategy")
         await ensemble_manager.add_strategy("test_strategy", strategy)
@@ -169,7 +187,7 @@ class TestStrategyEnsembleManager:
             quantity=1000.0,  # Very large quantity
             side="buy",
             price=50000.0,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         ensemble_signal = await ensemble_manager.route_signal(signal, "test_strategy")
@@ -184,16 +202,18 @@ class TestStrategyEnsembleManager:
         await ensemble_manager.add_strategy("test_strategy", strategy)
 
         performance_data = {
-            'daily_return': 0.02,
-            'pnl': 200.0,
-            'trades': 5,
-            'timestamp': datetime.now()
+            "daily_return": 0.02,
+            "pnl": 200.0,
+            "trades": 5,
+            "timestamp": datetime.now(),
         }
 
         await ensemble_manager.update_performance("test_strategy", performance_data)
 
         assert len(ensemble_manager.performance_history["test_strategy"]) == 1
-        assert ensemble_manager.performance_history["test_strategy"][0] == performance_data
+        assert (
+            ensemble_manager.performance_history["test_strategy"][0] == performance_data
+        )
 
     def test_get_strategy_allocations(self, ensemble_manager: StrategyEnsembleManager):
         """Test getting strategy allocations."""
@@ -207,25 +227,31 @@ class TestStrategyEnsembleManager:
         status = ensemble_manager.get_ensemble_status()
 
         required_keys = [
-            'total_capital', 'active_strategies', 'total_allocations',
-            'portfolio_exposure', 'allocation_method', 'running'
+            "total_capital",
+            "active_strategies",
+            "total_allocations",
+            "portfolio_exposure",
+            "allocation_method",
+            "running",
         ]
 
         for key in required_keys:
             assert key in status
 
-        assert status['total_capital'] == 10000.0
-        assert status['active_strategies'] == 0
-        assert not status['running']
+        assert status["total_capital"] == 10000.0
+        assert status["active_strategies"] == 0
+        assert not status["running"]
 
     @pytest.mark.asyncio
-    async def test_get_portfolio_performance(self, ensemble_manager: StrategyEnsembleManager):
+    async def test_get_portfolio_performance(
+        self, ensemble_manager: StrategyEnsembleManager
+    ):
         """Test getting portfolio performance."""
         performance = await ensemble_manager.get_portfolio_performance()
 
         assert isinstance(performance, EnsemblePerformance)
-        assert performance.total_capital == Decimal('10000.0')
-        assert performance.total_pnl == Decimal('0')
+        assert performance.total_capital == Decimal("10000.0")
+        assert performance.total_pnl == Decimal("0")
 
     @pytest.mark.asyncio
     async def test_start_stop_ensemble(self, ensemble_manager: StrategyEnsembleManager):
@@ -239,7 +265,9 @@ class TestStrategyEnsembleManager:
         assert not ensemble_manager._running
 
     @pytest.mark.asyncio
-    async def test_multiple_strategies_equal_weight(self, ensemble_manager: StrategyEnsembleManager):
+    async def test_multiple_strategies_equal_weight(
+        self, ensemble_manager: StrategyEnsembleManager
+    ):
         """Test multiple strategies with equal weight allocation."""
         strategy1 = MockStrategy("strategy1")
         strategy2 = MockStrategy("strategy2")
@@ -256,10 +284,15 @@ class TestStrategyEnsembleManager:
         """Test weight constraints application."""
         # Add a strategy with weight below minimum
         strategy = MockStrategy("test_strategy")
-        await ensemble_manager.add_strategy("test_strategy", strategy, 0.01)  # Below min_weight
+        await ensemble_manager.add_strategy(
+            "test_strategy", strategy, 0.01
+        )  # Below min_weight
 
         # Should be adjusted to minimum
-        assert ensemble_manager.allocations["test_strategy"].weight >= ensemble_manager.min_weight
+        assert (
+            ensemble_manager.allocations["test_strategy"].weight
+            >= ensemble_manager.min_weight
+        )
 
 
 class TestEnsembleSignal:
@@ -276,26 +309,26 @@ class TestEnsembleSignal:
             quantity=1.0,
             side="buy",
             price=50000.0,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         ensemble_signal = EnsembleSignal(
             original_signal=original_signal,
             strategy_id="test_strategy",
             allocated_weight=0.5,
-            allocated_quantity=Decimal('0.5'),
+            allocated_quantity=Decimal("0.5"),
             ensemble_context={
                 "allocation_weight": 0.5,
                 "capital_allocated": 5000.0,
                 "portfolio_exposure": 25000.0,
-                "strategy_performance": 0.8
-            }
+                "strategy_performance": 0.8,
+            },
         )
 
         assert ensemble_signal.original_signal == original_signal
         assert ensemble_signal.strategy_id == "test_strategy"
         assert ensemble_signal.allocated_weight == 0.5
-        assert ensemble_signal.allocated_quantity == Decimal('0.5')
+        assert ensemble_signal.allocated_quantity == Decimal("0.5")
         assert ensemble_signal.ensemble_context["allocation_weight"] == 0.5
 
 
@@ -307,13 +340,13 @@ class TestStrategyAllocation:
         allocation = StrategyAllocation(
             strategy_id="test_strategy",
             weight=0.3,
-            capital_allocated=Decimal('3000.0'),
-            performance_score=0.8
+            capital_allocated=Decimal("3000.0"),
+            performance_score=0.8,
         )
 
         assert allocation.strategy_id == "test_strategy"
         assert allocation.weight == 0.3
-        assert allocation.capital_allocated == Decimal('3000.0')
+        assert allocation.capital_allocated == Decimal("3000.0")
         assert allocation.performance_score == 0.8
         assert isinstance(allocation.last_updated, datetime)
 
@@ -324,15 +357,15 @@ class TestEnsemblePerformance:
     def test_ensemble_performance_creation(self):
         """Test creating ensemble performance metrics."""
         performance = EnsemblePerformance(
-            total_capital=Decimal('10000.0'),
-            total_pnl=Decimal('500.0'),
+            total_capital=Decimal("10000.0"),
+            total_pnl=Decimal("500.0"),
             total_trades=25,
             win_rate=0.6,
-            sharpe_ratio=1.5
+            sharpe_ratio=1.5,
         )
 
-        assert performance.total_capital == Decimal('10000.0')
-        assert performance.total_pnl == Decimal('500.0')
+        assert performance.total_capital == Decimal("10000.0")
+        assert performance.total_pnl == Decimal("500.0")
         assert performance.total_trades == 25
         assert performance.win_rate == 0.6
         assert performance.sharpe_ratio == 1.5
@@ -346,7 +379,7 @@ class TestGlobalFunctions:
         manager = create_ensemble_manager(ensemble_config)
 
         assert isinstance(manager, StrategyEnsembleManager)
-        assert manager.total_capital == Decimal('10000.0')
+        assert manager.total_capital == Decimal("10000.0")
 
 
 class TestIntegrationScenarios:
@@ -357,7 +390,7 @@ class TestIntegrationScenarios:
         """Test complete ensemble workflow."""
         # Adjust config to allow higher weights for this test
         ensemble_config = ensemble_config.copy()
-        ensemble_config['max_weight'] = 0.7  # Allow up to 70% weight
+        ensemble_config["max_weight"] = 0.7  # Allow up to 70% weight
         manager = StrategyEnsembleManager(ensemble_config)
 
         # Add strategies
@@ -380,7 +413,7 @@ class TestIntegrationScenarios:
             quantity=0.01,  # Reduced quantity to stay within risk limits
             side="buy",
             price=50000.0,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         ensemble_signal = await manager.route_signal(signal1, "rsi_strategy")
@@ -388,16 +421,19 @@ class TestIntegrationScenarios:
         assert ensemble_signal.allocated_weight == 0.6
 
         # Update performance
-        await manager.update_performance("rsi_strategy", {
-            'daily_return': 0.02,
-            'pnl': 100.0,
-            'trades': 2,
-            'timestamp': datetime.now()
-        })
+        await manager.update_performance(
+            "rsi_strategy",
+            {
+                "daily_return": 0.02,
+                "pnl": 100.0,
+                "trades": 2,
+                "timestamp": datetime.now(),
+            },
+        )
 
         # Get portfolio performance
         performance = await manager.get_portfolio_performance()
-        assert performance.total_pnl == Decimal('100.0')
+        assert performance.total_pnl == Decimal("100.0")
 
         # Stop ensemble
         await manager.stop()
@@ -406,8 +442,8 @@ class TestIntegrationScenarios:
     async def test_rebalancing_workflow(self, ensemble_config: Dict[str, Any]):
         """Test rebalancing workflow."""
         # Use sharpe-weighted allocation for rebalancing test
-        ensemble_config['allocation_method'] = 'sharpe_weighted'
-        ensemble_config['rebalance_interval_sec'] = 1  # Very fast for testing
+        ensemble_config["allocation_method"] = "sharpe_weighted"
+        ensemble_config["rebalance_interval_sec"] = 1  # Very fast for testing
 
         manager = StrategyEnsembleManager(ensemble_config)
 
@@ -419,19 +455,25 @@ class TestIntegrationScenarios:
         await manager.add_strategy("poor_strategy", strategy2)
 
         # Add performance data to trigger rebalancing
-        await manager.update_performance("good_strategy", {
-            'daily_return': 0.05,  # Good performance
-            'pnl': 500.0,
-            'trades': 10,
-            'timestamp': datetime.now()
-        })
+        await manager.update_performance(
+            "good_strategy",
+            {
+                "daily_return": 0.05,  # Good performance
+                "pnl": 500.0,
+                "trades": 10,
+                "timestamp": datetime.now(),
+            },
+        )
 
-        await manager.update_performance("poor_strategy", {
-            'daily_return': -0.02,  # Poor performance
-            'pnl': -200.0,
-            'trades': 10,
-            'timestamp': datetime.now()
-        })
+        await manager.update_performance(
+            "poor_strategy",
+            {
+                "daily_return": -0.02,  # Poor performance
+                "pnl": -200.0,
+                "trades": 10,
+                "timestamp": datetime.now(),
+            },
+        )
 
         # Initial weights should be equal
         assert abs(manager.allocations["good_strategy"].weight - 0.5) < 0.01
@@ -442,7 +484,10 @@ class TestIntegrationScenarios:
         await manager._rebalance_allocations()
 
         # Good strategy should get more weight after rebalancing
-        assert manager.allocations["good_strategy"].weight > manager.allocations["poor_strategy"].weight
+        assert (
+            manager.allocations["good_strategy"].weight
+            > manager.allocations["poor_strategy"].weight
+        )
 
 
 if __name__ == "__main__":

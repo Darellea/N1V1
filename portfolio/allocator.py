@@ -9,13 +9,13 @@ This module provides different strategies for allocating capital across assets:
 - Momentum Weighted: Higher allocation to stronger performing assets
 """
 
-from typing import Dict, List, Any, Optional
 import logging
 from abc import ABC, abstractmethod
-
-import pandas as pd
-import numpy as np
 from decimal import Decimal
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+import pandas as pd
 
 
 class CapitalAllocator(ABC):
@@ -34,8 +34,12 @@ class CapitalAllocator(ABC):
         self.logger = logging.getLogger(f"{self.__class__.__name__}")
 
     @abstractmethod
-    def allocate(self, assets: List[str], market_data: Optional[pd.DataFrame] = None,
-                current_prices: Optional[Dict[str, Decimal]] = None) -> Dict[str, float]:
+    def allocate(
+        self,
+        assets: List[str],
+        market_data: Optional[pd.DataFrame] = None,
+        current_prices: Optional[Dict[str, Decimal]] = None,
+    ) -> Dict[str, float]:
         """
         Allocate capital across assets.
 
@@ -66,13 +70,17 @@ class CapitalAllocator(ABC):
 
         # Check if allocations sum to approximately 1.0 (within tolerance)
         if not (0.99 <= total_allocation <= 1.01):
-            self.logger.warning(f"Allocations sum to {total_allocation}, should sum to 1.0")
+            self.logger.warning(
+                f"Allocations sum to {total_allocation}, should sum to 1.0"
+            )
             return False
 
         # Check individual allocations are within valid range
         for symbol, allocation in allocations.items():
             if not (0.0 <= allocation <= 1.0):
-                self.logger.warning(f"Allocation for {symbol} is {allocation}, should be between 0.0 and 1.0")
+                self.logger.warning(
+                    f"Allocation for {symbol} is {allocation}, should be between 0.0 and 1.0"
+                )
                 return False
 
         return True
@@ -91,7 +99,9 @@ class CapitalAllocator(ABC):
         if total == 0:
             return allocations
 
-        normalized = {symbol: allocation / total for symbol, allocation in allocations.items()}
+        normalized = {
+            symbol: allocation / total for symbol, allocation in allocations.items()
+        }
         return normalized
 
 
@@ -104,8 +114,12 @@ class EqualWeightAllocator(CapitalAllocator):
     without considering asset-specific characteristics.
     """
 
-    def allocate(self, assets: List[str], market_data: Optional[pd.DataFrame] = None,
-                current_prices: Optional[Dict[str, Decimal]] = None) -> Dict[str, float]:
+    def allocate(
+        self,
+        assets: List[str],
+        market_data: Optional[pd.DataFrame] = None,
+        current_prices: Optional[Dict[str, Decimal]] = None,
+    ) -> Dict[str, float]:
         """
         Allocate capital equally across all assets.
 
@@ -146,11 +160,17 @@ class RiskParityAllocator(CapitalAllocator):
             config: Configuration dictionary
         """
         super().__init__(config)
-        self.lookback_period = self.config.get('lookback_period', 30)
-        self.risk_measure = self.config.get('risk_measure', 'volatility')  # 'volatility' or 'var'
+        self.lookback_period = self.config.get("lookback_period", 30)
+        self.risk_measure = self.config.get(
+            "risk_measure", "volatility"
+        )  # 'volatility' or 'var'
 
-    def allocate(self, assets: List[str], market_data: Optional[pd.DataFrame] = None,
-                current_prices: Optional[Dict[str, Decimal]] = None) -> Dict[str, float]:
+    def allocate(
+        self,
+        assets: List[str],
+        market_data: Optional[pd.DataFrame] = None,
+        current_prices: Optional[Dict[str, Decimal]] = None,
+    ) -> Dict[str, float]:
         """
         Allocate capital using risk parity approach.
 
@@ -167,7 +187,9 @@ class RiskParityAllocator(CapitalAllocator):
 
         if market_data is None or market_data.empty:
             # Fallback to equal weight if no market data
-            self.logger.warning("No market data available, falling back to equal weight allocation")
+            self.logger.warning(
+                "No market data available, falling back to equal weight allocation"
+            )
             return EqualWeightAllocator().allocate(assets)
 
         # Calculate risk measures for each asset
@@ -178,14 +200,18 @@ class RiskParityAllocator(CapitalAllocator):
                     risk = self._calculate_risk_measure(market_data[asset])
                     risk_measures[asset] = risk
                 except Exception as e:
-                    self.logger.warning(f"Could not calculate risk for {asset}: {str(e)}")
+                    self.logger.warning(
+                        f"Could not calculate risk for {asset}: {str(e)}"
+                    )
                     risk_measures[asset] = 1.0  # Default risk measure
             else:
                 self.logger.warning(f"Asset {asset} not found in market data")
                 risk_measures[asset] = 1.0
 
         # Risk parity allocation: inverse of risk
-        total_inverse_risk = sum(1.0 / risk for risk in risk_measures.values() if risk > 0)
+        total_inverse_risk = sum(
+            1.0 / risk for risk in risk_measures.values() if risk > 0
+        )
 
         if total_inverse_risk == 0:
             # Fallback to equal weight
@@ -219,12 +245,14 @@ class RiskParityAllocator(CapitalAllocator):
         if len(price_series) < self.lookback_period:
             return 1.0  # Default risk measure
 
-        if self.risk_measure == 'volatility':
+        if self.risk_measure == "volatility":
             # Use annualized absolute volatility
             volatility = price_series.std() * np.sqrt(252)  # Assuming daily data
-            return max(volatility, 0.001)  # Minimum volatility to avoid division by zero
+            return max(
+                volatility, 0.001
+            )  # Minimum volatility to avoid division by zero
 
-        elif self.risk_measure == 'var':
+        elif self.risk_measure == "var":
             # Use Value at Risk (95% confidence)
             returns = price_series.pct_change().dropna()
             if len(returns) < 10:
@@ -255,11 +283,17 @@ class MomentumWeightAllocator(CapitalAllocator):
             config: Configuration dictionary
         """
         super().__init__(config)
-        self.lookback_period = self.config.get('lookback_period', 30)
-        self.momentum_type = self.config.get('momentum_type', 'returns')  # 'returns', 'sharpe', 'vol_adjusted'
+        self.lookback_period = self.config.get("lookback_period", 30)
+        self.momentum_type = self.config.get(
+            "momentum_type", "returns"
+        )  # 'returns', 'sharpe', 'vol_adjusted'
 
-    def allocate(self, assets: List[str], market_data: Optional[pd.DataFrame] = None,
-                current_prices: Optional[Dict[str, Decimal]] = None) -> Dict[str, float]:
+    def allocate(
+        self,
+        assets: List[str],
+        market_data: Optional[pd.DataFrame] = None,
+        current_prices: Optional[Dict[str, Decimal]] = None,
+    ) -> Dict[str, float]:
         """
         Allocate capital based on momentum scores.
 
@@ -276,7 +310,9 @@ class MomentumWeightAllocator(CapitalAllocator):
 
         if market_data is None or market_data.empty:
             # Fallback to equal weight if no market data
-            self.logger.warning("No market data available, falling back to equal weight allocation")
+            self.logger.warning(
+                "No market data available, falling back to equal weight allocation"
+            )
             return EqualWeightAllocator().allocate(assets)
 
         # Calculate momentum scores for each asset
@@ -287,7 +323,9 @@ class MomentumWeightAllocator(CapitalAllocator):
                     score = self._calculate_momentum_score(market_data[asset])
                     momentum_scores[asset] = score
                 except Exception as e:
-                    self.logger.warning(f"Could not calculate momentum for {asset}: {str(e)}")
+                    self.logger.warning(
+                        f"Could not calculate momentum for {asset}: {str(e)}"
+                    )
                     momentum_scores[asset] = 0.0
             else:
                 self.logger.warning(f"Asset {asset} not found in market data")
@@ -317,13 +355,13 @@ class MomentumWeightAllocator(CapitalAllocator):
             return 0.0
 
         try:
-            if self.momentum_type == 'returns':
+            if self.momentum_type == "returns":
                 # Simple return over lookback period
                 start_price = price_series.iloc[-self.lookback_period]
                 end_price = price_series.iloc[-1]
                 return (end_price - start_price) / start_price
 
-            elif self.momentum_type == 'sharpe':
+            elif self.momentum_type == "sharpe":
                 # Risk-adjusted return (simplified Sharpe)
                 returns = price_series.pct_change().dropna()
                 if len(returns) < 10:
@@ -337,13 +375,15 @@ class MomentumWeightAllocator(CapitalAllocator):
                 else:
                     return avg_return
 
-            elif self.momentum_type == 'vol_adjusted':
+            elif self.momentum_type == "vol_adjusted":
                 # Volatility-adjusted momentum
                 returns = price_series.pct_change().dropna()
                 if len(returns) < 10:
                     return 0.0
 
-                total_return = (price_series.iloc[-1] - price_series.iloc[-self.lookback_period]) / price_series.iloc[-self.lookback_period]
+                total_return = (
+                    price_series.iloc[-1] - price_series.iloc[-self.lookback_period]
+                ) / price_series.iloc[-self.lookback_period]
                 volatility = returns.std()
 
                 if volatility > 0:
@@ -361,7 +401,9 @@ class MomentumWeightAllocator(CapitalAllocator):
             self.logger.debug(f"Error calculating momentum score: {str(e)}")
             return 0.0
 
-    def _momentum_to_allocations(self, momentum_scores: Dict[str, float]) -> Dict[str, float]:
+    def _momentum_to_allocations(
+        self, momentum_scores: Dict[str, float]
+    ) -> Dict[str, float]:
         """
         Convert momentum scores to allocation weights.
 
@@ -382,7 +424,9 @@ class MomentumWeightAllocator(CapitalAllocator):
 
         # Apply softmax
         if len(scores) > 0 and np.sum(scores) > 0:
-            exp_scores = np.exp(scores / np.max(scores))  # Normalize by max to avoid overflow
+            exp_scores = np.exp(
+                scores / np.max(scores)
+            )  # Normalize by max to avoid overflow
             softmax_weights = exp_scores / np.sum(exp_scores)
         else:
             # Equal weights if all scores are zero or invalid
@@ -412,10 +456,14 @@ class MinimumVarianceAllocator(CapitalAllocator):
             config: Configuration dictionary
         """
         super().__init__(config)
-        self.lookback_period = self.config.get('lookback_period', 60)
+        self.lookback_period = self.config.get("lookback_period", 60)
 
-    def allocate(self, assets: List[str], market_data: Optional[pd.DataFrame] = None,
-                current_prices: Optional[Dict[str, Decimal]] = None) -> Dict[str, float]:
+    def allocate(
+        self,
+        assets: List[str],
+        market_data: Optional[pd.DataFrame] = None,
+        current_prices: Optional[Dict[str, Decimal]] = None,
+    ) -> Dict[str, float]:
         """
         Allocate capital using minimum variance optimization.
 
@@ -432,7 +480,9 @@ class MinimumVarianceAllocator(CapitalAllocator):
 
         if market_data is None or market_data.empty or len(assets) < 2:
             # Fallback to equal weight if insufficient data
-            self.logger.warning("Insufficient data for minimum variance optimization, falling back to equal weight")
+            self.logger.warning(
+                "Insufficient data for minimum variance optimization, falling back to equal weight"
+            )
             return EqualWeightAllocator().allocate(assets)
 
         try:
@@ -443,7 +493,9 @@ class MinimumVarianceAllocator(CapitalAllocator):
                 return EqualWeightAllocator().allocate(assets)
 
             # Use only recent data
-            recent_returns = returns_data.tail(min(self.lookback_period, len(returns_data)))
+            recent_returns = returns_data.tail(
+                min(self.lookback_period, len(returns_data))
+            )
 
             # Calculate covariance matrix
             cov_matrix = recent_returns.cov().values
@@ -467,7 +519,9 @@ class MinimumVarianceAllocator(CapitalAllocator):
 
             except np.linalg.LinAlgError:
                 # Fallback to equal weight if matrix is singular
-                self.logger.warning("Covariance matrix is singular, falling back to equal weight")
+                self.logger.warning(
+                    "Covariance matrix is singular, falling back to equal weight"
+                )
                 return EqualWeightAllocator().allocate(assets)
 
         except Exception as e:
@@ -483,7 +537,9 @@ class MinimumVarianceAllocator(CapitalAllocator):
 
 
 # Factory function for creating allocators
-def create_allocator(allocator_type: str, config: Optional[Dict[str, Any]] = None) -> CapitalAllocator:
+def create_allocator(
+    allocator_type: str, config: Optional[Dict[str, Any]] = None
+) -> CapitalAllocator:
     """
     Factory function to create capital allocators.
 
@@ -498,14 +554,16 @@ def create_allocator(allocator_type: str, config: Optional[Dict[str, Any]] = Non
         ValueError: If allocator type is not supported
     """
     allocators = {
-        'equal_weight': EqualWeightAllocator,
-        'risk_parity': RiskParityAllocator,
-        'momentum_weighted': MomentumWeightAllocator,
-        'min_variance': MinimumVarianceAllocator
+        "equal_weight": EqualWeightAllocator,
+        "risk_parity": RiskParityAllocator,
+        "momentum_weighted": MomentumWeightAllocator,
+        "min_variance": MinimumVarianceAllocator,
     }
 
     if allocator_type not in allocators:
         available = list(allocators.keys())
-        raise ValueError(f"Unsupported allocator type: {allocator_type}. Available: {available}")
+        raise ValueError(
+            f"Unsupported allocator type: {allocator_type}. Available: {available}"
+        )
 
     return allocators[allocator_type](config)

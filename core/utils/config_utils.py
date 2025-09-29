@@ -5,25 +5,24 @@ This module provides standardized configuration loading, validation,
 and management patterns used across core components.
 """
 
-import os
-import json
-import yaml
-import logging
-from typing import Any, Callable, Optional, Type, TypeVar
-from dataclasses import dataclass, field
-from pathlib import Path
 import hashlib
+import json
+import os
+from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
+from typing import Any, Callable, Optional, TypeVar
 
 from ..logging_utils import get_structured_logger
 
 logger = get_structured_logger(__name__)
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class ConfigFormat(Enum):
     """Supported configuration file formats."""
+
     JSON = "json"
     YAML = "yaml"
     ENV = "env"
@@ -32,6 +31,7 @@ class ConfigFormat(Enum):
 @dataclass
 class ConfigSource:
     """Configuration source information."""
+
     path: str
     format: ConfigFormat
     priority: int = 0
@@ -43,6 +43,7 @@ class ConfigSource:
 @dataclass
 class ConfigValidationRule:
     """Configuration validation rule."""
+
     field_path: str
     rule_type: str
     value: Any
@@ -59,27 +60,27 @@ class ConfigLoader:
         self.validators: dict[str, list[ConfigValidationRule]] = {}
         self.logger = get_structured_logger("core.config_loader")
 
-    def add_source(self,
-                   path: str,
-                   format: ConfigFormat,
-                   priority: int = 0,
-                   required: bool = False) -> None:
+    def add_source(
+        self, path: str, format: ConfigFormat, priority: int = 0, required: bool = False
+    ) -> None:
         """Add a configuration source."""
         source = ConfigSource(
-            path=path,
-            format=format,
-            priority=priority,
-            required=required
+            path=path, format=format, priority=priority, required=required
         )
         self.sources.append(source)
-        self.sources.sort(key=lambda s: s.priority, reverse=True)  # Higher priority first
+        self.sources.sort(
+            key=lambda s: s.priority, reverse=True
+        )  # Higher priority first
 
-        self.logger.info("Added configuration source", {
-            "path": path,
-            "format": format.value,
-            "priority": priority,
-            "required": required
-        })
+        self.logger.info(
+            "Added configuration source",
+            {
+                "path": path,
+                "format": format.value,
+                "priority": priority,
+                "required": required,
+            },
+        )
 
     def add_validator(self, config_key: str, rules: list[ConfigValidationRule]) -> None:
         """Add validation rules for a configuration section."""
@@ -108,16 +109,16 @@ class ConfigLoader:
 
             except Exception as e:
                 if source.required:
-                    self.logger.error(f"Failed to load required config source: {source.path}", {
-                        "error": str(e),
-                        "source": source.path
-                    })
+                    self.logger.error(
+                        f"Failed to load required config source: {source.path}",
+                        {"error": str(e), "source": source.path},
+                    )
                     raise
                 else:
-                    self.logger.warning(f"Failed to load optional config source: {source.path}", {
-                        "error": str(e),
-                        "source": source.path
-                    })
+                    self.logger.warning(
+                        f"Failed to load optional config source: {source.path}",
+                        {"error": str(e), "source": source.path},
+                    )
 
         # Validate configuration
         self._validate_config(merged_config, key)
@@ -134,11 +135,13 @@ class ConfigLoader:
             current_mtime = stat.st_mtime
 
             # Calculate checksum for change detection
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 current_checksum = hashlib.md5(f.read()).hexdigest()
 
-            if (source.last_modified == current_mtime and
-                source.checksum == current_checksum):
+            if (
+                source.last_modified == current_mtime
+                and source.checksum == current_checksum
+            ):
                 # Return cached version
                 cache_key = str(file_path)
                 if cache_key in self.cache:
@@ -159,7 +162,7 @@ class ConfigLoader:
     def _load_json(self, file_path: Path) -> dict[str, Any]:
         """Load JSON configuration file."""
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             # Cache the loaded data
@@ -171,16 +174,17 @@ class ConfigLoader:
                 raise
             return {}
         except json.JSONDecodeError as e:
-            self.logger.error(f"Invalid JSON in config file: {file_path}", {
-                "error": str(e)
-            })
+            self.logger.error(
+                f"Invalid JSON in config file: {file_path}", {"error": str(e)}
+            )
             raise
 
     def _load_yaml(self, file_path: Path) -> dict[str, Any]:
         """Load YAML configuration file."""
         try:
             import yaml
-            with open(file_path, 'r', encoding='utf-8') as f:
+
+            with open(file_path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)
 
             # Cache the loaded data
@@ -195,9 +199,9 @@ class ConfigLoader:
                 raise
             return {}
         except yaml.YAMLError as e:
-            self.logger.error(f"Invalid YAML in config file: {file_path}", {
-                "error": str(e)
-            })
+            self.logger.error(
+                f"Invalid YAML in config file: {file_path}", {"error": str(e)}
+            )
             raise
 
     def _load_env(self) -> dict[str, Any]:
@@ -206,15 +210,15 @@ class ConfigLoader:
 
         # Load common trading configuration from environment
         env_mappings = {
-            'EXCHANGE_API_KEY': ('exchange', 'api_key'),
-            'EXCHANGE_SECRET': ('exchange', 'secret'),
-            'EXCHANGE_BASE_CURRENCY': ('exchange', 'base_currency'),
-            'TRADING_MODE': ('environment', 'mode'),
-            'LOG_LEVEL': ('logging', 'level'),
-            'LOG_SENSITIVITY': ('logging', 'sensitivity'),
-            'REDIS_HOST': ('cache', 'host'),
-            'REDIS_PORT': ('cache', 'port'),
-            'DATABASE_URL': ('database', 'url')
+            "EXCHANGE_API_KEY": ("exchange", "api_key"),
+            "EXCHANGE_SECRET": ("exchange", "secret"),
+            "EXCHANGE_BASE_CURRENCY": ("exchange", "base_currency"),
+            "TRADING_MODE": ("environment", "mode"),
+            "LOG_LEVEL": ("logging", "level"),
+            "LOG_SENSITIVITY": ("logging", "sensitivity"),
+            "REDIS_HOST": ("cache", "host"),
+            "REDIS_PORT": ("cache", "port"),
+            "DATABASE_URL": ("database", "url"),
         }
 
         for env_var, config_path in env_mappings.items():
@@ -231,7 +235,9 @@ class ConfigLoader:
                 return source.required
         return False
 
-    def _set_nested_config(self, config: dict[str, Any], path: tuple, value: Any) -> None:
+    def _set_nested_config(
+        self, config: dict[str, Any], path: tuple, value: Any
+    ) -> None:
         """Set a value in a nested configuration dictionary."""
         current = config
         for key in path[:-1]:
@@ -240,9 +246,11 @@ class ConfigLoader:
             current = current[key]
         current[path[-1]] = value
 
-    def _validate_config(self, config: dict[str, Any], key: Optional[str] = None) -> None:
+    def _validate_config(
+        self, config: dict[str, Any], key: Optional[str] = None
+    ) -> None:
         """Validate configuration against defined rules."""
-        validation_key = key or 'global'
+        validation_key = key or "global"
 
         if validation_key not in self.validators:
             return
@@ -252,28 +260,32 @@ class ConfigLoader:
 
         for rule in rules:
             try:
-                field_value = self._get_nested_value(config, rule.field_path.split('.'))
+                field_value = self._get_nested_value(config, rule.field_path.split("."))
 
                 if not self._validate_rule(field_value, rule):
-                    errors.append({
-                        'field': rule.field_path,
-                        'error': rule.error_message,
-                        'value': field_value
-                    })
+                    errors.append(
+                        {
+                            "field": rule.field_path,
+                            "error": rule.error_message,
+                            "value": field_value,
+                        }
+                    )
 
             except KeyError:
-                if rule.rule_type != 'optional':
-                    errors.append({
-                        'field': rule.field_path,
-                        'error': f"Required field missing: {rule.field_path}"
-                    })
+                if rule.rule_type != "optional":
+                    errors.append(
+                        {
+                            "field": rule.field_path,
+                            "error": f"Required field missing: {rule.field_path}",
+                        }
+                    )
 
         if errors:
             error_msg = f"Configuration validation failed: {errors}"
-            self.logger.error("Configuration validation failed", {
-                "errors": errors,
-                "config_key": validation_key
-            })
+            self.logger.error(
+                "Configuration validation failed",
+                {"errors": errors, "config_key": validation_key},
+            )
             raise ValueError(error_msg)
 
     def _get_nested_value(self, config: dict[str, Any], path: list[str]) -> Any:
@@ -285,19 +297,20 @@ class ConfigLoader:
 
     def _validate_rule(self, value: Any, rule: ConfigValidationRule) -> bool:
         """Validate a single configuration rule."""
-        if rule.rule_type == 'required':
+        if rule.rule_type == "required":
             return value is not None
-        elif rule.rule_type == 'type':
+        elif rule.rule_type == "type":
             return isinstance(value, rule.value)
-        elif rule.rule_type == 'range':
+        elif rule.rule_type == "range":
             min_val, max_val = rule.value
             return min_val <= value <= max_val
-        elif rule.rule_type == 'enum':
+        elif rule.rule_type == "enum":
             return value in rule.value
-        elif rule.rule_type == 'pattern':
+        elif rule.rule_type == "pattern":
             import re
+
             return bool(re.match(rule.value, str(value)))
-        elif rule.rule_type == 'optional':
+        elif rule.rule_type == "optional":
             return True  # Optional fields always pass
         else:
             return True  # Unknown rule types pass by default
@@ -322,15 +335,25 @@ class ConfigManager:
         self.loader.add_source("", ConfigFormat.ENV, priority=100)
 
         # Local overrides
-        self.loader.add_source("config.local.json", ConfigFormat.JSON, priority=90, required=False)
-        self.loader.add_source("config.local.yaml", ConfigFormat.YAML, priority=90, required=False)
+        self.loader.add_source(
+            "config.local.json", ConfigFormat.JSON, priority=90, required=False
+        )
+        self.loader.add_source(
+            "config.local.yaml", ConfigFormat.YAML, priority=90, required=False
+        )
 
         # Main configuration files
-        self.loader.add_source("config.json", ConfigFormat.JSON, priority=50, required=False)
-        self.loader.add_source("config.yaml", ConfigFormat.YAML, priority=50, required=False)
+        self.loader.add_source(
+            "config.json", ConfigFormat.JSON, priority=50, required=False
+        )
+        self.loader.add_source(
+            "config.yaml", ConfigFormat.YAML, priority=50, required=False
+        )
 
         # Default configuration
-        self.loader.add_source("config.default.json", ConfigFormat.JSON, priority=10, required=False)
+        self.loader.add_source(
+            "config.default.json", ConfigFormat.JSON, priority=10, required=False
+        )
 
     def load_config(self) -> dict[str, Any]:
         """Load and validate configuration."""
@@ -339,17 +362,18 @@ class ConfigManager:
             self._validate_required_sections()
             self._notify_listeners()
 
-            self.logger.info("Configuration loaded successfully", {
-                "sources_loaded": len(self.loader.sources),
-                "config_keys": list(self.current_config.keys())
-            })
+            self.logger.info(
+                "Configuration loaded successfully",
+                {
+                    "sources_loaded": len(self.loader.sources),
+                    "config_keys": list(self.current_config.keys()),
+                },
+            )
 
             return self.current_config
 
         except Exception as e:
-            self.logger.error("Failed to load configuration", {
-                "error": str(e)
-            })
+            self.logger.error("Failed to load configuration", {"error": str(e)})
             raise
 
     def get_config(self, key: Optional[str] = None) -> Any:
@@ -357,7 +381,7 @@ class ConfigManager:
         if key is None:
             return self.current_config
 
-        keys = key.split('.')
+        keys = key.split(".")
         value = self.current_config
 
         try:
@@ -369,7 +393,7 @@ class ConfigManager:
 
     def set_config(self, key: str, value: Any) -> None:
         """Set a configuration value."""
-        keys = key.split('.')
+        keys = key.split(".")
         config = self.current_config
 
         for k in keys[:-1]:
@@ -386,11 +410,13 @@ class ConfigManager:
 
     def _validate_required_sections(self):
         """Validate that required configuration sections are present."""
-        required_sections = ['exchange', 'trading', 'risk_management']
+        required_sections = ["exchange", "trading", "risk_management"]
 
         for section in required_sections:
             if section not in self.current_config:
-                self.logger.warning(f"Required configuration section missing: {section}")
+                self.logger.warning(
+                    f"Required configuration section missing: {section}"
+                )
 
     def _notify_listeners(self):
         """Notify all configuration listeners of changes."""
@@ -398,9 +424,7 @@ class ConfigManager:
             try:
                 listener(self.current_config)
             except Exception as e:
-                self.logger.error("Configuration listener failed", {
-                    "error": str(e)
-                })
+                self.logger.error("Configuration listener failed", {"error": str(e)})
 
     def reload_config(self) -> dict[str, Any]:
         """Reload configuration from sources."""
@@ -441,10 +465,10 @@ def validate_trading_config(config: dict[str, Any]) -> list[str]:
 
     # Required fields
     required_fields = [
-        'exchange.api_key',
-        'exchange.secret',
-        'trading.symbol',
-        'trading.initial_balance'
+        "exchange.api_key",
+        "exchange.secret",
+        "trading.symbol",
+        "trading.initial_balance",
     ]
 
     for field in required_fields:
@@ -452,7 +476,7 @@ def validate_trading_config(config: dict[str, Any]) -> list[str]:
             errors.append(f"Required field missing: {field}")
 
     # Validate balance
-    balance = get_config('trading.initial_balance')
+    balance = get_config("trading.initial_balance")
     if balance is not None and balance <= 0:
         errors.append("Initial balance must be positive")
 

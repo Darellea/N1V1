@@ -6,11 +6,12 @@ Demonstrates basic metrics calculation functionality.
 """
 
 import sys
-import numpy as np
 from datetime import datetime, timedelta
 
+import numpy as np
+
 # Add the project root to Python path
-sys.path.insert(0, '.')
+sys.path.insert(0, ".")
 
 from reporting.metrics import MetricsEngine, MetricsResult
 
@@ -31,20 +32,18 @@ def test_metrics_calculation():
 
         # Create sample trade log
         trade_log = [
-            {'pnl': 1250.50, 'timestamp': datetime.now()},
-            {'pnl': -850.25, 'timestamp': datetime.now()},
-            {'pnl': 2100.75, 'timestamp': datetime.now()},
-            {'pnl': -650.00, 'timestamp': datetime.now()},
-            {'pnl': 1800.25, 'timestamp': datetime.now()}
+            {"pnl": 1250.50, "timestamp": datetime.now()},
+            {"pnl": -850.25, "timestamp": datetime.now()},
+            {"pnl": 2100.75, "timestamp": datetime.now()},
+            {"pnl": -650.00, "timestamp": datetime.now()},
+            {"pnl": 1800.25, "timestamp": datetime.now()},
         ]
 
         print(f"📊 Generated {len(returns)} returns and {len(trade_log)} trades")
 
         # Calculate metrics
         result = engine.calculate_metrics(
-            returns=returns,
-            strategy_id="test_strategy",
-            trade_log=trade_log
+            returns=returns, strategy_id="test_strategy", trade_log=trade_log
         )
 
         print("\n📈 Calculated Metrics:")
@@ -73,6 +72,7 @@ def test_metrics_calculation():
     except Exception as e:
         print(f"❌ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
         assert False
 
@@ -108,7 +108,7 @@ def test_metrics_result_structure():
             avg_win=1250.00,
             avg_loss=-875.00,
             largest_win=3500.00,
-            largest_loss=-2100.00
+            largest_loss=-2100.00,
         )
 
         # Test serialization

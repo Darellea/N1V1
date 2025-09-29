@@ -5,21 +5,17 @@ Provides comprehensive dependency vulnerability scanning, automated updates,
 security audits, and fallback strategies for dependency failures.
 """
 
-import subprocess
-import json
-import logging
 import asyncio
-import time
-from typing import Dict, Any, List, Optional, Set, Tuple
-from pathlib import Path
-import hashlib
-import requests
-from datetime import datetime, timedelta
+import logging
 import re
+import subprocess
+import time
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
 from packaging import version
 
 from utils.constants import PROJECT_ROOT
-from utils.error_handler import ErrorHandler, TradingError
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +23,15 @@ logger = logging.getLogger(__name__)
 class DependencyVulnerability:
     """Represents a dependency vulnerability."""
 
-    def __init__(self, package: str, version: str, vulnerability_id: str,
-                 severity: str, description: str, cvss_score: float = 0.0):
+    def __init__(
+        self,
+        package: str,
+        version: str,
+        vulnerability_id: str,
+        severity: str,
+        description: str,
+        cvss_score: float = 0.0,
+    ):
         self.package = package
         self.version = version
         self.vulnerability_id = vulnerability_id
@@ -48,7 +51,7 @@ class DependencyVulnerability:
             "description": self.description,
             "cvss_score": self.cvss_score,
             "discovered_at": self.discovered_at.isoformat(),
-            "fixed_version": self.fixed_version
+            "fixed_version": self.fixed_version,
         }
 
 
@@ -64,10 +67,12 @@ class DependencyScanner:
         self.security_databases = {
             "pypi": "https://pypi.org/security/advisories/",
             "osv": "https://api.osv.dev/v1/query",
-            "github": "https://api.github.com/search/advisories"
+            "github": "https://api.github.com/search/advisories",
         }
 
-    async def scan_dependencies(self, requirements_file: str = "requirements.txt") -> Dict[str, Any]:
+    async def scan_dependencies(
+        self, requirements_file: str = "requirements.txt"
+    ) -> Dict[str, Any]:
         """Perform comprehensive dependency vulnerability scan."""
         logger.info(f"Starting dependency vulnerability scan for {requirements_file}")
 
@@ -80,7 +85,7 @@ class DependencyScanner:
             "high_vulnerabilities": 0,
             "packages_scanned": 0,
             "scan_duration": 0,
-            "recommendations": []
+            "recommendations": [],
         }
 
         try:
@@ -133,12 +138,12 @@ class DependencyScanner:
             logger.warning(f"Requirements file not found: {requirements_path}")
             return dependencies
 
-        with open(requirements_path, 'r') as f:
+        with open(requirements_path, "r") as f:
             for line in f:
                 line = line.strip()
-                if line and not line.startswith('#'):
+                if line and not line.startswith("#"):
                     # Parse package==version or package>=version, etc.
-                    match = re.match(r'^([a-zA-Z0-9_-]+)([><=~!]+.+)?', line)
+                    match = re.match(r"^([a-zA-Z0-9_-]+)([><=~!]+.+)?", line)
                     if match:
                         package = match.group(1)
                         version_spec = match.group(2) if match.group(2) else "latest"
@@ -146,13 +151,15 @@ class DependencyScanner:
 
         return dependencies
 
-    async def _scan_package(self, package: str, version_spec: str) -> Optional[Dict[str, Any]]:
+    async def _scan_package(
+        self, package: str, version_spec: str
+    ) -> Optional[Dict[str, Any]]:
         """Scan a single package for vulnerabilities."""
         # Query multiple vulnerability databases
         vuln_checks = [
             self._check_osv_database(package, version_spec),
             self._check_github_advisories(package, version_spec),
-            self._check_safety_db(package, version_spec)
+            self._check_safety_db(package, version_spec),
         ]
 
         results = await asyncio.gather(*vuln_checks, return_exceptions=True)
@@ -163,16 +170,22 @@ class DependencyScanner:
 
         return None
 
-    async def _check_osv_database(self, package: str, version_spec: str) -> Optional[Dict[str, Any]]:
+    async def _check_osv_database(
+        self, package: str, version_spec: str
+    ) -> Optional[Dict[str, Any]]:
         """Check Open Source Vulnerability database."""
         try:
             payload = {
                 "package": {"name": package, "ecosystem": "PyPI"},
-                "version": version_spec.replace('==', '').replace('>=', '').replace('<=', '')
+                "version": version_spec.replace("==", "")
+                .replace(">=", "")
+                .replace("<=", ""),
             }
 
             async with aiohttp.ClientSession() as session:
-                async with session.post(self.security_databases["osv"], json=payload) as response:
+                async with session.post(
+                    self.security_databases["osv"], json=payload
+                ) as response:
                     if response.status == 200:
                         data = await response.json()
                         if data.get("vulns"):
@@ -182,15 +195,19 @@ class DependencyScanner:
                                 "version": version_spec,
                                 "vulnerability_id": vuln.get("id", "OSV-UNKNOWN"),
                                 "severity": vuln.get("severity", "UNKNOWN"),
-                                "description": vuln.get("summary", "No description available"),
-                                "cvss_score": vuln.get("cvss_score", 0.0)
+                                "description": vuln.get(
+                                    "summary", "No description available"
+                                ),
+                                "cvss_score": vuln.get("cvss_score", 0.0),
                             }
         except Exception as e:
             logger.debug(f"OSV check failed for {package}: {e}")
 
         return None
 
-    async def _check_github_advisories(self, package: str, version_spec: str) -> Optional[Dict[str, Any]]:
+    async def _check_github_advisories(
+        self, package: str, version_spec: str
+    ) -> Optional[Dict[str, Any]]:
         """Check GitHub Security Advisories."""
         try:
             # This would require GitHub API authentication for full access
@@ -205,14 +222,16 @@ class DependencyScanner:
                     "vulnerability_id": f"GHSA-{hash(package) % 10000:04d}",
                     "severity": "HIGH",
                     "description": f"Security vulnerability in {package}",
-                    "cvss_score": 7.5
+                    "cvss_score": 7.5,
                 }
         except Exception as e:
             logger.debug(f"GitHub check failed for {package}: {e}")
 
         return None
 
-    async def _check_safety_db(self, package: str, version_spec: str) -> Optional[Dict[str, Any]]:
+    async def _check_safety_db(
+        self, package: str, version_spec: str
+    ) -> Optional[Dict[str, Any]]:
         """Check Safety DB (simulated)."""
         try:
             # This would integrate with safety tool
@@ -226,7 +245,7 @@ class DependencyScanner:
                     "vulnerability_id": f"PYSEC-{hash(package) % 10000:04d}",
                     "severity": "MEDIUM",
                     "description": f"Known security issue in {package}",
-                    "cvss_score": 5.5
+                    "cvss_score": 5.5,
                 }
         except Exception as e:
             logger.debug(f"Safety check failed for {package}: {e}")
@@ -238,21 +257,33 @@ class DependencyScanner:
         recommendations = []
 
         if self.vulnerabilities:
-            critical_count = sum(1 for v in self.vulnerabilities if v.severity == "CRITICAL")
+            critical_count = sum(
+                1 for v in self.vulnerabilities if v.severity == "CRITICAL"
+            )
             high_count = sum(1 for v in self.vulnerabilities if v.severity == "HIGH")
 
             if critical_count > 0:
-                recommendations.append(f"🚨 CRITICAL: {critical_count} critical vulnerabilities found - immediate action required")
+                recommendations.append(
+                    f"🚨 CRITICAL: {critical_count} critical vulnerabilities found - immediate action required"
+                )
 
             if high_count > 0:
-                recommendations.append(f"⚠️ HIGH: {high_count} high-severity vulnerabilities found - prioritize fixes")
+                recommendations.append(
+                    f"⚠️ HIGH: {high_count} high-severity vulnerabilities found - prioritize fixes"
+                )
 
-            recommendations.append("🔄 Run 'pip install --upgrade' for affected packages")
+            recommendations.append(
+                "🔄 Run 'pip install --upgrade' for affected packages"
+            )
             recommendations.append("📋 Review and test updates in staging environment")
-            recommendations.append("🔒 Consider pinning versions for production stability")
+            recommendations.append(
+                "🔒 Consider pinning versions for production stability"
+            )
 
         if not self.vulnerabilities:
-            recommendations.append("✅ No known vulnerabilities found in current dependencies")
+            recommendations.append(
+                "✅ No known vulnerabilities found in current dependencies"
+            )
 
         return recommendations
 
@@ -263,7 +294,7 @@ class DependencyScanner:
             "severity_breakdown": self._get_severity_breakdown(),
             "package_breakdown": self._get_package_breakdown(),
             "recent_vulnerabilities": [v.to_dict() for v in self.vulnerabilities[-10:]],
-            "last_scan": self.last_scan.isoformat() if self.last_scan else None
+            "last_scan": self.last_scan.isoformat() if self.last_scan else None,
         }
 
     def _get_severity_breakdown(self) -> Dict[str, int]:
@@ -288,15 +319,17 @@ class DependencyUpdater:
 
     def __init__(self):
         self.update_policy = {
-            "patch_updates": "auto",      # Automatically apply patch updates
-            "minor_updates": "review",    # Require review for minor updates
-            "major_updates": "manual",    # Manual approval for major updates
-            "security_updates": "priority" # Priority for security updates
+            "patch_updates": "auto",  # Automatically apply patch updates
+            "minor_updates": "review",  # Require review for minor updates
+            "major_updates": "manual",  # Manual approval for major updates
+            "security_updates": "priority",  # Priority for security updates
         }
         self.compatibility_checks = True
         self.backup_requirements = True
 
-    async def check_for_updates(self, requirements_file: str = "requirements.txt") -> Dict[str, Any]:
+    async def check_for_updates(
+        self, requirements_file: str = "requirements.txt"
+    ) -> Dict[str, Any]:
         """Check for available dependency updates."""
         logger.info("Checking for dependency updates")
 
@@ -313,7 +346,7 @@ class DependencyUpdater:
             "update_candidates": len(update_candidates),
             "updates_by_type": self._categorize_updates(update_candidates),
             "security_updates": self._identify_security_updates(update_candidates),
-            "update_candidates": update_candidates
+            "update_candidates": update_candidates,
         }
 
     def _parse_requirements(self, requirements_file: str) -> Dict[str, str]:
@@ -321,36 +354,48 @@ class DependencyUpdater:
         scanner = DependencyScanner()
         return scanner._parse_requirements(requirements_file)
 
-    async def _check_package_updates(self, package: str, current_spec: str) -> Optional[Dict[str, Any]]:
+    async def _check_package_updates(
+        self, package: str, current_spec: str
+    ) -> Optional[Dict[str, Any]]:
         """Check for updates to a specific package."""
         try:
             # Use pip to check for updates
             result = subprocess.run(
                 ["pip", "index", "versions", package],
-                capture_output=True, text=True, timeout=30
+                capture_output=True,
+                text=True,
+                timeout=30,
             )
 
             if result.returncode == 0:
                 # Parse available versions
-                lines = result.stdout.split('\n')
+                lines = result.stdout.split("\n")
                 available_versions = []
 
                 for line in lines:
-                    if 'Available versions:' in line:
-                        version_str = line.split('Available versions:')[1].strip()
-                        available_versions = [v.strip() for v in version_str.split(',')]
+                    if "Available versions:" in line:
+                        version_str = line.split("Available versions:")[1].strip()
+                        available_versions = [v.strip() for v in version_str.split(",")]
                         break
 
                 if available_versions:
-                    current_version = current_spec.replace('==', '').replace('>=', '').replace('<=', '')
+                    current_version = (
+                        current_spec.replace("==", "")
+                        .replace(">=", "")
+                        .replace("<=", "")
+                    )
                     latest_version = available_versions[0]  # First is usually latest
 
                     if version.parse(latest_version) > version.parse(current_version):
                         return {
                             "current_version": current_version,
                             "latest_version": latest_version,
-                            "update_type": self._determine_update_type(current_version, latest_version),
-                            "available_versions": available_versions[:5]  # Top 5 versions
+                            "update_type": self._determine_update_type(
+                                current_version, latest_version
+                            ),
+                            "available_versions": available_versions[
+                                :5
+                            ],  # Top 5 versions
                         }
 
         except Exception as e:
@@ -383,14 +428,17 @@ class DependencyUpdater:
 
         return categories
 
-    def _identify_security_updates(self, update_candidates: Dict[str, Any]) -> List[str]:
+    def _identify_security_updates(
+        self, update_candidates: Dict[str, Any]
+    ) -> List[str]:
         """Identify packages with security-related updates."""
         # This would integrate with vulnerability data
         # For now, return a sample
         return ["requests", "urllib3"]  # Common packages with security updates
 
-    async def apply_updates(self, update_plan: Dict[str, Any],
-                          backup: bool = True) -> Dict[str, Any]:
+    async def apply_updates(
+        self, update_plan: Dict[str, Any], backup: bool = True
+    ) -> Dict[str, Any]:
         """Apply dependency updates according to policy."""
         logger.info("Applying dependency updates")
 
@@ -401,7 +449,7 @@ class DependencyUpdater:
             "updates_applied": 0,
             "updates_failed": 0,
             "backups_created": backup,
-            "details": []
+            "details": [],
         }
 
         for package, update_info in update_plan.items():
@@ -410,36 +458,42 @@ class DependencyUpdater:
                 policy_action = self.update_policy.get(update_type, "manual")
 
                 if policy_action in ["auto", "priority"]:
-                    success = await self._update_package(package, update_info["latest_version"])
+                    success = await self._update_package(
+                        package, update_info["latest_version"]
+                    )
                     if success:
                         results["updates_applied"] += 1
-                        results["details"].append({
-                            "package": package,
-                            "status": "success",
-                            "new_version": update_info["latest_version"]
-                        })
+                        results["details"].append(
+                            {
+                                "package": package,
+                                "status": "success",
+                                "new_version": update_info["latest_version"],
+                            }
+                        )
                     else:
                         results["updates_failed"] += 1
-                        results["details"].append({
-                            "package": package,
-                            "status": "failed",
-                            "reason": "Update command failed"
-                        })
+                        results["details"].append(
+                            {
+                                "package": package,
+                                "status": "failed",
+                                "reason": "Update command failed",
+                            }
+                        )
                 else:
-                    results["details"].append({
-                        "package": package,
-                        "status": "skipped",
-                        "reason": f"Policy requires {policy_action} approval"
-                    })
+                    results["details"].append(
+                        {
+                            "package": package,
+                            "status": "skipped",
+                            "reason": f"Policy requires {policy_action} approval",
+                        }
+                    )
 
             except Exception as e:
                 logger.exception(f"Error updating {package}: {e}")
                 results["updates_failed"] += 1
-                results["details"].append({
-                    "package": package,
-                    "status": "error",
-                    "reason": str(e)
-                })
+                results["details"].append(
+                    {"package": package, "status": "error", "reason": str(e)}
+                )
 
         return results
 
@@ -448,7 +502,9 @@ class DependencyUpdater:
         try:
             result = subprocess.run(
                 ["pip", "install", "--upgrade", f"{package}=={version}"],
-                capture_output=True, text=True, timeout=60
+                capture_output=True,
+                text=True,
+                timeout=60,
             )
 
             return result.returncode == 0
@@ -479,7 +535,7 @@ class DependencyFallbackManager:
             "requests": ["urllib3", "httpx", "aiohttp"],
             "numpy": ["cupy", "jax"],  # GPU alternatives
             "pandas": ["polars", "dask"],  # Faster alternatives
-            "matplotlib": ["plotly", "seaborn", "bokeh"]  # Alternative plotting
+            "matplotlib": ["plotly", "seaborn", "bokeh"],  # Alternative plotting
         }
         self.active_fallbacks: Dict[str, str] = {}
 
@@ -488,8 +544,9 @@ class DependencyFallbackManager:
         self.fallback_strategies[primary_package] = fallback_packages
         logger.info(f"Registered fallbacks for {primary_package}: {fallback_packages}")
 
-    async def handle_dependency_failure(self, failed_package: str,
-                                      error: Exception) -> Optional[str]:
+    async def handle_dependency_failure(
+        self, failed_package: str, error: Exception
+    ) -> Optional[str]:
         """Handle dependency failure by attempting fallback."""
         logger.warning(f"Dependency failure for {failed_package}: {error}")
 
@@ -508,8 +565,7 @@ class DependencyFallbackManager:
         try:
             # Check if package is available
             result = subprocess.run(
-                ["pip", "show", package],
-                capture_output=True, text=True
+                ["pip", "show", package], capture_output=True, text=True
             )
 
             if result.returncode == 0:
@@ -522,8 +578,7 @@ class DependencyFallbackManager:
 
             # Try to install package
             result = subprocess.run(
-                ["pip", "install", package],
-                capture_output=True, text=True, timeout=60
+                ["pip", "install", package], capture_output=True, text=True, timeout=60
             )
 
             if result.returncode == 0:
@@ -548,7 +603,9 @@ class DependencyFallbackManager:
         try:
             return __import__(primary_module)
         except ImportError:
-            logger.warning(f"Primary module {primary_module} failed, using fallback {fallback_module}")
+            logger.warning(
+                f"Primary module {primary_module} failed, using fallback {fallback_module}"
+            )
             return __import__(fallback_module)
 
 
@@ -580,14 +637,17 @@ class DependencyManager:
             "vulnerability_scan": scan_results,
             "update_check": update_results,
             "risk_assessment": self._assess_risk(scan_results, update_results),
-            "recommendations": self._generate_audit_recommendations(scan_results, update_results)
+            "recommendations": self._generate_audit_recommendations(
+                scan_results, update_results
+            ),
         }
 
         self.last_check = datetime.now()
         return audit_report
 
-    def _assess_risk(self, scan_results: Dict[str, Any],
-                    update_results: Dict[str, Any]) -> str:
+    def _assess_risk(
+        self, scan_results: Dict[str, Any], update_results: Dict[str, Any]
+    ) -> str:
         """Assess overall risk level."""
         critical_vulns = scan_results.get("critical_vulnerabilities", 0)
         high_vulns = scan_results.get("high_vulnerabilities", 0)
@@ -602,8 +662,9 @@ class DependencyManager:
         else:
             return "LOW"
 
-    def _generate_audit_recommendations(self, scan_results: Dict[str, Any],
-                                      update_results: Dict[str, Any]) -> List[str]:
+    def _generate_audit_recommendations(
+        self, scan_results: Dict[str, Any], update_results: Dict[str, Any]
+    ) -> List[str]:
         """Generate audit recommendations."""
         recommendations = []
 
@@ -611,7 +672,9 @@ class DependencyManager:
             recommendations.append("🚨 IMMEDIATE: Address critical vulnerabilities")
 
         if scan_results.get("high_vulnerabilities", 0) > 0:
-            recommendations.append("⚠️ HIGH PRIORITY: Fix high-severity vulnerabilities")
+            recommendations.append(
+                "⚠️ HIGH PRIORITY: Fix high-severity vulnerabilities"
+            )
 
         update_candidates = update_results.get("update_candidates", 0)
         if update_candidates > 5:
@@ -650,7 +713,7 @@ class DependencyManager:
             "last_audit": self.last_check.isoformat() if self.last_check else None,
             "vulnerabilities": self.scanner.get_vulnerability_report(),
             "active_fallbacks": self.fallback_manager.get_active_fallbacks(),
-            "health_score": self._calculate_health_score()
+            "health_score": self._calculate_health_score(),
         }
 
     def _calculate_health_score(self) -> float:
@@ -676,6 +739,7 @@ class DependencyManager:
 
 # Global dependency manager instance
 _dependency_manager = None
+
 
 def get_dependency_manager() -> DependencyManager:
     """Get the global dependency manager instance."""

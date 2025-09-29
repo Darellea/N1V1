@@ -14,14 +14,15 @@ Features Demonstrated:
 """
 
 import asyncio
+import logging
 import time
+from typing import Any, Dict, List
+
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Any
-import logging
 
+from core.performance_monitor import PerformanceAlert, get_performance_monitor
 from core.performance_profiler import get_profiler, profile_function
-from core.performance_monitor import get_performance_monitor, PerformanceAlert
 from core.performance_reports import get_performance_report_generator
 from utils.logger import get_logger
 
@@ -36,7 +37,7 @@ def calculate_sma(prices: np.ndarray, window: int) -> np.ndarray:
         return np.array([])
 
     weights = np.ones(window) / window
-    return np.convolve(prices, weights, mode='valid')
+    return np.convolve(prices, weights, mode="valid")
 
 
 @profile_function("calculate_rsi")
@@ -49,8 +50,8 @@ def calculate_rsi(prices: np.ndarray, period: int = 14) -> np.ndarray:
     gains = np.where(deltas > 0, deltas, 0)
     losses = np.where(deltas < 0, -deltas, 0)
 
-    avg_gains = np.convolve(gains, np.ones(period)/period, mode='valid')
-    avg_losses = np.convolve(losses, np.ones(period)/period, mode='valid')
+    avg_gains = np.convolve(gains, np.ones(period) / period, mode="valid")
+    avg_losses = np.convolve(losses, np.ones(period) / period, mode="valid")
 
     rs = avg_gains / avg_losses
     rsi = 100 - (100 / (1 + rs))
@@ -77,12 +78,9 @@ def slow_trading_loop(prices: List[float], signals: List[int]) -> List[Dict[str,
         # Calculate signal
         signal = signals[i] if i < len(signals) else 0
 
-        results.append({
-            'price': prices[i],
-            'ma': ma,
-            'signal': signal,
-            'timestamp': time.time()
-        })
+        results.append(
+            {"price": prices[i], "ma": ma, "signal": signal, "timestamp": time.time()}
+        )
 
     return results
 
@@ -95,23 +93,27 @@ def fast_trading_processing(prices: np.ndarray, signals: np.ndarray) -> pd.DataF
 
     # Ensure signals array matches prices length
     if len(signals) > len(ma):
-        signals = signals[:len(ma)]
+        signals = signals[: len(ma)]
     elif len(signals) < len(ma):
         signals = np.pad(signals, (0, len(ma) - len(signals)), constant_values=0)
 
     # Create results DataFrame
-    results = pd.DataFrame({
-        'price': prices[len(prices) - len(ma):],
-        'ma': ma,
-        'signal': signals,
-        'timestamp': np.full(len(ma), time.time())
-    })
+    results = pd.DataFrame(
+        {
+            "price": prices[len(prices) - len(ma) :],
+            "ma": ma,
+            "signal": signals,
+            "timestamp": np.full(len(ma), time.time()),
+        }
+    )
 
     return results
 
 
 @profile_function("complex_strategy_calculation")
-def complex_strategy_calculation(prices: np.ndarray, volume: np.ndarray) -> Dict[str, Any]:
+def complex_strategy_calculation(
+    prices: np.ndarray, volume: np.ndarray
+) -> Dict[str, Any]:
     """Complex strategy calculation combining multiple indicators."""
     # Calculate multiple indicators
     sma_20 = calculate_sma(prices, 20)
@@ -127,18 +129,20 @@ def complex_strategy_calculation(prices: np.ndarray, volume: np.ndarray) -> Dict
 
     # Composite signal
     composite_signal = trend_signal + momentum_signal
-    final_signal = np.where(composite_signal > 1, 1, np.where(composite_signal < -1, -1, 0))
+    final_signal = np.where(
+        composite_signal > 1, 1, np.where(composite_signal < -1, -1, 0)
+    )
 
     return {
-        'trend_signal': trend_signal,
-        'momentum_signal': momentum_signal,
-        'final_signal': final_signal,
-        'indicators': {
-            'sma_20': sma_20,
-            'sma_50': sma_50,
-            'rsi': rsi,
-            'volume_sma': volume_sma
-        }
+        "trend_signal": trend_signal,
+        "momentum_signal": momentum_signal,
+        "final_signal": final_signal,
+        "indicators": {
+            "sma_20": sma_20,
+            "sma_50": sma_50,
+            "rsi": rsi,
+            "volume_sma": volume_sma,
+        },
     }
 
 
@@ -155,7 +159,7 @@ async def setup_performance_monitoring():
             threshold=80.0,
             severity="high",
             cooldown_period=300,  # 5 minutes
-            description="High CPU usage detected"
+            description="High CPU usage detected",
         ),
         PerformanceAlert(
             alert_id="memory_pressure",
@@ -164,7 +168,7 @@ async def setup_performance_monitoring():
             threshold=500 * 1024 * 1024,  # 500MB
             severity="medium",
             cooldown_period=600,  # 10 minutes
-            description="High memory usage detected"
+            description="High memory usage detected",
         ),
         PerformanceAlert(
             alert_id="slow_function_execution",
@@ -173,8 +177,8 @@ async def setup_performance_monitoring():
             threshold=1.0,  # 1 second
             severity="medium",
             cooldown_period=60,  # 1 minute
-            description="Slow function execution detected"
-        )
+            description="Slow function execution detected",
+        ),
     ]
 
     # Add alerts
@@ -241,13 +245,15 @@ async def run_performance_demo():
         # Demo 2: Complex strategy calculation
         logger.info("🧠 Running complex strategy calculations...")
         strategy_results = complex_strategy_calculation(prices, volume)
-        logger.info(f"📊 Generated {len(strategy_results['final_signal'])} strategy signals")
+        logger.info(
+            f"📊 Generated {len(strategy_results['final_signal'])} strategy signals"
+        )
 
         # Demo 3: Simulate high-frequency processing
         logger.info("🔥 Simulating high-frequency processing...")
         for batch in range(10):
-            batch_prices = prices[batch*1000:(batch+1)*1000]
-            batch_volume = volume[batch*1000:(batch+1)*1000]
+            batch_prices = prices[batch * 1000 : (batch + 1) * 1000]
+            batch_volume = volume[batch * 1000 : (batch + 1) * 1000]
 
             # Process batch
             batch_results = complex_strategy_calculation(batch_prices, batch_volume)
@@ -268,8 +274,12 @@ async def run_performance_demo():
             result = np.zeros_like(data)
             for i in range(data.shape[0]):
                 for j in range(data.shape[1]):
-                    result[i, j] = np.sum(data[max(0, i-5):min(data.shape[0], i+6),
-                                             max(0, j-5):min(data.shape[1], j+6)])
+                    result[i, j] = np.sum(
+                        data[
+                            max(0, i - 5) : min(data.shape[0], i + 6),
+                            max(0, j - 5) : min(data.shape[1], j + 6),
+                        ]
+                    )
             return result
 
         memory_result = memory_intensive_calculation(large_data)
@@ -286,10 +296,16 @@ async def run_performance_demo():
         # Display report summary
         logger.info("📊 Performance Report Summary:")
         logger.info(f"   • Total Functions: {report.summary.get('total_functions', 0)}")
-        logger.info(f"   • Total Measurements: {report.summary.get('total_measurements', 0)}")
-        logger.info(f"   • Performance Score: {report.summary.get('performance_score', 0):.1f}")
+        logger.info(
+            f"   • Total Measurements: {report.summary.get('total_measurements', 0)}"
+        )
+        logger.info(
+            f"   • Performance Score: {report.summary.get('performance_score', 0):.1f}"
+        )
         logger.info(f"   • System Health: {report.summary.get('system_health', 0):.1f}")
-        logger.info(f"   • Anomalies Detected: {report.summary.get('anomaly_count', 0)}")
+        logger.info(
+            f"   • Anomalies Detected: {report.summary.get('anomaly_count', 0)}"
+        )
 
         # Display hotspots
         if report.hotspots:
@@ -361,7 +377,9 @@ async def demonstrate_anomaly_detection():
 
     # Check for anomalies
     status = await monitor.get_performance_status()
-    logger.info(f"🔍 Anomaly detection results: {status.get('recent_anomalies', 0)} anomalies detected")
+    logger.info(
+        f"🔍 Anomaly detection results: {status.get('recent_anomalies', 0)} anomalies detected"
+    )
 
     await monitor.stop_monitoring()
 
@@ -370,7 +388,7 @@ def main():
     """Main demo function."""
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     print("=" * 60)

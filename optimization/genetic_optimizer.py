@@ -5,15 +5,14 @@ Genetic Algorithm implementation for strategy parameter optimization.
 Uses evolutionary principles to find optimal parameter combinations.
 """
 
-from typing import Dict, List, Any, Optional, Tuple
-import logging
-import time
 import random
-from dataclasses import dataclass
+import time
 from collections import defaultdict
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from .base_optimizer import BaseOptimizer, ParameterBounds
 
@@ -23,20 +22,19 @@ class Chromosome:
     """Represents a parameter set as a chromosome for GA."""
 
     genes: Dict[str, Any]  # Parameter name -> value mapping
-    fitness: float = float('-inf')
+    fitness: float = float("-inf")
 
     def __post_init__(self):
         """Validate chromosome after initialization."""
         pass  # Allow empty genes for graceful handling
 
-    def copy(self) -> 'Chromosome':
+    def copy(self) -> "Chromosome":
         """Create a copy of this chromosome."""
-        return Chromosome(
-            genes=self.genes.copy(),
-            fitness=self.fitness
-        )
+        return Chromosome(genes=self.genes.copy(), fitness=self.fitness)
 
-    def mutate(self, mutation_rate: float, parameter_bounds: Dict[str, ParameterBounds]) -> None:
+    def mutate(
+        self, mutation_rate: float, parameter_bounds: Dict[str, ParameterBounds]
+    ) -> None:
         """
         Mutate this chromosome's genes.
 
@@ -157,20 +155,24 @@ class GeneticOptimizer(BaseOptimizer):
 
         # Adaptive population sizing parameters
         # Support both 'population_size' and 'initial_population_size' for backward compatibility
-        self.initial_population_size = config.get('initial_population_size', config.get('population_size', 20))
-        self.min_population_size = config.get('min_population_size', 10)
-        self.max_population_size = config.get('max_population_size', 200)
-        self.adaptation_rate = config.get('adaptation_rate', 0.1)  # How aggressively to adapt
+        self.initial_population_size = config.get(
+            "initial_population_size", config.get("population_size", 20)
+        )
+        self.min_population_size = config.get("min_population_size", 10)
+        self.max_population_size = config.get("max_population_size", 200)
+        self.adaptation_rate = config.get(
+            "adaptation_rate", 0.1
+        )  # How aggressively to adapt
 
         # Current population size (starts with initial, changes adaptively)
         self.population_size = self.initial_population_size
 
         # GA specific configuration
-        self.generations = config.get('generations', 10)
-        self.mutation_rate = config.get('mutation_rate', 0.1)
-        self.crossover_rate = config.get('crossover_rate', 0.7)
-        self.elitism_rate = config.get('elitism_rate', 0.1)
-        self.tournament_size = config.get('tournament_size', 3)
+        self.generations = config.get("generations", 10)
+        self.mutation_rate = config.get("mutation_rate", 0.1)
+        self.crossover_rate = config.get("crossover_rate", 0.7)
+        self.elitism_rate = config.get("elitism_rate", 0.1)
+        self.tournament_size = config.get("tournament_size", 3)
 
         # Population state
         self.population: List[Chromosome] = []
@@ -198,7 +200,9 @@ class GeneticOptimizer(BaseOptimizer):
         """
         self.parameter_bounds[bounds.name] = bounds
 
-    def _calculate_fitness(self, strategy, data: pd.DataFrame, params: Dict[str, Any]) -> float:
+    def _calculate_fitness(
+        self, strategy, data: pd.DataFrame, params: Dict[str, Any]
+    ) -> float:
         """
         Calculate fitness for a parameter set.
 
@@ -246,7 +250,7 @@ class GeneticOptimizer(BaseOptimizer):
             new_population.extend([offspring1, offspring2])
 
         # Trim population to correct size
-        self.population = new_population[:self.population_size]
+        self.population = new_population[: self.population_size]
 
     def _adapt_population_size(self) -> None:
         """
@@ -271,7 +275,9 @@ class GeneticOptimizer(BaseOptimizer):
         fitness_improvement = current_fitness - previous_fitness
 
         # Get current population diversity (standard deviation of fitness)
-        current_diversity = self.diversity_history[-1] if self.diversity_history else 0.0
+        current_diversity = (
+            self.diversity_history[-1] if self.diversity_history else 0.0
+        )
 
         # Adaptive logic
         old_population_size = self.population_size
@@ -294,7 +300,9 @@ class GeneticOptimizer(BaseOptimizer):
             new_size = int(self.population_size * (1 + adaptation_factor))
 
             # Ensure within bounds
-            new_size = max(self.min_population_size, min(self.max_population_size, new_size))
+            new_size = max(
+                self.min_population_size, min(self.max_population_size, new_size)
+            )
 
             if new_size != self.population_size:
                 self.logger.info(
@@ -318,7 +326,7 @@ class GeneticOptimizer(BaseOptimizer):
 
         return max(
             self.population,
-            key=lambda x: x.fitness if x.fitness != float('-inf') else float('-inf')
+            key=lambda x: x.fitness if x.fitness != float("-inf") else float("-inf"),
         )
 
     def _get_bounds_dict(self) -> Dict[str, ParameterBounds]:
@@ -339,33 +347,32 @@ class GeneticOptimizer(BaseOptimizer):
         """
         if not self.population:
             return {
-                'best_fitness': 0.0,
-                'average_fitness': 0.0,
-                'worst_fitness': 0.0,
-                'population_size': 0,
-                'generations': self.generations
+                "best_fitness": 0.0,
+                "average_fitness": 0.0,
+                "worst_fitness": 0.0,
+                "population_size": 0,
+                "generations": self.generations,
             }
 
         fitness_values = [
-            chrom.fitness for chrom in self.population
-            if chrom.fitness != float('-inf')
+            chrom.fitness for chrom in self.population if chrom.fitness != float("-inf")
         ]
 
         if not fitness_values:
             return {
-                'best_fitness': 0.0,
-                'average_fitness': 0.0,
-                'worst_fitness': 0.0,
-                'population_size': len(self.population),
-                'generations': self.generations
+                "best_fitness": 0.0,
+                "average_fitness": 0.0,
+                "worst_fitness": 0.0,
+                "population_size": len(self.population),
+                "generations": self.generations,
             }
 
         return {
-            'best_fitness': max(fitness_values),
-            'average_fitness': np.mean(fitness_values),
-            'worst_fitness': min(fitness_values),
-            'population_size': len(self.population),
-            'generations': self.generations
+            "best_fitness": max(fitness_values),
+            "average_fitness": np.mean(fitness_values),
+            "worst_fitness": min(fitness_values),
+            "population_size": len(self.population),
+            "generations": self.generations,
         }
 
     def optimize(self, strategy_class, data: pd.DataFrame) -> Dict[str, Any]:
@@ -418,7 +425,7 @@ class GeneticOptimizer(BaseOptimizer):
 
         # Finalize optimization
         optimization_time = time.time() - start_time
-        self.config['optimization_time'] = optimization_time
+        self.config["optimization_time"] = optimization_time
 
         self.logger.info(f"Genetic Algorithm completed in {optimization_time:.2f}s")
         self.logger.info(f"Best fitness: {self.best_fitness:.4f}")
@@ -441,7 +448,9 @@ class GeneticOptimizer(BaseOptimizer):
             for _ in range(self.population_size):
                 chromosome = Chromosome(genes={})
                 self.population.append(chromosome)
-            self.logger.info(f"Initialized population with {len(self.population)} chromosomes (empty genes)")
+            self.logger.info(
+                f"Initialized population with {len(self.population)} chromosomes (empty genes)"
+            )
             return
 
         for _ in range(self.population_size):
@@ -451,16 +460,24 @@ class GeneticOptimizer(BaseOptimizer):
             for bounds in self.parameter_bounds.values():
                 param_name = bounds.name
                 if bounds.param_type == "categorical":
-                    genes[param_name] = random.choice(bounds.categories or [bounds.min_value])
+                    genes[param_name] = random.choice(
+                        bounds.categories or [bounds.min_value]
+                    )
                 elif bounds.param_type == "int":
-                    genes[param_name] = random.randint(int(bounds.min_value), int(bounds.max_value))
+                    genes[param_name] = random.randint(
+                        int(bounds.min_value), int(bounds.max_value)
+                    )
                 else:  # float
-                    genes[param_name] = random.uniform(bounds.min_value, bounds.max_value)
+                    genes[param_name] = random.uniform(
+                        bounds.min_value, bounds.max_value
+                    )
 
             chromosome = Chromosome(genes=genes)
             self.population.append(chromosome)
 
-        self.logger.info(f"Initialized population with {len(self.population)} chromosomes")
+        self.logger.info(
+            f"Initialized population with {len(self.population)} chromosomes"
+        )
 
     def _evaluate_population(self, strategy_class, data: pd.DataFrame) -> None:
         """
@@ -471,15 +488,15 @@ class GeneticOptimizer(BaseOptimizer):
             data: Historical data for backtesting
         """
         for chromosome in self.population:
-            if chromosome.fitness == float('-inf'):  # Not evaluated yet
+            if chromosome.fitness == float("-inf"):  # Not evaluated yet
                 # Create strategy instance with chromosome genes
                 try:
                     strategy_config = {
-                        'name': 'ga_optimization',
-                        'symbols': ['BTC/USDT'],
-                        'timeframe': '1h',
-                        'required_history': 100,
-                        'params': chromosome.genes
+                        "name": "ga_optimization",
+                        "symbols": ["BTC/USDT"],
+                        "timeframe": "1h",
+                        "required_history": 100,
+                        "params": chromosome.genes,
                     }
 
                     strategy_instance = strategy_class(strategy_config)
@@ -493,7 +510,7 @@ class GeneticOptimizer(BaseOptimizer):
 
                 except Exception as e:
                     self.logger.debug(f"Chromosome evaluation failed: {str(e)}")
-                    chromosome.fitness = float('-inf')
+                    chromosome.fitness = float("-inf")
 
     def _select_elite(self) -> List[Chromosome]:
         """
@@ -505,11 +522,11 @@ class GeneticOptimizer(BaseOptimizer):
         # Sort population by fitness (descending)
         sorted_population = sorted(
             self.population,
-            key=lambda x: x.fitness if x.fitness != float('-inf') else float('-inf'),
-            reverse=True
+            key=lambda x: x.fitness if x.fitness != float("-inf") else float("-inf"),
+            reverse=True,
         )
 
-        return sorted_population[:self.elite_count]
+        return sorted_population[: self.elite_count]
 
     def _tournament_selection(self) -> Chromosome:
         """
@@ -519,12 +536,19 @@ class GeneticOptimizer(BaseOptimizer):
             Selected chromosome
         """
         # Select random individuals for tournament
-        tournament = random.sample(self.population, min(self.tournament_size, len(self.population)))
+        tournament = random.sample(
+            self.population, min(self.tournament_size, len(self.population))
+        )
 
         # Return the best from tournament
-        return max(tournament, key=lambda x: x.fitness if x.fitness != float('-inf') else float('-inf'))
+        return max(
+            tournament,
+            key=lambda x: x.fitness if x.fitness != float("-inf") else float("-inf"),
+        )
 
-    def _crossover(self, parent1: Chromosome, parent2: Chromosome) -> Tuple[Chromosome, Chromosome]:
+    def _crossover(
+        self, parent1: Chromosome, parent2: Chromosome
+    ) -> Tuple[Chromosome, Chromosome]:
         """
         Perform crossover between two parent chromosomes.
 
@@ -565,10 +589,13 @@ class GeneticOptimizer(BaseOptimizer):
 
         current_best = max(
             self.population,
-            key=lambda x: x.fitness if x.fitness != float('-inf') else float('-inf')
+            key=lambda x: x.fitness if x.fitness != float("-inf") else float("-inf"),
         )
 
-        if self.best_chromosome is None or current_best.fitness > self.best_chromosome.fitness:
+        if (
+            self.best_chromosome is None
+            or current_best.fitness > self.best_chromosome.fitness
+        ):
             self.best_chromosome = current_best.copy()
 
     def _log_generation_stats(self, generation: int) -> None:
@@ -582,8 +609,7 @@ class GeneticOptimizer(BaseOptimizer):
             return
 
         fitness_values = [
-            chrom.fitness for chrom in self.population
-            if chrom.fitness != float('-inf')
+            chrom.fitness for chrom in self.population if chrom.fitness != float("-inf")
         ]
 
         if fitness_values:
@@ -605,14 +631,16 @@ class GeneticOptimizer(BaseOptimizer):
             self.diversity_history.append(std_fitness)
 
             # Store generation data for analysis
-            self.results_history.append({
-                'generation': generation,
-                'population_size': self.population_size,
-                'best_fitness': best_fitness,
-                'avg_fitness': avg_fitness,
-                'std_fitness': std_fitness,
-                'best_params': self.best_params.copy() if self.best_params else {}
-            })
+            self.results_history.append(
+                {
+                    "generation": generation,
+                    "population_size": self.population_size,
+                    "best_fitness": best_fitness,
+                    "avg_fitness": avg_fitness,
+                    "std_fitness": std_fitness,
+                    "best_params": self.best_params.copy() if self.best_params else {},
+                }
+            )
 
     def get_ga_summary(self) -> Dict[str, Any]:
         """
@@ -622,24 +650,27 @@ class GeneticOptimizer(BaseOptimizer):
             Summary dictionary
         """
         summary = self.get_optimization_summary()
-        summary.update({
-            'population_size': self.population_size,
-            'initial_population_size': self.initial_population_size,
-            'min_population_size': self.min_population_size,
-            'max_population_size': self.max_population_size,
-            'adaptation_rate': self.adaptation_rate,
-            'population_size_history': self.population_size_history,
-            'generations': self.generations,
-            'mutation_rate': self.mutation_rate,
-            'crossover_rate': self.crossover_rate,
-            'elitism_rate': self.elitism_rate,
-            'tournament_size': self.tournament_size,
-            'elite_count': self.elite_count,
-            'final_population_fitness': [
-                chrom.fitness for chrom in self.population
-                if chrom.fitness != float('-inf')
-            ]
-        })
+        summary.update(
+            {
+                "population_size": self.population_size,
+                "initial_population_size": self.initial_population_size,
+                "min_population_size": self.min_population_size,
+                "max_population_size": self.max_population_size,
+                "adaptation_rate": self.adaptation_rate,
+                "population_size_history": self.population_size_history,
+                "generations": self.generations,
+                "mutation_rate": self.mutation_rate,
+                "crossover_rate": self.crossover_rate,
+                "elitism_rate": self.elitism_rate,
+                "tournament_size": self.tournament_size,
+                "elite_count": self.elite_count,
+                "final_population_fitness": [
+                    chrom.fitness
+                    for chrom in self.population
+                    if chrom.fitness != float("-inf")
+                ],
+            }
+        )
 
         return summary
 
@@ -659,18 +690,19 @@ class GeneticOptimizer(BaseOptimizer):
         for bounds in self.parameter_bounds.values():
             param_name = bounds.name
             values = [
-                chrom.genes.get(param_name) for chrom in self.population
+                chrom.genes.get(param_name)
+                for chrom in self.population
                 if param_name in chrom.genes
             ]
 
             if values:
                 if isinstance(values[0], (int, float)):
                     diversity[param_name] = {
-                        'mean': np.mean(values),
-                        'std': np.std(values),
-                        'min': min(values),
-                        'max': max(values),
-                        'unique_count': len(set(values))
+                        "mean": np.mean(values),
+                        "std": np.std(values),
+                        "min": min(values),
+                        "max": max(values),
+                        "unique_count": len(set(values)),
                     }
                 else:  # categorical
                     value_counts = defaultdict(int)

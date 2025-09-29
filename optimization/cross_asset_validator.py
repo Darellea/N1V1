@@ -13,27 +13,25 @@ Key Features:
 - Handles errors gracefully with fallback mechanisms
 """
 
-import asyncio
-import logging
-import time
 import os
-from typing import Dict, List, Any, Optional, Callable
-from datetime import datetime
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 
+from .asset_selector import AssetSelector, ValidationAsset
 from .base_optimizer import BaseOptimizer
 from .config import get_cross_asset_validation_config
+from .market_data_fetcher import MarketDataFetcher
 from .validation_criteria import ValidationCriteria
-from .asset_selector import AssetSelector, ValidationAsset
 from .validation_results import (
     AssetValidationResult,
     CrossAssetValidationResult,
-    ValidationResultAnalyzer
+    ValidationResultAnalyzer,
 )
-from .market_data_fetcher import MarketDataFetcher
 
 
 class CrossAssetValidator(BaseOptimizer):
@@ -65,22 +63,22 @@ class CrossAssetValidator(BaseOptimizer):
         if config is None:
             validator_config = get_cross_asset_validation_config()
             config = {
-                'output_dir': validator_config.output_dir,
-                'parallel_validation': validator_config.parallel_validation,
-                'max_parallel_workers': validator_config.max_parallel_workers,
-                'log_level': validator_config.log_level,
-                'save_detailed_results': validator_config.save_detailed_results,
-                'save_csv_summary': validator_config.save_csv_summary
+                "output_dir": validator_config.output_dir,
+                "parallel_validation": validator_config.parallel_validation,
+                "max_parallel_workers": validator_config.max_parallel_workers,
+                "log_level": validator_config.log_level,
+                "save_detailed_results": validator_config.save_detailed_results,
+                "save_csv_summary": validator_config.save_csv_summary,
             }
 
         super().__init__(config)
 
         # Core configuration
-        self.output_dir = config.get('output_dir', 'results/cross_asset_validation')
-        self.parallel_validation = config.get('parallel_validation', False)
-        self.max_parallel_workers = config.get('max_parallel_workers', 4)
-        self.save_detailed_results = config.get('save_detailed_results', True)
-        self.save_csv_summary = config.get('save_csv_summary', True)
+        self.output_dir = config.get("output_dir", "results/cross_asset_validation")
+        self.parallel_validation = config.get("parallel_validation", False)
+        self.max_parallel_workers = config.get("max_parallel_workers", 4)
+        self.save_detailed_results = config.get("save_detailed_results", True)
+        self.save_csv_summary = config.get("save_csv_summary", True)
 
         # Initialize components
         self.asset_selector = AssetSelector()
@@ -118,8 +116,13 @@ class CrossAssetValidator(BaseOptimizer):
         )
         return {}
 
-    def validate_strategy(self, strategy_class, optimized_params: Dict[str, Any],
-                         primary_asset: str, primary_data: pd.DataFrame) -> CrossAssetValidationResult:
+    def validate_strategy(
+        self,
+        strategy_class,
+        optimized_params: Dict[str, Any],
+        primary_asset: str,
+        primary_data: pd.DataFrame,
+    ) -> CrossAssetValidationResult:
         """
         Validate an optimized strategy across multiple assets.
 
@@ -136,7 +139,9 @@ class CrossAssetValidator(BaseOptimizer):
             Complete cross-asset validation results
         """
         start_time = time.time()
-        self.logger.info(f"Starting Cross-Asset Validation for {strategy_class.__name__}")
+        self.logger.info(
+            f"Starting Cross-Asset Validation for {strategy_class.__name__}"
+        )
         self.logger.info(f"Primary asset: {primary_asset}")
         self.logger.info(f"Optimized parameters: {optimized_params}")
 
@@ -172,8 +177,12 @@ class CrossAssetValidator(BaseOptimizer):
             self._calculate_aggregate_metrics()
 
             # Evaluate overall results
-            pass_rate, overall_pass = self.validation_criteria.evaluate_overall(self.asset_results)
-            robustness_score = self.validation_criteria.calculate_robustness_score(self.asset_results)
+            pass_rate, overall_pass = self.validation_criteria.evaluate_overall(
+                self.asset_results
+            )
+            robustness_score = self.validation_criteria.calculate_robustness_score(
+                self.asset_results
+            )
 
             # Create result
             total_time = time.time() - start_time
@@ -187,7 +196,7 @@ class CrossAssetValidator(BaseOptimizer):
                 overall_pass=overall_pass,
                 robustness_score=robustness_score,
                 timestamp=datetime.now(),
-                total_time=total_time
+                total_time=total_time,
             )
 
             # Store in history
@@ -200,23 +209,31 @@ class CrossAssetValidator(BaseOptimizer):
             self._log_validation_results(result)
 
             self.logger.info(".2f")
-            self.logger.info(f"Pass rate: {pass_rate:.1%}, Overall pass: {overall_pass}")
+            self.logger.info(
+                f"Pass rate: {pass_rate:.1%}, Overall pass: {overall_pass}"
+            )
 
             return result
 
         except Exception as e:
             self.logger.error(f"Cross-asset validation failed: {str(e)}")
             total_time = time.time() - start_time
-            return self._create_error_result(strategy_class.__name__, primary_asset, str(e), total_time)
+            return self._create_error_result(
+                strategy_class.__name__, primary_asset, str(e), total_time
+            )
 
     def _reset_validation_state(self) -> None:
         """Reset validation state for a new validation run."""
         self.asset_results = []
         self.aggregate_metrics = {}
 
-    def _validate_assets_sequential(self, strategy_class, optimized_params: Dict[str, Any],
-                                  validation_assets: List[ValidationAsset],
-                                  primary_metrics: Dict[str, Any]) -> List[AssetValidationResult]:
+    def _validate_assets_sequential(
+        self,
+        strategy_class,
+        optimized_params: Dict[str, Any],
+        validation_assets: List[ValidationAsset],
+        primary_metrics: Dict[str, Any],
+    ) -> List[AssetValidationResult]:
         """Validate strategy on assets sequentially."""
         results = []
 
@@ -229,17 +246,28 @@ class CrossAssetValidator(BaseOptimizer):
 
         return results
 
-    def _validate_assets_parallel(self, strategy_class, optimized_params: Dict[str, Any],
-                                validation_assets: List[ValidationAsset],
-                                primary_metrics: Dict[str, Any]) -> List[AssetValidationResult]:
+    def _validate_assets_parallel(
+        self,
+        strategy_class,
+        optimized_params: Dict[str, Any],
+        validation_assets: List[ValidationAsset],
+        primary_metrics: Dict[str, Any],
+    ) -> List[AssetValidationResult]:
         """Validate strategy on assets in parallel."""
         results = []
 
-        with ThreadPoolExecutor(max_workers=min(self.max_parallel_workers, len(validation_assets))) as executor:
+        with ThreadPoolExecutor(
+            max_workers=min(self.max_parallel_workers, len(validation_assets))
+        ) as executor:
             # Submit all validation tasks
             future_to_asset = {
-                executor.submit(self._validate_single_asset,
-                              strategy_class, optimized_params, asset, primary_metrics): asset
+                executor.submit(
+                    self._validate_single_asset,
+                    strategy_class,
+                    optimized_params,
+                    asset,
+                    primary_metrics,
+                ): asset
                 for asset in validation_assets
             }
 
@@ -261,14 +289,19 @@ class CrossAssetValidator(BaseOptimizer):
                         pass_criteria={},
                         overall_pass=False,
                         validation_time=0.0,
-                        error_message=str(e)
+                        error_message=str(e),
                     )
                     results.append(error_result)
 
         return results
 
-    def _validate_single_asset(self, strategy_class, optimized_params: Dict[str, Any],
-                             asset: ValidationAsset, primary_metrics: Dict[str, Any]) -> AssetValidationResult:
+    def _validate_single_asset(
+        self,
+        strategy_class,
+        optimized_params: Dict[str, Any],
+        asset: ValidationAsset,
+        primary_metrics: Dict[str, Any],
+    ) -> AssetValidationResult:
         """Validate strategy on a single asset."""
         start_time = time.time()
 
@@ -300,7 +333,7 @@ class CrossAssetValidator(BaseOptimizer):
                 validation_metrics=validation_metrics,
                 pass_criteria=pass_criteria,
                 overall_pass=overall_pass,
-                validation_time=validation_time
+                validation_time=validation_time,
             )
 
         except Exception as e:
@@ -315,20 +348,25 @@ class CrossAssetValidator(BaseOptimizer):
                 pass_criteria={},
                 overall_pass=False,
                 validation_time=validation_time,
-                error_message=str(e)
+                error_message=str(e),
             )
 
-    def _evaluate_strategy_on_asset(self, strategy_class, params: Dict[str, Any],
-                                  asset_symbol: str, asset_data: pd.DataFrame) -> Dict[str, Any]:
+    def _evaluate_strategy_on_asset(
+        self,
+        strategy_class,
+        params: Dict[str, Any],
+        asset_symbol: str,
+        asset_data: pd.DataFrame,
+    ) -> Dict[str, Any]:
         """Evaluate strategy with given parameters on asset data."""
         try:
             # Create strategy instance
             strategy_config = {
-                'name': f'cross_asset_validation_{asset_symbol}_{datetime.now().strftime("%Y%m%d_%H%M%S")}',
-                'symbols': [asset_symbol],
-                'timeframe': '1h',
-                'required_history': 100,
-                'params': params
+                "name": f'cross_asset_validation_{asset_symbol}_{datetime.now().strftime("%Y%m%d_%H%M%S")}',
+                "symbols": [asset_symbol],
+                "timeframe": "1h",
+                "required_history": 100,
+                "params": params,
             }
 
             strategy_instance = strategy_class(strategy_config)
@@ -340,16 +378,18 @@ class CrossAssetValidator(BaseOptimizer):
             equity_progression = self._run_backtest(strategy_instance, asset_data)
             if equity_progression:
                 metrics = self._compute_backtest_metrics(equity_progression)
-                metrics['fitness'] = fitness
+                metrics["fitness"] = fitness
                 return metrics
             else:
-                return {'fitness': fitness, 'error': 'No equity progression'}
+                return {"fitness": fitness, "error": "No equity progression"}
 
         except Exception as e:
             self.logger.error(f"Strategy evaluation failed for {asset_symbol}: {e}")
-            return {'error': str(e), 'fitness': float('-inf')}
+            return {"error": str(e), "fitness": float("-inf")}
 
-    def _run_backtest(self, strategy_instance, data: pd.DataFrame) -> List[Dict[str, Any]]:
+    def _run_backtest(
+        self, strategy_instance, data: pd.DataFrame
+    ) -> List[Dict[str, Any]]:
         """
         Run backtest for strategy evaluation.
 
@@ -376,13 +416,16 @@ class CrossAssetValidator(BaseOptimizer):
                 current_equity += pnl
                 trade_count += 1
 
-                equity_progression.append({
-                    'trade_id': trade_count,
-                    'timestamp': signal['timestamp'],
-                    'equity': current_equity,
-                    'pnl': pnl,
-                    'cumulative_return': (current_equity - initial_equity) / initial_equity
-                })
+                equity_progression.append(
+                    {
+                        "trade_id": trade_count,
+                        "timestamp": signal["timestamp"],
+                        "equity": current_equity,
+                        "pnl": pnl,
+                        "cumulative_return": (current_equity - initial_equity)
+                        / initial_equity,
+                    }
+                )
 
             return equity_progression
 
@@ -390,7 +433,9 @@ class CrossAssetValidator(BaseOptimizer):
             self.logger.error(f"Backtest failed: {str(e)}")
             return []
 
-    def _compute_backtest_metrics(self, equity_progression: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _compute_backtest_metrics(
+        self, equity_progression: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
         """
         Compute comprehensive backtest metrics.
 
@@ -405,8 +450,8 @@ class CrossAssetValidator(BaseOptimizer):
 
         try:
             # Extract equity values
-            equities = [point['equity'] for point in equity_progression]
-            pnls = [point['pnl'] for point in equity_progression]
+            equities = [point["equity"] for point in equity_progression]
+            pnls = [point["pnl"] for point in equity_progression]
 
             # Basic metrics
             initial_equity = equities[0]
@@ -414,7 +459,9 @@ class CrossAssetValidator(BaseOptimizer):
             total_return = (final_equity - initial_equity) / initial_equity
 
             # Risk metrics
-            returns = np.array([point['cumulative_return'] for point in equity_progression])
+            returns = np.array(
+                [point["cumulative_return"] for point in equity_progression]
+            )
             volatility = np.std(returns) * np.sqrt(252) if len(returns) > 1 else 0
 
             # Sharpe ratio (assuming 0% risk-free rate)
@@ -441,35 +488,41 @@ class CrossAssetValidator(BaseOptimizer):
             # Profit factor
             gross_profit = sum(pnl for pnl in pnls if pnl > 0)
             gross_loss = abs(sum(pnl for pnl in pnls if pnl < 0))
-            profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
+            profit_factor = (
+                gross_profit / gross_loss if gross_loss > 0 else float("inf")
+            )
 
             # Calmar ratio
             if max_drawdown > 0:
                 calmar_ratio = total_return / max_drawdown
             else:
-                calmar_ratio = float('inf')
+                calmar_ratio = float("inf")
 
             # Sortino ratio (downside deviation)
             downside_returns = returns[returns < 0]
             if len(downside_returns) > 0:
                 downside_deviation = np.std(downside_returns) * np.sqrt(252)
-                sortino_ratio = np.mean(returns) / downside_deviation if downside_deviation > 0 else 0
+                sortino_ratio = (
+                    np.mean(returns) / downside_deviation
+                    if downside_deviation > 0
+                    else 0
+                )
             else:
-                sortino_ratio = float('inf')
+                sortino_ratio = float("inf")
 
             return {
-                'total_return': total_return,
-                'sharpe_ratio': sharpe_ratio,
-                'max_drawdown': max_drawdown,
-                'win_rate': win_rate,
-                'profit_factor': profit_factor,
-                'volatility': volatility,
-                'calmar_ratio': calmar_ratio,
-                'sortino_ratio': sortino_ratio,
-                'total_trades': total_trades,
-                'winning_trades': winning_trades,
-                'gross_profit': gross_profit,
-                'gross_loss': gross_loss
+                "total_return": total_return,
+                "sharpe_ratio": sharpe_ratio,
+                "max_drawdown": max_drawdown,
+                "win_rate": win_rate,
+                "profit_factor": profit_factor,
+                "volatility": volatility,
+                "calmar_ratio": calmar_ratio,
+                "sortino_ratio": sortino_ratio,
+                "total_trades": total_trades,
+                "winning_trades": winning_trades,
+                "gross_profit": gross_profit,
+                "gross_loss": gross_loss,
             }
 
         except Exception as e:
@@ -494,39 +547,53 @@ class CrossAssetValidator(BaseOptimizer):
                 continue  # Skip failed validations
 
             metrics = result.validation_metrics
-            validation_sharpes.append(metrics.get('sharpe_ratio', 0))
-            validation_returns.append(metrics.get('total_return', 0))
-            validation_win_rates.append(metrics.get('win_rate', 0))
-            validation_max_drawdowns.append(metrics.get('max_drawdown', 0))
-            validation_profit_factors.append(metrics.get('profit_factor', 0))
+            validation_sharpes.append(metrics.get("sharpe_ratio", 0))
+            validation_returns.append(metrics.get("total_return", 0))
+            validation_win_rates.append(metrics.get("win_rate", 0))
+            validation_max_drawdowns.append(metrics.get("max_drawdown", 0))
+            validation_profit_factors.append(metrics.get("profit_factor", 0))
             validation_times.append(result.validation_time)
 
         # Calculate aggregate statistics
         self.aggregate_metrics = {
-            'total_validation_assets': len(self.asset_results),
-            'successful_validations': len(validation_sharpes),
-            'failed_validations': len([r for r in self.asset_results if r.error_message]),
-            'avg_validation_sharpe': np.mean(validation_sharpes) if validation_sharpes else 0,
-            'std_validation_sharpe': np.std(validation_sharpes) if validation_sharpes else 0,
-            'avg_validation_return': np.mean(validation_returns) if validation_returns else 0,
-            'avg_validation_win_rate': np.mean(validation_win_rates) if validation_win_rates else 0,
-            'avg_validation_max_drawdown': np.mean(validation_max_drawdowns) if validation_max_drawdowns else 0,
-            'avg_validation_profit_factor': np.mean(validation_profit_factors) if validation_profit_factors else 0,
-            'sharpe_ratio_range': self._calculate_range(validation_sharpes),
-            'return_consistency': self._calculate_consistency(validation_returns),
-            'avg_validation_time': np.mean(validation_times) if validation_times else 0,
-            'total_validation_time': sum(validation_times) if validation_times else 0
+            "total_validation_assets": len(self.asset_results),
+            "successful_validations": len(validation_sharpes),
+            "failed_validations": len(
+                [r for r in self.asset_results if r.error_message]
+            ),
+            "avg_validation_sharpe": np.mean(validation_sharpes)
+            if validation_sharpes
+            else 0,
+            "std_validation_sharpe": np.std(validation_sharpes)
+            if validation_sharpes
+            else 0,
+            "avg_validation_return": np.mean(validation_returns)
+            if validation_returns
+            else 0,
+            "avg_validation_win_rate": np.mean(validation_win_rates)
+            if validation_win_rates
+            else 0,
+            "avg_validation_max_drawdown": np.mean(validation_max_drawdowns)
+            if validation_max_drawdowns
+            else 0,
+            "avg_validation_profit_factor": np.mean(validation_profit_factors)
+            if validation_profit_factors
+            else 0,
+            "sharpe_ratio_range": self._calculate_range(validation_sharpes),
+            "return_consistency": self._calculate_consistency(validation_returns),
+            "avg_validation_time": np.mean(validation_times) if validation_times else 0,
+            "total_validation_time": sum(validation_times) if validation_times else 0,
         }
 
     def _calculate_range(self, values: List[float]) -> Dict[str, float]:
         """Calculate range statistics for a list of values."""
         if not values:
-            return {'min': 0, 'max': 0, 'range': 0}
+            return {"min": 0, "max": 0, "range": 0}
 
         return {
-            'min': min(values),
-            'max': max(values),
-            'range': max(values) - min(values)
+            "min": min(values),
+            "max": max(values),
+            "range": max(values) - min(values),
         }
 
     def _calculate_consistency(self, values: List[float]) -> float:
@@ -542,7 +609,9 @@ class CrossAssetValidator(BaseOptimizer):
         consistent_count = sum(1 for v in values if (v >= 0) == (mean_val >= 0))
         return consistent_count / len(values)
 
-    def _create_empty_result(self, strategy_name: str, primary_asset: str) -> CrossAssetValidationResult:
+    def _create_empty_result(
+        self, strategy_name: str, primary_asset: str
+    ) -> CrossAssetValidationResult:
         """Create empty result when validation fails."""
         return CrossAssetValidationResult(
             strategy_name=strategy_name,
@@ -554,23 +623,28 @@ class CrossAssetValidator(BaseOptimizer):
             overall_pass=False,
             robustness_score=0.0,
             timestamp=datetime.now(),
-            total_time=0.0
+            total_time=0.0,
         )
 
-    def _create_error_result(self, strategy_name: str, primary_asset: str,
-                           error_message: str, total_time: float) -> CrossAssetValidationResult:
+    def _create_error_result(
+        self,
+        strategy_name: str,
+        primary_asset: str,
+        error_message: str,
+        total_time: float,
+    ) -> CrossAssetValidationResult:
         """Create error result when validation fails with exception."""
         return CrossAssetValidationResult(
             strategy_name=strategy_name,
             primary_asset=primary_asset,
             validation_assets=[],
             asset_results=[],
-            aggregate_metrics={'error': error_message},
+            aggregate_metrics={"error": error_message},
             pass_rate=0.0,
             overall_pass=False,
             robustness_score=0.0,
             timestamp=datetime.now(),
-            total_time=total_time
+            total_time=total_time,
         )
 
     def _save_results(self, result: CrossAssetValidationResult) -> None:
@@ -578,15 +652,21 @@ class CrossAssetValidator(BaseOptimizer):
         try:
             # Save detailed results
             if self.save_detailed_results:
-                detailed_path = os.path.join(self.output_dir, 'cross_asset_validation_results.json')
+                detailed_path = os.path.join(
+                    self.output_dir, "cross_asset_validation_results.json"
+                )
                 result.save_to_file(detailed_path)
 
             # Save CSV summary for easy analysis
             if self.save_csv_summary:
-                csv_path = os.path.join(self.output_dir, 'cross_asset_validation_summary.csv')
+                csv_path = os.path.join(
+                    self.output_dir, "cross_asset_validation_summary.csv"
+                )
                 result.generate_csv_report(csv_path)
 
-            self.logger.info(f"Cross-asset validation results saved to {self.output_dir}")
+            self.logger.info(
+                f"Cross-asset validation results saved to {self.output_dir}"
+            )
 
         except Exception as e:
             self.logger.error(f"Failed to save validation results: {str(e)}")
@@ -608,7 +688,9 @@ class CrossAssetValidator(BaseOptimizer):
         # Log individual asset results
         for asset_result in result.asset_results:
             status = "✅ PASS" if asset_result.overall_pass else "❌ FAIL"
-            self.logger.info(f"{asset_result.asset.symbol} ({asset_result.asset.name}): {status}")
+            self.logger.info(
+                f"{asset_result.asset.symbol} ({asset_result.asset.name}): {status}"
+            )
 
             if asset_result.error_message:
                 self.logger.info(f"  Error: {asset_result.error_message}")
@@ -637,19 +719,19 @@ class CrossAssetValidator(BaseOptimizer):
     def get_validation_summary(self) -> Dict[str, Any]:
         """Get comprehensive summary of validator state and history."""
         if not self.validation_history:
-            return {'status': 'No validations performed'}
+            return {"status": "No validations performed"}
 
         latest_result = self.validation_history[-1]
 
         return {
-            'total_validations': len(self.validation_history),
-            'latest_strategy': latest_result.strategy_name,
-            'latest_pass_rate': latest_result.pass_rate,
-            'latest_overall_pass': latest_result.overall_pass,
-            'latest_robustness_score': latest_result.robustness_score,
-            'asset_selector_status': self.asset_selector.get_asset_summary(),
-            'data_fetcher_status': self.data_fetcher.get_cache_stats(),
-            'validation_criteria': self.validation_criteria.get_criteria_summary()
+            "total_validations": len(self.validation_history),
+            "latest_strategy": latest_result.strategy_name,
+            "latest_pass_rate": latest_result.pass_rate,
+            "latest_overall_pass": latest_result.overall_pass,
+            "latest_robustness_score": latest_result.robustness_score,
+            "asset_selector_status": self.asset_selector.get_asset_summary(),
+            "data_fetcher_status": self.data_fetcher.get_cache_stats(),
+            "validation_criteria": self.validation_criteria.get_criteria_summary(),
         }
 
     def clear_history(self) -> None:
@@ -666,20 +748,27 @@ class CrossAssetValidator(BaseOptimizer):
         """
         try:
             report = {
-                'generated_at': datetime.now().isoformat(),
-                'validator_config': {
-                    'parallel_validation': self.parallel_validation,
-                    'max_parallel_workers': self.max_parallel_workers,
-                    'output_dir': self.output_dir
+                "generated_at": datetime.now().isoformat(),
+                "validator_config": {
+                    "parallel_validation": self.parallel_validation,
+                    "max_parallel_workers": self.max_parallel_workers,
+                    "output_dir": self.output_dir,
                 },
-                'validation_history': [result.get_summary_report() for result in self.validation_history],
-                'performance_analysis': self.result_analyzer.compare_results(self.validation_history) if self.validation_history else {},
-                'system_status': self.get_validation_summary()
+                "validation_history": [
+                    result.get_summary_report() for result in self.validation_history
+                ],
+                "performance_analysis": self.result_analyzer.compare_results(
+                    self.validation_history
+                )
+                if self.validation_history
+                else {},
+                "system_status": self.get_validation_summary(),
             }
 
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, 'w') as f:
+            with open(file_path, "w") as f:
                 import json
+
                 json.dump(report, f, indent=2, default=str)
 
             self.logger.info(f"Validation report exported to {file_path}")
@@ -689,7 +778,9 @@ class CrossAssetValidator(BaseOptimizer):
 
 
 # Convenience functions for easy integration
-def create_cross_asset_validator(config: Optional[Dict[str, Any]] = None) -> CrossAssetValidator:
+def create_cross_asset_validator(
+    config: Optional[Dict[str, Any]] = None
+) -> CrossAssetValidator:
     """
     Create a cross-asset validator with default configuration.
 
@@ -700,12 +791,12 @@ def create_cross_asset_validator(config: Optional[Dict[str, Any]] = None) -> Cro
         Configured CrossAssetValidator instance
     """
     default_config = {
-        'output_dir': 'results/cross_asset_validation',
-        'parallel_validation': False,
-        'max_parallel_workers': 4,
-        'log_level': 'INFO',
-        'save_detailed_results': True,
-        'save_csv_summary': True
+        "output_dir": "results/cross_asset_validation",
+        "parallel_validation": False,
+        "max_parallel_workers": 4,
+        "log_level": "INFO",
+        "save_detailed_results": True,
+        "save_csv_summary": True,
     }
 
     if config:
@@ -714,9 +805,13 @@ def create_cross_asset_validator(config: Optional[Dict[str, Any]] = None) -> Cro
     return CrossAssetValidator(default_config)
 
 
-def run_cross_asset_validation(strategy_class, optimized_params: Dict[str, Any],
-                             primary_asset: str, primary_data: pd.DataFrame,
-                             config: Optional[Dict[str, Any]] = None) -> CrossAssetValidationResult:
+def run_cross_asset_validation(
+    strategy_class,
+    optimized_params: Dict[str, Any],
+    primary_asset: str,
+    primary_data: pd.DataFrame,
+    config: Optional[Dict[str, Any]] = None,
+) -> CrossAssetValidationResult:
     """
     Run complete cross-asset validation.
 
@@ -731,4 +826,6 @@ def run_cross_asset_validation(strategy_class, optimized_params: Dict[str, Any],
         Complete cross-asset validation results
     """
     validator = create_cross_asset_validator(config)
-    return validator.validate_strategy(strategy_class, optimized_params, primary_asset, primary_data)
+    return validator.validate_strategy(
+        strategy_class, optimized_params, primary_asset, primary_data
+    )

@@ -20,6 +20,7 @@ class PredictionContext:
         volatility_confidence: Confidence for volatility prediction
         volume_confidence: Confidence for volume surge detection
     """
+
     price_direction: str = "neutral"
     volatility: str = "low"
     volume_surge: bool = False

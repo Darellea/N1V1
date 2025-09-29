@@ -23,30 +23,24 @@ Architecture:
 """
 
 import asyncio
-import logging
 import time
-from typing import Dict, List, Any, Optional, Callable, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-import json
-import threading
-from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 import aiohttp
 
-from core.watchdog import (
-    get_watchdog_service, WatchdogService, HeartbeatProtocol,
-    ComponentStatus, FailureSeverity, FailureType, HeartbeatMessage
-)
 from core.diagnostics import get_diagnostics_manager
-from core.bot_engine import BotEngine
-from core.order_manager import OrderManager
-from core.signal_router import SignalRouter
-from core.task_manager import TaskManager
-from data.data_fetcher import DataFetcher
-from strategies.base_strategy import BaseStrategy
-from notifier.discord_bot import DiscordNotifier
-from core.timeframe_manager import TimeframeManager
+from core.watchdog import (
+    ComponentStatus,
+    FailureSeverity,
+    FailureType,
+    HeartbeatMessage,
+    HeartbeatProtocol,
+    WatchdogService,
+    get_watchdog_service,
+)
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -54,6 +48,7 @@ logger = get_logger(__name__)
 
 class SystemState(Enum):
     """Overall system health state."""
+
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     CRITICAL = "critical"
@@ -63,6 +58,7 @@ class SystemState(Enum):
 
 class ComponentType(Enum):
     """Types of components that can be monitored."""
+
     BOT_ENGINE = "bot_engine"
     ORDER_MANAGER = "order_manager"
     SIGNAL_ROUTER = "signal_router"
@@ -78,6 +74,7 @@ class ComponentType(Enum):
 @dataclass
 class ComponentInfo:
     """Information about a registered component."""
+
     component_id: str
     component_type: ComponentType
     instance: Any
@@ -92,20 +89,23 @@ class ComponentInfo:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
-            'component_id': self.component_id,
-            'component_type': self.component_type.value,
-            'critical': self.critical,
-            'dependencies': self.dependencies,
-            'recovery_priority': self.recovery_priority,
-            'last_health_check': self.last_health_check.isoformat() if self.last_health_check else None,
-            'consecutive_failures': self.consecutive_failures,
-            'registered_at': self.registered_at.isoformat()
+            "component_id": self.component_id,
+            "component_type": self.component_type.value,
+            "critical": self.critical,
+            "dependencies": self.dependencies,
+            "recovery_priority": self.recovery_priority,
+            "last_health_check": self.last_health_check.isoformat()
+            if self.last_health_check
+            else None,
+            "consecutive_failures": self.consecutive_failures,
+            "registered_at": self.registered_at.isoformat(),
         }
 
 
 @dataclass
 class HealingAction:
     """A healing action to be executed."""
+
     action_id: str
     component_id: str
     action_type: str
@@ -122,18 +122,20 @@ class HealingAction:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
-            'action_id': self.action_id,
-            'component_id': self.component_id,
-            'action_type': self.action_type,
-            'description': self.description,
-            'priority': self.priority,
-            'timeout_seconds': self.timeout_seconds,
-            'created_at': self.created_at.isoformat(),
-            'started_at': self.started_at.isoformat() if self.started_at else None,
-            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
-            'status': self.status,
-            'result': self.result,
-            'error_message': self.error_message
+            "action_id": self.action_id,
+            "component_id": self.component_id,
+            "action_type": self.action_type,
+            "description": self.description,
+            "priority": self.priority,
+            "timeout_seconds": self.timeout_seconds,
+            "created_at": self.created_at.isoformat(),
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "completed_at": self.completed_at.isoformat()
+            if self.completed_at
+            else None,
+            "status": self.status,
+            "result": self.result,
+            "error_message": self.error_message,
         }
 
 
@@ -144,10 +146,15 @@ class ComponentRegistry:
         self.components: Dict[str, ComponentInfo] = {}
         self.component_types: Dict[ComponentType, List[str]] = {}
 
-    def register_component(self, component_id: str, component_type: ComponentType,
-                          instance: Any, critical: bool = False,
-                          dependencies: Optional[List[str]] = None,
-                          recovery_priority: int = 5) -> ComponentInfo:
+    def register_component(
+        self,
+        component_id: str,
+        component_type: ComponentType,
+        instance: Any,
+        critical: bool = False,
+        dependencies: Optional[List[str]] = None,
+        recovery_priority: int = 5,
+    ) -> ComponentInfo:
         """Register a component for monitoring."""
         if component_id in self.components:
             logger.warning(f"Component {component_id} already registered, updating")
@@ -158,7 +165,7 @@ class ComponentRegistry:
             instance=instance,
             critical=critical,
             dependencies=dependencies or [],
-            recovery_priority=recovery_priority
+            recovery_priority=recovery_priority,
         )
 
         self.components[component_id] = info
@@ -190,7 +197,9 @@ class ComponentRegistry:
         """Get component information."""
         return self.components.get(component_id)
 
-    def get_components_by_type(self, component_type: ComponentType) -> List[ComponentInfo]:
+    def get_components_by_type(
+        self, component_type: ComponentType
+    ) -> List[ComponentInfo]:
         """Get all components of a specific type."""
         component_ids = self.component_types.get(component_type, [])
         return [self.components[cid] for cid in component_ids if cid in self.components]
@@ -233,11 +242,15 @@ class ComponentRegistry:
         critical_count = len(self.get_critical_components())
 
         return {
-            'total_components': len(self.components),
-            'component_types': type_counts,
-            'critical_components': critical_count,
-            'healthy_components': sum(1 for c in self.components.values() if c.consecutive_failures == 0),
-            'failing_components': sum(1 for c in self.components.values() if c.consecutive_failures > 0)
+            "total_components": len(self.components),
+            "component_types": type_counts,
+            "critical_components": critical_count,
+            "healthy_components": sum(
+                1 for c in self.components.values() if c.consecutive_failures == 0
+            ),
+            "failing_components": sum(
+                1 for c in self.components.values() if c.consecutive_failures > 0
+            ),
         }
 
 
@@ -258,11 +271,16 @@ class HealingOrchestrator:
             ComponentType.SIGNAL_ROUTER: self._recover_signal_router,
             ComponentType.STRATEGY: self._recover_strategy,
             ComponentType.DATA_FETCHER: self._recover_data_fetcher,
-            ComponentType.EXTERNAL_SERVICE: self._recover_external_service
+            ComponentType.EXTERNAL_SERVICE: self._recover_external_service,
         }
 
-    async def initiate_healing(self, component_id: str, failure_type: FailureType,
-                             severity: FailureSeverity, diagnosis: Dict[str, Any]) -> Optional[HealingAction]:
+    async def initiate_healing(
+        self,
+        component_id: str,
+        failure_type: FailureType,
+        severity: FailureSeverity,
+        diagnosis: Dict[str, Any],
+    ) -> Optional[HealingAction]:
         """Initiate healing process for a failed component."""
 
         if component_id in self.pending_actions:
@@ -277,17 +295,21 @@ class HealingOrchestrator:
         # Select recovery strategy
         strategy = self.recovery_strategies.get(component_info.component_type)
         if not strategy:
-            logger.error(f"No recovery strategy for component type: {component_info.component_type}")
+            logger.error(
+                f"No recovery strategy for component type: {component_info.component_type}"
+            )
             return None
 
         # Create healing action
         action = HealingAction(
             action_id=f"heal_{component_id}_{int(time.time())}",
             component_id=component_id,
-            action_type=self._get_action_type(component_info.component_type, failure_type),
+            action_type=self._get_action_type(
+                component_info.component_type, failure_type
+            ),
             description=f"Recover {component_info.component_type.value} component",
             priority=self._calculate_priority(severity),
-            timeout_seconds=self._calculate_timeout(severity, failure_type)
+            timeout_seconds=self._calculate_timeout(severity, failure_type),
         )
 
         self.pending_actions[component_id] = action
@@ -334,11 +356,13 @@ class HealingOrchestrator:
             FailureSeverity.CRITICAL: 10,
             FailureSeverity.HIGH: 7,
             FailureSeverity.MEDIUM: 5,
-            FailureSeverity.LOW: 3
+            FailureSeverity.LOW: 3,
         }
         return priority_map.get(severity, 5)
 
-    def _calculate_timeout(self, severity: FailureSeverity, failure_type: FailureType) -> int:
+    def _calculate_timeout(
+        self, severity: FailureSeverity, failure_type: FailureType
+    ) -> int:
         """Calculate timeout for healing action."""
         base_timeout = 300  # 5 minutes
 
@@ -361,15 +385,21 @@ class HealingOrchestrator:
 
         return base_timeout
 
-    def _get_action_type(self, component_type: ComponentType, failure_type: FailureType) -> str:
+    def _get_action_type(
+        self, component_type: ComponentType, failure_type: FailureType
+    ) -> str:
         """Get the action type string for recovery."""
         if failure_type == FailureType.CONNECTIVITY:
             return "test_recovery_connectivity"
         else:
             return f"recover_{component_type.value}"
 
-    async def _recover_bot_engine(self, component_info: ComponentInfo,
-                                action: HealingAction, diagnosis: Dict[str, Any]) -> bool:
+    async def _recover_bot_engine(
+        self,
+        component_info: ComponentInfo,
+        action: HealingAction,
+        diagnosis: Dict[str, Any],
+    ) -> bool:
         """Recover bot engine component."""
         logger.info(f"Recovering bot engine: {component_info.component_id}")
 
@@ -378,20 +408,21 @@ class HealingOrchestrator:
         try:
             # Handle Mock objects for testing
             from unittest.mock import Mock
+
             if isinstance(bot_engine, Mock):  # It's a Mock object
                 logger.info("Mock bot engine detected, simulating recovery")
                 await asyncio.sleep(0.1)  # Simulate recovery time
                 return True
 
             # Attempt graceful restart
-            if hasattr(bot_engine, 'shutdown'):
+            if hasattr(bot_engine, "shutdown"):
                 await bot_engine.shutdown()
 
             # Wait a moment
             await asyncio.sleep(2)
 
             # Attempt restart (this would need to be implemented in BotEngine)
-            if hasattr(bot_engine, 'restart'):
+            if hasattr(bot_engine, "restart"):
                 success = await bot_engine.restart()
                 return success
 
@@ -403,8 +434,12 @@ class HealingOrchestrator:
             logger.error(f"Bot engine recovery failed: {e}")
             return False
 
-    async def _recover_order_manager(self, component_info: ComponentInfo,
-                                   action: HealingAction, diagnosis: Dict[str, Any]) -> bool:
+    async def _recover_order_manager(
+        self,
+        component_info: ComponentInfo,
+        action: HealingAction,
+        diagnosis: Dict[str, Any],
+    ) -> bool:
         """Recover order manager component."""
         logger.info(f"Recovering order manager: {component_info.component_id}")
 
@@ -412,15 +447,15 @@ class HealingOrchestrator:
 
         try:
             # Cancel any stuck orders
-            if hasattr(order_manager, 'cancel_all_orders'):
+            if hasattr(order_manager, "cancel_all_orders"):
                 await order_manager.cancel_all_orders()
 
             # Reset internal state
-            if hasattr(order_manager, 'reset_state'):
+            if hasattr(order_manager, "reset_state"):
                 await order_manager.reset_state()
 
             # Reconnect to exchange if needed
-            if hasattr(order_manager, 'reconnect'):
+            if hasattr(order_manager, "reconnect"):
                 success = await order_manager.reconnect()
                 return success
 
@@ -430,8 +465,12 @@ class HealingOrchestrator:
             logger.error(f"Order manager recovery failed: {e}")
             return False
 
-    async def _recover_signal_router(self, component_info: ComponentInfo,
-                                   action: HealingAction, diagnosis: Dict[str, Any]) -> bool:
+    async def _recover_signal_router(
+        self,
+        component_info: ComponentInfo,
+        action: HealingAction,
+        diagnosis: Dict[str, Any],
+    ) -> bool:
         """Recover signal router component."""
         logger.info(f"Recovering signal router: {component_info.component_id}")
 
@@ -439,11 +478,11 @@ class HealingOrchestrator:
 
         try:
             # Clear any stuck signals
-            if hasattr(signal_router, 'clear_queue'):
+            if hasattr(signal_router, "clear_queue"):
                 await signal_router.clear_queue()
 
             # Reset routing state
-            if hasattr(signal_router, 'reset_state'):
+            if hasattr(signal_router, "reset_state"):
                 await signal_router.reset_state()
 
             return True
@@ -452,8 +491,12 @@ class HealingOrchestrator:
             logger.error(f"Signal router recovery failed: {e}")
             return False
 
-    async def _recover_strategy(self, component_info: ComponentInfo,
-                              action: HealingAction, diagnosis: Dict[str, Any]) -> bool:
+    async def _recover_strategy(
+        self,
+        component_info: ComponentInfo,
+        action: HealingAction,
+        diagnosis: Dict[str, Any],
+    ) -> bool:
         """Recover strategy component."""
         logger.info(f"Recovering strategy: {component_info.component_id}")
 
@@ -461,11 +504,11 @@ class HealingOrchestrator:
 
         try:
             # Reset strategy state
-            if hasattr(strategy, 'reset'):
+            if hasattr(strategy, "reset"):
                 await strategy.reset()
 
             # Reinitialize if needed
-            if hasattr(strategy, 'initialize'):
+            if hasattr(strategy, "initialize"):
                 # This would need market data, simplified for now
                 await strategy.initialize(None)
 
@@ -475,8 +518,12 @@ class HealingOrchestrator:
             logger.error(f"Strategy recovery failed: {e}")
             return False
 
-    async def _recover_data_fetcher(self, component_info: ComponentInfo,
-                                  action: HealingAction, diagnosis: Dict[str, Any]) -> bool:
+    async def _recover_data_fetcher(
+        self,
+        component_info: ComponentInfo,
+        action: HealingAction,
+        diagnosis: Dict[str, Any],
+    ) -> bool:
         """Recover data fetcher component."""
         logger.info(f"Recovering data fetcher: {component_info.component_id}")
 
@@ -484,13 +531,13 @@ class HealingOrchestrator:
 
         try:
             # Close existing connections
-            if hasattr(data_fetcher, 'close'):
+            if hasattr(data_fetcher, "close"):
                 await data_fetcher.close()
 
             # Wait and reconnect
             await asyncio.sleep(1)
 
-            if hasattr(data_fetcher, 'initialize'):
+            if hasattr(data_fetcher, "initialize"):
                 await data_fetcher.initialize()
 
             return True
@@ -499,8 +546,12 @@ class HealingOrchestrator:
             logger.error(f"Data fetcher recovery failed: {e}")
             return False
 
-    async def _recover_external_service(self, component_info: ComponentInfo,
-                                      action: HealingAction, diagnosis: Dict[str, Any]) -> bool:
+    async def _recover_external_service(
+        self,
+        component_info: ComponentInfo,
+        action: HealingAction,
+        diagnosis: Dict[str, Any],
+    ) -> bool:
         """Recover external service component."""
         logger.info(f"Recovering external service: {component_info.component_id}")
 
@@ -511,12 +562,12 @@ class HealingOrchestrator:
             service = component_info.instance
 
             # Attempt reconnection
-            if hasattr(service, 'reconnect'):
+            if hasattr(service, "reconnect"):
                 success = await service.reconnect()
                 return success
 
             # Generic health check
-            if hasattr(service, 'health_check'):
+            if hasattr(service, "health_check"):
                 is_healthy = await service.health_check()
                 return is_healthy
 
@@ -529,10 +580,11 @@ class HealingOrchestrator:
     def get_healing_stats(self) -> Dict[str, Any]:
         """Get healing statistics."""
         return {
-            'pending_actions': len(self.pending_actions),
-            'completed_actions': len(self.completed_actions),
-            'failed_actions': len(self.failed_actions),
-            'success_rate': len(self.completed_actions) / max(1, len(self.completed_actions) + len(self.failed_actions))
+            "pending_actions": len(self.pending_actions),
+            "completed_actions": len(self.completed_actions),
+            "failed_actions": len(self.failed_actions),
+            "success_rate": len(self.completed_actions)
+            / max(1, len(self.completed_actions) + len(self.failed_actions)),
         }
 
 
@@ -599,9 +651,9 @@ class EmergencyProcedures:
         bot_engines = self.registry.get_components_by_type(ComponentType.BOT_ENGINE)
         for bot_info in bot_engines:
             try:
-                if hasattr(bot_info.instance, 'emergency_shutdown'):
+                if hasattr(bot_info.instance, "emergency_shutdown"):
                     await bot_info.instance.emergency_shutdown()
-                elif hasattr(bot_info.instance, 'shutdown'):
+                elif hasattr(bot_info.instance, "shutdown"):
                     await bot_info.instance.shutdown()
             except Exception as e:
                 logger.error(f"Failed to stop bot engine {bot_info.component_id}: {e}")
@@ -610,10 +662,12 @@ class EmergencyProcedures:
         """Cancel all pending orders."""
         logger.critical("Cancelling all pending orders...")
 
-        order_managers = self.registry.get_components_by_type(ComponentType.ORDER_MANAGER)
+        order_managers = self.registry.get_components_by_type(
+            ComponentType.ORDER_MANAGER
+        )
         for om_info in order_managers:
             try:
-                if hasattr(om_info.instance, 'cancel_all_orders'):
+                if hasattr(om_info.instance, "cancel_all_orders"):
                     await om_info.instance.cancel_all_orders()
             except Exception as e:
                 logger.error(f"Failed to cancel orders for {om_info.component_id}: {e}")
@@ -634,7 +688,9 @@ class EmergencyProcedures:
         critical_components = self.registry.get_critical_components()
         for comp_info in critical_components:
             if comp_info.consecutive_failures > 0:
-                logger.warning(f"Isolating critical component: {comp_info.component_id}")
+                logger.warning(
+                    f"Isolating critical component: {comp_info.component_id}"
+                )
 
     async def _activate_backup_systems(self) -> None:
         """Activate backup systems if available."""
@@ -646,47 +702,49 @@ class EmergencyProcedures:
     async def _send_emergency_alerts(self, reason: str) -> None:
         """Send emergency alerts."""
         alert_message = {
-            "embeds": [{
-                "title": "🚨 CRITICAL SYSTEM EMERGENCY",
-                "description": f"Emergency mode activated: {reason}",
-                "color": 15158332,  # Red color
-                "fields": [
-                    {
-                        "name": "Emergency Start Time",
-                        "value": datetime.now().isoformat(),
-                        "inline": True
-                    },
-                    {
-                        "name": "Affected Components",
-                        "value": str(len(self.registry.get_critical_components())),
-                        "inline": True
-                    },
-                    {
-                        "name": "Status",
-                        "value": "EMERGENCY MODE ACTIVE",
-                        "inline": True
-                    }
-                ],
-                "footer": {
-                    "text": "Self-Healing Engine Emergency Procedures"
+            "embeds": [
+                {
+                    "title": "🚨 CRITICAL SYSTEM EMERGENCY",
+                    "description": f"Emergency mode activated: {reason}",
+                    "color": 15158332,  # Red color
+                    "fields": [
+                        {
+                            "name": "Emergency Start Time",
+                            "value": datetime.now().isoformat(),
+                            "inline": True,
+                        },
+                        {
+                            "name": "Affected Components",
+                            "value": str(len(self.registry.get_critical_components())),
+                            "inline": True,
+                        },
+                        {
+                            "name": "Status",
+                            "value": "EMERGENCY MODE ACTIVE",
+                            "inline": True,
+                        },
+                    ],
+                    "footer": {"text": "Self-Healing Engine Emergency Procedures"},
                 }
-            }]
+            ]
         }
 
         # Send to configured webhook
-        webhook_url = self.config.get('emergency_webhook_url', '')
+        webhook_url = self.config.get("emergency_webhook_url", "")
         if webhook_url:
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.post(
                         webhook_url,
                         json=alert_message,
-                        timeout=aiohttp.ClientTimeout(total=10)
+                        timeout=aiohttp.ClientTimeout(total=10),
                     ) as response:
                         if response.status == 204:
                             logger.info("Emergency alert sent successfully")
                         else:
-                            logger.error(f"Failed to send emergency alert: HTTP {response.status}")
+                            logger.error(
+                                f"Failed to send emergency alert: HTTP {response.status}"
+                            )
             except Exception as e:
                 logger.exception(f"Error sending emergency alert: {e}")
 
@@ -705,8 +763,12 @@ class EmergencyProcedures:
 class MonitoringDashboard:
     """Real-time monitoring dashboard for system health."""
 
-    def __init__(self, config: Dict[str, Any], component_registry: ComponentRegistry,
-                 watchdog_service: WatchdogService):
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        component_registry: ComponentRegistry,
+        watchdog_service: WatchdogService,
+    ):
         self.config = config
         self.registry = component_registry
         self.watchdog = watchdog_service
@@ -721,13 +783,13 @@ class MonitoringDashboard:
         self._update_dashboard_data()
 
         return {
-            'timestamp': datetime.now().isoformat(),
-            'system_health': self._get_system_health_summary(),
-            'component_status': self._get_component_status_summary(),
-            'failure_stats': self._get_failure_statistics(),
-            'recovery_stats': self._get_recovery_statistics(),
-            'performance_metrics': self._get_performance_metrics(),
-            'alerts': self._get_recent_alerts()
+            "timestamp": datetime.now().isoformat(),
+            "system_health": self._get_system_health_summary(),
+            "component_status": self._get_component_status_summary(),
+            "failure_stats": self._get_failure_statistics(),
+            "recovery_stats": self._get_recovery_statistics(),
+            "performance_metrics": self._get_performance_metrics(),
+            "alerts": self._get_recent_alerts(),
         }
 
     def _update_dashboard_data(self) -> None:
@@ -742,18 +804,18 @@ class MonitoringDashboard:
 
         # Gather fresh data
         self.dashboard_data = {
-            'watchdog_stats': self.watchdog.get_watchdog_stats(),
-            'registry_stats': self.registry.get_registry_stats(),
-            'diagnostic_status': self.diagnostics.get_health_status()
+            "watchdog_stats": self.watchdog.get_watchdog_stats(),
+            "registry_stats": self.registry.get_registry_stats(),
+            "diagnostic_status": self.diagnostics.get_health_status(),
         }
 
     def _get_system_health_summary(self) -> Dict[str, Any]:
         """Get overall system health summary."""
-        registry_stats = self.dashboard_data.get('registry_stats', {})
-        watchdog_stats = self.dashboard_data.get('watchdog_stats', {})
+        registry_stats = self.dashboard_data.get("registry_stats", {})
+        watchdog_stats = self.dashboard_data.get("watchdog_stats", {})
 
-        total_components = registry_stats.get('total_components', 0)
-        failing_components = registry_stats.get('failing_components', 0)
+        total_components = registry_stats.get("total_components", 0)
+        failing_components = registry_stats.get("failing_components", 0)
 
         # Determine overall health
         if failing_components == 0:
@@ -770,14 +832,14 @@ class MonitoringDashboard:
             health_score = 25
 
         return {
-            'overall_health': overall_health,
-            'health_score': health_score,
-            'total_components': total_components,
-            'healthy_components': registry_stats.get('healthy_components', 0),
-            'failing_components': failing_components,
-            'critical_components': registry_stats.get('critical_components', 0),
-            'heartbeats_received': watchdog_stats.get('heartbeats_received', 0),
-            'failures_detected': watchdog_stats.get('failures_detected', 0)
+            "overall_health": overall_health,
+            "health_score": health_score,
+            "total_components": total_components,
+            "healthy_components": registry_stats.get("healthy_components", 0),
+            "failing_components": failing_components,
+            "critical_components": registry_stats.get("critical_components", 0),
+            "heartbeats_received": watchdog_stats.get("heartbeats_received", 0),
+            "failures_detected": watchdog_stats.get("failures_detected", 0),
         }
 
     def _get_component_status_summary(self) -> List[Dict[str, Any]]:
@@ -787,53 +849,64 @@ class MonitoringDashboard:
         for comp_id, comp_info in self.registry.components.items():
             watchdog_status = self.watchdog.get_component_status(comp_id)
 
-            component_status.append({
-                'component_id': comp_id,
-                'component_type': comp_info.component_type.value,
-                'critical': comp_info.critical,
-                'consecutive_failures': comp_info.consecutive_failures,
-                'last_health_check': comp_info.last_health_check.isoformat() if comp_info.last_health_check else None,
-                'heartbeat_overdue': watchdog_status.get('is_overdue', True) if watchdog_status else True,
-                'last_heartbeat': watchdog_status.get('last_heartbeat', {}).get('timestamp') if watchdog_status else None
-            })
+            component_status.append(
+                {
+                    "component_id": comp_id,
+                    "component_type": comp_info.component_type.value,
+                    "critical": comp_info.critical,
+                    "consecutive_failures": comp_info.consecutive_failures,
+                    "last_health_check": comp_info.last_health_check.isoformat()
+                    if comp_info.last_health_check
+                    else None,
+                    "heartbeat_overdue": watchdog_status.get("is_overdue", True)
+                    if watchdog_status
+                    else True,
+                    "last_heartbeat": watchdog_status.get("last_heartbeat", {}).get(
+                        "timestamp"
+                    )
+                    if watchdog_status
+                    else None,
+                }
+            )
 
         return component_status
 
     def _get_failure_statistics(self) -> Dict[str, Any]:
         """Get failure statistics."""
-        watchdog_stats = self.dashboard_data.get('watchdog_stats', {})
+        watchdog_stats = self.dashboard_data.get("watchdog_stats", {})
 
         return {
-            'total_failures': watchdog_stats.get('failures_detected', 0),
-            'recovery_attempts': watchdog_stats.get('recoveries_initiated', 0),
-            'successful_recoveries': watchdog_stats.get('recoveries_successful', 0),
-            'recovery_success_rate': (
-                watchdog_stats.get('recoveries_successful', 0) /
-                max(1, watchdog_stats.get('recoveries_initiated', 0))
-            ) * 100
+            "total_failures": watchdog_stats.get("failures_detected", 0),
+            "recovery_attempts": watchdog_stats.get("recoveries_initiated", 0),
+            "successful_recoveries": watchdog_stats.get("recoveries_successful", 0),
+            "recovery_success_rate": (
+                watchdog_stats.get("recoveries_successful", 0)
+                / max(1, watchdog_stats.get("recoveries_initiated", 0))
+            )
+            * 100,
         }
 
     def _get_recovery_statistics(self) -> Dict[str, Any]:
         """Get recovery statistics."""
-        watchdog_stats = self.dashboard_data.get('watchdog_stats', {})
-        recovery_stats = watchdog_stats.get('recovery_stats', {})
+        watchdog_stats = self.dashboard_data.get("watchdog_stats", {})
+        recovery_stats = watchdog_stats.get("recovery_stats", {})
 
         return {
-            'pending_recoveries': recovery_stats.get('pending_actions', 0),
-            'completed_recoveries': recovery_stats.get('completed_actions', 0),
-            'failed_recoveries': recovery_stats.get('failed_actions', 0),
-            'recovery_success_rate': recovery_stats.get('success_rate', 0) * 100
+            "pending_recoveries": recovery_stats.get("pending_actions", 0),
+            "completed_recoveries": recovery_stats.get("completed_actions", 0),
+            "failed_recoveries": recovery_stats.get("failed_actions", 0),
+            "recovery_success_rate": recovery_stats.get("success_rate", 0) * 100,
         }
 
     def _get_performance_metrics(self) -> Dict[str, Any]:
         """Get performance metrics."""
-        diagnostic_status = self.dashboard_data.get('diagnostic_status', {})
+        diagnostic_status = self.dashboard_data.get("diagnostic_status", {})
 
         return {
-            'uptime_percentage': 99.9,  # This would be calculated from actual uptime
-            'average_response_time': diagnostic_status.get('average_latency', 0),
-            'error_rate': diagnostic_status.get('error_rate', 0),
-            'throughput': diagnostic_status.get('throughput', 0)
+            "uptime_percentage": 99.9,  # This would be calculated from actual uptime
+            "average_response_time": diagnostic_status.get("average_latency", 0),
+            "error_rate": diagnostic_status.get("error_rate", 0),
+            "throughput": diagnostic_status.get("throughput", 0),
         }
 
     def _get_recent_alerts(self) -> List[Dict[str, Any]]:
@@ -842,10 +915,10 @@ class MonitoringDashboard:
         # For now, return a placeholder
         return [
             {
-                'timestamp': datetime.now().isoformat(),
-                'severity': 'info',
-                'message': 'System operating normally',
-                'component': 'self_healing_engine'
+                "timestamp": datetime.now().isoformat(),
+                "severity": "info",
+                "message": "System operating normally",
+                "component": "self_healing_engine",
             }
         ]
 
@@ -917,18 +990,30 @@ class SelfHealingEngine:
 
         logger.info("✅ Self-Healing Engine stopped")
 
-    def register_component(self, component_id: str, component_type: ComponentType,
-                          instance: Any, critical: bool = False,
-                          dependencies: Optional[List[str]] = None,
-                          recovery_priority: int = 5) -> None:
+    def register_component(
+        self,
+        component_id: str,
+        component_type: ComponentType,
+        instance: Any,
+        critical: bool = False,
+        dependencies: Optional[List[str]] = None,
+        recovery_priority: int = 5,
+    ) -> None:
         """Register a component for monitoring and healing."""
         # Register with component registry
         comp_info = self.component_registry.register_component(
-            component_id, component_type, instance, critical, dependencies, recovery_priority
+            component_id,
+            component_type,
+            instance,
+            critical,
+            dependencies,
+            recovery_priority,
         )
 
         # Register with watchdog service
-        heartbeat_interval = 15 if critical else 30  # More frequent monitoring for critical components
+        heartbeat_interval = (
+            15 if critical else 30
+        )  # More frequent monitoring for critical components
         heartbeat_protocol = self.watchdog_service.register_component(
             component_id, component_type.value, heartbeat_interval
         )
@@ -943,9 +1028,14 @@ class SelfHealingEngine:
         self.component_registry.unregister_component(component_id)
         logger.info(f"✅ Component unregistered: {component_id}")
 
-    async def send_heartbeat(self, component_id: str, status: ComponentStatus = ComponentStatus.HEALTHY,
-                           latency_ms: Optional[float] = None, error_count: int = 0,
-                           custom_metrics: Optional[Dict[str, Any]] = None) -> None:
+    async def send_heartbeat(
+        self,
+        component_id: str,
+        status: ComponentStatus = ComponentStatus.HEALTHY,
+        latency_ms: Optional[float] = None,
+        error_count: int = 0,
+        custom_metrics: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Send a heartbeat for a component."""
         comp_info = self.component_registry.get_component(component_id)
         if not comp_info or not comp_info.heartbeat_protocol:
@@ -962,7 +1052,7 @@ class SelfHealingEngine:
             status=status,
             latency_ms=latency_ms,
             error_count=error_count,
-            custom_metrics=custom_metrics or {}
+            custom_metrics=custom_metrics or {},
         )
 
         # Send to watchdog service (optimized - no unnecessary logging)
@@ -1018,7 +1108,9 @@ class SelfHealingEngine:
         """Check for emergency conditions that require immediate action."""
         # Check if emergency mode should be activated
         critical_components = self.component_registry.get_critical_components()
-        failing_critical = sum(1 for c in critical_components if c.consecutive_failures > 0)
+        failing_critical = sum(
+            1 for c in critical_components if c.consecutive_failures > 0
+        )
 
         if failing_critical > 0:
             critical_ratio = failing_critical / len(critical_components)
@@ -1036,14 +1128,14 @@ class SelfHealingEngine:
     def get_engine_stats(self) -> Dict[str, Any]:
         """Get comprehensive engine statistics."""
         return {
-            'uptime': str(datetime.now() - self.start_time),
-            'total_failures_handled': self.total_failures_handled,
-            'total_recoveries_successful': self.total_recoveries_successful,
-            'registry_stats': self.component_registry.get_registry_stats(),
-            'healing_stats': self.healing_orchestrator.get_healing_stats(),
-            'watchdog_stats': self.watchdog_service.get_watchdog_stats(),
-            'emergency_active': self.emergency_procedures.is_emergency_active(),
-            'dashboard_data': self.monitoring_dashboard.get_dashboard_data()
+            "uptime": str(datetime.now() - self.start_time),
+            "total_failures_handled": self.total_failures_handled,
+            "total_recoveries_successful": self.total_recoveries_successful,
+            "registry_stats": self.component_registry.get_registry_stats(),
+            "healing_stats": self.healing_orchestrator.get_healing_stats(),
+            "watchdog_stats": self.watchdog_service.get_watchdog_stats(),
+            "emergency_active": self.emergency_procedures.is_emergency_active(),
+            "dashboard_data": self.monitoring_dashboard.get_dashboard_data(),
         }
 
     def get_component_status(self, component_id: str) -> Optional[Dict[str, Any]]:
@@ -1059,20 +1151,24 @@ class SelfHealingEngine:
             heartbeat_overdue = True
             last_heartbeat = None
         else:
-            heartbeat_overdue = watchdog_status.get('is_overdue', True)
-            last_heartbeat_data = watchdog_status.get('last_heartbeat', {})
-            last_heartbeat = last_heartbeat_data.get('timestamp') if last_heartbeat_data else None
+            heartbeat_overdue = watchdog_status.get("is_overdue", True)
+            last_heartbeat_data = watchdog_status.get("last_heartbeat", {})
+            last_heartbeat = (
+                last_heartbeat_data.get("timestamp") if last_heartbeat_data else None
+            )
 
         return {
-            'component_id': component_id,
-            'component_type': comp_info.component_type.value.upper(),
-            'critical': comp_info.critical,
-            'consecutive_failures': comp_info.consecutive_failures,
-            'last_health_check': comp_info.last_health_check.isoformat() if comp_info.last_health_check else None,
-            'heartbeat_overdue': heartbeat_overdue,
-            'last_heartbeat': last_heartbeat,
-            'dependencies': comp_info.dependencies,
-            'recovery_priority': comp_info.recovery_priority
+            "component_id": component_id,
+            "component_type": comp_info.component_type.value.upper(),
+            "critical": comp_info.critical,
+            "consecutive_failures": comp_info.consecutive_failures,
+            "last_health_check": comp_info.last_health_check.isoformat()
+            if comp_info.last_health_check
+            else None,
+            "heartbeat_overdue": heartbeat_overdue,
+            "last_heartbeat": last_heartbeat,
+            "dependencies": comp_info.dependencies,
+            "recovery_priority": comp_info.recovery_priority,
         }
 
 
@@ -1088,6 +1184,8 @@ def get_self_healing_engine() -> SelfHealingEngine:
     return _self_healing_engine
 
 
-def create_self_healing_engine(config: Optional[Dict[str, Any]] = None) -> SelfHealingEngine:
+def create_self_healing_engine(
+    config: Optional[Dict[str, Any]] = None
+) -> SelfHealingEngine:
     """Create a new self-healing engine instance."""
     return SelfHealingEngine(config or {})

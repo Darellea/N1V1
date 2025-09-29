@@ -8,21 +8,18 @@ and dashboard synchronization capabilities.
 
 import asyncio
 import sys
-import numpy as np
-from decimal import Decimal
 from datetime import datetime, timedelta
 
+import numpy as np
+
 # Add the project root to Python path
-sys.path.insert(0, '.')
+sys.path.insert(0, ".")
 
 from reporting import (
+    DashboardSync,
     MetricsEngine,
     MetricsResult,
-    DashboardSync,
     MetricsScheduler,
-    start_session,
-    end_session,
-    update_session_data
 )
 
 
@@ -40,24 +37,38 @@ async def demo_metrics_engine():
         np.random.seed(42)  # For reproducible results
 
         # Simulate different market conditions
-        bull_market = np.random.normal(0.002, 0.015, 63)  # Bull market: 0.2% daily return
-        bear_market = np.random.normal(-0.001, 0.025, 63)  # Bear market: -0.1% daily return
-        volatile_market = np.random.normal(0.0005, 0.035, 63)  # Volatile: 0.05% with high volatility
-        mixed_market = np.random.normal(0.001, 0.02, 63)  # Mixed: 0.1% with moderate volatility
+        bull_market = np.random.normal(
+            0.002, 0.015, 63
+        )  # Bull market: 0.2% daily return
+        bear_market = np.random.normal(
+            -0.001, 0.025, 63
+        )  # Bear market: -0.1% daily return
+        volatile_market = np.random.normal(
+            0.0005, 0.035, 63
+        )  # Volatile: 0.05% with high volatility
+        mixed_market = np.random.normal(
+            0.001, 0.02, 63
+        )  # Mixed: 0.1% with moderate volatility
 
-        returns = np.concatenate([bull_market, bear_market, volatile_market, mixed_market])
+        returns = np.concatenate(
+            [bull_market, bear_market, volatile_market, mixed_market]
+        )
 
         # Create sample trade log
-        trade_log = [
-            {'pnl': 1250.50, 'timestamp': datetime.now() - timedelta(days=i)}
-            for i in range(50)
-        ] + [
-            {'pnl': -850.25, 'timestamp': datetime.now() - timedelta(days=i)}
-            for i in range(50, 100)
-        ] + [
-            {'pnl': 2100.75, 'timestamp': datetime.now() - timedelta(days=i)}
-            for i in range(100, 150)
-        ]
+        trade_log = (
+            [
+                {"pnl": 1250.50, "timestamp": datetime.now() - timedelta(days=i)}
+                for i in range(50)
+            ]
+            + [
+                {"pnl": -850.25, "timestamp": datetime.now() - timedelta(days=i)}
+                for i in range(50, 100)
+            ]
+            + [
+                {"pnl": 2100.75, "timestamp": datetime.now() - timedelta(days=i)}
+                for i in range(100, 150)
+            ]
+        )
 
         print(f"📈 Generated {len(returns)} days of returns data")
         print(f"🏷️  Generated {len(trade_log)} trade records")
@@ -68,7 +79,7 @@ async def demo_metrics_engine():
             strategy_id="demo_strategy",
             trade_log=trade_log,
             period_start=datetime.now() - timedelta(days=252),
-            period_end=datetime.now()
+            period_end=datetime.now(),
         )
 
         print("\n🎯 Calculated Metrics:")
@@ -107,6 +118,7 @@ async def demo_metrics_engine():
     except Exception as e:
         print(f"❌ Metrics Engine demo failed: {e}")
         import traceback
+
         traceback.print_exc()
         return None
 
@@ -119,14 +131,9 @@ async def demo_dashboard_sync():
     try:
         # Create dashboard sync (Streamlit only for demo)
         config = {
-            'enabled': True,
-            'streamlit': {
-                'enabled': True,
-                'data_dir': 'demo_dashboard_data'
-            },
-            'grafana': {
-                'enabled': False  # Disabled for demo
-            }
+            "enabled": True,
+            "streamlit": {"enabled": True, "data_dir": "demo_dashboard_data"},
+            "grafana": {"enabled": False},  # Disabled for demo
         }
 
         sync = DashboardSync(config)
@@ -157,7 +164,7 @@ async def demo_dashboard_sync():
             avg_win=1250.00,
             avg_loss=-875.00,
             largest_win=3500.00,
-            largest_loss=-2100.00
+            largest_loss=-2100.00,
         )
 
         # Sync to dashboard
@@ -169,6 +176,7 @@ async def demo_dashboard_sync():
 
             # Check files were created
             import os
+
             data_dir = sync.streamlit_data_dir
             if os.path.exists(data_dir):
                 files = os.listdir(data_dir)
@@ -195,10 +203,10 @@ async def demo_scheduler():
     try:
         # Create scheduler
         config = {
-            'enabled': True,
-            'session_end_enabled': True,
-            'daily_enabled': False,  # Disable for demo
-            'weekly_enabled': False  # Disable for demo
+            "enabled": True,
+            "session_end_enabled": True,
+            "daily_enabled": False,  # Disable for demo
+            "weekly_enabled": False,  # Disable for demo
         }
 
         scheduler = MetricsScheduler(config)
@@ -221,22 +229,30 @@ async def demo_scheduler():
         sample_returns_2 = [0.001, 0.002, 0.001, -0.002, 0.0015]  # Strategy 2 returns
 
         sample_trades_1 = [
-            {'pnl': 1250.50, 'timestamp': datetime.now()},
-            {'pnl': -850.25, 'timestamp': datetime.now()},
-            {'pnl': 2100.75, 'timestamp': datetime.now()}
+            {"pnl": 1250.50, "timestamp": datetime.now()},
+            {"pnl": -850.25, "timestamp": datetime.now()},
+            {"pnl": 2100.75, "timestamp": datetime.now()},
         ]
 
         sample_trades_2 = [
-            {'pnl': 950.00, 'timestamp': datetime.now()},
-            {'pnl': -650.50, 'timestamp': datetime.now()},
-            {'pnl': 1800.25, 'timestamp': datetime.now()}
+            {"pnl": 950.00, "timestamp": datetime.now()},
+            {"pnl": -650.50, "timestamp": datetime.now()},
+            {"pnl": 1800.25, "timestamp": datetime.now()},
         ]
 
         # Update session data
-        scheduler.update_session_data(session_id, "demo_strategy_1",
-                                    returns=sample_returns_1, trade_log=sample_trades_1)
-        scheduler.update_session_data(session_id, "demo_strategy_2",
-                                    returns=sample_returns_2, trade_log=sample_trades_2)
+        scheduler.update_session_data(
+            session_id,
+            "demo_strategy_1",
+            returns=sample_returns_1,
+            trade_log=sample_trades_1,
+        )
+        scheduler.update_session_data(
+            session_id,
+            "demo_strategy_2",
+            returns=sample_returns_2,
+            trade_log=sample_trades_2,
+        )
 
         print("✅ Updated session with sample data")
 
@@ -250,7 +266,9 @@ async def demo_scheduler():
 
         # Get scheduler status
         status = scheduler.get_scheduler_status()
-        print(f"📊 Scheduler Status: {status['active_sessions']} active sessions, {status['scheduled_tasks']} tasks")
+        print(
+            f"📊 Scheduler Status: {status['active_sessions']} active sessions, {status['scheduled_tasks']} tasks"
+        )
 
         return success
 
@@ -271,16 +289,25 @@ async def demo_comprehensive_workflow():
         # Simulate 6 months of daily returns
         np.random.seed(123)
         num_days = 126  # 6 months
-        returns = np.random.normal(0.0012, 0.018, num_days)  # 0.12% mean, 1.8% volatility
+        returns = np.random.normal(
+            0.0012, 0.018, num_days
+        )  # 0.12% mean, 1.8% volatility
 
         # Generate trade log
         trade_log = []
         for i in range(200):  # 200 trades
-            pnl = np.random.normal(500, 800) if np.random.random() > 0.4 else np.random.normal(-400, 600)
-            trade_log.append({
-                'pnl': pnl,
-                'timestamp': datetime.now() - timedelta(days=np.random.randint(1, num_days))
-            })
+            pnl = (
+                np.random.normal(500, 800)
+                if np.random.random() > 0.4
+                else np.random.normal(-400, 600)
+            )
+            trade_log.append(
+                {
+                    "pnl": pnl,
+                    "timestamp": datetime.now()
+                    - timedelta(days=np.random.randint(1, num_days)),
+                }
+            )
 
         print(f"   Generated {num_days} days of returns")
         print(f"   Generated {len(trade_log)} trades")
@@ -290,9 +317,7 @@ async def demo_comprehensive_workflow():
 
         engine = MetricsEngine()
         result = engine.calculate_metrics(
-            returns=returns,
-            strategy_id="comprehensive_demo",
-            trade_log=trade_log
+            returns=returns, strategy_id="comprehensive_demo", trade_log=trade_log
         )
 
         print("   ✅ Performance metrics calculated")
@@ -308,10 +333,12 @@ async def demo_comprehensive_workflow():
 
         # 4. Sync to dashboard
         print("\n📡 Step 4: Syncing to dashboard...")
-        sync = DashboardSync({
-            'enabled': True,
-            'streamlit': {'enabled': True, 'data_dir': 'comprehensive_demo_data'}
-        })
+        sync = DashboardSync(
+            {
+                "enabled": True,
+                "streamlit": {"enabled": True, "data_dir": "comprehensive_demo_data"},
+            }
+        )
 
         sync_success = sync.sync_metrics(result)
         if sync_success:
@@ -328,13 +355,14 @@ async def demo_comprehensive_workflow():
         print(f"Volatility: {result.volatility:.2%}")
         print(f"Win Rate: {result.win_rate:.1%}")
         print(f"Total Trades: {result.total_trades}")
-        print(f"Files Generated: JSON, CSV, Dashboard data")
+        print("Files Generated: JSON, CSV, Dashboard data")
 
         return True
 
     except Exception as e:
         print(f"❌ Comprehensive workflow demo failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

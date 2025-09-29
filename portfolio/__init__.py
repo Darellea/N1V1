@@ -11,20 +11,20 @@ This module provides comprehensive portfolio management capabilities including:
 - Portfolio metrics and performance reporting
 """
 
-from .portfolio_manager import PortfolioManager
 from .allocator import (
     CapitalAllocator,
     EqualWeightAllocator,
+    MomentumWeightAllocator,
     RiskParityAllocator,
-    MomentumWeightAllocator
 )
 from .hedging import PortfolioHedger
+from .portfolio_manager import PortfolioManager
 
 __all__ = [
-    'PortfolioManager',
-    'CapitalAllocator',
-    'EqualWeightAllocator',
-    'RiskParityAllocator',
-    'MomentumWeightAllocator',
-    'PortfolioHedger'
+    "PortfolioManager",
+    "CapitalAllocator",
+    "EqualWeightAllocator",
+    "RiskParityAllocator",
+    "MomentumWeightAllocator",
+    "PortfolioHedger",
 ]

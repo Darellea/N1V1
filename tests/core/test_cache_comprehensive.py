@@ -5,20 +5,19 @@ cache invalidation, global functions, context manager, and error handling.
 """
 
 import asyncio
-import pytest
 import json
-import time
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from typing import Dict, Any, List
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
 
 from core.cache import (
-    RedisCache,
     CacheConfig,
+    CacheContext,
     EvictionPolicy,
-    initialize_cache,
-    get_cache,
+    RedisCache,
     close_cache,
-    CacheContext
+    get_cache,
+    initialize_cache,
 )
 
 
@@ -50,7 +49,7 @@ class TestCacheBasicOperations:
                 "default": 300,
                 "market_ticker": 60,
                 "ohlcv": 600,
-                "account_balance": 30
+                "account_balance": 30,
             },
             eviction_policy=EvictionPolicy.TTL,
             max_cache_size=10000,
@@ -59,8 +58,8 @@ class TestCacheBasicOperations:
                 "warning_memory_mb": 400.0,
                 "cleanup_memory_mb": 350.0,
                 "eviction_batch_size": 100,
-                "memory_check_interval": 60.0
-            }
+                "memory_check_interval": 60.0,
+            },
         )
 
     @pytest.fixture
@@ -74,7 +73,7 @@ class TestCacheBasicOperations:
     @pytest.mark.asyncio
     async def test_initialization_success(self, cache_config, mock_redis):
         """Test successful cache initialization."""
-        with patch('redis.asyncio.Redis', return_value=mock_redis):
+        with patch("redis.asyncio.Redis", return_value=mock_redis):
             cache = RedisCache(cache_config)
             success = await cache.initialize()
 
@@ -85,7 +84,7 @@ class TestCacheBasicOperations:
     @pytest.mark.asyncio
     async def test_initialization_failure(self, cache_config):
         """Test cache initialization failure."""
-        with patch('redis.asyncio.Redis') as mock_redis_class:
+        with patch("redis.asyncio.Redis") as mock_redis_class:
             mock_redis_instance = AsyncMock()
             mock_redis_instance.ping.side_effect = Exception("Connection failed")
             mock_redis_class.return_value = mock_redis_instance
@@ -100,7 +99,7 @@ class TestCacheBasicOperations:
     async def test_get_existing_key(self, cache_instance, mock_redis):
         """Test getting an existing key."""
         test_data = {"symbol": "BTC/USDT", "price": 50000}
-        mock_redis.get.return_value = json.dumps(test_data).encode('utf-8')
+        mock_redis.get.return_value = json.dumps(test_data).encode("utf-8")
 
         result = await cache_instance.get("test:key")
 
@@ -139,7 +138,7 @@ class TestCacheBasicOperations:
         assert call_args[0][0] == "test:key"
         assert call_args[0][1] == 300
         # Verify JSON serialization
-        deserialized = json.loads(call_args[0][2].decode('utf-8'))
+        deserialized = json.loads(call_args[0][2].decode("utf-8"))
         assert deserialized == test_data
 
     @pytest.mark.asyncio
@@ -235,7 +234,14 @@ class TestCacheSpecializedMethods:
     @pytest.fixture
     def cache_config(self):
         """Cache configuration."""
-        return CacheConfig(ttl_config={"default": 300, "market_ticker": 60, "ohlcv": 600, "account_balance": 30})
+        return CacheConfig(
+            ttl_config={
+                "default": 300,
+                "market_ticker": 60,
+                "ohlcv": 600,
+                "account_balance": 30,
+            }
+        )
 
     @pytest.fixture
     def cache_instance(self, cache_config, mock_redis):
@@ -249,7 +255,7 @@ class TestCacheSpecializedMethods:
     async def test_get_market_ticker_cached(self, cache_instance, mock_redis):
         """Test getting cached market ticker."""
         ticker_data = {"symbol": "BTC/USDT", "price": 50000, "volume": 100}
-        mock_redis.get.return_value = json.dumps(ticker_data).encode('utf-8')
+        mock_redis.get.return_value = json.dumps(ticker_data).encode("utf-8")
 
         result = await cache_instance.get_market_ticker("BTC/USDT")
 
@@ -282,7 +288,7 @@ class TestCacheSpecializedMethods:
     async def test_get_ohlcv_cached(self, cache_instance, mock_redis):
         """Test getting cached OHLCV data."""
         ohlcv_data = [[1640995200000, 50000, 51000, 49000, 50500, 100]]
-        mock_redis.get.return_value = json.dumps(ohlcv_data).encode('utf-8')
+        mock_redis.get.return_value = json.dumps(ohlcv_data).encode("utf-8")
 
         result = await cache_instance.get_ohlcv("BTC/USDT", "1h")
 
@@ -306,7 +312,7 @@ class TestCacheSpecializedMethods:
     async def test_get_account_balance_cached(self, cache_instance, mock_redis):
         """Test getting cached account balance."""
         balance_data = {"USDT": 10000.0, "BTC": 0.5}
-        mock_redis.get.return_value = json.dumps(balance_data).encode('utf-8')
+        mock_redis.get.return_value = json.dumps(balance_data).encode("utf-8")
 
         result = await cache_instance.get_account_balance("user123")
 
@@ -378,7 +384,7 @@ class TestCacheBatchOperations:
         """Test setting multiple OHLCV data successfully."""
         data = {
             "BTC/USDT": [[1640995200000, 50000, 51000, 49000, 50500, 100]],
-            "ETH/USDT": [[1640995200000, 3000, 3100, 2900, 3050, 200]]
+            "ETH/USDT": [[1640995200000, 3000, 3100, 2900, 3050, 200]],
         }
 
         result = await cache_instance.set_multiple_ohlcv(data, "1h")
@@ -421,7 +427,11 @@ class TestCacheInvalidation:
         """Mock Redis client."""
         mock_client = AsyncMock()
         mock_client.ping.return_value = True
-        mock_client.keys.return_value = ["ohlcv:BTC/USDT:1h", "market_ticker:BTC/USDT", "ohlcv:ETH/USDT:1h"]
+        mock_client.keys.return_value = [
+            "ohlcv:BTC/USDT:1h",
+            "market_ticker:BTC/USDT",
+            "ohlcv:ETH/USDT:1h",
+        ]
         mock_client.delete.return_value = 3
         return mock_client
 
@@ -451,7 +461,9 @@ class TestCacheInvalidation:
         assert len(delete_args) == 3
 
     @pytest.mark.asyncio
-    async def test_invalidate_symbol_data_specific_types(self, cache_instance, mock_redis):
+    async def test_invalidate_symbol_data_specific_types(
+        self, cache_instance, mock_redis
+    ):
         """Test invalidating specific data types for a symbol."""
         # Mock keys to return only BTC/USDT keys
         mock_redis.keys.return_value = ["ohlcv:BTC/USDT:1h", "market_ticker:BTC/USDT"]
@@ -502,12 +514,12 @@ class TestCacheGlobalFunctions:
             "port": 6379,
             "db": 0,
             "eviction_policy": "lru",
-            "max_cache_size": 5000
+            "max_cache_size": 5000,
         }
 
-        with patch('redis.asyncio.Redis') as mock_redis_class, \
-             patch('asyncio.run') as mock_asyncio_run:
-
+        with patch("redis.asyncio.Redis") as mock_redis_class, patch(
+            "asyncio.run"
+        ) as mock_asyncio_run:
             mock_redis_instance = AsyncMock()
             mock_redis_instance.ping.return_value = True
             mock_redis_class.return_value = mock_redis_instance
@@ -530,9 +542,9 @@ class TestCacheGlobalFunctions:
         """Test cache initialization when already initialized."""
         config = {"host": "localhost", "port": 6379}
 
-        with patch('redis.asyncio.Redis') as mock_redis_class, \
-             patch('asyncio.run') as mock_asyncio_run:
-
+        with patch("redis.asyncio.Redis") as mock_redis_class, patch(
+            "asyncio.run"
+        ) as mock_asyncio_run:
             mock_redis_instance = AsyncMock()
             mock_redis_instance.ping.return_value = True
             mock_redis_class.return_value = mock_redis_instance
@@ -561,10 +573,11 @@ class TestCacheGlobalFunctions:
         """Test successful cache closing."""
         config = {"host": "localhost", "port": 6379}
 
-        with patch('redis.asyncio.Redis') as mock_redis_class, \
-             patch('asyncio.run') as mock_asyncio_run, \
-             patch('asyncio.run', side_effect=[True, None]) as mock_asyncio_run_close:
-
+        with patch("redis.asyncio.Redis") as mock_redis_class, patch(
+            "asyncio.run"
+        ) as mock_asyncio_run, patch(
+            "asyncio.run", side_effect=[True, None]
+        ) as mock_asyncio_run_close:
             mock_redis_instance = AsyncMock()
             mock_redis_instance.ping.return_value = True
             mock_redis_instance.close.return_value = None
@@ -599,11 +612,11 @@ class TestCacheContextManager:
     @pytest.mark.asyncio
     async def test_context_manager_success(self, cache_config, mock_redis):
         """Test context manager with successful initialization."""
-        with patch('redis.asyncio.Redis', return_value=mock_redis), \
-             patch('core.cache.initialize_cache', return_value=True) as mock_init, \
-             patch('core.cache.close_cache') as mock_close, \
-             patch('core.cache.get_cache', return_value=None):
-
+        with patch("redis.asyncio.Redis", return_value=mock_redis), patch(
+            "core.cache.initialize_cache", return_value=True
+        ) as mock_init, patch("core.cache.close_cache") as mock_close, patch(
+            "core.cache.get_cache", return_value=None
+        ):
             async with CacheContext(cache_config) as cache:
                 assert cache is not None
 
@@ -613,7 +626,7 @@ class TestCacheContextManager:
     @pytest.mark.asyncio
     async def test_context_manager_initialization_failure(self, cache_config):
         """Test context manager when initialization fails."""
-        with patch('core.cache.initialize_cache', return_value=False):
+        with patch("core.cache.initialize_cache", return_value=False):
             with pytest.raises(RuntimeError, match="Failed to initialize cache"):
                 async with CacheContext(cache_config) as cache:
                     pass
@@ -621,7 +634,7 @@ class TestCacheContextManager:
     @pytest.mark.asyncio
     async def test_context_manager_no_config(self):
         """Test context manager without config when cache not initialized."""
-        with patch('core.cache.get_cache', return_value=None):
+        with patch("core.cache.get_cache", return_value=None):
             with pytest.raises(RuntimeError, match="Cache not initialized"):
                 async with CacheContext() as cache:
                     pass
@@ -675,16 +688,20 @@ class TestCacheErrorHandling:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_batch_operations_with_partial_failures(self, cache_instance, mock_redis):
+    async def test_batch_operations_with_partial_failures(
+        self, cache_instance, mock_redis
+    ):
         """Test batch operations with partial failures."""
         # Mock mget to return mix of valid and invalid data
         mock_redis.mget.return_value = [
-            json.dumps({"price": 50000}).encode('utf-8'),  # Valid
+            json.dumps({"price": 50000}).encode("utf-8"),  # Valid
             b"invalid json",  # Invalid
-            None  # Not found
+            None,  # Not found
         ]
 
-        result = await cache_instance.get_multiple_ohlcv(["BTC/USDT", "ETH/USDT", "ADA/USDT"], "1h")
+        result = await cache_instance.get_multiple_ohlcv(
+            ["BTC/USDT", "ETH/USDT", "ADA/USDT"], "1h"
+        )
 
         assert "BTC/USDT" in result
         assert "ETH/USDT" in result
@@ -741,7 +758,10 @@ class TestCacheMemoryMonitoring:
         mock_client = AsyncMock()
         mock_client.ping.return_value = True
         mock_client.dbsize.return_value = 100
-        mock_client.info.return_value = {"used_memory": 100000000, "used_memory_peak": 150000000}
+        mock_client.info.return_value = {
+            "used_memory": 100000000,
+            "used_memory_peak": 150000000,
+        }
         return mock_client
 
     @pytest.fixture
@@ -760,7 +780,7 @@ class TestCacheMemoryMonitoring:
     @pytest.mark.asyncio
     async def test_memory_usage_monitoring(self, cache_instance):
         """Test memory usage monitoring."""
-        with patch('psutil.Process') as mock_process:
+        with patch("psutil.Process") as mock_process:
             mock_memory_info = Mock()
             mock_memory_info.rss = 300 * 1024 * 1024  # 300MB
             mock_process.return_value.memory_info.return_value = mock_memory_info
@@ -772,7 +792,7 @@ class TestCacheMemoryMonitoring:
     @pytest.mark.asyncio
     async def test_memory_thresholds(self, cache_instance):
         """Test memory threshold checking."""
-        with patch.object(cache_instance, '_get_memory_usage') as mock_memory:
+        with patch.object(cache_instance, "_get_memory_usage") as mock_memory:
             # Normal memory
             mock_memory.return_value = 200.0
             status = cache_instance._check_memory_thresholds()
@@ -786,7 +806,7 @@ class TestCacheMemoryMonitoring:
     @pytest.mark.asyncio
     async def test_get_cache_stats(self, cache_instance, mock_redis):
         """Test cache statistics retrieval."""
-        with patch.object(cache_instance, '_get_memory_usage') as mock_memory:
+        with patch.object(cache_instance, "_get_memory_usage") as mock_memory:
             mock_memory.return_value = 250.0
 
             stats = await cache_instance.get_cache_stats()
@@ -811,7 +831,10 @@ class TestCacheEviction:
         mock_client.keys.return_value = ["test:key1", "test:key2"]
         mock_client.dbsize.return_value = 100
         mock_client.object.return_value = [10, 20]  # idle times or frequencies
-        mock_client.info.return_value = {"used_memory": 100000000, "used_memory_peak": 150000000}
+        mock_client.info.return_value = {
+            "used_memory": 100000000,
+            "used_memory_peak": 150000000,
+        }
         return mock_client
 
     @pytest.fixture
@@ -824,8 +847,8 @@ class TestCacheEviction:
                 "max_memory_mb": 500.0,
                 "warning_memory_mb": 400.0,
                 "cleanup_memory_mb": 350.0,
-                "eviction_batch_size": 10
-            }
+                "eviction_batch_size": 10,
+            },
         )
 
     @pytest.fixture
@@ -839,7 +862,7 @@ class TestCacheEviction:
     @pytest.mark.asyncio
     async def test_memory_usage_monitoring(self, cache_instance):
         """Test memory usage monitoring."""
-        with patch('psutil.Process') as mock_process:
+        with patch("psutil.Process") as mock_process:
             mock_memory_info = Mock()
             mock_memory_info.rss = 300 * 1024 * 1024  # 300MB
             mock_process.return_value.memory_info.return_value = mock_memory_info
@@ -850,7 +873,7 @@ class TestCacheEviction:
     @pytest.mark.asyncio
     async def test_memory_thresholds_check(self, cache_instance):
         """Test memory threshold checking."""
-        with patch.object(cache_instance, '_get_memory_usage') as mock_get_memory:
+        with patch.object(cache_instance, "_get_memory_usage") as mock_get_memory:
             # Test normal memory usage
             mock_get_memory.return_value = 200.0
             status = cache_instance._check_memory_thresholds()
@@ -889,7 +912,7 @@ class TestCacheEviction:
         """Test cache size enforcement with TTL policy."""
         mock_redis.dbsize.return_value = 150  # Over limit
 
-        with patch.object(cache_instance, '_evict_oldest') as mock_evict:
+        with patch.object(cache_instance, "_evict_oldest") as mock_evict:
             mock_evict.return_value = 10
 
             evicted = await cache_instance._enforce_cache_limits()
@@ -903,7 +926,7 @@ class TestCacheEviction:
         cache_instance.config.eviction_policy = EvictionPolicy.LRU
         mock_redis.dbsize.return_value = 150
 
-        with patch.object(cache_instance, '_evict_lru') as mock_evict:
+        with patch.object(cache_instance, "_evict_lru") as mock_evict:
             mock_evict.return_value = 10
 
             evicted = await cache_instance._enforce_cache_limits()
@@ -917,7 +940,7 @@ class TestCacheEviction:
         cache_instance.config.eviction_policy = EvictionPolicy.LFU
         mock_redis.dbsize.return_value = 150
 
-        with patch.object(cache_instance, '_evict_lfu') as mock_evict:
+        with patch.object(cache_instance, "_evict_lfu") as mock_evict:
             mock_evict.return_value = 10
 
             evicted = await cache_instance._enforce_cache_limits()
@@ -959,11 +982,13 @@ class TestCacheEviction:
         assert evicted >= 0
 
     @pytest.mark.asyncio
-    async def test_perform_maintenance_normal_conditions(self, cache_instance, mock_redis):
+    async def test_perform_maintenance_normal_conditions(
+        self, cache_instance, mock_redis
+    ):
         """Test maintenance under normal conditions."""
         mock_redis.dbsize.return_value = 50  # Under limit
 
-        with patch.object(cache_instance, '_get_memory_usage') as mock_memory:
+        with patch.object(cache_instance, "_get_memory_usage") as mock_memory:
             mock_memory.return_value = 200.0  # Normal memory
 
             result = await cache_instance.perform_maintenance()
@@ -977,10 +1002,13 @@ class TestCacheEviction:
         """Test maintenance under high memory conditions."""
         mock_redis.dbsize.return_value = 50
 
-        with patch.object(cache_instance, '_get_memory_usage') as mock_memory, \
-             patch.object(cache_instance, '_evict_expired_entries') as mock_expired, \
-             patch.object(cache_instance, '_enforce_cache_limits') as mock_limits:
-
+        with patch.object(
+            cache_instance, "_get_memory_usage"
+        ) as mock_memory, patch.object(
+            cache_instance, "_evict_expired_entries"
+        ) as mock_expired, patch.object(
+            cache_instance, "_enforce_cache_limits"
+        ) as mock_limits:
             mock_memory.return_value = 400.0  # High memory
             mock_expired.return_value = 5
             mock_limits.return_value = 3
@@ -995,9 +1023,12 @@ class TestCacheEviction:
     async def test_get_cache_stats(self, cache_instance, mock_redis):
         """Test cache statistics retrieval."""
         mock_redis.dbsize.return_value = 75
-        mock_redis.info.return_value = {"used_memory": 100000000, "used_memory_peak": 150000000}
+        mock_redis.info.return_value = {
+            "used_memory": 100000000,
+            "used_memory_peak": 150000000,
+        }
 
-        with patch.object(cache_instance, '_get_memory_usage') as mock_memory:
+        with patch.object(cache_instance, "_get_memory_usage") as mock_memory:
             mock_memory.return_value = 250.0
 
             stats = await cache_instance.get_cache_stats()
@@ -1030,14 +1061,14 @@ class TestCacheEviction:
                 "max_memory_mb": 800.0,
                 "warning_memory_mb": 600.0,
                 "cleanup_memory_mb": 500.0,
-                "eviction_batch_size": 50
-            }
+                "eviction_batch_size": 50,
+            },
         }
 
         # Mock the Redis client creation
-        with patch('redis.asyncio.Redis') as mock_redis_class, \
-             patch('asyncio.run') as mock_asyncio_run:
-
+        with patch("redis.asyncio.Redis") as mock_redis_class, patch(
+            "asyncio.run"
+        ) as mock_asyncio_run:
             mock_redis_instance = AsyncMock()
             mock_redis_instance.ping.return_value = True
             mock_redis_class.return_value = mock_redis_instance
@@ -1088,7 +1119,7 @@ class TestCacheEviction:
         # Simulate high cache usage
         mock_redis.dbsize.return_value = 200  # Well over limit
 
-        with patch.object(cache_instance, '_evict_oldest') as mock_evict:
+        with patch.object(cache_instance, "_evict_oldest") as mock_evict:
             mock_evict.return_value = 20
 
             # Trigger maintenance
@@ -1100,6 +1131,7 @@ class TestCacheEviction:
     def test_memory_config_defaults(self):
         """Test memory configuration defaults."""
         from core.cache import MemoryConfig
+
         config = MemoryConfig()
 
         assert config.max_memory_mb == 500.0
@@ -1141,7 +1173,9 @@ class TestCacheIntegration:
 
         # Mock cache instance
         mock_cache = Mock()
-        mock_cache.perform_maintenance = AsyncMock(return_value={"maintenance_performed": True})
+        mock_cache.perform_maintenance = AsyncMock(
+            return_value={"maintenance_performed": True}
+        )
 
         # Integrate cache with memory manager
         memory_manager.integrate_cache_maintenance(mock_cache)
@@ -1155,10 +1189,13 @@ class TestCacheIntegration:
         # Set up scenario: high memory + large cache
         mock_redis.dbsize.return_value = 150
 
-        with patch.object(cache_instance, '_get_memory_usage') as mock_memory, \
-             patch.object(cache_instance, '_evict_expired_entries') as mock_expired, \
-             patch.object(cache_instance, '_enforce_cache_limits') as mock_limits:
-
+        with patch.object(
+            cache_instance, "_get_memory_usage"
+        ) as mock_memory, patch.object(
+            cache_instance, "_evict_expired_entries"
+        ) as mock_expired, patch.object(
+            cache_instance, "_enforce_cache_limits"
+        ) as mock_limits:
             mock_memory.return_value = 400.0  # High memory
             mock_expired.return_value = 5
             mock_limits.return_value = 15

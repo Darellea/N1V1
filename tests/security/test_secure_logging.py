@@ -5,19 +5,19 @@ Tests log sanitization, structured logging, and configurable sensitivity levels
 to ensure sensitive information is never exposed in logs.
 """
 
-import pytest
-import logging
 import json
-from unittest.mock import patch, MagicMock
+import logging
 from io import StringIO
+from unittest.mock import patch
+
+import pytest
 
 from core.logging_utils import (
     LogSanitizer,
-    StructuredLogger,
     LogSensitivity,
+    StructuredLogger,
     get_structured_logger,
     set_global_log_sensitivity,
-    create_secure_logger_config
 )
 
 
@@ -84,11 +84,11 @@ class TestLogSanitizer:
 
     def test_complex_message_sanitization(self):
         """Test sanitization of complex messages with multiple sensitive fields."""
-        message = '''
+        message = """
         Processing trade for user@example.com with API key "sk-1234567890abcdef"
         Balance: 50000.00, PnL: 2500.75, Token: Bearer xyz789
         Phone: +1-555-0199, SSN: 123-45-6789
-        '''
+        """
 
         sanitized = self.sanitizer.sanitize_message(message, LogSensitivity.SECURE)
 
@@ -124,7 +124,9 @@ class TestStructuredLogger:
 
     def test_structured_info_logging(self):
         """Test structured info logging with key-value pairs."""
-        self.logger.info("Test message", symbol="BTC/USDT", amount=1000.50, user_id="user123")
+        self.logger.info(
+            "Test message", symbol="BTC/USDT", amount=1000.50, user_id="user123"
+        )
 
         log_output = self.stream.getvalue()
         log_data = json.loads(log_output.split(" | ", 1)[-1].strip())
@@ -144,7 +146,9 @@ class TestStructuredLogger:
 
     def test_structured_error_logging(self):
         """Test structured error logging."""
-        self.logger.error("Database connection failed", db_host="localhost", error_code=500)
+        self.logger.error(
+            "Database connection failed", db_host="localhost", error_code=500
+        )
 
         log_output = self.stream.getvalue()
         assert "ERROR" in log_output
@@ -192,17 +196,19 @@ class TestCoreLoggerIntegration:
         """Test getting a core logger instance."""
         logger = get_structured_logger("core.test_module", LogSensitivity.SECURE)
         assert logger is not None
-        assert hasattr(logger, 'info')
-        assert hasattr(logger, 'warning')
-        assert hasattr(logger, 'error')
+        assert hasattr(logger, "info")
+        assert hasattr(logger, "warning")
+        assert hasattr(logger, "error")
 
     def test_core_logger_sanitization(self):
         """Test that core logger properly sanitizes sensitive data."""
         logger = get_structured_logger("core.test_module", LogSensitivity.SECURE)
 
         # Mock the underlying logger to capture output
-        with patch.object(logger.logger, 'info') as mock_info:
-            logger.info("Processing order", symbol="BTC/USDT", amount=50000.00, api_key="sk-123")
+        with patch.object(logger.logger, "info") as mock_info:
+            logger.info(
+                "Processing order", symbol="BTC/USDT", amount=50000.00, api_key="sk-123"
+            )
 
             # Check that info was called with sanitized data
             mock_info.assert_called_once()
@@ -235,12 +241,12 @@ class TestGlobalSensitivity:
 
     def test_environment_variable_sensitivity(self):
         """Test sensitivity configuration via environment variable."""
-        with patch.dict('os.environ', {'LOG_SENSITIVITY': 'debug'}):
+        with patch.dict("os.environ", {"LOG_SENSITIVITY": "debug"}):
             # Test that environment variable is respected
             # This would normally call configure_core_logging()
             pass
 
-        with patch.dict('os.environ', {'LOG_SENSITIVITY': 'invalid'}):
+        with patch.dict("os.environ", {"LOG_SENSITIVITY": "invalid"}):
             # Test that invalid values fallback to SECURE
             # This would normally call configure_core_logging()
             pass
@@ -255,7 +261,7 @@ class TestLogSecurityVerification:
             "sk-1234567890abcdef",
             "pk_test_1234567890",
             "xoxb-1234567890-1234567890",
-            "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+            "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
         ]
 
         sanitizer = LogSanitizer()
@@ -269,12 +275,7 @@ class TestLogSecurityVerification:
 
     def test_no_financial_amounts_in_logs(self):
         """Verify that financial amounts never appear in logs."""
-        amounts = [
-            "12345.67",
-            "$999,999.99",
-            "€50,000.00",
-            "-1234.56"
-        ]
+        amounts = ["12345.67", "$999,999.99", "€50,000.00", "-1234.56"]
 
         sanitizer = LogSanitizer()
 
@@ -291,7 +292,7 @@ class TestLogSecurityVerification:
             "user@example.com",
             "+1-555-0123",
             "123-45-6789",
-            "john.doe@gmail.com"
+            "john.doe@gmail.com",
         ]
 
         sanitizer = LogSanitizer()

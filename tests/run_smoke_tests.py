@@ -14,17 +14,17 @@ Usage:
     python tests/run_smoke_tests.py [--url BASE_URL] [--timeout SECONDS] [--verbose]
 """
 
-import asyncio
-import time
-import sys
-import os
-import logging
 import argparse
-import requests
-from typing import Dict, List, Any, Optional
-import subprocess
-import signal
+import asyncio
 import json
+import logging
+import os
+import subprocess
+import sys
+import time
+from typing import Any, Dict
+
+import requests
 
 from utils.logger import get_logger
 
@@ -34,8 +34,13 @@ logger = get_logger(__name__)
 class SmokeTestRunner:
     """Smoke test runner for canary deployment validation."""
 
-    def __init__(self, base_url: str = "http://localhost:8000", timeout: int = 300, verbose: bool = False):
-        self.base_url = base_url.rstrip('/')
+    def __init__(
+        self,
+        base_url: str = "http://localhost:8000",
+        timeout: int = 300,
+        verbose: bool = False,
+    ):
+        self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.verbose = verbose
         self.test_results = {}
@@ -90,7 +95,7 @@ class SmokeTestRunner:
                 "tests_passed": summary["passed_count"],
                 "tests_failed": summary["failed_count"],
                 "results": self.test_results,
-                "summary": summary
+                "summary": summary,
             }
 
         except Exception as e:
@@ -98,7 +103,9 @@ class SmokeTestRunner:
             return {
                 "status": "error",
                 "error": str(e),
-                "duration_seconds": time.time() - self.start_time if self.start_time else 0
+                "duration_seconds": time.time() - self.start_time
+                if self.start_time
+                else 0,
             }
         finally:
             # Cleanup
@@ -116,21 +123,21 @@ class SmokeTestRunner:
                 self.test_results["health_endpoint"] = {
                     "status": "passed",
                     "response_time": response.elapsed.total_seconds(),
-                    "status_code": response.status_code
+                    "status_code": response.status_code,
                 }
                 self.log("Health check passed", "success")
             else:
                 self.test_results["health_endpoint"] = {
                     "status": "failed",
                     "reason": f"Unexpected status code: {response.status_code}",
-                    "status_code": response.status_code
+                    "status_code": response.status_code,
                 }
                 self.log(f"Health check failed: {response.status_code}", "error")
 
         except requests.RequestException as e:
             self.test_results["health_endpoint"] = {
                 "status": "failed",
-                "reason": f"Request failed: {e}"
+                "reason": f"Request failed: {e}",
             }
             self.log(f"Health check failed: {e}", "error")
 
@@ -145,21 +152,21 @@ class SmokeTestRunner:
                 self.test_results["ready_endpoint"] = {
                     "status": "passed",
                     "response_time": response.elapsed.total_seconds(),
-                    "status_code": response.status_code
+                    "status_code": response.status_code,
                 }
                 self.log("Readiness check passed", "success")
             else:
                 self.test_results["ready_endpoint"] = {
                     "status": "failed",
                     "reason": f"Unexpected status code: {response.status_code}",
-                    "status_code": response.status_code
+                    "status_code": response.status_code,
                 }
                 self.log(f"Readiness check failed: {response.status_code}", "error")
 
         except requests.RequestException as e:
             self.test_results["ready_endpoint"] = {
                 "status": "failed",
-                "reason": f"Request failed: {e}"
+                "reason": f"Request failed: {e}",
             }
             self.log(f"Readiness check failed: {e}", "error")
 
@@ -175,21 +182,21 @@ class SmokeTestRunner:
                     "status": "passed",
                     "response_time": response.elapsed.total_seconds(),
                     "status_code": response.status_code,
-                    "auth_required": response.status_code == 401
+                    "auth_required": response.status_code == 401,
                 }
                 self.log("API status check passed", "success")
             else:
                 self.test_results["api_status"] = {
                     "status": "failed",
                     "reason": f"Unexpected status code: {response.status_code}",
-                    "status_code": response.status_code
+                    "status_code": response.status_code,
                 }
                 self.log(f"API status check failed: {response.status_code}", "error")
 
         except requests.RequestException as e:
             self.test_results["api_status"] = {
                 "status": "failed",
-                "reason": f"Request failed: {e}"
+                "reason": f"Request failed: {e}",
             }
             self.log(f"API status check failed: {e}", "error")
 
@@ -201,7 +208,7 @@ class SmokeTestRunner:
         if "localhost" not in self.base_url:
             self.test_results["framework_startup"] = {
                 "status": "skipped",
-                "reason": "Not running locally"
+                "reason": "Not running locally",
             }
             self.log("Framework startup test skipped (not local)", "warning")
             return
@@ -212,7 +219,7 @@ class SmokeTestRunner:
                 [sys.executable, "main.py", "--test-mode"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             )
 
             # Wait a bit for startup
@@ -222,21 +229,21 @@ class SmokeTestRunner:
             if self.process.poll() is None:
                 self.test_results["framework_startup"] = {
                     "status": "passed",
-                    "message": "Framework started successfully"
+                    "message": "Framework started successfully",
                 }
                 self.log("Framework startup test passed", "success")
             else:
                 stdout, stderr = self.process.communicate()
                 self.test_results["framework_startup"] = {
                     "status": "failed",
-                    "reason": f"Framework exited early: {stderr.decode()}"
+                    "reason": f"Framework exited early: {stderr.decode()}",
                 }
                 self.log("Framework startup test failed", "error")
 
         except Exception as e:
             self.test_results["framework_startup"] = {
                 "status": "failed",
-                "reason": f"Startup failed: {e}"
+                "reason": f"Startup failed: {e}",
             }
             self.log(f"Framework startup test failed: {e}", "error")
 
@@ -254,21 +261,21 @@ class SmokeTestRunner:
                 self.test_results["basic_trading"] = {
                     "status": "passed",
                     "response_time": response.elapsed.total_seconds(),
-                    "status_code": response.status_code
+                    "status_code": response.status_code,
                 }
                 self.log("Basic trading test passed", "success")
             else:
                 self.test_results["basic_trading"] = {
                     "status": "failed",
                     "reason": f"Unexpected status code: {response.status_code}",
-                    "status_code": response.status_code
+                    "status_code": response.status_code,
                 }
                 self.log(f"Basic trading test failed: {response.status_code}", "error")
 
         except requests.RequestException as e:
             self.test_results["basic_trading"] = {
                 "status": "failed",
-                "reason": f"Request failed: {e}"
+                "reason": f"Request failed: {e}",
             }
             self.log(f"Basic trading test failed: {e}", "error")
 
@@ -287,13 +294,13 @@ class SmokeTestRunner:
             cpu_usage_percent = psutil.cpu_percent(interval=1)
 
             # Check disk space
-            disk = psutil.disk_usage('/')
+            disk = psutil.disk_usage("/")
             disk_usage_percent = disk.percent
 
             # Define thresholds
             memory_threshold = 90  # 90%
-            cpu_threshold = 95     # 95%
-            disk_threshold = 95    # 95%
+            cpu_threshold = 95  # 95%
+            disk_threshold = 95  # 95%
 
             issues = []
 
@@ -312,7 +319,7 @@ class SmokeTestRunner:
                     "issues": issues,
                     "memory_percent": memory_usage_percent,
                     "cpu_percent": cpu_usage_percent,
-                    "disk_percent": disk_usage_percent
+                    "disk_percent": disk_usage_percent,
                 }
                 self.log(f"System resources test failed: {', '.join(issues)}", "error")
             else:
@@ -320,20 +327,20 @@ class SmokeTestRunner:
                     "status": "passed",
                     "memory_percent": memory_usage_percent,
                     "cpu_percent": cpu_usage_percent,
-                    "disk_percent": disk_usage_percent
+                    "disk_percent": disk_usage_percent,
                 }
                 self.log("System resources test passed", "success")
 
         except ImportError:
             self.test_results["system_resources"] = {
                 "status": "skipped",
-                "reason": "psutil not available"
+                "reason": "psutil not available",
             }
             self.log("System resources test skipped (psutil not available)", "warning")
         except Exception as e:
             self.test_results["system_resources"] = {
                 "status": "failed",
-                "reason": f"Resource check failed: {e}"
+                "reason": f"Resource check failed: {e}",
             }
             self.log(f"System resources test failed: {e}", "error")
 
@@ -372,15 +379,21 @@ class SmokeTestRunner:
             "failed_count": failed_count,
             "skipped_count": skipped_count,
             "all_passed": all_passed,
-            "success_rate": (passed_count / len(self.test_results)) * 100 if self.test_results else 0
+            "success_rate": (passed_count / len(self.test_results)) * 100
+            if self.test_results
+            else 0,
         }
 
 
 async def main():
     """Main function."""
     parser = argparse.ArgumentParser(description="N1V1 Smoke Tests")
-    parser.add_argument("--url", default="http://localhost:8000", help="Base URL to test")
-    parser.add_argument("--timeout", type=int, default=300, help="Test timeout in seconds")
+    parser.add_argument(
+        "--url", default="http://localhost:8000", help="Base URL to test"
+    )
+    parser.add_argument(
+        "--timeout", type=int, default=300, help="Test timeout in seconds"
+    )
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     parser.add_argument("--json", action="store_true", help="Output results as JSON")
 
@@ -389,8 +402,7 @@ async def main():
     # Setup logging
     log_level = logging.DEBUG if args.verbose else logging.INFO
     logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        level=log_level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
     print("=" * 60)

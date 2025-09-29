@@ -16,13 +16,10 @@ Key Features:
 
 import asyncio
 import logging
-import time
-import json
 import os
-from typing import Dict, List, Any, Optional, Tuple, Callable
+import time
 from datetime import datetime, timedelta
-from pathlib import Path
-import warnings
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -57,27 +54,27 @@ class MarketDataFetcher:
         if config is None:
             data_config = get_cross_asset_validation_config()
             config = {
-                'name': data_config.data_fetcher.name,
-                'cache_enabled': data_config.data_fetcher.cache_enabled,
-                'cache_dir': data_config.data_fetcher.cache_dir,
-                'requests_per_minute': data_config.data_fetcher.requests_per_minute,
-                'requests_per_hour': data_config.data_fetcher.requests_per_hour,
-                'min_data_points': data_config.data_fetcher.min_data_points,
-                'max_missing_data_pct': data_config.data_fetcher.max_missing_data_pct
+                "name": data_config.data_fetcher.name,
+                "cache_enabled": data_config.data_fetcher.cache_enabled,
+                "cache_dir": data_config.data_fetcher.cache_dir,
+                "requests_per_minute": data_config.data_fetcher.requests_per_minute,
+                "requests_per_hour": data_config.data_fetcher.requests_per_hour,
+                "min_data_points": data_config.data_fetcher.min_data_points,
+                "max_missing_data_pct": data_config.data_fetcher.max_missing_data_pct,
             }
 
         self.logger = logging.getLogger(f"{self.__class__.__name__}")
 
         # Core configuration
-        self.provider_name = config.get('name', 'binance')
-        self.cache_enabled = config.get('cache_enabled', True)
-        self.cache_dir = config.get('cache_dir', 'data/cache')
-        self.min_data_points = config.get('min_data_points', 100)
-        self.max_missing_data_pct = config.get('max_missing_data_pct', 0.05)
+        self.provider_name = config.get("name", "binance")
+        self.cache_enabled = config.get("cache_enabled", True)
+        self.cache_dir = config.get("cache_dir", "data/cache")
+        self.min_data_points = config.get("min_data_points", 100)
+        self.max_missing_data_pct = config.get("max_missing_data_pct", 0.05)
 
         # Rate limiting
-        self.requests_per_minute = config.get('requests_per_minute', 60)
-        self.requests_per_hour = config.get('requests_per_hour', 1000)
+        self.requests_per_minute = config.get("requests_per_minute", 60)
+        self.requests_per_hour = config.get("requests_per_hour", 1000)
         self._request_times: List[float] = []
         self._hourly_request_times: List[float] = []
 
@@ -89,10 +86,13 @@ class MarketDataFetcher:
         if self.cache_enabled:
             os.makedirs(self.cache_dir, exist_ok=True)
 
-        self.logger.info(f"MarketDataFetcher initialized with provider: {self.provider_name}")
+        self.logger.info(
+            f"MarketDataFetcher initialized with provider: {self.provider_name}"
+        )
 
-    def get_historical_data(self, symbol: str, timeframe: str = '1h',
-                           limit: int = 1000) -> pd.DataFrame:
+    def get_historical_data(
+        self, symbol: str, timeframe: str = "1h", limit: int = 1000
+    ) -> pd.DataFrame:
         """
         Get historical market data for a symbol.
 
@@ -119,9 +119,9 @@ class MarketDataFetcher:
             self._apply_rate_limiting()
 
             # Fetch data based on provider
-            if self.provider_name.lower() == 'binance':
+            if self.provider_name.lower() == "binance":
                 data = self._fetch_from_binance(symbol, timeframe, limit)
-            elif self.provider_name.lower() == 'coingecko':
+            elif self.provider_name.lower() == "coingecko":
                 data = self._fetch_from_coingecko(symbol, timeframe, limit)
             else:
                 raise ValueError(f"Unsupported data provider: {self.provider_name}")
@@ -141,8 +141,9 @@ class MarketDataFetcher:
             self.logger.error(f"Failed to fetch data for {symbol}: {str(e)}")
             return pd.DataFrame()
 
-    async def get_historical_data_async(self, symbol: str, timeframe: str = '1h',
-                                       limit: int = 1000) -> pd.DataFrame:
+    async def get_historical_data_async(
+        self, symbol: str, timeframe: str = "1h", limit: int = 1000
+    ) -> pd.DataFrame:
         """
         Async version of get_historical_data.
 
@@ -165,9 +166,9 @@ class MarketDataFetcher:
             await self._apply_rate_limiting_async()
 
             # Fetch data based on provider
-            if self.provider_name.lower() == 'binance':
+            if self.provider_name.lower() == "binance":
                 data = await self._fetch_from_binance_async(symbol, timeframe, limit)
-            elif self.provider_name.lower() == 'coingecko':
+            elif self.provider_name.lower() == "coingecko":
                 data = await self._fetch_from_coingecko_async(symbol, timeframe, limit)
             else:
                 raise ValueError(f"Unsupported data provider: {self.provider_name}")
@@ -187,7 +188,9 @@ class MarketDataFetcher:
             self.logger.error(f"Failed to fetch data for {symbol}: {str(e)}")
             return pd.DataFrame()
 
-    def _fetch_from_binance(self, symbol: str, timeframe: str, limit: int) -> pd.DataFrame:
+    def _fetch_from_binance(
+        self, symbol: str, timeframe: str, limit: int
+    ) -> pd.DataFrame:
         """
         Fetch data from Binance API.
 
@@ -200,14 +203,15 @@ class MarketDataFetcher:
             DataFrame with OHLCV data
         """
         try:
-            from binance.client import Client as BinanceClient
 
             # Initialize Binance client (would need API keys in production)
             # client = BinanceClient(api_key, api_secret)
             # klines = client.get_klines(symbol=symbol, interval=timeframe, limit=limit)
 
             # Mock data for demonstration
-            self.logger.info(f"Fetching {limit} {timeframe} candles for {symbol} from Binance")
+            self.logger.info(
+                f"Fetching {limit} {timeframe} candles for {symbol} from Binance"
+            )
 
             # Generate mock OHLCV data
             base_time = datetime.now() - timedelta(hours=limit)
@@ -224,18 +228,20 @@ class MarketDataFetcher:
                 high_price = max(open_price, close_price) + abs(np.random.normal(0, 50))
                 low_price = min(open_price, close_price) - abs(np.random.normal(0, 50))
 
-                data.append({
-                    'timestamp': ts,
-                    'open': open_price,
-                    'high': high_price,
-                    'low': low_price,
-                    'close': close_price,
-                    'volume': volumes[i]
-                })
+                data.append(
+                    {
+                        "timestamp": ts,
+                        "open": open_price,
+                        "high": high_price,
+                        "low": low_price,
+                        "close": close_price,
+                        "volume": volumes[i],
+                    }
+                )
 
             df = pd.DataFrame(data)
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            df.set_index('timestamp', inplace=True)
+            df["timestamp"] = pd.to_datetime(df["timestamp"])
+            df.set_index("timestamp", inplace=True)
 
             return df
 
@@ -243,7 +249,9 @@ class MarketDataFetcher:
             self.logger.error(f"Binance fetch failed: {str(e)}")
             return pd.DataFrame()
 
-    async def _fetch_from_binance_async(self, symbol: str, timeframe: str, limit: int) -> pd.DataFrame:
+    async def _fetch_from_binance_async(
+        self, symbol: str, timeframe: str, limit: int
+    ) -> pd.DataFrame:
         """
         Async version of Binance data fetching.
 
@@ -258,9 +266,13 @@ class MarketDataFetcher:
         # For async Binance fetching, you would use aiohttp or similar
         # For now, delegate to sync version in a thread pool
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self._fetch_from_binance, symbol, timeframe, limit)
+        return await loop.run_in_executor(
+            None, self._fetch_from_binance, symbol, timeframe, limit
+        )
 
-    def _fetch_from_coingecko(self, symbol: str, timeframe: str, limit: int) -> pd.DataFrame:
+    def _fetch_from_coingecko(
+        self, symbol: str, timeframe: str, limit: int
+    ) -> pd.DataFrame:
         """
         Fetch data from CoinGecko API.
 
@@ -277,7 +289,7 @@ class MarketDataFetcher:
 
             # Map symbol to CoinGecko ID
             symbol_to_id = self._get_coingecko_id_mapping()
-            base_symbol = symbol.split('/')[0].upper()
+            base_symbol = symbol.split("/")[0].upper()
 
             if base_symbol not in symbol_to_id:
                 raise ValueError(f"Unsupported symbol for CoinGecko: {symbol}")
@@ -287,9 +299,9 @@ class MarketDataFetcher:
             # CoinGecko API call
             url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart"
             params = {
-                'vs_currency': 'usd',
-                'days': min(limit // 24, 365),  # Convert to days (max 365)
-                'interval': 'hourly' if timeframe in ['1h', '4h'] else 'daily'
+                "vs_currency": "usd",
+                "days": min(limit // 24, 365),  # Convert to days (max 365)
+                "interval": "hourly" if timeframe in ["1h", "4h"] else "daily",
             }
 
             response = requests.get(url, params=params)
@@ -298,8 +310,8 @@ class MarketDataFetcher:
             data = response.json()
 
             # Parse CoinGecko response
-            prices = data.get('prices', [])
-            volumes = data.get('total_volumes', [])
+            prices = data.get("prices", [])
+            volumes = data.get("total_volumes", [])
 
             if not prices:
                 return pd.DataFrame()
@@ -309,18 +321,20 @@ class MarketDataFetcher:
             for i, (timestamp, price) in enumerate(prices):
                 volume = volumes[i][1] if i < len(volumes) else 0
 
-                df_data.append({
-                    'timestamp': datetime.fromtimestamp(timestamp / 1000),
-                    'open': price,
-                    'high': price * 1.01,  # Approximate high
-                    'low': price * 0.99,   # Approximate low
-                    'close': price,
-                    'volume': volume
-                })
+                df_data.append(
+                    {
+                        "timestamp": datetime.fromtimestamp(timestamp / 1000),
+                        "open": price,
+                        "high": price * 1.01,  # Approximate high
+                        "low": price * 0.99,  # Approximate low
+                        "close": price,
+                        "volume": volume,
+                    }
+                )
 
             df = pd.DataFrame(df_data)
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            df.set_index('timestamp', inplace=True)
+            df["timestamp"] = pd.to_datetime(df["timestamp"])
+            df.set_index("timestamp", inplace=True)
 
             return df.head(limit)
 
@@ -328,7 +342,9 @@ class MarketDataFetcher:
             self.logger.error(f"CoinGecko fetch failed: {str(e)}")
             return pd.DataFrame()
 
-    async def _fetch_from_coingecko_async(self, symbol: str, timeframe: str, limit: int) -> pd.DataFrame:
+    async def _fetch_from_coingecko_async(
+        self, symbol: str, timeframe: str, limit: int
+    ) -> pd.DataFrame:
         """
         Async version of CoinGecko data fetching.
 
@@ -345,7 +361,7 @@ class MarketDataFetcher:
 
             # Map symbol to CoinGecko ID
             symbol_to_id = self._get_coingecko_id_mapping()
-            base_symbol = symbol.split('/')[0].upper()
+            base_symbol = symbol.split("/")[0].upper()
 
             if base_symbol not in symbol_to_id:
                 raise ValueError(f"Unsupported symbol for CoinGecko: {symbol}")
@@ -355,9 +371,9 @@ class MarketDataFetcher:
             # CoinGecko API call
             url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart"
             params = {
-                'vs_currency': 'usd',
-                'days': min(limit // 24, 365),
-                'interval': 'hourly' if timeframe in ['1h', '4h'] else 'daily'
+                "vs_currency": "usd",
+                "days": min(limit // 24, 365),
+                "interval": "hourly" if timeframe in ["1h", "4h"] else "daily",
             }
 
             async with aiohttp.ClientSession() as session:
@@ -368,8 +384,8 @@ class MarketDataFetcher:
                     data = await response.json()
 
             # Parse response (same as sync version)
-            prices = data.get('prices', [])
-            volumes = data.get('total_volumes', [])
+            prices = data.get("prices", [])
+            volumes = data.get("total_volumes", [])
 
             if not prices:
                 return pd.DataFrame()
@@ -378,18 +394,20 @@ class MarketDataFetcher:
             for i, (timestamp, price) in enumerate(prices):
                 volume = volumes[i][1] if i < len(volumes) else 0
 
-                df_data.append({
-                    'timestamp': datetime.fromtimestamp(timestamp / 1000),
-                    'open': price,
-                    'high': price * 1.01,
-                    'low': price * 0.99,
-                    'close': price,
-                    'volume': volume
-                })
+                df_data.append(
+                    {
+                        "timestamp": datetime.fromtimestamp(timestamp / 1000),
+                        "open": price,
+                        "high": price * 1.01,
+                        "low": price * 0.99,
+                        "close": price,
+                        "volume": volume,
+                    }
+                )
 
             df = pd.DataFrame(df_data)
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            df.set_index('timestamp', inplace=True)
+            df["timestamp"] = pd.to_datetime(df["timestamp"])
+            df.set_index("timestamp", inplace=True)
 
             return df.head(limit)
 
@@ -405,18 +423,18 @@ class MarketDataFetcher:
             Dictionary mapping symbols to CoinGecko IDs
         """
         return {
-            'BTC': 'bitcoin',
-            'ETH': 'ethereum',
-            'ADA': 'cardano',
-            'SOL': 'solana',
-            'DOT': 'polkadot',
-            'LINK': 'chainlink',
-            'BNB': 'binancecoin',
-            'XRP': 'ripple',
-            'LTC': 'litecoin',
-            'DOGE': 'dogecoin',
-            'MATIC': 'matic-network',
-            'AVAX': 'avalanche-2'
+            "BTC": "bitcoin",
+            "ETH": "ethereum",
+            "ADA": "cardano",
+            "SOL": "solana",
+            "DOT": "polkadot",
+            "LINK": "chainlink",
+            "BNB": "binancecoin",
+            "XRP": "ripple",
+            "LTC": "litecoin",
+            "DOGE": "dogecoin",
+            "MATIC": "matic-network",
+            "AVAX": "avalanche-2",
         }
 
     def _validate_data_quality(self, data: pd.DataFrame) -> bool:
@@ -434,17 +452,21 @@ class MarketDataFetcher:
 
         # Check minimum data points
         if len(data) < self.min_data_points:
-            self.logger.warning(f"Insufficient data points: {len(data)} < {self.min_data_points}")
+            self.logger.warning(
+                f"Insufficient data points: {len(data)} < {self.min_data_points}"
+            )
             return False
 
         # Check for missing values
         missing_pct = data.isnull().sum().sum() / (len(data) * len(data.columns))
         if missing_pct > self.max_missing_data_pct:
-            self.logger.warning(f"Too many missing values: {missing_pct:.1%} > {self.max_missing_data_pct:.1%}")
+            self.logger.warning(
+                f"Too many missing values: {missing_pct:.1%} > {self.max_missing_data_pct:.1%}"
+            )
             return False
 
         # Check for reasonable price values
-        required_columns = ['open', 'high', 'low', 'close']
+        required_columns = ["open", "high", "low", "close"]
         if not all(col in data.columns for col in required_columns):
             self.logger.warning("Missing required OHLC columns")
             return False
@@ -457,11 +479,11 @@ class MarketDataFetcher:
 
         # Check OHLC relationships
         invalid_ohlc = (
-            (data['high'] < data['low']) |
-            (data['high'] < data['open']) |
-            (data['high'] < data['close']) |
-            (data['low'] > data['open']) |
-            (data['low'] > data['close'])
+            (data["high"] < data["low"])
+            | (data["high"] < data["open"])
+            | (data["high"] < data["close"])
+            | (data["low"] > data["open"])
+            | (data["low"] > data["close"])
         )
         if invalid_ohlc.any():
             self.logger.warning("Invalid OHLC relationships found")
@@ -477,7 +499,9 @@ class MarketDataFetcher:
 
         # Clean old request times
         self._request_times = [t for t in self._request_times if current_time - t < 60]
-        self._hourly_request_times = [t for t in self._hourly_request_times if current_time - t < 3600]
+        self._hourly_request_times = [
+            t for t in self._hourly_request_times if current_time - t < 3600
+        ]
 
         # Check rate limits
         if len(self._request_times) >= self.requests_per_minute:
@@ -489,7 +513,9 @@ class MarketDataFetcher:
         if len(self._hourly_request_times) >= self.requests_per_hour:
             sleep_time = 3600 - (current_time - self._hourly_request_times[0])
             if sleep_time > 0:
-                self.logger.info(f"Hourly rate limit reached, sleeping for {sleep_time:.1f}s")
+                self.logger.info(
+                    f"Hourly rate limit reached, sleeping for {sleep_time:.1f}s"
+                )
                 time.sleep(sleep_time)
 
         # Record this request
@@ -504,7 +530,9 @@ class MarketDataFetcher:
 
         # Clean old request times
         self._request_times = [t for t in self._request_times if current_time - t < 60]
-        self._hourly_request_times = [t for t in self._hourly_request_times if current_time - t < 3600]
+        self._hourly_request_times = [
+            t for t in self._hourly_request_times if current_time - t < 3600
+        ]
 
         # Check rate limits
         if len(self._request_times) >= self.requests_per_minute:
@@ -516,7 +544,9 @@ class MarketDataFetcher:
         if len(self._hourly_request_times) >= self.requests_per_hour:
             sleep_time = 3600 - (current_time - self._hourly_request_times[0])
             if sleep_time > 0:
-                self.logger.info(f"Hourly rate limit reached, sleeping for {sleep_time:.1f}s")
+                self.logger.info(
+                    f"Hourly rate limit reached, sleeping for {sleep_time:.1f}s"
+                )
                 await asyncio.sleep(sleep_time)
 
         # Record this request
@@ -537,7 +567,9 @@ class MarketDataFetcher:
         """
         return f"{symbol}_{timeframe}_{limit}"
 
-    def _get_from_cache(self, symbol: str, timeframe: str, limit: int) -> Optional[pd.DataFrame]:
+    def _get_from_cache(
+        self, symbol: str, timeframe: str, limit: int
+    ) -> Optional[pd.DataFrame]:
         """
         Retrieve data from cache if available and not expired.
 
@@ -581,7 +613,9 @@ class MarketDataFetcher:
 
         return None
 
-    def _save_to_cache(self, symbol: str, timeframe: str, limit: int, data: pd.DataFrame) -> None:
+    def _save_to_cache(
+        self, symbol: str, timeframe: str, limit: int, data: pd.DataFrame
+    ) -> None:
         """
         Save data to cache.
 
@@ -615,11 +649,13 @@ class MarketDataFetcher:
 
         if os.path.exists(self.cache_dir):
             for file in os.listdir(self.cache_dir):
-                if file.endswith('.pkl'):
+                if file.endswith(".pkl"):
                     try:
                         os.remove(os.path.join(self.cache_dir, file))
                     except Exception as e:
-                        self.logger.warning(f"Failed to remove cache file {file}: {str(e)}")
+                        self.logger.warning(
+                            f"Failed to remove cache file {file}: {str(e)}"
+                        )
 
         self.logger.info("Cache cleared")
 
@@ -632,14 +668,14 @@ class MarketDataFetcher:
         """
         cache_files = []
         if os.path.exists(self.cache_dir):
-            cache_files = [f for f in os.listdir(self.cache_dir) if f.endswith('.pkl')]
+            cache_files = [f for f in os.listdir(self.cache_dir) if f.endswith(".pkl")]
 
         return {
-            'memory_cache_entries': len(self._cache),
-            'file_cache_entries': len(cache_files),
-            'cache_enabled': self.cache_enabled,
-            'cache_ttl_seconds': self._cache_ttl,
-            'cache_directory': self.cache_dir
+            "memory_cache_entries": len(self._cache),
+            "file_cache_entries": len(cache_files),
+            "cache_enabled": self.cache_enabled,
+            "cache_ttl_seconds": self._cache_ttl,
+            "cache_directory": self.cache_dir,
         }
 
     def set_cache_ttl(self, ttl_seconds: int) -> None:
@@ -659,17 +695,31 @@ class MarketDataFetcher:
         Returns:
             List of supported symbols
         """
-        if self.provider_name.lower() == 'binance':
+        if self.provider_name.lower() == "binance":
             # Common Binance symbols
             return [
-                'BTC/USDT', 'ETH/USDT', 'ADA/USDT', 'SOL/USDT', 'DOT/USDT',
-                'LINK/USDT', 'BNB/USDT', 'XRP/USDT', 'LTC/USDT', 'DOGE/USDT'
+                "BTC/USDT",
+                "ETH/USDT",
+                "ADA/USDT",
+                "SOL/USDT",
+                "DOT/USDT",
+                "LINK/USDT",
+                "BNB/USDT",
+                "XRP/USDT",
+                "LTC/USDT",
+                "DOGE/USDT",
             ]
-        elif self.provider_name.lower() == 'coingecko':
+        elif self.provider_name.lower() == "coingecko":
             # CoinGecko supported symbols
             return [
-                'BTC/USDT', 'ETH/USDT', 'ADA/USDT', 'SOL/USDT', 'DOT/USDT',
-                'LINK/USDT', 'MATIC/USDT', 'AVAX/USDT'
+                "BTC/USDT",
+                "ETH/USDT",
+                "ADA/USDT",
+                "SOL/USDT",
+                "DOT/USDT",
+                "LINK/USDT",
+                "MATIC/USDT",
+                "AVAX/USDT",
             ]
         else:
             return []
@@ -681,12 +731,28 @@ class MarketDataFetcher:
         Returns:
             List of supported timeframes
         """
-        if self.provider_name.lower() == 'binance':
-            return ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '3d', '1w', '1M']
-        elif self.provider_name.lower() == 'coingecko':
-            return ['1h', '1d']  # Limited by CoinGecko API
+        if self.provider_name.lower() == "binance":
+            return [
+                "1m",
+                "3m",
+                "5m",
+                "15m",
+                "30m",
+                "1h",
+                "2h",
+                "4h",
+                "6h",
+                "8h",
+                "12h",
+                "1d",
+                "3d",
+                "1w",
+                "1M",
+            ]
+        elif self.provider_name.lower() == "coingecko":
+            return ["1h", "1d"]  # Limited by CoinGecko API
         else:
-            return ['1h', '1d']
+            return ["1h", "1d"]
 
     def __str__(self) -> str:
         """

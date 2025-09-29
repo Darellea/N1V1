@@ -9,17 +9,17 @@ Unit tests for adaptive risk management features including:
 - Enhanced trade logging with exit details
 """
 
-import pytest
-import asyncio
-import pandas as pd
-import numpy as np
-from decimal import Decimal
-from unittest.mock import Mock, patch, AsyncMock
 from datetime import datetime, timedelta
+from decimal import Decimal
+from unittest.mock import Mock, patch
 
-from risk.risk_manager import RiskManager
-from core.contracts import TradingSignal, SignalType, SignalStrength
+import numpy as np
+import pandas as pd
+import pytest
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
 from core.types import OrderType
+from risk.risk_manager import RiskManager
 from strategies.regime.market_regime import MarketRegime
 
 
@@ -65,7 +65,7 @@ class TestAdaptiveRiskManagement:
     def sample_market_data(self):
         """Sample OHLCV market data for testing."""
         # Create 20 periods of sample data
-        dates = pd.date_range('2023-01-01', periods=20, freq='h')
+        dates = pd.date_range("2023-01-01", periods=20, freq="h")
         np.random.seed(42)  # For reproducible tests
 
         # Generate realistic price data
@@ -100,7 +100,7 @@ class TestAdaptiveRiskManagement:
             "low": pd.Series(lows, index=dates),
             "close": pd.Series(prices, index=dates),
             "volume": pd.Series(volumes, index=dates),
-            "adx": 30  # Sample ADX value
+            "adx": 30,  # Sample ADX value
         }
 
     @pytest.fixture
@@ -116,11 +116,13 @@ class TestAdaptiveRiskManagement:
             amount=Decimal("1000"),
             stop_loss=Decimal("49000"),
             take_profit=Decimal("51000"),
-            timestamp=int(datetime.now().timestamp() * 1000)
+            timestamp=int(datetime.now().timestamp() * 1000),
         )
 
     @pytest.mark.asyncio
-    async def test_adaptive_position_size_calculation(self, risk_manager, sample_market_data):
+    async def test_adaptive_position_size_calculation(
+        self, risk_manager, sample_market_data
+    ):
         """Test adaptive position sizing with ATR-based volatility scaling."""
         signal = TradingSignal(
             strategy_id="test_strategy",
@@ -130,12 +132,16 @@ class TestAdaptiveRiskManagement:
             order_type=OrderType.MARKET,
             current_price=Decimal("50000"),
             amount=Decimal("0"),  # Will be calculated
-            timestamp=int(datetime.now().timestamp() * 1000)
+            timestamp=int(datetime.now().timestamp() * 1000),
         )
 
         # Mock account balance
-        with patch.object(risk_manager, '_get_current_balance', return_value=Decimal("10000")):
-            position_size = await risk_manager.calculate_adaptive_position_size(signal, sample_market_data)
+        with patch.object(
+            risk_manager, "_get_current_balance", return_value=Decimal("10000")
+        ):
+            position_size = await risk_manager.calculate_adaptive_position_size(
+                signal, sample_market_data
+            )
 
             # Position size should be calculated based on ATR
             assert isinstance(position_size, Decimal)
@@ -156,12 +162,16 @@ class TestAdaptiveRiskManagement:
             order_type=OrderType.MARKET,
             current_price=Decimal("50000"),
             amount=Decimal("0"),
-            timestamp=int(datetime.now().timestamp() * 1000)
+            timestamp=int(datetime.now().timestamp() * 1000),
         )
 
         # Mock account balance
-        with patch.object(risk_manager, '_get_current_balance', return_value=Decimal("10000")):
-            position_size = await risk_manager.calculate_adaptive_position_size(signal, None)
+        with patch.object(
+            risk_manager, "_get_current_balance", return_value=Decimal("10000")
+        ):
+            position_size = await risk_manager.calculate_adaptive_position_size(
+                signal, None
+            )
 
             # Should fallback to fixed percentage
             expected = Decimal("10000") * risk_manager.risk_per_trade
@@ -178,10 +188,12 @@ class TestAdaptiveRiskManagement:
             order_type=OrderType.MARKET,
             current_price=Decimal("50000"),
             amount=Decimal("1000"),
-            timestamp=int(datetime.now().timestamp() * 1000)
+            timestamp=int(datetime.now().timestamp() * 1000),
         )
 
-        stop_loss = await risk_manager.calculate_dynamic_stop_loss(signal, sample_market_data)
+        stop_loss = await risk_manager.calculate_dynamic_stop_loss(
+            signal, sample_market_data
+        )
 
         assert stop_loss is not None
         assert isinstance(stop_loss, Decimal)
@@ -202,7 +214,7 @@ class TestAdaptiveRiskManagement:
             order_type=OrderType.MARKET,
             current_price=Decimal("50000"),
             amount=Decimal("1000"),
-            timestamp=int(datetime.now().timestamp() * 1000)
+            timestamp=int(datetime.now().timestamp() * 1000),
         )
 
         stop_loss = await risk_manager.calculate_dynamic_stop_loss(signal, None)
@@ -225,10 +237,12 @@ class TestAdaptiveRiskManagement:
             current_price=Decimal("50000"),
             amount=Decimal("1000"),
             stop_loss=Decimal("49000"),
-            timestamp=int(datetime.now().timestamp() * 1000)
+            timestamp=int(datetime.now().timestamp() * 1000),
         )
 
-        take_profit = await risk_manager.calculate_adaptive_take_profit(signal, sample_market_data)
+        take_profit = await risk_manager.calculate_adaptive_take_profit(
+            signal, sample_market_data
+        )
 
         assert take_profit is not None
         assert isinstance(take_profit, Decimal)
@@ -247,7 +261,7 @@ class TestAdaptiveRiskManagement:
             current_price=Decimal("50000"),
             amount=Decimal("1000"),
             stop_loss=Decimal("49000"),
-            timestamp=int(datetime.now().timestamp() * 1000)
+            timestamp=int(datetime.now().timestamp() * 1000),
         )
 
         # Test LONG position trailing
@@ -277,7 +291,7 @@ class TestAdaptiveRiskManagement:
             current_price=Decimal("50000"),
             amount=Decimal("1000"),
             stop_loss=Decimal("49000"),
-            timestamp=int(datetime.now().timestamp() * 1000)
+            timestamp=int(datetime.now().timestamp() * 1000),
         )
 
         highest_price = Decimal("51000")
@@ -315,10 +329,12 @@ class TestAdaptiveRiskManagement:
         assert exit_reason == ""
 
     @pytest.mark.asyncio
-    async def test_regime_based_exit(self, risk_manager, sample_market_data, sample_signal):
+    async def test_regime_based_exit(
+        self, risk_manager, sample_market_data, sample_signal
+    ):
         """Test regime-based exit conditions."""
         # Mock regime detector to return sideways regime
-        with patch('risk.risk_manager.get_market_regime_detector') as mock_detector:
+        with patch("risk.risk_manager.get_market_regime_detector") as mock_detector:
             mock_regime_detector = Mock()
             mock_result = Mock()
             mock_result.regime = MarketRegime.SIDEWAYS
@@ -363,10 +379,15 @@ class TestAdaptiveRiskManagement:
         take_profit = Decimal("51000")
 
         # Mock trade logger
-        with patch('risk.risk_manager.trade_logger') as mock_logger:
+        with patch("risk.risk_manager.trade_logger") as mock_logger:
             await risk_manager.log_trade_with_exit_details(
-                sample_signal, exit_price, exit_reason, pnl,
-                entry_price, stop_loss, take_profit
+                sample_signal,
+                exit_price,
+                exit_reason,
+                pnl,
+                entry_price,
+                stop_loss,
+                take_profit,
             )
 
             # Verify performance method was called
@@ -401,7 +422,9 @@ class TestAdaptiveRiskManagement:
 
         # Test with moderate trend (ADX >= 25)
         market_data_moderate = {"adx": 30}
-        multiplier = await risk_manager._calculate_trend_multiplier(market_data_moderate)
+        multiplier = await risk_manager._calculate_trend_multiplier(
+            market_data_moderate
+        )
         assert multiplier == Decimal("1.2")
 
         # Test with weak trend (ADX < 25)
@@ -436,8 +459,12 @@ class TestAdaptiveRiskManagement:
         params = await risk_manager.get_risk_parameters()
 
         required_keys = [
-            "max_position_size", "max_daily_loss", "risk_reward_ratio",
-            "position_sizing_method", "today_pnl", "today_drawdown"
+            "max_position_size",
+            "max_daily_loss",
+            "risk_reward_ratio",
+            "position_sizing_method",
+            "today_pnl",
+            "today_drawdown",
         ]
 
         for key in required_keys:
@@ -453,7 +480,7 @@ class TestAdaptiveRiskManagement:
         # Add some volatility data
         risk_manager.symbol_volatility["BTC/USDT"] = {
             "volatility": 0.25,
-            "last_updated": int(datetime.now().timestamp() * 1000)
+            "last_updated": int(datetime.now().timestamp() * 1000),
         }
 
         params = await risk_manager.get_risk_parameters("BTC/USDT")
@@ -462,7 +489,9 @@ class TestAdaptiveRiskManagement:
         assert params["volatility"] == 0.25
 
     @pytest.mark.asyncio
-    async def test_position_sizing_method_selection(self, risk_manager, sample_market_data):
+    async def test_position_sizing_method_selection(
+        self, risk_manager, sample_market_data
+    ):
         """Test that position sizing method selection works correctly."""
         signal = TradingSignal(
             strategy_id="test_strategy",
@@ -472,22 +501,30 @@ class TestAdaptiveRiskManagement:
             order_type=OrderType.MARKET,
             current_price=Decimal("50000"),
             amount=Decimal("0"),
-            timestamp=int(datetime.now().timestamp() * 1000)
+            timestamp=int(datetime.now().timestamp() * 1000),
         )
 
         # Mock account balance
-        with patch.object(risk_manager, '_get_current_balance', return_value=Decimal("10000")):
+        with patch.object(
+            risk_manager, "_get_current_balance", return_value=Decimal("10000")
+        ):
             # Test adaptive_atr method
             risk_manager.position_sizing_method = "adaptive_atr"
-            size1 = await risk_manager.calculate_position_size(signal, sample_market_data)
+            size1 = await risk_manager.calculate_position_size(
+                signal, sample_market_data
+            )
 
             # Test fixed_percent method
             risk_manager.position_sizing_method = "fixed_percent"
-            size2 = await risk_manager.calculate_position_size(signal, sample_market_data)
+            size2 = await risk_manager.calculate_position_size(
+                signal, sample_market_data
+            )
 
             # Test kelly method
             risk_manager.position_sizing_method = "kelly"
-            size3 = await risk_manager.calculate_position_size(signal, sample_market_data)
+            size3 = await risk_manager.calculate_position_size(
+                signal, sample_market_data
+            )
 
             # All should return valid position sizes
             assert size1 > 0
@@ -508,14 +545,16 @@ class TestAdaptiveRiskManagement:
             order_type=OrderType.MARKET,
             current_price=Decimal("50000"),
             amount=Decimal("1000"),
-            timestamp=int(datetime.now().timestamp() * 1000)
+            timestamp=int(datetime.now().timestamp() * 1000),
         )
 
         # Test with invalid market data
         invalid_data = {"invalid": "data"}
 
         # These should not raise exceptions and should return reasonable defaults
-        pos_size = await risk_manager.calculate_adaptive_position_size(signal, invalid_data)
+        pos_size = await risk_manager.calculate_adaptive_position_size(
+            signal, invalid_data
+        )
         assert pos_size >= 0
 
         sl = await risk_manager.calculate_dynamic_stop_loss(signal, invalid_data)
@@ -536,17 +575,21 @@ class TestAdaptiveRiskManagement:
             current_price=Decimal("50000"),
             amount=Decimal("1000"),
             stop_loss=Decimal("51000"),  # Above entry for SHORT
-            timestamp=int(datetime.now().timestamp() * 1000)
+            timestamp=int(datetime.now().timestamp() * 1000),
         )
 
         # Test stop loss calculation for SHORT
-        stop_loss = await risk_manager.calculate_dynamic_stop_loss(signal, sample_market_data)
+        stop_loss = await risk_manager.calculate_dynamic_stop_loss(
+            signal, sample_market_data
+        )
         if stop_loss:
             # For SHORT position, stop loss should be above entry price
             assert stop_loss > Decimal("50000")
 
         # Test take profit calculation for SHORT
-        take_profit = await risk_manager.calculate_adaptive_take_profit(signal, sample_market_data)
+        take_profit = await risk_manager.calculate_adaptive_take_profit(
+            signal, sample_market_data
+        )
         if take_profit:
             # For SHORT position, take profit should be below entry price
             assert take_profit < Decimal("50000")
@@ -569,7 +612,7 @@ class TestAdaptiveRiskIntegration:
     def sample_market_data(self):
         """Sample OHLCV market data for testing."""
         # Create 20 periods of sample data
-        dates = pd.date_range('2023-01-01', periods=20, freq='h')
+        dates = pd.date_range("2023-01-01", periods=20, freq="h")
         np.random.seed(42)  # For reproducible tests
 
         # Generate realistic price data
@@ -604,7 +647,7 @@ class TestAdaptiveRiskIntegration:
             "low": pd.Series(lows, index=dates),
             "close": pd.Series(prices, index=dates),
             "volume": pd.Series(volumes, index=dates),
-            "adx": 30  # Sample ADX value
+            "adx": 30,  # Sample ADX value
         }
 
     @pytest.fixture
@@ -649,13 +692,17 @@ class TestAdaptiveRiskIntegration:
             order_type=OrderType.MARKET,
             current_price=Decimal("50000"),
             amount=Decimal("0"),  # Will be calculated
-            timestamp=int(datetime.now().timestamp() * 1000)
+            timestamp=int(datetime.now().timestamp() * 1000),
         )
 
         # Mock account balance
-        with patch.object(full_risk_manager, '_get_current_balance', return_value=Decimal("10000")):
+        with patch.object(
+            full_risk_manager, "_get_current_balance", return_value=Decimal("10000")
+        ):
             # 1. Evaluate signal (should calculate position size, SL, TP)
-            is_valid = await full_risk_manager.evaluate_signal(signal, sample_market_data)
+            is_valid = await full_risk_manager.evaluate_signal(
+                signal, sample_market_data
+            )
 
             assert is_valid is True
             assert signal.amount > 0
@@ -672,7 +719,11 @@ class TestAdaptiveRiskIntegration:
 
             # 3. Test trailing stop calculation
             trailing_stop = await full_risk_manager.calculate_trailing_stop(
-                signal, signal.current_price, signal.current_price, None, sample_market_data
+                signal,
+                signal.current_price,
+                signal.current_price,
+                None,
+                sample_market_data,
             )
 
             assert trailing_stop is not None
@@ -686,8 +737,13 @@ class TestAdaptiveRiskIntegration:
 
             # 5. Test trade logging
             await full_risk_manager.log_trade_with_exit_details(
-                signal, Decimal("49500"), "sl_hit", Decimal("-100"),
-                signal.current_price, signal.stop_loss, signal.take_profit
+                signal,
+                Decimal("49500"),
+                "sl_hit",
+                Decimal("-100"),
+                signal.current_price,
+                signal.stop_loss,
+                signal.take_profit,
             )
 
             # Verify exit stats were updated
@@ -697,15 +753,15 @@ class TestAdaptiveRiskIntegration:
     async def test_risk_manager_initialization(self, full_risk_manager):
         """Test that RiskManager initializes correctly with all new parameters."""
         # Verify all new attributes are set
-        assert hasattr(full_risk_manager, 'risk_per_trade')
-        assert hasattr(full_risk_manager, 'atr_k_factor')
-        assert hasattr(full_risk_manager, 'stop_loss_method')
-        assert hasattr(full_risk_manager, 'enable_adaptive_tp')
-        assert hasattr(full_risk_manager, 'enable_trailing_stop')
-        assert hasattr(full_risk_manager, 'enable_time_based_exit')
-        assert hasattr(full_risk_manager, 'enable_regime_based_exit')
-        assert hasattr(full_risk_manager, 'position_tracking')
-        assert hasattr(full_risk_manager, 'exit_type_stats')
+        assert hasattr(full_risk_manager, "risk_per_trade")
+        assert hasattr(full_risk_manager, "atr_k_factor")
+        assert hasattr(full_risk_manager, "stop_loss_method")
+        assert hasattr(full_risk_manager, "enable_adaptive_tp")
+        assert hasattr(full_risk_manager, "enable_trailing_stop")
+        assert hasattr(full_risk_manager, "enable_time_based_exit")
+        assert hasattr(full_risk_manager, "enable_regime_based_exit")
+        assert hasattr(full_risk_manager, "position_tracking")
+        assert hasattr(full_risk_manager, "exit_type_stats")
 
         # Verify default values
         assert full_risk_manager.position_sizing_method == "adaptive_atr"
@@ -715,7 +771,13 @@ class TestAdaptiveRiskIntegration:
         assert full_risk_manager.enable_regime_based_exit is True
 
         # Verify exit type stats structure
-        expected_exit_types = ["sl_hit", "tp_hit", "time_limit", "regime_change", "manual"]
+        expected_exit_types = [
+            "sl_hit",
+            "tp_hit",
+            "time_limit",
+            "regime_change",
+            "manual",
+        ]
         for exit_type in expected_exit_types:
             assert exit_type in full_risk_manager.exit_type_stats
             assert "wins" in full_risk_manager.exit_type_stats[exit_type]

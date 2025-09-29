@@ -5,14 +5,13 @@ Discord integration for trade alerts, system notifications, and bot commands.
 Supports both webhook-based notifications and interactive bot functionality.
 """
 
-import logging
 import asyncio
-import random
-from typing import Dict, Optional, List, Any
-from datetime import datetime
-from utils.time import now_ms, to_iso
-import json
+import logging
 import os
+import random
+from typing import Any, Dict, Optional
+
+from utils.time import now_ms, to_iso
 
 try:
     import discord
@@ -31,9 +30,9 @@ except ImportError:
     commands = None
 import aiohttp
 
-from utils.logger import get_trade_logger
-from utils.config_loader import get_config
 from utils.adapter import signal_to_dict
+from utils.config_loader import get_config
+from utils.logger import get_trade_logger
 
 logger = logging.getLogger(__name__)
 trade_logger = get_trade_logger()
@@ -45,7 +44,9 @@ class DiscordNotifier:
     Supports both asynchronous alerts and command-based interaction.
     """
 
-    def __init__(self, discord_config: Dict, task_manager: Optional["TaskManager"] = None):
+    def __init__(
+        self, discord_config: Dict, task_manager: Optional["TaskManager"] = None
+    ):
         """
         Initialize the Discord notifier.
 
@@ -60,9 +61,15 @@ class DiscordNotifier:
         #  - CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN
         #  - CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID
         #  - DISCORD_TEST_MODE (for testing: "mock" or "live")
-        self.webhook_url = os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL") or discord_config.get("webhook_url")
-        self.bot_token = os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN") or discord_config.get("bot_token")
-        self.channel_id = os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID") or discord_config.get("channel_id")
+        self.webhook_url = os.getenv(
+            "CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL"
+        ) or discord_config.get("webhook_url")
+        self.bot_token = os.getenv(
+            "CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN"
+        ) or discord_config.get("bot_token")
+        self.channel_id = os.getenv(
+            "CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID"
+        ) or discord_config.get("channel_id")
         self.alerts_enabled = discord_config.get("alerts", {}).get("enabled", False)
         self.commands_enabled = discord_config.get("commands", {}).get("enabled", False)
 
@@ -111,11 +118,15 @@ class DiscordNotifier:
         # Don't create session here - it will be created asynchronously in initialize()
         # Informational logging; actual sending path chosen in send_notification based on config.
         if self.bot_token and self.channel_id and not self.webhook_url:
-            logger.info("Discord notifier configured to use Bot token + channel (REST API) for alerts")
+            logger.info(
+                "Discord notifier configured to use Bot token + channel (REST API) for alerts"
+            )
         elif self.webhook_url:
             logger.info("Discord webhook notifications enabled")
         else:
-            logger.debug("Discord notifier initialized without webhook or bot-token+channel; alerts disabled until configured")
+            logger.debug(
+                "Discord notifier initialized without webhook or bot-token+channel; alerts disabled until configured"
+            )
 
     def _register_commands(self) -> None:
         """Register Discord bot commands."""
@@ -196,7 +207,7 @@ class DiscordNotifier:
     async def _verify_channel(self, ctx) -> bool:
         """Verify command was issued in the correct channel."""
         if str(ctx.channel.id) != str(self.channel_id):
-            await ctx.send(f"❌ Please use commands in the designated bot channel.")
+            await ctx.send("❌ Please use commands in the designated bot channel.")
             return False
         return True
 
@@ -222,11 +233,15 @@ class DiscordNotifier:
         if self.bot and self.commands_enabled:
             # Keep reference to bot task so it can be cancelled/awaited on shutdown
             if self.task_manager:
-                self._bot_task = self.task_manager.create_task(self.bot.start(self.bot_token), name="DiscordBot")
+                self._bot_task = self.task_manager.create_task(
+                    self.bot.start(self.bot_token), name="DiscordBot"
+                )
             else:
                 self._bot_task = asyncio.create_task(self.bot.start(self.bot_token))
             logger.info("Discord bot started")
-        elif self.alerts_enabled and (self.webhook_url or (self.bot_token and self.channel_id)):
+        elif self.alerts_enabled and (
+            self.webhook_url or (self.bot_token and self.channel_id)
+        ):
             # Create aiohttp session asynchronously - only if not already created
             await self._ensure_session()
             logger.info("Discord webhook notifications enabled")
@@ -239,7 +254,9 @@ class DiscordNotifier:
         async with self._session_lock:
             if self.session is None or self.session.closed:
                 # Create new session with proper connector configuration
-                connector = aiohttp.TCPConnector(limit=10, limit_per_host=5, ttl_dns_cache=30)
+                connector = aiohttp.TCPConnector(
+                    limit=10, limit_per_host=5, ttl_dns_cache=30
+                )
                 self.session = aiohttp.ClientSession(connector=connector)
                 logger.debug("Created new aiohttp session for Discord notifier")
 
@@ -260,7 +277,7 @@ class DiscordNotifier:
     async def shutdown(self) -> None:
         """Cleanup Discord resources."""
         # Prevent multiple shutdown calls
-        if getattr(self, '_shutdown_complete', False):
+        if getattr(self, "_shutdown_complete", False):
             return
 
         try:
@@ -277,13 +294,13 @@ class DiscordNotifier:
             if getattr(self, "_bot_task", None):
                 try:
                     # Check if task is done - handle both real tasks and mocks
-                    if hasattr(self._bot_task, 'done'):
+                    if hasattr(self._bot_task, "done"):
                         try:
                             is_done = self._bot_task.done()
                             # Handle case where done() returns a Mock object (AsyncMock)
-                            if hasattr(is_done, '__bool__'):
+                            if hasattr(is_done, "__bool__"):
                                 is_done = bool(is_done)
-                            elif hasattr(is_done, '__call__'):
+                            elif callable(is_done):
                                 is_done = False  # Assume AsyncMock task is not done
                             else:
                                 is_done = False
@@ -294,26 +311,32 @@ class DiscordNotifier:
 
                     if not is_done and loop_running:
                         # For real tasks, cancel and await
-                        if hasattr(self._bot_task, 'cancel'):
+                        if hasattr(self._bot_task, "cancel"):
                             try:
                                 self._bot_task.cancel()
                             except Exception:
                                 pass  # Cancel may fail on mocks
 
                         # Only await if it's actually awaitable
-                        if hasattr(self._bot_task, '__await__') or asyncio.iscoroutine(self._bot_task):
+                        if hasattr(self._bot_task, "__await__") or asyncio.iscoroutine(
+                            self._bot_task
+                        ):
                             try:
                                 await asyncio.wait_for(self._bot_task, timeout=30.0)
                             except asyncio.TimeoutError:
                                 try:
-                                    logger.warning("Timeout reached while awaiting discord bot task cancellation")
+                                    logger.warning(
+                                        "Timeout reached while awaiting discord bot task cancellation"
+                                    )
                                 except (ValueError, RuntimeError):
                                     pass  # Logging may fail during shutdown
                             except asyncio.CancelledError:
                                 pass
                             except Exception:
                                 try:
-                                    logger.exception("Error awaiting discord bot task during shutdown")
+                                    logger.exception(
+                                        "Error awaiting discord bot task during shutdown"
+                                    )
                                 except (ValueError, RuntimeError):
                                     pass  # Logging may fail during shutdown
                 except Exception:
@@ -335,20 +358,27 @@ class DiscordNotifier:
                             await asyncio.wait_for(self.bot.logout(), timeout=15.0)
                         except asyncio.TimeoutError:
                             try:
-                                logger.warning("Timeout reached while awaiting discord bot logout")
+                                logger.warning(
+                                    "Timeout reached while awaiting discord bot logout"
+                                )
                             except (ValueError, RuntimeError):
                                 pass
                         except Exception:
                             # Not all library versions expose logout or it may fail; continue to close the client anyway.
                             try:
-                                logger.debug("discord.Bot.logout() not available or failed; continuing to close the bot", exc_info=True)
+                                logger.debug(
+                                    "discord.Bot.logout() not available or failed; continuing to close the bot",
+                                    exc_info=True,
+                                )
                             except (ValueError, RuntimeError):
                                 pass
                     try:
                         await asyncio.wait_for(self.bot.close(), timeout=15.0)
                     except asyncio.TimeoutError:
                         try:
-                            logger.warning("Timeout reached while awaiting discord bot close")
+                            logger.warning(
+                                "Timeout reached while awaiting discord bot close"
+                            )
                         except (ValueError, RuntimeError):
                             pass
                     except Exception:
@@ -358,7 +388,9 @@ class DiscordNotifier:
                             pass
                 except Exception:
                     try:
-                        logger.exception("Failed while shutting down discord bot client")
+                        logger.exception(
+                            "Failed while shutting down discord bot client"
+                        )
                     except (ValueError, RuntimeError):
                         pass
                 finally:
@@ -371,7 +403,9 @@ class DiscordNotifier:
                     await self._close_session()
                 except Exception:
                     try:
-                        logger.exception("Failed to close aiohttp session for discord notifier")
+                        logger.exception(
+                            "Failed to close aiohttp session for discord notifier"
+                        )
                     except (ValueError, RuntimeError):
                         pass  # Logging may fail during shutdown
 
@@ -404,7 +438,9 @@ class DiscordNotifier:
                 message = "📊 Update"
             else:
                 # No content and no embed - skip sending but return success
-                logger.debug("Skipping Discord notification: empty content and no embed data")
+                logger.debug(
+                    "Skipping Discord notification: empty content and no embed data"
+                )
                 return True
 
         # Ensure HTTP session exists
@@ -421,7 +457,9 @@ class DiscordNotifier:
         use_webhook = bool(self.webhook_url) and not use_bot_rest
 
         if not use_bot_rest and not use_webhook:
-            logger.error("No valid Discord notifier configuration: missing webhook_url or bot_token+channel_id")
+            logger.error(
+                "No valid Discord notifier configuration: missing webhook_url or bot_token+channel_id"
+            )
             return False
 
         # Common retry strategy parameters
@@ -461,9 +499,14 @@ class DiscordNotifier:
                         sleep_for = float(retry_after)
                     else:
                         # Exponential backoff with jitter
-                        sleep_for = base_backoff * (2 ** attempt) + random.random() * base_backoff
+                        sleep_for = (
+                            base_backoff * (2**attempt)
+                            + random.random() * base_backoff
+                        )
 
-                    logger.warning(f"Discord rate limited (429). Sleeping for {sleep_for:.2f}s (attempt {attempt+1}/{max_retries})")
+                    logger.warning(
+                        f"Discord rate limited (429). Sleeping for {sleep_for:.2f}s (attempt {attempt+1}/{max_retries})"
+                    )
                     await asyncio.sleep(sleep_for)
                     attempt += 1
                     continue
@@ -472,19 +515,29 @@ class DiscordNotifier:
                 body = await resp.text()
                 if 500 <= status < 600:
                     # Server error: retry with backoff
-                    sleep_for = base_backoff * (2 ** attempt) + random.random() * base_backoff
-                    logger.warning(f"Discord server error {status}. Retrying after {sleep_for:.2f}s (attempt {attempt+1}/{max_retries}) - body: {body}")
+                    sleep_for = (
+                        base_backoff * (2**attempt) + random.random() * base_backoff
+                    )
+                    logger.warning(
+                        f"Discord server error {status}. Retrying after {sleep_for:.2f}s (attempt {attempt+1}/{max_retries}) - body: {body}"
+                    )
                     await asyncio.sleep(sleep_for)
                     attempt += 1
                     continue
 
-                logger.error(f"Discord notification failed: status={status} body={body}")
+                logger.error(
+                    f"Discord notification failed: status={status} body={body}"
+                )
                 return False
 
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            except (aiohttp.ClientError, asyncio.TimeoutError):
                 # Network-level errors: retry with backoff
-                sleep_for = base_backoff * (2 ** attempt) + random.random() * base_backoff
-                logger.exception(f"Discord notification HTTP/client error; retrying after {sleep_for:.2f}s (attempt {attempt+1}/{max_retries})")
+                sleep_for = (
+                    base_backoff * (2**attempt) + random.random() * base_backoff
+                )
+                logger.exception(
+                    f"Discord notification HTTP/client error; retrying after {sleep_for:.2f}s (attempt {attempt+1}/{max_retries})"
+                )
                 await asyncio.sleep(sleep_for)
                 attempt += 1
                 continue
@@ -564,14 +617,22 @@ class DiscordNotifier:
             return False
 
         # Normalize incoming signal objects (dataclass/objects) into plain dicts
-        sig = signal_data if isinstance(signal_data, dict) else signal_to_dict(signal_data)
+        sig = (
+            signal_data
+            if isinstance(signal_data, dict)
+            else signal_to_dict(signal_data)
+        )
 
         embed = {
             "title": "📡 New Trading Signal",
             "color": 0x0000FF,
             "fields": [
                 {"name": "Symbol", "value": sig.get("symbol", "N/A"), "inline": True},
-                {"name": "Type", "value": sig.get("signal_type", "N/A"), "inline": True},
+                {
+                    "name": "Type",
+                    "value": sig.get("signal_type", "N/A"),
+                    "inline": True,
+                },
                 {
                     "name": "Strength",
                     "value": sig.get("strength", "N/A"),
@@ -603,7 +664,8 @@ class DiscordNotifier:
         }
 
         return await self.send_notification(
-            message=f"New signal generated: {sig.get('symbol', 'N/A')}", embed_data=embed
+            message=f"New signal generated: {sig.get('symbol', 'N/A')}",
+            embed_data=embed,
         )
 
     async def send_error_alert(self, error_data: Dict) -> bool:
@@ -737,7 +799,9 @@ class DiscordNotifier:
                 },
                 {
                     "name": "Error Message",
-                    "value": failure_data.get("error_message", "Unknown error")[:1024],  # Discord field limit
+                    "value": failure_data.get("error_message", "Unknown error")[
+                        :1024
+                    ],  # Discord field limit
                     "inline": False,
                 },
                 {
@@ -762,7 +826,7 @@ class DiscordNotifier:
 
         return await self.send_notification(
             message=f"🚨 Order execution failed for {failure_data.get('symbol', 'Unknown')} after {failure_data.get('retry_count', 0)} retries",
-            embed_data=embed
+            embed_data=embed,
         )
 
     async def __aenter__(self):
@@ -779,7 +843,7 @@ class DiscordNotifier:
         # Avoid any logging or async operations during interpreter shutdown
         # Just silently check if shutdown was completed properly
         try:
-            if not getattr(self, '_shutdown_complete', False):
+            if not getattr(self, "_shutdown_complete", False):
                 # Shutdown was not called - this is just a silent flag check
                 # No logging, no async operations, no exceptions
                 pass

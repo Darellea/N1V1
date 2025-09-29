@@ -2,16 +2,18 @@
 Unit tests for predictive models.
 """
 
-import pytest
-import pandas as pd
-import numpy as np
 from unittest.mock import Mock, patch
+
+import numpy as np
+import pandas as pd
+import pytest
+
 from predictive_models import (
+    PredictionContext,
+    PredictiveModelManager,
     PricePredictor,
     VolatilityPredictor,
     VolumePredictor,
-    PredictiveModelManager,
-    PredictionContext
 )
 
 
@@ -21,10 +23,7 @@ class TestPredictionContext:
     def test_valid_prediction_context(self):
         """Test creating a valid PredictionContext."""
         context = PredictionContext(
-            price_direction="up",
-            volatility="low",
-            volume_surge=True,
-            confidence=0.8
+            price_direction="up", volatility="low", volume_surge=True, confidence=0.8
         )
         assert context.price_direction == "up"
         assert context.volatility == "low"
@@ -49,10 +48,7 @@ class TestPredictionContext:
     def test_to_dict(self):
         """Test converting PredictionContext to dict."""
         context = PredictionContext(
-            price_direction="up",
-            volatility="high",
-            volume_surge=False,
-            confidence=0.7
+            price_direction="up", volatility="high", volume_surge=False, confidence=0.7
         )
         data = context.to_dict()
         assert data["price_direction"] == "up"
@@ -66,7 +62,7 @@ class TestPredictionContext:
             "price_direction": "down",
             "volatility": "low",
             "volume_surge": True,
-            "confidence": 0.6
+            "confidence": 0.6,
         }
         context = PredictionContext.from_dict(data)
         assert context.price_direction == "down"
@@ -80,11 +76,7 @@ class TestPricePredictor:
 
     def test_initialization(self):
         """Test PricePredictor initialization."""
-        config = {
-            "type": "lightgbm",
-            "confidence_threshold": 0.6,
-            "lookback": 50
-        }
+        config = {"type": "lightgbm", "confidence_threshold": 0.6, "lookback": 50}
         predictor = PricePredictor(config)
         assert predictor.model_type == "lightgbm"
         assert predictor.confidence_threshold == 0.6
@@ -96,14 +88,14 @@ class TestPricePredictor:
         predictor = PricePredictor(config)
 
         # Create sample data
-        dates = pd.date_range('2023-01-01', periods=100, freq='h')
+        dates = pd.date_range("2023-01-01", periods=100, freq="h")
         data = {
-            'timestamp': dates,
-            'open': np.random.uniform(100, 110, 100),
-            'high': np.random.uniform(105, 115, 100),
-            'low': np.random.uniform(95, 105, 100),
-            'close': np.random.uniform(100, 110, 100),
-            'volume': np.random.uniform(1000, 5000, 100)
+            "timestamp": dates,
+            "open": np.random.uniform(100, 110, 100),
+            "high": np.random.uniform(105, 115, 100),
+            "low": np.random.uniform(95, 105, 100),
+            "close": np.random.uniform(100, 110, 100),
+            "volume": np.random.uniform(1000, 5000, 100),
         }
         df = pd.DataFrame(data)
 
@@ -116,13 +108,15 @@ class TestPricePredictor:
         config = {"type": "lightgbm"}
         predictor = PricePredictor(config)
 
-        df = pd.DataFrame({
-            'open': [100, 101, 102],
-            'high': [105, 106, 107],
-            'low': [95, 96, 97],
-            'close': [103, 104, 105],
-            'volume': [1000, 1100, 1200]
-        })
+        df = pd.DataFrame(
+            {
+                "open": [100, 101, 102],
+                "high": [105, 106, 107],
+                "low": [95, 96, 97],
+                "close": [103, 104, 105],
+                "volume": [1000, 1100, 1200],
+            }
+        )
 
         direction, confidence = predictor.predict(df)
         assert direction == "neutral"
@@ -134,11 +128,7 @@ class TestVolatilityPredictor:
 
     def test_initialization(self):
         """Test VolatilityPredictor initialization."""
-        config = {
-            "type": "garch",
-            "forecast_horizon": 5,
-            "threshold": 0.02
-        }
+        config = {"type": "garch", "forecast_horizon": 5, "threshold": 0.02}
         predictor = VolatilityPredictor(config)
         assert predictor.model_type == "garch"
         assert predictor.forecast_horizon == 5
@@ -151,11 +141,11 @@ class TestVolatilityPredictor:
 
         # Create sample data
         data = {
-            'open': np.random.uniform(100, 110, 100),
-            'high': np.random.uniform(105, 115, 100),
-            'low': np.random.uniform(95, 105, 100),
-            'close': np.random.uniform(100, 110, 100),
-            'volume': np.random.uniform(1000, 5000, 100)
+            "open": np.random.uniform(100, 110, 100),
+            "high": np.random.uniform(105, 115, 100),
+            "low": np.random.uniform(95, 105, 100),
+            "close": np.random.uniform(100, 110, 100),
+            "volume": np.random.uniform(1000, 5000, 100),
         }
         df = pd.DataFrame(data)
 
@@ -163,18 +153,20 @@ class TestVolatilityPredictor:
         assert not features.empty
         assert len(features.columns) > 0
 
-    @patch('predictive_models.volatility_predictor.ARCH_AVAILABLE', False)
+    @patch("predictive_models.volatility_predictor.ARCH_AVAILABLE", False)
     def test_predict_garch_unavailable(self):
         """Test GARCH prediction when arch library is not available."""
         config = {"type": "garch"}
         predictor = VolatilityPredictor(config)
 
-        df = pd.DataFrame({
-            'open': [100, 101, 102],
-            'high': [105, 106, 107],
-            'low': [95, 96, 97],
-            'close': [103, 104, 105]
-        })
+        df = pd.DataFrame(
+            {
+                "open": [100, 101, 102],
+                "high": [105, 106, 107],
+                "low": [95, 96, 97],
+                "close": [103, 104, 105],
+            }
+        )
 
         regime, confidence = predictor.predict(df)
         assert regime == "low"
@@ -186,11 +178,7 @@ class TestVolumePredictor:
 
     def test_initialization(self):
         """Test VolumePredictor initialization."""
-        config = {
-            "type": "zscore",
-            "threshold": 2.5,
-            "lookback": 50
-        }
+        config = {"type": "zscore", "threshold": 2.5, "lookback": 50}
         predictor = VolumePredictor(config)
         assert predictor.model_type == "zscore"
         assert predictor.threshold == 2.5
@@ -203,11 +191,11 @@ class TestVolumePredictor:
 
         # Create sample data
         data = {
-            'open': np.random.uniform(100, 110, 100),
-            'high': np.random.uniform(105, 115, 100),
-            'low': np.random.uniform(95, 105, 100),
-            'close': np.random.uniform(100, 110, 100),
-            'volume': np.random.uniform(1000, 5000, 100)
+            "open": np.random.uniform(100, 110, 100),
+            "high": np.random.uniform(105, 115, 100),
+            "low": np.random.uniform(95, 105, 100),
+            "close": np.random.uniform(100, 110, 100),
+            "volume": np.random.uniform(1000, 5000, 100),
         }
         df = pd.DataFrame(data)
 
@@ -223,11 +211,11 @@ class TestVolumePredictor:
         # Create data with a volume spike
         volumes = [1000] * 19 + [3000]  # Last volume is 3x the mean
         data = {
-            'open': [100] * 20,
-            'high': [105] * 20,
-            'low': [95] * 20,
-            'close': [103] * 20,
-            'volume': volumes
+            "open": [100] * 20,
+            "high": [105] * 20,
+            "low": [95] * 20,
+            "close": [103] * 20,
+            "volume": volumes,
         }
         df = pd.DataFrame(data)
 
@@ -253,8 +241,8 @@ class TestPredictiveModelManager:
             "models": {
                 "price_direction": {"type": "lightgbm"},
                 "volatility": {"type": "garch"},
-                "volume_surge": {"type": "zscore"}
-            }
+                "volume_surge": {"type": "zscore"},
+            },
         }
         manager = PredictiveModelManager(config)
         assert manager.enabled
@@ -267,7 +255,7 @@ class TestPredictiveModelManager:
         config = {"enabled": False}
         manager = PredictiveModelManager(config)
 
-        df = pd.DataFrame({'close': [100, 101, 102]})
+        df = pd.DataFrame({"close": [100, 101, 102]})
         context = manager.predict(df)
 
         assert context.price_direction == "neutral"
@@ -289,7 +277,7 @@ class TestPredictiveModelManager:
             "enabled": True,
             "models": {
                 "price_direction": {"enabled": True, "confidence_threshold": 0.6}
-            }
+            },
         }
         manager = PredictiveModelManager(config)
 
@@ -313,8 +301,8 @@ class TestPredictiveModelManager:
             "models": {
                 "price_direction": {"type": "lightgbm"},
                 "volatility": {"type": "garch"},
-                "volume_surge": {"type": "zscore"}
-            }
+                "volume_surge": {"type": "zscore"},
+            },
         }
         manager = PredictiveModelManager(config)
         status = manager.get_model_status()

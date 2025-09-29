@@ -8,31 +8,25 @@ and performance impact as specified in the testing strategy.
 """
 
 import asyncio
-import time
-import pytest
-import unittest.mock as mock
-from unittest.mock import AsyncMock, MagicMock, patch, mock_open
-import numpy as np
-import pandas as pd
-import json
-import aiohttp
-from aiohttp import web
-from aiohttp.test_utils import TestServer, TestClient
-from typing import Dict, List, Any, Optional
-import tempfile
-import os
 import math
-from pathlib import Path
-import requests
+import time
+from unittest.mock import patch
 
-from core.metrics_collector import (
-    MetricsCollector, MetricSample, MetricSeries, get_metrics_collector,
-    collect_trading_metrics, collect_risk_metrics, collect_strategy_metrics,
-    collect_exchange_metrics
-)
-from core.metrics_endpoint import MetricsEndpoint
+import pytest
+from aiohttp import web
+from aiohttp.test_utils import TestClient, TestServer
+
 from core.alert_rules_manager import AlertRulesManager
 from core.dashboard_manager import DashboardManager
+from core.metrics_collector import (
+    MetricSample,
+    MetricsCollector,
+    collect_exchange_metrics,
+    collect_risk_metrics,
+    collect_strategy_metrics,
+    collect_trading_metrics,
+)
+from core.metrics_endpoint import MetricsEndpoint
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -43,10 +37,7 @@ class TestMetricsCollection:
 
     def setup_method(self):
         """Setup test fixtures."""
-        self.config = {
-            'collection_interval': 15.0,
-            'max_samples_per_metric': 1000
-        }
+        self.config = {"collection_interval": 15.0, "max_samples_per_metric": 1000}
         self.collector = MetricsCollector(self.config)
 
     def test_initialization(self):
@@ -59,7 +50,9 @@ class TestMetricsCollection:
     def test_metric_registration(self):
         """Test metric series registration."""
         # Register a metric
-        series = self.collector.register_metric("test_metric", "Test metric description")
+        series = self.collector.register_metric(
+            "test_metric", "Test metric description"
+        )
 
         assert "test_metric" in self.collector.metrics
         assert self.collector.metrics["test_metric"] == series
@@ -105,9 +98,15 @@ class TestMetricsCollection:
     async def test_histogram_observation(self):
         """Test histogram metric observations."""
         # Add histogram observations
-        await self.collector.observe_histogram("test_histogram", 0.1, {"bucket": "fast"})
-        await self.collector.observe_histogram("test_histogram", 0.5, {"bucket": "medium"})
-        await self.collector.observe_histogram("test_histogram", 2.0, {"bucket": "slow"})
+        await self.collector.observe_histogram(
+            "test_histogram", 0.1, {"bucket": "fast"}
+        )
+        await self.collector.observe_histogram(
+            "test_histogram", 0.5, {"bucket": "medium"}
+        )
+        await self.collector.observe_histogram(
+            "test_histogram", 2.0, {"bucket": "slow"}
+        )
 
         # Check observations were recorded
         series = self.collector.metrics["test_histogram"]
@@ -139,14 +138,17 @@ class TestMetricsCollection:
             value=99.9,
             labels={"env": "test", "version": "1.0"},
             timestamp=1234567890.0,
-            help_text="Sample metric"
+            help_text="Sample metric",
         )
 
         prometheus_output = sample.to_prometheus()
 
         assert "# HELP test_sample Sample metric" in prometheus_output
         assert "# TYPE test_sample gauge" in prometheus_output
-        assert 'test_sample{env="test",version="1.0"} 99.9 1234567890000' in prometheus_output
+        assert (
+            'test_sample{env="test",version="1.0"} 99.9 1234567890000'
+            in prometheus_output
+        )
 
     def test_metric_types_inference(self):
         """Test automatic metric type inference."""
@@ -196,9 +198,9 @@ class TestDataAccuracy:
             3.14159,
             1e-6,
             1e6,
-            float('inf'),
-            float('-inf'),
-            float('nan')
+            float("inf"),
+            float("-inf"),
+            float("nan"),
         ]
 
         for i, value in enumerate(test_values):
@@ -213,26 +215,29 @@ class TestDataAccuracy:
     async def test_metric_persistence(self):
         """Test metrics persistence across collector operations."""
         # Record metrics
-        await self.collector.record_metric("persistence_test", 42.0, {"persistent": "true"})
+        await self.collector.record_metric(
+            "persistence_test", 42.0, {"persistent": "true"}
+        )
 
         # Perform other operations
         await self.collector.record_metric("other_metric", 24.0)
         await self.collector.increment_counter("counter_test")
 
         # Verify original metric still exists and is correct
-        value = self.collector.get_metric_value("persistence_test", {"persistent": "true"})
+        value = self.collector.get_metric_value(
+            "persistence_test", {"persistent": "true"}
+        )
         assert value == 42.0
 
     @pytest.mark.asyncio
     async def test_concurrent_metric_recording(self):
         """Test metric recording under concurrent access."""
+
         async def record_metrics(worker_id: int):
             """Worker function to record metrics concurrently."""
             for i in range(100):
                 await self.collector.record_metric(
-                    f"concurrent_test_{worker_id}",
-                    float(i),
-                    {"worker": str(worker_id)}
+                    f"concurrent_test_{worker_id}", float(i), {"worker": str(worker_id)}
                 )
 
         # Run multiple workers concurrently
@@ -250,7 +255,7 @@ class TestDataAccuracy:
     def test_metric_series_limits(self):
         """Test metric series sample limits."""
         # Create collector with small limit
-        collector = MetricsCollector({'max_samples_per_metric': 5})
+        collector = MetricsCollector({"max_samples_per_metric": 5})
 
         series = collector.register_metric("limit_test")
 
@@ -286,7 +291,7 @@ class TestTradingMetricsCollection:
             "trading_max_drawdown_percent",
             "trading_orders_total",
             "trading_order_latency_seconds",
-            "trading_slippage_bps"
+            "trading_slippage_bps",
         ]
 
         for metric_name in expected_metrics:
@@ -303,7 +308,7 @@ class TestTradingMetricsCollection:
             "risk_value_at_risk_usd",
             "risk_portfolio_exposure_usd",
             "risk_concentration_ratio",
-            "risk_circuit_breaker_status"
+            "risk_circuit_breaker_status",
         ]
 
         for metric_name in expected_metrics:
@@ -315,8 +320,11 @@ class TestTradingMetricsCollection:
         await collect_strategy_metrics(self.collector)
 
         # Should have metrics for multiple strategies
-        strategy_metrics = [name for name in self.collector.metrics.keys()
-                          if name.startswith("strategy_")]
+        strategy_metrics = [
+            name
+            for name in self.collector.metrics.keys()
+            if name.startswith("strategy_")
+        ]
 
         assert len(strategy_metrics) > 0
 
@@ -330,8 +338,11 @@ class TestTradingMetricsCollection:
         await collect_exchange_metrics(self.collector)
 
         # Should have metrics for multiple exchanges
-        exchange_metrics = [name for name in self.collector.metrics.keys()
-                          if name.startswith("exchange_")]
+        exchange_metrics = [
+            name
+            for name in self.collector.metrics.keys()
+            if name.startswith("exchange_")
+        ]
 
         assert len(exchange_metrics) > 0
 
@@ -365,7 +376,7 @@ class TestMetricsEndpoint:
         async with TestServer(app) as server:
             async with TestClient(server) as client:
                 # Request metrics
-                resp = await client.get('/metrics')
+                resp = await client.get("/metrics")
 
                 assert resp.status == 200
                 text = await resp.text()
@@ -380,7 +391,7 @@ class TestMetricsEndpoint:
         app = self.endpoint.create_app()
         async with TestServer(app) as server:
             async with TestClient(server) as client:
-                resp = await client.get('/health')
+                resp = await client.get("/health")
 
                 assert resp.status == 200
                 data = await resp.json()
@@ -395,7 +406,7 @@ class TestMetricsEndpoint:
         app = self.endpoint.create_app()
         async with TestServer(app) as server:
             async with TestClient(server) as client:
-                resp = await client.get('/invalid')
+                resp = await client.get("/invalid")
 
                 assert resp.status == 404
 
@@ -416,7 +427,7 @@ class TestAlertingSystem:
             "query": "cpu_usage > 80",
             "duration": "5m",
             "severity": "warning",
-            "description": "High CPU usage detected"
+            "description": "High CPU usage detected",
         }
 
         rule = await self.alert_manager.create_rule(rule_config)
@@ -433,7 +444,7 @@ class TestAlertingSystem:
             "name": "test_alert",
             "query": "test_metric > 90",
             "duration": "1m",
-            "severity": "critical"
+            "severity": "critical",
         }
 
         rule = await self.alert_manager.create_rule(rule_config)
@@ -457,7 +468,7 @@ class TestAlertingSystem:
             "name": "duplicate_test",
             "query": "error_rate > 5",
             "duration": "1m",
-            "severity": "warning"
+            "severity": "warning",
         }
 
         rule = await self.alert_manager.create_rule(rule_config)
@@ -477,15 +488,17 @@ class TestAlertingSystem:
     async def test_notification_delivery(self):
         """Test alert notification delivery."""
         # Mock notification channels
-        with patch.object(self.alert_manager, '_send_discord_notification') as mock_discord, \
-             patch.object(self.alert_manager, '_send_email_notification') as mock_email:
-
+        with patch.object(
+            self.alert_manager, "_send_discord_notification"
+        ) as mock_discord, patch.object(
+            self.alert_manager, "_send_email_notification"
+        ) as mock_email:
             rule_config = {
                 "name": "notification_test",
                 "query": "memory_usage > 90",
                 "duration": "1m",
                 "severity": "critical",
-                "channels": ["discord", "email"]
+                "channels": ["discord", "email"],
             }
 
             rule = await self.alert_manager.create_rule(rule_config)
@@ -510,8 +523,9 @@ class TestPerformanceImpact:
     @pytest.mark.asyncio
     async def test_collection_performance(self):
         """Test metrics collection performance overhead."""
-        import psutil
         import os
+
+        import psutil
 
         process = psutil.Process(os.getpid())
 
@@ -529,27 +543,36 @@ class TestPerformanceImpact:
         collection_cpu = process.cpu_percent(interval=0.1)
 
         # Performance requirements
-        assert collection_time < 1.0, f"Collection took {collection_time:.2f}s (should be < 1.0s)"
-        assert collection_cpu - baseline_cpu < 10, f"CPU overhead {collection_cpu - baseline_cpu:.1f}% (should be < 10%)"
+        assert (
+            collection_time < 1.0
+        ), f"Collection took {collection_time:.2f}s (should be < 1.0s)"
+        assert (
+            collection_cpu - baseline_cpu < 10
+        ), f"CPU overhead {collection_cpu - baseline_cpu:.1f}% (should be < 10%)"
 
     @pytest.mark.asyncio
     async def test_memory_overhead(self):
         """Test memory overhead of metrics collection."""
-        import psutil
         import os
+
+        import psutil
 
         process = psutil.Process(os.getpid())
         baseline_memory = process.memory_info().rss
 
         # Perform intensive metrics collection
         for i in range(10000):
-            await self.collector.record_metric("memory_test", float(i), {"batch": str(i % 10)})
+            await self.collector.record_metric(
+                "memory_test", float(i), {"batch": str(i % 10)}
+            )
 
         final_memory = process.memory_info().rss
         memory_increase = final_memory - baseline_memory
 
         # Memory requirements (reasonable for metrics collection)
-        assert memory_increase < 100 * 1024 * 1024, f"Memory increase {memory_increase/1024/1024:.1f}MB exceeds 100MB limit"
+        assert (
+            memory_increase < 100 * 1024 * 1024
+        ), f"Memory increase {memory_increase/1024/1024:.1f}MB exceeds 100MB limit"
 
     @pytest.mark.asyncio
     async def test_scalability_under_load(self):
@@ -568,11 +591,15 @@ class TestPerformanceImpact:
         total_time = time.time() - start_time
 
         # Scalability requirements
-        assert total_time < 5.0, f"High-load test took {total_time:.2f}s (should be < 5.0s)"
+        assert (
+            total_time < 5.0
+        ), f"High-load test took {total_time:.2f}s (should be < 5.0s)"
 
         # Verify all metrics were collected
         total_metrics = len(self.collector.metrics)
-        assert total_metrics >= 100, f"Only {total_metrics} metrics collected (expected >= 100)"
+        assert (
+            total_metrics >= 100
+        ), f"Only {total_metrics} metrics collected (expected >= 100)"
 
     async def _generate_metrics_batch(self, batch_id: int):
         """Generate a batch of metrics for scalability testing."""
@@ -580,7 +607,7 @@ class TestPerformanceImpact:
             await self.collector.record_metric(
                 f"scalability_test_{batch_id}_{i % 10}",
                 float(i),
-                {"batch": str(batch_id), "metric": str(i % 10)}
+                {"batch": str(batch_id), "metric": str(i % 10)},
             )
 
 
@@ -601,9 +628,9 @@ class TestGrafanaIntegration:
                 {
                     "title": "CPU Usage",
                     "type": "graph",
-                    "targets": [{"expr": "cpu_usage"}]
+                    "targets": [{"expr": "cpu_usage"}],
                 }
-            ]
+            ],
         }
 
         dashboard = await self.dashboard_manager.create_dashboard(dashboard_config)
@@ -621,9 +648,9 @@ class TestGrafanaIntegration:
                 {
                     "title": "Test Panel",
                     "type": "graph",
-                    "targets": [{"expr": "test_metric"}]
+                    "targets": [{"expr": "test_metric"}],
                 }
-            ]
+            ],
         }
 
         dashboard = await self.dashboard_manager.create_dashboard(dashboard_config)

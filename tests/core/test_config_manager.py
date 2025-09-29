@@ -5,25 +5,24 @@ Tests configuration validation, safe defaults, environment-specific validation,
 and error handling for the hardened configuration system.
 """
 
-import pytest
+import copy
 import json
 import os
 import tempfile
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-import copy
+
+import pytest
+from pydantic import ValidationError
 
 from core.config_manager import (
+    SAFE_DEFAULTS,
     ConfigManager,
     EnvironmentConfig,
     ExchangeConfig,
-    RiskManagementConfig,
-    MonitoringConfig,
-    StrategiesConfig,
     MainConfig,
-    SAFE_DEFAULTS
+    MonitoringConfig,
+    RiskManagementConfig,
+    StrategiesConfig,
 )
-from pydantic import ValidationError
 
 
 class TestConfigManagerValidation:
@@ -47,7 +46,12 @@ class TestConfigManagerValidation:
 
         valid_config = {
             "environment": {"mode": "paper", "debug": False, "log_level": "INFO"},
-            "exchange": {"name": "kucoin", "sandbox": True, "timeout": 30000, "rate_limit": 10},
+            "exchange": {
+                "name": "kucoin",
+                "sandbox": True,
+                "timeout": 30000,
+                "rate_limit": 10,
+            },
             "risk_management": {
                 "stop_loss": 0.02,
                 "take_profit": 0.04,
@@ -56,19 +60,19 @@ class TestConfigManagerValidation:
                 "max_position_size": 0.3,
                 "risk_reward_ratio": 2.0,
                 "max_daily_drawdown": 0.1,
-                "circuit_breaker_enabled": True
+                "circuit_breaker_enabled": True,
             },
             "monitoring": {
                 "enabled": True,
                 "update_interval": 5,
                 "alert_on_errors": True,
-                "log_level": "INFO"
+                "log_level": "INFO",
             },
             "strategies": {
                 "default": "RSIStrategy",
                 "active_strategies": ["RSIStrategy"],
-                "max_concurrent_strategies": 3
-            }
+                "max_concurrent_strategies": 3,
+            },
         }
 
         errors = manager.validate_main_config(valid_config)
@@ -81,9 +85,13 @@ class TestConfigManagerValidation:
         invalid_config = {
             "environment": {"mode": "invalid_mode"},
             "exchange": {"name": "kucoin"},
-            "risk_management": {"stop_loss": 0.02, "take_profit": 0.04, "circuit_breaker_enabled": True},
+            "risk_management": {
+                "stop_loss": 0.02,
+                "take_profit": 0.04,
+                "circuit_breaker_enabled": True,
+            },
             "monitoring": {"enabled": True, "update_interval": 5},
-            "strategies": {"default": "RSIStrategy"}
+            "strategies": {"default": "RSIStrategy"},
         }
 
         errors = manager.validate_main_config(invalid_config)
@@ -97,9 +105,13 @@ class TestConfigManagerValidation:
         invalid_config = {
             "environment": {"mode": "paper"},
             # Missing exchange section
-            "risk_management": {"stop_loss": 0.02, "take_profit": 0.04, "circuit_breaker_enabled": True},
+            "risk_management": {
+                "stop_loss": 0.02,
+                "take_profit": 0.04,
+                "circuit_breaker_enabled": True,
+            },
             "monitoring": {"enabled": True, "update_interval": 5},
-            "strategies": {"default": "RSIStrategy"}
+            "strategies": {"default": "RSIStrategy"},
         }
 
         errors = manager.validate_main_config(invalid_config)
@@ -111,11 +123,18 @@ class TestConfigManagerValidation:
         manager = ConfigManager.__new__(ConfigManager)
 
         invalid_config = {
-            "environment": {"mode": "paper", "debug": "not_a_boolean"},  # Should be boolean
+            "environment": {
+                "mode": "paper",
+                "debug": "not_a_boolean",
+            },  # Should be boolean
             "exchange": {"name": "kucoin"},
-            "risk_management": {"stop_loss": 0.02, "take_profit": 0.04, "circuit_breaker_enabled": True},
+            "risk_management": {
+                "stop_loss": 0.02,
+                "take_profit": 0.04,
+                "circuit_breaker_enabled": True,
+            },
             "monitoring": {"enabled": True, "update_interval": 5},
-            "strategies": {"default": "RSIStrategy"}
+            "strategies": {"default": "RSIStrategy"},
         }
 
         errors = manager.validate_main_config(invalid_config)
@@ -129,15 +148,21 @@ class TestConfigManagerValidation:
         invalid_config = {
             "environment": {"mode": "paper"},
             "exchange": {"name": "kucoin"},
-            "risk_management": {"stop_loss": 0.02, "take_profit": 0.04, "circuit_breaker_enabled": True},
+            "risk_management": {
+                "stop_loss": 0.02,
+                "take_profit": 0.04,
+                "circuit_breaker_enabled": True,
+            },
             "monitoring": {"enabled": True, "update_interval": 5},
             "strategies": {"default": "RSIStrategy"},
-            "unknown_section": {"some_field": "value"}  # Unknown section
+            "unknown_section": {"some_field": "value"},  # Unknown section
         }
 
         errors = manager.validate_main_config(invalid_config)
         assert len(errors) > 0
-        assert any("unknown_section" in error or "extra" in error.lower() for error in errors)
+        assert any(
+            "unknown_section" in error or "extra" in error.lower() for error in errors
+        )
 
     def test_validate_environment_config_live_mode_valid(self):
         """Test environment validation for valid live mode config."""
@@ -149,9 +174,9 @@ class TestConfigManagerValidation:
                 "name": "kucoin",
                 "api_key": "test_key",
                 "api_secret": "test_secret",
-                "sandbox": False
+                "sandbox": False,
             },
-            "risk_management": {"circuit_breaker_enabled": True}
+            "risk_management": {"circuit_breaker_enabled": True},
         }
 
         errors = manager.validate_environment_config(valid_live_config)
@@ -163,8 +188,12 @@ class TestConfigManagerValidation:
 
         invalid_config = {
             "environment": {"mode": "live"},
-            "exchange": {"name": "kucoin", "api_secret": "test_secret", "sandbox": False},
-            "risk_management": {"circuit_breaker_enabled": True}
+            "exchange": {
+                "name": "kucoin",
+                "api_secret": "test_secret",
+                "sandbox": False,
+            },
+            "risk_management": {"circuit_breaker_enabled": True},
         }
 
         errors = manager.validate_environment_config(invalid_config)
@@ -178,7 +207,7 @@ class TestConfigManagerValidation:
         invalid_config = {
             "environment": {"mode": "live"},
             "exchange": {"name": "kucoin", "api_key": "test_key", "sandbox": False},
-            "risk_management": {"circuit_breaker_enabled": True}
+            "risk_management": {"circuit_breaker_enabled": True},
         }
 
         errors = manager.validate_environment_config(invalid_config)
@@ -195,9 +224,9 @@ class TestConfigManagerValidation:
                 "name": "kucoin",
                 "api_key": "test_key",
                 "api_secret": "test_secret",
-                "sandbox": False
+                "sandbox": False,
             },
-            "risk_management": {"circuit_breaker_enabled": False}
+            "risk_management": {"circuit_breaker_enabled": False},
         }
 
         errors = manager.validate_environment_config(invalid_config)
@@ -214,9 +243,9 @@ class TestConfigManagerValidation:
                 "name": "kucoin",
                 "api_key": "test_key",
                 "api_secret": "test_secret",
-                "sandbox": True  # Should be False for live
+                "sandbox": True,  # Should be False for live
             },
-            "risk_management": {"circuit_breaker_enabled": True}
+            "risk_management": {"circuit_breaker_enabled": True},
         }
 
         errors = manager.validate_environment_config(invalid_config)
@@ -229,7 +258,7 @@ class TestConfigManagerValidation:
 
         valid_paper_config = {
             "environment": {"mode": "paper"},
-            "exchange": {"name": "kucoin"}
+            "exchange": {"name": "kucoin"},
         }
 
         errors = manager.validate_environment_config(valid_paper_config)
@@ -241,7 +270,7 @@ class TestConfigManagerValidation:
 
         invalid_config = {
             "environment": {"mode": "paper"},
-            "exchange": {}  # Missing name
+            "exchange": {},  # Missing name
         }
 
         errors = manager.validate_environment_config(invalid_config)
@@ -254,7 +283,7 @@ class TestConfigManagerValidation:
 
         invalid_config = {
             "environment": {"mode": "invalid"},
-            "exchange": {"name": "kucoin"}
+            "exchange": {"name": "kucoin"},
         }
 
         errors = manager.validate_environment_config(invalid_config)
@@ -293,7 +322,7 @@ class TestConfigManagerValidation:
             "exchange": {"name": "kucoin"},  # Missing sandbox, timeout, rate_limit
             "risk_management": {"stop_loss": 0.02},  # Missing other fields
             "monitoring": {},
-            "strategies": {}
+            "strategies": {},
         }
 
         updated_config = manager.apply_safe_defaults(incomplete_config)
@@ -311,7 +340,12 @@ class TestConfigManagerValidation:
 
         complete_config = {
             "environment": {"mode": "paper", "debug": False, "log_level": "INFO"},
-            "exchange": {"name": "kucoin", "sandbox": True, "timeout": 30000, "rate_limit": 10},
+            "exchange": {
+                "name": "kucoin",
+                "sandbox": True,
+                "timeout": 30000,
+                "rate_limit": 10,
+            },
             "risk_management": {
                 "stop_loss": 0.02,
                 "take_profit": 0.04,
@@ -320,19 +354,19 @@ class TestConfigManagerValidation:
                 "max_position_size": 0.3,
                 "risk_reward_ratio": 2.0,
                 "max_daily_drawdown": 0.1,
-                "circuit_breaker_enabled": True
+                "circuit_breaker_enabled": True,
             },
             "monitoring": {
                 "enabled": True,
                 "update_interval": 5,
                 "alert_on_errors": True,
-                "log_level": "INFO"
+                "log_level": "INFO",
             },
             "strategies": {
                 "default": "RSIStrategy",
                 "active_strategies": ["RSIStrategy"],
-                "max_concurrent_strategies": 3
-            }
+                "max_concurrent_strategies": 3,
+            },
         }
 
         original_config = copy.deepcopy(complete_config)
@@ -345,7 +379,12 @@ class TestConfigManagerValidation:
         """Test ConfigManager initialization with valid configuration."""
         valid_config = {
             "environment": {"mode": "paper", "debug": False, "log_level": "INFO"},
-            "exchange": {"name": "kucoin", "sandbox": True, "timeout": 30000, "rate_limit": 10},
+            "exchange": {
+                "name": "kucoin",
+                "sandbox": True,
+                "timeout": 30000,
+                "rate_limit": 10,
+            },
             "risk_management": {
                 "stop_loss": 0.02,
                 "take_profit": 0.04,
@@ -354,23 +393,23 @@ class TestConfigManagerValidation:
                 "max_position_size": 0.3,
                 "risk_reward_ratio": 2.0,
                 "max_daily_drawdown": 0.1,
-                "circuit_breaker_enabled": True
+                "circuit_breaker_enabled": True,
             },
             "monitoring": {
                 "enabled": True,
                 "update_interval": 5,
                 "alert_on_errors": True,
-                "log_level": "INFO"
+                "log_level": "INFO",
             },
             "strategies": {
                 "default": "RSIStrategy",
                 "active_strategies": ["RSIStrategy"],
-                "max_concurrent_strategies": 3
-            }
+                "max_concurrent_strategies": 3,
+            },
         }
 
         # Write config to file
-        with open(self.config_file, 'w') as f:
+        with open(self.config_file, "w") as f:
             json.dump(valid_config, f)
 
         # Should initialize without errors
@@ -382,13 +421,17 @@ class TestConfigManagerValidation:
         invalid_config = {
             "environment": {"mode": "invalid_mode"},  # Invalid mode
             "exchange": {"name": "kucoin"},
-            "risk_management": {"stop_loss": 0.02, "take_profit": 0.04, "circuit_breaker_enabled": True},
+            "risk_management": {
+                "stop_loss": 0.02,
+                "take_profit": 0.04,
+                "circuit_breaker_enabled": True,
+            },
             "monitoring": {"enabled": True, "update_interval": 5},
-            "strategies": {"default": "RSIStrategy"}
+            "strategies": {"default": "RSIStrategy"},
         }
 
         # Write config to file
-        with open(self.config_file, 'w') as f:
+        with open(self.config_file, "w") as f:
             json.dump(invalid_config, f)
 
         # Should raise ValueError
@@ -402,11 +445,11 @@ class TestConfigManagerValidation:
             "exchange": {"name": "kucoin", "sandbox": False},  # Missing API keys
             "risk_management": {"circuit_breaker_enabled": True},
             "monitoring": {"enabled": True, "update_interval": 5},
-            "strategies": {"default": "RSIStrategy"}
+            "strategies": {"default": "RSIStrategy"},
         }
 
         # Write config to file
-        with open(self.config_file, 'w') as f:
+        with open(self.config_file, "w") as f:
             json.dump(live_config, f)
 
         # Should raise ValueError
@@ -421,7 +464,7 @@ class TestConfigManagerValidation:
         }
 
         # Write config to file
-        with open(self.config_file, 'w') as f:
+        with open(self.config_file, "w") as f:
             json.dump(minimal_config, f)
 
         # Should initialize successfully with defaults applied
@@ -431,8 +474,8 @@ class TestConfigManagerValidation:
     def test_config_manager_init_with_invalid_json(self):
         """Test ConfigManager initialization with invalid JSON."""
         # Write invalid JSON to file
-        with open(self.config_file, 'w') as f:
-            f.write('{invalid json content')
+        with open(self.config_file, "w") as f:
+            f.write("{invalid json content")
 
         # Should raise ValueError
         with pytest.raises(ValueError, match="Invalid JSON in configuration file"):
@@ -443,14 +486,18 @@ class TestConfigManagerValidation:
         config_with_unknown = {
             "environment": {"mode": "paper"},
             "exchange": {"name": "kucoin"},
-            "risk_management": {"stop_loss": 0.02, "take_profit": 0.04, "circuit_breaker_enabled": True},
+            "risk_management": {
+                "stop_loss": 0.02,
+                "take_profit": 0.04,
+                "circuit_breaker_enabled": True,
+            },
             "monitoring": {"enabled": True, "update_interval": 5},
             "strategies": {"default": "RSIStrategy"},
-            "unknown_section": {"field": "value"}  # Unknown section
+            "unknown_section": {"field": "value"},  # Unknown section
         }
 
         # Write config to file
-        with open(self.config_file, 'w') as f:
+        with open(self.config_file, "w") as f:
             json.dump(config_with_unknown, f)
 
         # Should raise ValueError due to unknown fields
@@ -486,7 +533,7 @@ class TestPydanticModels:
             api_secret="test_secret",
             sandbox=True,
             timeout=30000,
-            rate_limit=10
+            rate_limit=10,
         )
         assert config.name == "kucoin"
         assert config.api_key == "test_key"
@@ -508,7 +555,7 @@ class TestPydanticModels:
             stop_loss=0.02,
             take_profit=0.04,
             position_size=0.1,
-            circuit_breaker_enabled=True
+            circuit_breaker_enabled=True,
         )
         assert config.stop_loss == 0.02
         assert config.circuit_breaker_enabled is True
@@ -524,10 +571,7 @@ class TestPydanticModels:
     def test_monitoring_config_valid(self):
         """Test MonitoringConfig with valid data."""
         config = MonitoringConfig(
-            enabled=True,
-            update_interval=5,
-            alert_on_errors=True,
-            log_level="INFO"
+            enabled=True, update_interval=5, alert_on_errors=True, log_level="INFO"
         )
         assert config.enabled is True
         assert config.update_interval == 5
@@ -542,7 +586,7 @@ class TestPydanticModels:
         config = StrategiesConfig(
             default="RSIStrategy",
             active_strategies=["RSIStrategy", "EMACrossStrategy"],
-            max_concurrent_strategies=3
+            max_concurrent_strategies=3,
         )
         assert config.default == "RSIStrategy"
         assert len(config.active_strategies) == 2
@@ -557,9 +601,13 @@ class TestPydanticModels:
         config_data = {
             "environment": {"mode": "paper"},
             "exchange": {"name": "kucoin"},
-            "risk_management": {"stop_loss": 0.02, "take_profit": 0.04, "circuit_breaker_enabled": True},
+            "risk_management": {
+                "stop_loss": 0.02,
+                "take_profit": 0.04,
+                "circuit_breaker_enabled": True,
+            },
             "monitoring": {"enabled": True, "update_interval": 5},
-            "strategies": {"default": "RSIStrategy"}
+            "strategies": {"default": "RSIStrategy"},
         }
 
         config = MainConfig(**config_data)
@@ -571,10 +619,14 @@ class TestPydanticModels:
         config_data = {
             "environment": {"mode": "paper"},
             "exchange": {"name": "kucoin"},
-            "risk_management": {"stop_loss": 0.02, "take_profit": 0.04, "circuit_breaker_enabled": True},
+            "risk_management": {
+                "stop_loss": 0.02,
+                "take_profit": 0.04,
+                "circuit_breaker_enabled": True,
+            },
             "monitoring": {"enabled": True, "update_interval": 5},
             "strategies": {"default": "RSIStrategy"},
-            "unknown_field": "value"
+            "unknown_field": "value",
         }
 
         with pytest.raises(ValidationError):
@@ -586,7 +638,13 @@ class TestSafeDefaults:
 
     def test_safe_defaults_structure(self):
         """Test that SAFE_DEFAULTS has all required sections."""
-        required_sections = ["environment", "exchange", "risk_management", "monitoring", "strategies"]
+        required_sections = [
+            "environment",
+            "exchange",
+            "risk_management",
+            "monitoring",
+            "strategies",
+        ]
 
         for section in required_sections:
             assert section in SAFE_DEFAULTS

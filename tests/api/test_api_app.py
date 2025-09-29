@@ -2,12 +2,11 @@
 Tests for api/app.py - FastAPI application and middleware.
 """
 
-import pytest
-from unittest.mock import Mock, AsyncMock, patch
-from fastapi import HTTPException
-from fastapi.responses import JSONResponse
 import json
-from datetime import datetime
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+from fastapi.responses import JSONResponse
 
 
 class TestCustomExceptionMiddleware:
@@ -17,6 +16,7 @@ class TestCustomExceptionMiddleware:
     def middleware(self):
         """Create a CustomExceptionMiddleware instance."""
         from api.app import CustomExceptionMiddleware
+
         # Create a mock app
         mock_app = Mock()
         middleware = CustomExceptionMiddleware(mock_app)
@@ -85,6 +85,7 @@ class TestRateLimitJSONMiddleware:
     def middleware(self):
         """Create a RateLimitJSONMiddleware instance."""
         from api.app import RateLimitJSONMiddleware
+
         # Create a mock app
         mock_app = Mock()
         middleware = RateLimitJSONMiddleware(mock_app)
@@ -116,7 +117,7 @@ class TestRateLimitJSONMiddleware:
 
         # Verify the content structure
         content = response.body
-        response_data = json.loads(content.decode('utf-8'))
+        response_data = json.loads(content.decode("utf-8"))
 
         assert "error" in response_data
         assert response_data["error"]["code"] == "rate_limit_exceeded"
@@ -150,8 +151,9 @@ class TestExceptionHandlers:
     @pytest.mark.asyncio
     async def test_http_exception_handler_formatted_error(self):
         """Test HTTP exception handler with already formatted error."""
-        from api.app import http_exception_handler
         from fastapi import HTTPException
+
+        from api.app import http_exception_handler
 
         # Mock request
         request = Mock()
@@ -169,14 +171,15 @@ class TestExceptionHandlers:
 
         # Verify the content is the formatted error
         content = response.body
-        response_data = json.loads(content.decode('utf-8'))
+        response_data = json.loads(content.decode("utf-8"))
         assert response_data == formatted_error
 
     @pytest.mark.asyncio
     async def test_http_exception_handler_plain_error(self):
         """Test HTTP exception handler with plain string error."""
-        from api.app import http_exception_handler
         from fastapi import HTTPException
+
+        from api.app import http_exception_handler
 
         # Mock request
         request = Mock()
@@ -193,7 +196,7 @@ class TestExceptionHandlers:
 
         # Verify the content structure
         content = response.body
-        response_data = json.loads(content.decode('utf-8'))
+        response_data = json.loads(content.decode("utf-8"))
 
         assert "error" in response_data
         assert response_data["error"]["code"] == 404
@@ -221,7 +224,7 @@ class TestExceptionHandlers:
 
         # Verify the content structure
         content = response.body
-        response_data = json.loads(content.decode('utf-8'))
+        response_data = json.loads(content.decode("utf-8"))
 
         assert "error" in response_data
         assert response_data["error"]["code"] == 500
@@ -239,13 +242,7 @@ class TestUtilityFunctions:
 
         result = format_error(404, "Not found")
 
-        expected = {
-            "error": {
-                "code": 404,
-                "message": "Not found",
-                "details": None
-            }
-        }
+        expected = {"error": {"code": 404, "message": "Not found", "details": None}}
 
         assert result == expected
 
@@ -257,11 +254,7 @@ class TestUtilityFunctions:
         result = format_error(401, "Invalid API key", details)
 
         expected = {
-            "error": {
-                "code": 401,
-                "message": "Invalid API key",
-                "details": details
-            }
+            "error": {"code": 401, "message": "Invalid API key", "details": details}
         }
 
         assert result == expected
@@ -294,7 +287,7 @@ class TestUtilityFunctions:
 
     def test_set_bot_engine(self):
         """Test set_bot_engine function."""
-        from api.app import set_bot_engine, bot_engine
+        from api.app import set_bot_engine
 
         # Create a mock bot engine
         mock_engine = Mock()
@@ -304,6 +297,7 @@ class TestUtilityFunctions:
 
         # Import bot_engine again to check if it was set
         from api.app import bot_engine as current_bot_engine
+
         assert current_bot_engine is mock_engine
 
 
@@ -314,6 +308,7 @@ class TestAPIEndpoints:
     def client(self):
         """Create a test client."""
         from fastapi.testclient import TestClient
+
         from api.app import app
 
         return TestClient(app)
@@ -331,6 +326,7 @@ class TestAPIEndpoints:
         """Test health endpoint when bot engine is not available."""
         # Ensure bot_engine is None
         from api.app import set_bot_engine
+
         set_bot_engine(None)
 
         response = client.get("/api/v1/health")
@@ -354,35 +350,41 @@ class TestAPIEndpoints:
         from api.app import verify_api_key
 
         # Ensure API_KEY is not set
-        with patch.dict('os.environ', {}, clear=True):
+        with patch.dict("os.environ", {}, clear=True):
             result = await verify_api_key(None)
             assert result is True
 
     @pytest.mark.asyncio
     async def test_verify_api_key_valid(self):
         """Test verify_api_key with valid credentials."""
-        from api.app import verify_api_key
         from fastapi.security import HTTPAuthorizationCredentials
 
+        from api.app import verify_api_key
+
         # Mock credentials
-        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="test_key")
+        credentials = HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials="test_key"
+        )
 
         # Set API_KEY env var
-        with patch.dict('os.environ', {'API_KEY': 'test_key'}):
+        with patch.dict("os.environ", {"API_KEY": "test_key"}):
             result = await verify_api_key(credentials)
             assert result is True
 
     @pytest.mark.asyncio
     async def test_verify_api_key_invalid(self):
         """Test verify_api_key with invalid credentials."""
-        from api.app import verify_api_key, HTTPException
         from fastapi.security import HTTPAuthorizationCredentials
 
+        from api.app import HTTPException, verify_api_key
+
         # Mock credentials
-        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials="wrong_key")
+        credentials = HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials="wrong_key"
+        )
 
         # Set API_KEY env var
-        with patch.dict('os.environ', {'API_KEY': 'test_key'}):
+        with patch.dict("os.environ", {"API_KEY": "test_key"}):
             with pytest.raises(HTTPException) as exc_info:
                 await verify_api_key(credentials)
 
@@ -392,10 +394,10 @@ class TestAPIEndpoints:
     @pytest.mark.asyncio
     async def test_verify_api_key_required_but_missing(self):
         """Test verify_api_key when API key is required but not provided."""
-        from api.app import verify_api_key, HTTPException
+        from api.app import HTTPException, verify_api_key
 
         # Set API_KEY env var but don't provide credentials
-        with patch.dict('os.environ', {'API_KEY': 'test_key'}):
+        with patch.dict("os.environ", {"API_KEY": "test_key"}):
             with pytest.raises(HTTPException) as exc_info:
                 await verify_api_key(None)
 

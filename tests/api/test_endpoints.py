@@ -3,15 +3,13 @@ Automated tests for FastAPI endpoints.
 Uses pytest-asyncio for async testing.
 """
 
-import pytest
-from httpx import AsyncClient
-from fastapi.testclient import TestClient
-from api.app import app, set_bot_engine
-from api.models import init_db, SessionLocal
-from core.bot_engine import BotEngine
 import os
-import tempfile
-import json
+
+import pytest
+from fastapi.testclient import TestClient
+
+from api.app import app, set_bot_engine
+from core.bot_engine import BotEngine
 
 
 @pytest.fixture
@@ -22,29 +20,16 @@ def test_config():
         "exchange": {
             "name": "kucoin",
             "base_currency": "USDT",
-            "markets": ["BTC/USDT"]
+            "markets": ["BTC/USDT"],
         },
-        "trading": {
-            "symbol": "BTC/USDT",
-            "initial_balance": 1000.0
-        },
+        "trading": {"symbol": "BTC/USDT", "initial_balance": 1000.0},
         "strategies": {
             "active_strategies": ["RSIStrategy"],
-            "strategy_config": {
-                "RSIStrategy": {"rsi_period": 14}
-            }
+            "strategy_config": {"RSIStrategy": {"rsi_period": 14}},
         },
-        "risk_management": {
-            "max_position_size": 0.1,
-            "max_drawdown": 0.2
-        },
-        "monitoring": {
-            "terminal_display": False,
-            "update_interval": 1
-        },
-        "notifications": {
-            "discord": {"enabled": False}
-        }
+        "risk_management": {"max_position_size": 0.1, "max_drawdown": 0.2},
+        "monitoring": {"terminal_display": False, "update_interval": 1},
+        "notifications": {"discord": {"enabled": False}},
     }
 
 
@@ -128,11 +113,11 @@ class TestHealthEndpoint:
         data = response.json()
 
         # Check ISO format
-        iso_pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$'
+        iso_pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$"
         assert re.match(iso_pattern, data["timestamp"])
 
         # Check it's a valid datetime
-        parsed = datetime.fromisoformat(data["timestamp"].replace('Z', '+00:00'))
+        parsed = datetime.fromisoformat(data["timestamp"].replace("Z", "+00:00"))
         assert isinstance(parsed, datetime)
 
 
@@ -165,7 +150,13 @@ class TestReadinessEndpoint:
         response = client.get("/api/v1/ready")
         data = response.json()
 
-        expected_components = ["database", "exchange", "message_queue", "cache", "bot_engine"]
+        expected_components = [
+            "database",
+            "exchange",
+            "message_queue",
+            "cache",
+            "bot_engine",
+        ]
         checks = data["checks"]
 
         for component in expected_components:
@@ -196,16 +187,17 @@ class TestReadinessEndpoint:
         data = response.json()
 
         # Check ISO format
-        iso_pattern = r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$'
+        iso_pattern = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$"
         assert re.match(iso_pattern, data["timestamp"])
 
         # Check it's a valid datetime
-        parsed = datetime.fromisoformat(data["timestamp"].replace('Z', '+00:00'))
+        parsed = datetime.fromisoformat(data["timestamp"].replace("Z", "+00:00"))
         assert isinstance(parsed, datetime)
 
     def test_readiness_endpoint_returns_503_when_bot_engine_unavailable(self, client):
         """Test that readiness returns 503 when bot engine is unavailable."""
         from api.app import set_bot_engine
+
         original_engine = client._test_bot_engine
 
         # Temporarily remove bot engine
@@ -251,14 +243,14 @@ class TestReadinessEndpoint:
         for component, check_data in data["checks"].items():
             if "latency_ms" in check_data and check_data["latency_ms"] is not None:
                 assert check_data["latency_ms"] >= 0
-                assert check_data["latency_ms"] < 5000  # 5 seconds max for any single check
+                assert (
+                    check_data["latency_ms"] < 5000
+                )  # 5 seconds max for any single check
 
-    @pytest.mark.parametrize("missing_env_var", [
-        "DATABASE_URL",
-        "EXCHANGE_API_URL",
-        "MESSAGE_QUEUE_URL",
-        "REDIS_URL"
-    ])
+    @pytest.mark.parametrize(
+        "missing_env_var",
+        ["DATABASE_URL", "EXCHANGE_API_URL", "MESSAGE_QUEUE_URL", "REDIS_URL"],
+    )
     def test_readiness_endpoint_handles_missing_env_vars(self, client, missing_env_var):
         """Test that readiness endpoint handles missing environment variables gracefully."""
         # Store original value
@@ -281,7 +273,9 @@ class TestReadinessEndpoint:
                 # Database should be marked as not configured
                 assert "database" in data["checks"]
                 db_check = data["checks"]["database"]
-                assert "configured" in db_check.get("details", {}) or not db_check["ready"]
+                assert (
+                    "configured" in db_check.get("details", {}) or not db_check["ready"]
+                )
 
         finally:
             # Restore original value
@@ -359,7 +353,10 @@ class TestReadinessEndpoint:
 
         # Database might not be configured in tests, which is acceptable
         if not db_check["ready"]:
-            assert "configured" in db_check.get("details", {}) or "Database not configured" in db_check["message"]
+            assert (
+                "configured" in db_check.get("details", {})
+                or "Database not configured" in db_check["message"]
+            )
 
 
 class TestStatusEndpoint:
@@ -399,7 +396,9 @@ class TestOrdersEndpoint:
         response = client.get("/api/v1/orders")
         assert response.status_code == 401
 
-    def test_orders_endpoint_api_key_required_returns_200_with_key(self, client, auth_headers):
+    def test_orders_endpoint_api_key_required_returns_200_with_key(
+        self, client, auth_headers
+    ):
         """Test orders endpoint with correct API key when required."""
         response = client.get("/api/v1/orders", headers=auth_headers)
         assert response.status_code == 200
@@ -477,7 +476,14 @@ class TestPerformanceEndpoint:
 
         response = client.get("/api/v1/performance")
         data = response.json()
-        expected_fields = ["total_pnl", "win_rate", "wins", "losses", "sharpe_ratio", "max_drawdown"]
+        expected_fields = [
+            "total_pnl",
+            "win_rate",
+            "wins",
+            "losses",
+            "sharpe_ratio",
+            "max_drawdown",
+        ]
         for field in expected_fields:
             assert field in data
 
@@ -555,7 +561,9 @@ class TestAuthentication:
     def test_invalid_api_key_returns_401(self, client):
         """Test that invalid API key returns 401."""
         os.environ["API_KEY"] = "valid_key"
-        response = client.get("/api/v1/orders", headers={"Authorization": "Bearer invalid_key"})
+        response = client.get(
+            "/api/v1/orders", headers={"Authorization": "Bearer invalid_key"}
+        )
         assert response.status_code == 401
 
     def test_valid_api_key_works(self, client, auth_headers):
@@ -576,7 +584,9 @@ class TestErrorResponseSchema:
     def test_invalid_api_key_returns_standardized_error(self, client):
         """Test that invalid API key returns standardized error format."""
         os.environ["API_KEY"] = "valid_key"
-        response = client.get("/api/v1/orders", headers={"Authorization": "Bearer invalid_key"})
+        response = client.get(
+            "/api/v1/orders", headers={"Authorization": "Bearer invalid_key"}
+        )
         assert response.status_code == 401
 
         data = response.json()
@@ -603,6 +613,7 @@ class TestErrorResponseSchema:
         """Test that bot engine unavailable returns standardized error format."""
         # Temporarily remove bot engine
         from api.app import set_bot_engine
+
         set_bot_engine(None)
 
         response = client.get("/api/v1/status")
@@ -688,24 +699,42 @@ class TestCORSSecurity:
     def test_cors_allows_configured_origins(self, client):
         """Test that CORS allows configured origins."""
         # Test with allowed origin
-        response = client.get("/api/v1/health", headers={"Origin": "http://localhost:3000"})
+        response = client.get(
+            "/api/v1/health", headers={"Origin": "http://localhost:3000"}
+        )
         assert "access-control-allow-origin" in response.headers
-        assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+        assert (
+            response.headers["access-control-allow-origin"] == "http://localhost:3000"
+        )
 
     def test_cors_blocks_unconfigured_origins(self, client):
         """Test that CORS blocks unconfigured origins."""
         # Test with disallowed origin
-        response = client.get("/api/v1/health", headers={"Origin": "http://malicious-site.com"})
+        response = client.get(
+            "/api/v1/health", headers={"Origin": "http://malicious-site.com"}
+        )
         # Should not have access-control-allow-origin header for disallowed origins
-        assert "access-control-allow-origin" not in response.headers or response.headers["access-control-allow-origin"] != "http://malicious-site.com"
+        assert (
+            "access-control-allow-origin" not in response.headers
+            or response.headers["access-control-allow-origin"]
+            != "http://malicious-site.com"
+        )
 
     def test_cors_preflight_request_handled(self, client):
         """Test that CORS preflight requests include proper headers."""
         # Test preflight request (OPTIONS) for a POST request
-        response = client.options("/api/v1/pause", headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": "POST"})
+        response = client.options(
+            "/api/v1/pause",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
         # CORS middleware should add the appropriate headers
         assert "access-control-allow-origin" in response.headers
-        assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+        assert (
+            response.headers["access-control-allow-origin"] == "http://localhost:3000"
+        )
         assert "access-control-allow-methods" in response.headers
         assert "POST" in response.headers["access-control-allow-methods"]
 
@@ -713,9 +742,10 @@ class TestCORSSecurity:
         """Test that wildcard origins are not allowed."""
         # Verify that the CORS middleware doesn't allow "*" origins
         from api.app import app
+
         cors_middleware = None
         for middleware in app.user_middleware:
-            if hasattr(middleware, 'app') and hasattr(middleware.app, 'allow_origins'):
+            if hasattr(middleware, "app") and hasattr(middleware.app, "allow_origins"):
                 cors_middleware = middleware.app
                 break
 
@@ -740,12 +770,13 @@ class TestInputValidation:
 
         # Validate each order against the schema
         from api.schemas import OrderResponse
+
         for order_data in data["orders"]:
             try:
                 order = OrderResponse(**order_data)
                 # If validation passes, the data conforms to schema
                 assert order.id is not None
-            except Exception as e:
+            except Exception:
                 # If validation fails, ensure it's handled gracefully
                 # (This might happen with existing test data)
                 pass
@@ -763,12 +794,13 @@ class TestInputValidation:
 
         # Validate each signal against the schema
         from api.schemas import SignalResponse
+
         for signal_data in data["signals"]:
             try:
                 signal = SignalResponse(**signal_data)
                 # If validation passes, the data conforms to schema
                 assert signal.id is not None
-            except Exception as e:
+            except Exception:
                 # If validation fails, ensure it's handled gracefully
                 pass
 
@@ -780,6 +812,7 @@ class TestGlobalExceptionHandler:
         """Test that unhandled exceptions return 500 status."""
         # Temporarily break the bot engine to cause an exception
         from api.app import set_bot_engine
+
         original_engine = client._test_bot_engine
 
         # Create a mock engine that raises an exception
@@ -798,6 +831,7 @@ class TestGlobalExceptionHandler:
     def test_unhandled_exception_returns_standardized_error(self, client):
         """Test that unhandled exceptions return standardized error format."""
         from api.app import set_bot_engine
+
         original_engine = client._test_bot_engine
 
         # Create a mock engine that raises an exception
@@ -828,6 +862,7 @@ class TestGlobalExceptionHandler:
     def test_global_handler_logs_exceptions(self, client, caplog):
         """Test that global exception handler logs exceptions."""
         from api.app import set_bot_engine
+
         original_engine = client._test_bot_engine
 
         # Create a mock engine that raises an exception
@@ -856,7 +891,8 @@ class TestCustomExceptionMiddleware:
         """Test that custom exception middleware catches and handles exceptions."""
         # This test is tricky to trigger directly, but we can test by ensuring the middleware is added
         from api.app import app
-        assert any('CustomExceptionMiddleware' in str(mw) for mw in app.user_middleware)
+
+        assert any("CustomExceptionMiddleware" in str(mw) for mw in app.user_middleware)
 
 
 class TestRateLimitJSONMiddleware:
@@ -881,6 +917,7 @@ class TestBotEngineUnavailable:
     def test_status_endpoint_bot_unavailable(self, client):
         """Test status endpoint when bot engine is None."""
         from api.app import set_bot_engine
+
         original_engine = client._test_bot_engine
         set_bot_engine(None)
 
@@ -896,6 +933,7 @@ class TestBotEngineUnavailable:
     def test_pause_endpoint_bot_unavailable(self, client):
         """Test pause endpoint when bot engine is None."""
         from api.app import set_bot_engine
+
         original_engine = client._test_bot_engine
         set_bot_engine(None)
 
@@ -907,6 +945,7 @@ class TestBotEngineUnavailable:
     def test_resume_endpoint_bot_unavailable(self, client):
         """Test resume endpoint when bot engine is None."""
         from api.app import set_bot_engine
+
         original_engine = client._test_bot_engine
         set_bot_engine(None)
 
@@ -918,6 +957,7 @@ class TestBotEngineUnavailable:
     def test_performance_endpoint_bot_unavailable(self, client):
         """Test performance endpoint when bot engine is None."""
         from api.app import set_bot_engine
+
         original_engine = client._test_bot_engine
         set_bot_engine(None)
 
@@ -1018,7 +1058,9 @@ class TestAuthenticationEdgeCases:
     def test_verify_api_key_with_invalid_credentials(self, client):
         """Test verify_api_key with invalid credentials."""
         os.environ["API_KEY"] = "test_key"
-        response = client.get("/api/v1/orders", headers={"Authorization": "Bearer invalid"})
+        response = client.get(
+            "/api/v1/orders", headers={"Authorization": "Bearer invalid"}
+        )
         assert response.status_code == 401
 
     def test_verify_api_key_no_env_var(self, client):
@@ -1036,7 +1078,9 @@ class TestHTTPExceptionHandler:
         """Test that HTTP exception handler formats errors properly."""
         # Trigger an HTTPException indirectly
         os.environ["API_KEY"] = "test_key"
-        response = client.get("/api/v1/orders", headers={"Authorization": "Bearer invalid"})
+        response = client.get(
+            "/api/v1/orders", headers={"Authorization": "Bearer invalid"}
+        )
         assert response.status_code == 401
 
         data = response.json()
@@ -1051,6 +1095,7 @@ class TestGlobalExceptionHandlerEdgeCases:
     def test_global_exception_handler_with_different_exceptions(self, client):
         """Test global exception handler with different exception types."""
         from api.app import set_bot_engine
+
         original_engine = client._test_bot_engine
 
         class TestException(Exception):
@@ -1079,15 +1124,17 @@ class TestRateLimitingEdgeCases:
         """Test rate limiting with Redis fallback."""
         # This is hard to test directly, but we can check that limiter is configured
         from api.app import limiter
+
         assert limiter is not None
 
     def test_get_remote_address_exempt_function(self, client):
         """Test get_remote_address_exempt function."""
         from api.app import get_remote_address_exempt
+
         # Create a mock request
         class MockRequest:
             def __init__(self, path):
-                self.url = type('obj', (object,), {'path': path})()
+                self.url = type("obj", (object,), {"path": path})()
 
         exempt_request = MockRequest("/")
         non_exempt_request = MockRequest("/api/v1/status")
@@ -1102,6 +1149,7 @@ class TestFormatErrorFunction:
     def test_format_error_with_details(self, client):
         """Test format_error function with details."""
         from api.app import format_error
+
         error = format_error(400, "Bad Request", {"field": "required"})
         assert "error" in error
         assert error["error"]["code"] == 400
@@ -1111,6 +1159,7 @@ class TestFormatErrorFunction:
     def test_format_error_without_details(self, client):
         """Test format_error function without details."""
         from api.app import format_error
+
         error = format_error(404, "Not Found")
         assert "error" in error
         assert error["error"]["code"] == 404
@@ -1123,7 +1172,8 @@ class TestSetBotEngineFunction:
 
     def test_set_bot_engine_updates_global(self, client):
         """Test that set_bot_engine updates the global bot_engine."""
-        from api.app import set_bot_engine, bot_engine
+        from api.app import bot_engine, set_bot_engine
+
         original_engine = bot_engine
 
         mock_engine = {"test": "engine"}
@@ -1141,19 +1191,21 @@ class TestMiddlewareOrder:
     def test_cors_middleware_configured(self, client):
         """Test that CORS middleware is properly configured."""
         from api.app import app
+
         cors_found = False
         for middleware in app.user_middleware:
-            if hasattr(middleware, 'cls') and 'CORSMiddleware' in str(middleware.cls):
+            if hasattr(middleware, "cls") and "CORSMiddleware" in str(middleware.cls):
                 cors_found = True
-                assert 'allow_origins' in middleware.options
-                assert middleware.options['allow_origins'] is not None
+                assert "allow_origins" in middleware.options
+                assert middleware.options["allow_origins"] is not None
                 break
         assert cors_found
 
     def test_rate_limit_middleware_configured(self, client):
         """Test that rate limit middleware is configured."""
         from api.app import app
-        assert any('SlowAPIMiddleware' in str(mw) for mw in app.user_middleware)
+
+        assert any("SlowAPIMiddleware" in str(mw) for mw in app.user_middleware)
 
 
 class TestEndpointDependencies:
@@ -1173,7 +1225,9 @@ class TestEndpointDependencies:
         response = client.get("/api/v1/status")
         assert response.status_code == 401
 
-        response = client.get("/api/v1/status", headers={"Authorization": "Bearer test_key"})
+        response = client.get(
+            "/api/v1/status", headers={"Authorization": "Bearer test_key"}
+        )
         assert response.status_code == 200
 
 

@@ -5,15 +5,15 @@ Executes large orders by splitting them into smaller parts with delays.
 """
 
 import logging
-import asyncio
 import uuid
-from typing import Dict, Any, List, Optional
 from decimal import Decimal
+from typing import Any, Dict, List
 
-from .base_executor import BaseExecutor
-from core.contracts import TradingSignal, SignalType
+from core.contracts import SignalType, TradingSignal
 from core.types.order_types import Order, OrderStatus, OrderType
 from utils.logger import get_trade_logger
+
+from .base_executor import BaseExecutor
 
 logger = logging.getLogger(__name__)
 trade_logger = get_trade_logger()
@@ -44,8 +44,10 @@ class SmartOrderExecutor(BaseExecutor):
         self.delay_seconds = config.get("delay_seconds", 2.0)
         self.fallback_mode = config.get("fallback_mode", "market")
 
-        self.logger.info(f"SmartOrderExecutor initialized: threshold={self.split_threshold}, "
-                        f"max_parts={self.max_parts}, delay={self.delay_seconds}s")
+        self.logger.info(
+            f"SmartOrderExecutor initialized: threshold={self.split_threshold}, "
+            f"max_parts={self.max_parts}, delay={self.delay_seconds}s"
+        )
 
     async def execute_order(self, signal: TradingSignal) -> List[Order]:
         """
@@ -87,17 +89,22 @@ class SmartOrderExecutor(BaseExecutor):
         # Split the amount
         split_amounts = await self.split_order(signal.amount, parts)
 
-        self.logger.info(f"Smart split order triggered: {signal.symbol} "
-                        f"size={signal.amount}, value={order_value}, "
-                        f"parts={parts}, threshold={self.split_threshold}")
+        self.logger.info(
+            f"Smart split order triggered: {signal.symbol} "
+            f"size={signal.amount}, value={order_value}, "
+            f"parts={parts}, threshold={self.split_threshold}"
+        )
 
-        trade_logger.trade("Smart Order Split", {
-            "symbol": signal.symbol,
-            "original_amount": float(signal.amount),
-            "order_value": float(order_value),
-            "parts": parts,
-            "split_threshold": float(self.split_threshold)
-        })
+        trade_logger.trade(
+            "Smart Order Split",
+            {
+                "symbol": signal.symbol,
+                "original_amount": float(signal.amount),
+                "order_value": float(order_value),
+                "parts": parts,
+                "split_threshold": float(self.split_threshold),
+            },
+        )
 
         # Execute each part with delay
         executed_orders = []
@@ -106,8 +113,10 @@ class SmartOrderExecutor(BaseExecutor):
         for i, amount in enumerate(split_amounts):
             try:
                 # Create child order
-                child_signal = self._create_child_order(signal, amount, parent_order_id, i + 1)
-                child_signal.metadata['total_parts'] = parts
+                child_signal = self._create_child_order(
+                    signal, amount, parent_order_id, i + 1
+                )
+                child_signal.metadata["total_parts"] = parts
 
                 # Execute child order
                 order = await self._execute_single_order(child_signal)
@@ -123,7 +132,9 @@ class SmartOrderExecutor(BaseExecutor):
                 # Continue with remaining parts or cancel all?
                 # For now, continue but log the error
 
-        self.logger.info(f"Smart split order completed: {len(executed_orders)}/{parts} parts executed")
+        self.logger.info(
+            f"Smart split order completed: {len(executed_orders)}/{parts} parts executed"
+        )
         return executed_orders
 
     async def _execute_single_order(self, signal: TradingSignal) -> List[Order]:
@@ -179,18 +190,18 @@ class SmartOrderExecutor(BaseExecutor):
         order_type = signal.order_type.value if signal.order_type else "market"
 
         params = {
-            'symbol': signal.symbol,
-            'type': order_type,
-            'side': side,
-            'amount': float(signal.amount)
+            "symbol": signal.symbol,
+            "type": order_type,
+            "side": side,
+            "amount": float(signal.amount),
         }
 
         if signal.price and order_type == "limit":
-            params['price'] = float(signal.price)
+            params["price"] = float(signal.price)
 
         # Add metadata
         if signal.metadata:
-            params['metadata'] = signal.metadata
+            params["metadata"] = signal.metadata
 
         # Place the order
         response = await self.exchange_api.create_order(**params)
@@ -209,18 +220,20 @@ class SmartOrderExecutor(BaseExecutor):
         # This would be similar to the existing order parsing logic
         # For now, return a basic order
         return Order(
-            id=str(response.get('id', '')),
-            symbol=response.get('symbol', ''),
-            type=OrderType(response.get('type', 'market')),
-            side=response.get('side', ''),
-            amount=Decimal(str(response.get('amount', 0))),
-            price=Decimal(str(response.get('price', 0))) if response.get('price') else None,
-            status=OrderStatus(response.get('status', 'open')),
-            timestamp=response.get('timestamp', 0),
-            filled=Decimal(str(response.get('filled', 0))),
-            remaining=Decimal(str(response.get('remaining', 0))),
-            cost=Decimal(str(response.get('cost', 0))),
-            fee=response.get('fee')
+            id=str(response.get("id", "")),
+            symbol=response.get("symbol", ""),
+            type=OrderType(response.get("type", "market")),
+            side=response.get("side", ""),
+            amount=Decimal(str(response.get("amount", 0))),
+            price=Decimal(str(response.get("price", 0)))
+            if response.get("price")
+            else None,
+            status=OrderStatus(response.get("status", "open")),
+            timestamp=response.get("timestamp", 0),
+            filled=Decimal(str(response.get("filled", 0))),
+            remaining=Decimal(str(response.get("remaining", 0))),
+            cost=Decimal(str(response.get("cost", 0))),
+            fee=response.get("fee"),
         )
 
     def _create_mock_order(self, signal: TradingSignal) -> Order:
@@ -257,7 +270,7 @@ class SmartOrderExecutor(BaseExecutor):
             filled=signal.amount,
             remaining=Decimal(0),
             cost=signal.amount * (signal.price or Decimal(1)),
-            fee={'cost': Decimal(0), 'currency': 'USD'}
+            fee={"cost": Decimal(0), "currency": "USD"},
         )
 
     def _calculate_order_value(self, signal: TradingSignal) -> Decimal:

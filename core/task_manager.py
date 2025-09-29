@@ -1,11 +1,11 @@
 import asyncio
-import logging
 import json
+import logging
+import time
 import uuid
-from typing import Set, Optional, Callable, Coroutine, Any, Dict, List, Union
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-import time
+from typing import Any, Callable, Coroutine, Dict, List, Optional, Set
 
 # Module-level imports for mocking
 aio_pika = None
@@ -21,9 +21,11 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class TaskMessage:
     """Represents a task message for distributed processing."""
+
     task_id: str
     task_type: str  # 'signal', 'backtest', 'optimization'
     payload: Dict[str, Any]
@@ -42,18 +44,18 @@ class TaskMessage:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
-            'task_id': self.task_id,
-            'task_type': self.task_type,
-            'payload': self.payload,
-            'priority': self.priority,
-            'correlation_id': self.correlation_id,
-            'timestamp': self.timestamp,
-            'retry_count': self.retry_count,
-            'max_retries': self.max_retries
+            "task_id": self.task_id,
+            "task_type": self.task_type,
+            "payload": self.payload,
+            "priority": self.priority,
+            "correlation_id": self.correlation_id,
+            "timestamp": self.timestamp,
+            "retry_count": self.retry_count,
+            "max_retries": self.max_retries,
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'TaskMessage':
+    def from_dict(cls, data: Dict[str, Any]) -> "TaskMessage":
         """Create from dictionary."""
         return cls(**data)
 
@@ -186,20 +188,22 @@ class RabbitMQAdapter(QueueAdapter):
         self.config = config
         self.connection = None
         self.channel = None
-        self.queue_name = config.get('queue_name', 'n1v1_tasks')
+        self.queue_name = config.get("queue_name", "n1v1_tasks")
         self._connected = False
 
     async def connect(self) -> None:
         """Connect to RabbitMQ."""
         try:
             if aio_pika is None:
-                raise ImportError("aio-pika not installed. Install with: pip install aio-pika")
+                raise ImportError(
+                    "aio-pika not installed. Install with: pip install aio-pika"
+                )
 
-            host = self.config.get('host', 'localhost')
-            port = self.config.get('port', 5672)
-            user = self.config.get('user', 'guest')
-            password = self.config.get('password', 'guest')
-            vhost = self.config.get('vhost', '/')
+            host = self.config.get("host", "localhost")
+            port = self.config.get("port", 5672)
+            user = self.config.get("user", "guest")
+            password = self.config.get("password", "guest")
+            vhost = self.config.get("vhost", "/")
 
             connection_string = f"amqp://{user}:{password}@{host}:{port}/{vhost}"
 
@@ -238,15 +242,14 @@ class RabbitMQAdapter(QueueAdapter):
                 body=message_body,
                 delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
                 headers={
-                    'task_type': task.task_type,
-                    'priority': str(task.priority),
-                    'correlation_id': task.correlation_id
-                }
+                    "task_type": task.task_type,
+                    "priority": str(task.priority),
+                    "correlation_id": task.correlation_id,
+                },
             )
 
             await self.channel.default_exchange.publish(
-                message,
-                routing_key=self.queue_name
+                message, routing_key=self.queue_name
             )
 
             logger.debug(f"Enqueued task {task.task_id} to RabbitMQ")
@@ -309,20 +312,24 @@ class KafkaAdapter(QueueAdapter):
         self.config = config
         self.producer = None
         self.consumer = None
-        self.topic = config.get('topic', 'n1v1_tasks')
+        self.topic = config.get("topic", "n1v1_tasks")
         self._connected = False
 
     async def connect(self) -> None:
         """Connect to Kafka."""
         try:
             if aiokafka is None:
-                raise ImportError("aiokafka not installed. Install with: pip install aiokafka")
+                raise ImportError(
+                    "aiokafka not installed. Install with: pip install aiokafka"
+                )
 
-            bootstrap_servers = self.config.get('bootstrap_servers', ['localhost:9092'])
-            group_id = self.config.get('group_id', 'n1v1_workers')
+            bootstrap_servers = self.config.get("bootstrap_servers", ["localhost:9092"])
+            group_id = self.config.get("group_id", "n1v1_workers")
 
             # Create producer
-            self.producer = aiokafka.AIOKafkaProducer(bootstrap_servers=bootstrap_servers)
+            self.producer = aiokafka.AIOKafkaProducer(
+                bootstrap_servers=bootstrap_servers
+            )
             await self.producer.start()
 
             # Create consumer
@@ -330,8 +337,8 @@ class KafkaAdapter(QueueAdapter):
                 self.topic,
                 bootstrap_servers=bootstrap_servers,
                 group_id=group_id,
-                auto_offset_reset='earliest',
-                enable_auto_commit=False
+                auto_offset_reset="earliest",
+                enable_auto_commit=False,
             )
             await self.consumer.start()
 
@@ -368,10 +375,10 @@ class KafkaAdapter(QueueAdapter):
                 value=message_value,
                 key=message_key,
                 headers=[
-                    ('task_type', task.task_type.encode()),
-                    ('priority', str(task.priority).encode()),
-                    ('correlation_id', task.correlation_id.encode())
-                ]
+                    ("task_type", task.task_type.encode()),
+                    ("priority", str(task.priority).encode()),
+                    ("correlation_id", task.correlation_id.encode()),
+                ],
             )
 
             logger.debug(f"Enqueued task {task.task_id} to Kafka")
@@ -435,13 +442,13 @@ class TaskManager:
         self._shutdown = False
 
         # Queue configuration
-        queue_config = self.config.get('queue', {})
-        queue_type = queue_config.get('type', 'in_memory')
+        queue_config = self.config.get("queue", {})
+        queue_type = queue_config.get("type", "in_memory")
 
         # Initialize queue adapter
-        if queue_type == 'rabbitmq':
+        if queue_type == "rabbitmq":
             self.queue_adapter = RabbitMQAdapter(queue_config)
-        elif queue_type == 'kafka':
+        elif queue_type == "kafka":
             self.queue_adapter = KafkaAdapter(queue_config)
         else:
             self.queue_adapter = InMemoryQueueAdapter(queue_config)
@@ -449,13 +456,15 @@ class TaskManager:
         # Worker management
         self.workers: Dict[str, Any] = {}  # Store worker objects
         self.worker_info: Dict[str, Dict[str, Any]] = {}  # Store worker info
-        self.max_workers = queue_config.get('max_workers', 4)
+        self.max_workers = queue_config.get("max_workers", 4)
         self.worker_tasks: Set[asyncio.Task] = set()
 
         # Task processing
         self.task_handlers: Dict[str, Callable] = {}
 
-    def create_task(self, coro: Coroutine[Any, Any, Any], *, name: Optional[str] = None) -> asyncio.Task:
+    def create_task(
+        self, coro: Coroutine[Any, Any, Any], *, name: Optional[str] = None
+    ) -> asyncio.Task:
         """
         Create and track a new asyncio task.
 
@@ -469,7 +478,9 @@ class TaskManager:
         if self._shutdown:
             raise RuntimeError("TaskManager is shutting down; cannot create new tasks")
 
-        task = asyncio.create_task(coro, name=name) if name else asyncio.create_task(coro)
+        task = (
+            asyncio.create_task(coro, name=name) if name else asyncio.create_task(coro)
+        )
         self._tasks.add(task)
         task.add_done_callback(self._task_done_callback)
         logger.debug(f"Task created and tracked: {task.get_name() if name else task}")
@@ -486,7 +497,10 @@ class TaskManager:
         try:
             exc = task.exception()
             if exc:
-                logger.error(f"Task {task.get_name() if hasattr(task, 'get_name') else task} raised exception: {exc}", exc_info=True)
+                logger.error(
+                    f"Task {task.get_name() if hasattr(task, 'get_name') else task} raised exception: {exc}",
+                    exc_info=True,
+                )
         except asyncio.CancelledError:
             # Task was cancelled, no error to log
             pass
@@ -507,7 +521,9 @@ class TaskManager:
 
         try:
             # Wait for all tasks to complete with timeout protection
-            await asyncio.wait_for(asyncio.gather(*self._tasks, return_exceptions=True), timeout=30.0)
+            await asyncio.wait_for(
+                asyncio.gather(*self._tasks, return_exceptions=True), timeout=30.0
+            )
         except asyncio.TimeoutError:
             logger.warning("Timeout reached while waiting for tasks to cancel")
         except Exception:
@@ -542,8 +558,13 @@ class TaskManager:
         self.task_handlers[task_type] = handler
         logger.info(f"Registered handler for task type: {task_type}")
 
-    async def enqueue_task(self, task_type: str, payload: Dict[str, Any],
-                          priority: int = 1, correlation_id: Optional[str] = None) -> Optional[str]:
+    async def enqueue_task(
+        self,
+        task_type: str,
+        payload: Dict[str, Any],
+        priority: int = 1,
+        correlation_id: Optional[str] = None,
+    ) -> Optional[str]:
         """Enqueue a task for distributed processing."""
         task_id = str(uuid.uuid4())
         task = TaskMessage(
@@ -551,7 +572,7 @@ class TaskManager:
             task_type=task_type,
             payload=payload,
             priority=priority,
-            correlation_id=correlation_id
+            correlation_id=correlation_id,
         )
 
         success = await self.queue_adapter.enqueue_task(task)
@@ -568,10 +589,7 @@ class TaskManager:
 
         for i in range(count):
             worker_id = f"worker_{i}"
-            worker_task = self.create_task(
-                self._worker_loop(worker_id),
-                name=worker_id
-            )
+            worker_task = self.create_task(self._worker_loop(worker_id), name=worker_id)
             self.workers[worker_id] = worker_task
             self.worker_tasks.add(worker_task)
 
@@ -608,7 +626,9 @@ class TaskManager:
 
                     if success:
                         await self.queue_adapter.acknowledge_task(task.task_id)
-                        logger.debug(f"Worker {worker_id} completed task {task.task_id}")
+                        logger.debug(
+                            f"Worker {worker_id} completed task {task.task_id}"
+                        )
                     else:
                         # Handle failure and retry logic
                         await self._handle_task_failure(task)
@@ -632,17 +652,22 @@ class TaskManager:
             handler = self.task_handlers[task.task_type]
 
             # Add correlation_id to logging context
-            logger_extra = {'correlation_id': task.correlation_id}
+            logger_extra = {"correlation_id": task.correlation_id}
 
             # Execute handler
             result = await handler(task.payload, **logger_extra)
 
-            logger.info(f"Task {task.task_id} processed successfully", extra=logger_extra)
+            logger.info(
+                f"Task {task.task_id} processed successfully", extra=logger_extra
+            )
             return True
 
         except Exception as e:
-            logger.error(f"Task {task.task_id} processing failed: {e}",
-                        extra={'correlation_id': task.correlation_id}, exc_info=True)
+            logger.error(
+                f"Task {task.task_id} processing failed: {e}",
+                extra={"correlation_id": task.correlation_id},
+                exc_info=True,
+            )
             return False
 
     async def _handle_task_failure(self, task: TaskMessage) -> None:
@@ -652,42 +677,62 @@ class TaskManager:
         if task.retry_count < task.max_retries:
             # Requeue with small backoff for testing
             backoff_delay = 0.1
-            logger.warning(f"Retrying task {task.task_id} in {backoff_delay}s "
-                          f"(attempt {task.retry_count}/{task.max_retries})")
+            logger.warning(
+                f"Retrying task {task.task_id} in {backoff_delay}s "
+                f"(attempt {task.retry_count}/{task.max_retries})"
+            )
 
             await asyncio.sleep(backoff_delay)
             await self.queue_adapter.reject_task(task.task_id, requeue=True)
         else:
             # Max retries exceeded, reject permanently
-            logger.error(f"Task {task.task_id} failed permanently after {task.max_retries} attempts")
+            logger.error(
+                f"Task {task.task_id} failed permanently after {task.max_retries} attempts"
+            )
             await self.queue_adapter.reject_task(task.task_id, requeue=False)
 
     async def get_queue_status(self) -> Dict[str, Any]:
         """Get current queue status."""
         depth = await self.queue_adapter.get_queue_depth()
         return {
-            'queue_depth': depth,
-            'active_workers': len(self.workers),
-            'max_workers': self.max_workers,
-            'registered_handlers': list(self.task_handlers.keys())
+            "queue_depth": depth,
+            "active_workers": len(self.workers),
+            "max_workers": self.max_workers,
+            "registered_handlers": list(self.task_handlers.keys()),
         }
 
     # Convenience methods for common task types
 
-    async def enqueue_signal_task(self, signal_data: Dict[str, Any],
-                                 priority: int = 1, correlation_id: Optional[str] = None) -> Optional[str]:
+    async def enqueue_signal_task(
+        self,
+        signal_data: Dict[str, Any],
+        priority: int = 1,
+        correlation_id: Optional[str] = None,
+    ) -> Optional[str]:
         """Enqueue a signal processing task."""
-        return await self.enqueue_task('signal', signal_data, priority, correlation_id)
+        return await self.enqueue_task("signal", signal_data, priority, correlation_id)
 
-    async def enqueue_backtest_task(self, backtest_config: Dict[str, Any],
-                                   priority: int = 2, correlation_id: Optional[str] = None) -> Optional[str]:
+    async def enqueue_backtest_task(
+        self,
+        backtest_config: Dict[str, Any],
+        priority: int = 2,
+        correlation_id: Optional[str] = None,
+    ) -> Optional[str]:
         """Enqueue a backtest task."""
-        return await self.enqueue_task('backtest', backtest_config, priority, correlation_id)
+        return await self.enqueue_task(
+            "backtest", backtest_config, priority, correlation_id
+        )
 
-    async def enqueue_optimization_task(self, optimization_config: Dict[str, Any],
-                                       priority: int = 3, correlation_id: Optional[str] = None) -> Optional[str]:
+    async def enqueue_optimization_task(
+        self,
+        optimization_config: Dict[str, Any],
+        priority: int = 3,
+        correlation_id: Optional[str] = None,
+    ) -> Optional[str]:
         """Enqueue an optimization task."""
-        return await self.enqueue_task('optimization', optimization_config, priority, correlation_id)
+        return await self.enqueue_task(
+            "optimization", optimization_config, priority, correlation_id
+        )
 
     async def register_worker(self, worker: Any) -> None:
         """
@@ -697,17 +742,21 @@ class TaskManager:
             worker: Worker object with node_id, status, capacity, etc.
         """
         # Validate worker object
-        if not hasattr(worker, 'node_id'):
+        if not hasattr(worker, "node_id"):
             raise ValueError("Worker must have 'node_id' attribute")
-        if not hasattr(worker, 'status'):
+        if not hasattr(worker, "status"):
             raise ValueError("Worker must have 'status' attribute")
-        if not hasattr(worker, 'capacity'):
+        if not hasattr(worker, "capacity"):
             raise ValueError("Worker must have 'capacity' attribute")
 
         # Initialize assigned_strategies and assigned_tasks if not present
-        if not hasattr(worker, "assigned_strategies") or not isinstance(getattr(worker, "assigned_strategies", None), list):
+        if not hasattr(worker, "assigned_strategies") or not isinstance(
+            getattr(worker, "assigned_strategies", None), list
+        ):
             worker.assigned_strategies = []
-        if not hasattr(worker, "assigned_tasks") or not isinstance(getattr(worker, "assigned_tasks", None), list):
+        if not hasattr(worker, "assigned_tasks") or not isinstance(
+            getattr(worker, "assigned_tasks", None), list
+        ):
             worker.assigned_tasks = []
 
         node_id = worker.node_id
@@ -720,7 +769,7 @@ class TaskManager:
     @property
     def active_workers(self) -> Dict[str, Any]:
         """Get active workers."""
-        return {k: v for k, v in self.workers.items() if v.status == 'active'}
+        return {k: v for k, v in self.workers.items() if v.status == "active"}
 
     @property
     def total_capacity(self) -> int:
@@ -737,13 +786,19 @@ class TaskManager:
         worker_list = list(self.active_workers.values())
         for i, strategy in enumerate(strategies):
             worker = worker_list[i % len(worker_list)]
-            if not hasattr(worker, "assigned_strategies") or not isinstance(getattr(worker, "assigned_strategies", None), list):
+            if not hasattr(worker, "assigned_strategies") or not isinstance(
+                getattr(worker, "assigned_strategies", None), list
+            ):
                 worker.assigned_strategies = []
             if len(worker.assigned_strategies) < worker.capacity:
-                worker.assigned_strategies.append(strategy.id if hasattr(strategy, 'id') else str(strategy))
+                worker.assigned_strategies.append(
+                    strategy.id if hasattr(strategy, "id") else str(strategy)
+                )
                 worker.current_load = len(worker.assigned_strategies)
 
-        logger.info(f"Distributed {len(strategies)} strategies across {len(worker_list)} workers")
+        logger.info(
+            f"Distributed {len(strategies)} strategies across {len(worker_list)} workers"
+        )
 
     async def distribute_tasks(self, tasks: List[Any]) -> None:
         """Distribute tasks across workers considering processing_power and task complexity."""
@@ -758,35 +813,42 @@ class TaskManager:
             return
 
         # Sort tasks by complexity (complex > medium > simple), then priority (high > medium > low)
-        complexity_order = {'complex': 3, 'medium': 2, 'simple': 1}
-        priority_order = {'high': 3, 'medium': 2, 'low': 1}
+        complexity_order = {"complex": 3, "medium": 2, "simple": 1}
+        priority_order = {"high": 3, "medium": 2, "low": 1}
 
         def task_sort_key(task):
-            complexity = getattr(task, 'complexity', 'simple')
-            priority = getattr(task, 'priority', 'low')
-            return (-complexity_order.get(complexity, 1), -priority_order.get(priority, 1))
+            complexity = getattr(task, "complexity", "simple")
+            priority = getattr(task, "priority", "low")
+            return (
+                -complexity_order.get(complexity, 1),
+                -priority_order.get(priority, 1),
+            )
 
         sorted_tasks = sorted(tasks, key=task_sort_key)
 
         # Sort workers by processing_power descending (use capacity if processing_power not available)
         def worker_sort_key(worker):
-            processing_power = getattr(worker, 'processing_power', worker.capacity)
+            processing_power = getattr(worker, "processing_power", worker.capacity)
             return -processing_power
 
         sorted_workers = sorted(worker_list, key=worker_sort_key)
 
         # Calculate target assignments proportional to processing_power
-        total_pp = sum(getattr(w, 'processing_power', w.capacity) for w in worker_list)
+        total_pp = sum(getattr(w, "processing_power", w.capacity) for w in worker_list)
         targets = {}
         for worker in worker_list:
-            pp = getattr(worker, 'processing_power', worker.capacity)
+            pp = getattr(worker, "processing_power", worker.capacity)
             targets[worker] = int((pp / total_pp) * num_tasks)
 
         total_target = sum(targets.values())
         remaining = num_tasks - total_target
 
         # Distribute remaining tasks to highest processing_power workers
-        sorted_workers_pp = sorted(worker_list, key=lambda w: getattr(w, 'processing_power', w.capacity), reverse=True)
+        sorted_workers_pp = sorted(
+            worker_list,
+            key=lambda w: getattr(w, "processing_power", w.capacity),
+            reverse=True,
+        )
         for i in range(remaining):
             targets[sorted_workers_pp[i % len(sorted_workers_pp)]] += 1
 
@@ -794,25 +856,33 @@ class TaskManager:
         for task in sorted_tasks:
             # Find worker with highest processing_power that has not reached target
             for worker in sorted_workers_pp:
-                if len(getattr(worker, 'assigned_tasks', [])) < targets[worker]:
+                if len(getattr(worker, "assigned_tasks", [])) < targets[worker]:
                     # Initialize assigned_tasks if missing
-                    if not hasattr(worker, "assigned_tasks") or not isinstance(getattr(worker, "assigned_tasks", None), list):
+                    if not hasattr(worker, "assigned_tasks") or not isinstance(
+                        getattr(worker, "assigned_tasks", None), list
+                    ):
                         worker.assigned_tasks = []
                     worker.assigned_tasks.append(task)
                     break
 
         # Log distribution results
-        logger.info(f"Distributed {num_tasks} tasks across {len(worker_list)} workers (processing_power and complexity prioritized):")
+        logger.info(
+            f"Distributed {num_tasks} tasks across {len(worker_list)} workers (processing_power and complexity prioritized):"
+        )
         total_assigned = 0
         for worker in worker_list:
-            assigned_count = len(getattr(worker, 'assigned_tasks', []))
-            processing_power = getattr(worker, 'processing_power', worker.capacity)
-            logger.info(f"  Worker {worker.node_id}: {assigned_count} tasks (capacity: {worker.capacity}, processing_power: {processing_power})")
+            assigned_count = len(getattr(worker, "assigned_tasks", []))
+            processing_power = getattr(worker, "processing_power", worker.capacity)
+            logger.info(
+                f"  Worker {worker.node_id}: {assigned_count} tasks (capacity: {worker.capacity}, processing_power: {processing_power})"
+            )
             total_assigned += assigned_count
 
         # Final validation
         if total_assigned != num_tasks:
-            logger.error(f"Task distribution failed: assigned {total_assigned} of {num_tasks} tasks")
+            logger.error(
+                f"Task distribution failed: assigned {total_assigned} of {num_tasks} tasks"
+            )
         else:
             logger.info(f"Successfully distributed all {num_tasks} tasks")
 
@@ -820,13 +890,19 @@ class TaskManager:
         """Remove a worker from the registry."""
         if node_id in self.workers:
             worker = self.workers[node_id]
-            failed_strategies = worker.assigned_strategies.copy() if hasattr(worker, 'assigned_strategies') else []
+            failed_strategies = (
+                worker.assigned_strategies.copy()
+                if hasattr(worker, "assigned_strategies")
+                else []
+            )
             del self.workers[node_id]
             logger.info(f"Removed worker {node_id}")
 
             if failed_strategies:
                 await self.redistribute_tasks(failed_strategies)
-                logger.info(f"Redistributed {len(failed_strategies)} strategies from failed worker {node_id}")
+                logger.info(
+                    f"Redistributed {len(failed_strategies)} strategies from failed worker {node_id}"
+                )
 
     async def redistribute_tasks(self, strategies: List[str]) -> None:
         """Redistribute strategies to remaining workers using load-aware distribution."""
@@ -837,13 +913,13 @@ class TaskManager:
         # Calculate available capacity for each worker (allow up to 1.5x capacity)
         worker_capacity = []
         for worker in self.active_workers.values():
-            current_assigned = len(getattr(worker, 'assigned_strategies', []))
+            current_assigned = len(getattr(worker, "assigned_strategies", []))
             max_allowed = int(worker.capacity * 1.5)
             available = max(0, max_allowed - current_assigned)
-            worker_capacity.append({'worker': worker, 'available': available})
+            worker_capacity.append({"worker": worker, "available": available})
 
         # Sort by available capacity descending
-        worker_capacity.sort(key=lambda x: x['available'], reverse=True)
+        worker_capacity.sort(key=lambda x: x["available"], reverse=True)
 
         assigned_counts = {worker.node_id: 0 for worker in self.active_workers.values()}
 
@@ -851,25 +927,29 @@ class TaskManager:
             # Find worker with most available capacity
             assigned = False
             for item in worker_capacity:
-                if item['available'] > 0:
-                    worker = item['worker']
-                    if not hasattr(worker, 'assigned_strategies'):
+                if item["available"] > 0:
+                    worker = item["worker"]
+                    if not hasattr(worker, "assigned_strategies"):
                         worker.assigned_strategies = []
                     worker.assigned_strategies.append(strategy)
                     worker.current_load = len(worker.assigned_strategies)
                     assigned_counts[worker.node_id] += 1
                     # Update available
-                    item['available'] -= 1
+                    item["available"] -= 1
                     # Re-sort after assignment
-                    worker_capacity.sort(key=lambda x: x['available'], reverse=True)
+                    worker_capacity.sort(key=lambda x: x["available"], reverse=True)
                     assigned = True
                     break
 
             if not assigned:
-                logger.warning(f"Could not assign strategy {strategy}: no available capacity")
+                logger.warning(
+                    f"Could not assign strategy {strategy}: no available capacity"
+                )
 
         # Log redistribution results
-        logger.info(f"Redistributed {len(strategies)} strategies to workers: {assigned_counts}")
+        logger.info(
+            f"Redistributed {len(strategies)} strategies to workers: {assigned_counts}"
+        )
 
     async def start(self) -> bool:
         """Async stub for starting the task manager."""

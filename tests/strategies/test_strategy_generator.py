@@ -24,24 +24,25 @@ The Backtester class provides a mock implementation for testing purposes,
 returning sample backtest results with computed metrics.
 """
 
-import pytest
-import numpy as np
-import pandas as pd
-from datetime import datetime, timedelta
-from unittest.mock import Mock, AsyncMock, patch
 import asyncio
-import tempfile
-import os
-from pathlib import Path
+from unittest.mock import AsyncMock, Mock
 
+import numpy as np
+import pytest
+
+from backtest.backtester import Backtester
+from core.diagnostics import HealthCheckResult, HealthStatus
 from optimization.strategy_generator import (
-    StrategyGenerator, StrategyGenome, StrategyGene,
-    StrategyComponent, IndicatorType, SignalLogic
+    IndicatorType,
+    SignalLogic,
+    StrategyComponent,
+    StrategyGene,
+    StrategyGenerator,
+    StrategyGenome,
 )
+
 # from strategies.generated import GeneratedStrategy
 from strategies.base_strategy import BaseStrategy
-from backtest.backtester import Backtester
-from core.diagnostics import HealthStatus, HealthCheckResult
 
 
 class TestStrategyGenome:
@@ -63,7 +64,7 @@ class TestStrategyGenome:
         indicator_gene = StrategyGene(
             component_type=StrategyComponent.INDICATOR,
             indicator_type=IndicatorType.RSI,
-            parameters={'period': 14, 'overbought': 70, 'oversold': 30}
+            parameters={"period": 14, "overbought": 70, "oversold": 30},
         )
         genome.genes.append(indicator_gene)
 
@@ -71,7 +72,7 @@ class TestStrategyGenome:
         signal_gene = StrategyGene(
             component_type=StrategyComponent.SIGNAL_LOGIC,
             signal_logic=SignalLogic.THRESHOLD,
-            parameters={'threshold': 0.5, 'direction': 'above'}
+            parameters={"threshold": 0.5, "direction": "above"},
         )
         genome.genes.append(signal_gene)
 
@@ -89,7 +90,7 @@ class TestStrategyGenome:
         gene = StrategyGene(
             component_type=StrategyComponent.INDICATOR,
             indicator_type=IndicatorType.MACD,
-            parameters={'fast_period': 12, 'slow_period': 26}
+            parameters={"fast_period": 12, "slow_period": 26},
         )
         genome.genes.append(gene)
 
@@ -97,10 +98,10 @@ class TestStrategyGenome:
         data = genome.to_dict()
 
         assert isinstance(data, dict)
-        assert 'genes' in data
-        assert 'fitness' in data
-        assert 'generation' in data
-        assert len(data['genes']) == 1
+        assert "genes" in data
+        assert "fitness" in data
+        assert "generation" in data
+        assert len(data["genes"]) == 1
 
         # Deserialize
         genome2 = StrategyGenome.from_dict(data)
@@ -118,7 +119,7 @@ class TestStrategyGenome:
         gene = StrategyGene(
             component_type=StrategyComponent.INDICATOR,
             indicator_type=IndicatorType.BOLLINGER_BANDS,
-            parameters={'period': 20, 'std_dev': 2.0}
+            parameters={"period": 20, "std_dev": 2.0},
         )
         genome.genes.append(gene)
 
@@ -131,11 +132,11 @@ class TestStrategyGenome:
 
         # Modify copy
         genome_copy.fitness = 3.0
-        genome_copy.genes[0].parameters['period'] = 30
+        genome_copy.genes[0].parameters["period"] = 30
 
         # Original should be unchanged
         assert genome.fitness == 2.0
-        assert genome.genes[0].parameters['period'] == 20
+        assert genome.genes[0].parameters["period"] == 20
 
 
 class TestGeneticOperations:
@@ -149,11 +150,11 @@ class TestGeneticOperations:
         gene = StrategyGene(
             component_type=StrategyComponent.INDICATOR,
             indicator_type=IndicatorType.RSI,
-            parameters={'period': 14, 'overbought': 70, 'oversold': 30}
+            parameters={"period": 14, "overbought": 70, "oversold": 30},
         )
         genome.genes.append(gene)
 
-        original_period = gene.parameters['period']
+        original_period = gene.parameters["period"]
 
         # Apply mutation
         mutated = genome.mutate(mutation_rate=1.0)  # 100% mutation rate
@@ -171,7 +172,7 @@ class TestGeneticOperations:
         gene1 = StrategyGene(
             component_type=StrategyComponent.INDICATOR,
             indicator_type=IndicatorType.RSI,
-            parameters={'period': 14}
+            parameters={"period": 14},
         )
         genome1.genes.append(gene1)
 
@@ -180,7 +181,7 @@ class TestGeneticOperations:
         gene2 = StrategyGene(
             component_type=StrategyComponent.INDICATOR,
             indicator_type=IndicatorType.MACD,
-            parameters={'fast_period': 12}
+            parameters={"fast_period": 12},
         )
         genome2.genes.append(gene2)
 
@@ -263,7 +264,9 @@ class TestStrategyGenerator:
             assert len(genome.genes) > 0
 
     @pytest.mark.asyncio
-    async def test_evolution_process(self, test_config, temp_dir, generate_strategy_population):
+    async def test_evolution_process(
+        self, test_config, temp_dir, generate_strategy_population
+    ):
         """Test evolution process."""
         config = test_config.get("strategy_generator", {})
         config["population_size"] = 5  # Very small for testing
@@ -392,31 +395,39 @@ class TestFitnessEvaluation:
     """Test fitness evaluation system."""
 
     @pytest.mark.asyncio
-    async def test_fitness_calculation(self, generate_strategy_population, synthetic_market_data):
+    async def test_fitness_calculation(
+        self, generate_strategy_population, synthetic_market_data
+    ):
         """Test fitness calculation for strategies."""
         population = generate_strategy_population(3)
 
         for genome in population:
             # Calculate fitness
-            fitness = await StrategyGenerator.calculate_fitness(genome, synthetic_market_data)
+            fitness = await StrategyGenerator.calculate_fitness(
+                genome, synthetic_market_data
+            )
 
             assert isinstance(fitness, (int, float))
             assert fitness >= 0.0  # Fitness should be non-negative
 
     @pytest.mark.asyncio
-    async def test_backtest_integration(self, generate_strategy_population, synthetic_market_data):
+    async def test_backtest_integration(
+        self, generate_strategy_population, synthetic_market_data
+    ):
         """Test integration with backtesting system."""
         genome = generate_strategy_population(1)[0]
 
         # Mock backtester
         backtester = Mock(spec=Backtester)
-        backtester.run_backtest = AsyncMock(return_value={
-            'total_return': 0.15,
-            'sharpe_ratio': 1.8,
-            'max_drawdown': 0.08,
-            'win_rate': 0.65,
-            'total_trades': 50
-        })
+        backtester.run_backtest = AsyncMock(
+            return_value={
+                "total_return": 0.15,
+                "sharpe_ratio": 1.8,
+                "max_drawdown": 0.08,
+                "win_rate": 0.65,
+                "total_trades": 50,
+            }
+        )
 
         # Calculate fitness using backtest results
         fitness = await StrategyGenerator.calculate_fitness_with_backtest(
@@ -433,11 +444,11 @@ class TestFitnessEvaluation:
         """Test multi-objective fitness calculation."""
         # Mock backtest results
         results = {
-            'total_return': 0.20,      # 20% return
-            'sharpe_ratio': 2.1,       # Good Sharpe
-            'max_drawdown': 0.05,      # 5% drawdown
-            'win_rate': 0.70,          # 70% win rate
-            'total_trades': 100
+            "total_return": 0.20,  # 20% return
+            "sharpe_ratio": 2.1,  # Good Sharpe
+            "max_drawdown": 0.05,  # 5% drawdown
+            "win_rate": 0.70,  # 70% win rate
+            "total_trades": 100,
         }
 
         # Calculate multi-objective fitness
@@ -448,7 +459,7 @@ class TestFitnessEvaluation:
 
         # Higher returns should give higher fitness
         results_high = results.copy()
-        results_high['total_return'] = 0.30
+        results_high["total_return"] = 0.30
         fitness_high = StrategyGenerator.calculate_multi_objective_fitness(results_high)
 
         assert fitness_high > fitness
@@ -457,22 +468,26 @@ class TestFitnessEvaluation:
         """Test risk-adjusted fitness calculation."""
         # Strategy with high returns but high risk
         high_risk_results = {
-            'total_return': 0.30,
-            'sharpe_ratio': 1.2,
-            'max_drawdown': 0.15,
-            'win_rate': 0.60
+            "total_return": 0.30,
+            "sharpe_ratio": 1.2,
+            "max_drawdown": 0.15,
+            "win_rate": 0.60,
         }
 
         # Strategy with moderate returns but low risk
         low_risk_results = {
-            'total_return': 0.15,
-            'sharpe_ratio': 2.5,
-            'max_drawdown': 0.03,
-            'win_rate': 0.75
+            "total_return": 0.15,
+            "sharpe_ratio": 2.5,
+            "max_drawdown": 0.03,
+            "win_rate": 0.75,
         }
 
-        high_risk_fitness = StrategyGenerator.calculate_risk_adjusted_fitness(high_risk_results)
-        low_risk_fitness = StrategyGenerator.calculate_risk_adjusted_fitness(low_risk_results)
+        high_risk_fitness = StrategyGenerator.calculate_risk_adjusted_fitness(
+            high_risk_results
+        )
+        low_risk_fitness = StrategyGenerator.calculate_risk_adjusted_fitness(
+            low_risk_results
+        )
 
         # Low risk strategy should have higher fitness due to better risk adjustment
         assert low_risk_fitness > high_risk_fitness
@@ -493,10 +508,12 @@ class TestDistributedEvaluation:
         await generator.initialize()
 
         # Should have distributed evaluator
-        assert hasattr(generator, 'distributed_evaluator')
+        assert hasattr(generator, "distributed_evaluator")
 
     @pytest.mark.asyncio
-    async def test_parallel_fitness_evaluation(self, test_config, temp_dir, generate_strategy_population):
+    async def test_parallel_fitness_evaluation(
+        self, test_config, temp_dir, generate_strategy_population
+    ):
         """Test parallel fitness evaluation."""
         config = test_config.get("strategy_generator", {})
         config["distributed_enabled"] = True
@@ -515,7 +532,9 @@ class TestDistributedEvaluation:
             return len(genome.genes) * 0.1
 
         # Evaluate fitness in parallel
-        fitness_scores = await generator.evaluate_population_fitness_parallel(population, mock_fitness)
+        fitness_scores = await generator.evaluate_population_fitness_parallel(
+            population, mock_fitness
+        )
 
         assert len(fitness_scores) == len(population)
         assert all(isinstance(score, (int, float)) for score in fitness_scores)
@@ -600,7 +619,9 @@ class TestPerformance:
     """Test performance characteristics."""
 
     @pytest.mark.asyncio
-    async def test_generation_performance(self, test_config, temp_dir, performance_timer):
+    async def test_generation_performance(
+        self, test_config, temp_dir, performance_timer
+    ):
         """Test strategy generation performance."""
         config = test_config.get("strategy_generator", {})
         config["population_size"] = 5
@@ -613,7 +634,9 @@ class TestPerformance:
 
         # Measure generation time
         performance_timer.start()
-        strategy_class = await generator.generate_strategy(genome, "PerformanceTestStrategy")
+        strategy_class = await generator.generate_strategy(
+            genome, "PerformanceTestStrategy"
+        )
         performance_timer.stop()
 
         duration_ms = performance_timer.duration_ms()
@@ -623,7 +646,9 @@ class TestPerformance:
         assert strategy_class is not None
 
     @pytest.mark.asyncio
-    async def test_evolution_performance(self, test_config, temp_dir, performance_timer):
+    async def test_evolution_performance(
+        self, test_config, temp_dir, performance_timer
+    ):
         """Test evolution performance."""
         config = test_config.get("strategy_generator", {})
         config["population_size"] = 10
@@ -650,7 +675,9 @@ class TestPerformance:
         assert duration_seconds < 30  # Less than 30 seconds for small population
 
     @pytest.mark.asyncio
-    async def test_memory_usage_during_evolution(self, test_config, temp_dir, memory_monitor):
+    async def test_memory_usage_during_evolution(
+        self, test_config, temp_dir, memory_monitor
+    ):
         """Test memory usage during evolution."""
         config = test_config.get("strategy_generator", {})
         config["population_size"] = 20
@@ -714,7 +741,9 @@ class TestErrorHandling:
         assert generator.current_generation >= 0
 
     @pytest.mark.asyncio
-    async def test_fitness_evaluation_failure(self, generate_strategy_population, synthetic_market_data):
+    async def test_fitness_evaluation_failure(
+        self, generate_strategy_population, synthetic_market_data
+    ):
         """Test handling of fitness evaluation failures."""
         genome = generate_strategy_population(1)[0]
 
@@ -770,38 +799,48 @@ class TestHealthMonitoring:
         async def check_strategy_generator():
             try:
                 population_size = len(generator.population)
-                current_generation = getattr(generator, 'current_generation', 0)
-                best_fitness = max([g.fitness for g in generator.population]) if generator.population else 0
+                current_generation = getattr(generator, "current_generation", 0)
+                best_fitness = (
+                    max([g.fitness for g in generator.population])
+                    if generator.population
+                    else 0
+                )
 
-                status = HealthStatus.HEALTHY if population_size > 0 else HealthStatus.DEGRADED
+                status = (
+                    HealthStatus.HEALTHY
+                    if population_size > 0
+                    else HealthStatus.DEGRADED
+                )
 
                 return HealthCheckResult(
-                    component='strategy_generator',
+                    component="strategy_generator",
                     status=status,
                     latency_ms=15.0,
-                    message=f'Generator healthy: pop={population_size}, gen={current_generation}, best_fit={best_fitness:.2f}',
+                    message=f"Generator healthy: pop={population_size}, gen={current_generation}, best_fit={best_fitness:.2f}",
                     details={
-                        'population_size': population_size,
-                        'current_generation': current_generation,
-                        'best_fitness': best_fitness
-                    }
+                        "population_size": population_size,
+                        "current_generation": current_generation,
+                        "best_fitness": best_fitness,
+                    },
                 )
             except Exception as e:
                 return HealthCheckResult(
-                    component='strategy_generator',
+                    component="strategy_generator",
                     status=HealthStatus.CRITICAL,
-                    message=f'Health check failed: {str(e)}',
-                    details={'error': str(e)}
+                    message=f"Health check failed: {str(e)}",
+                    details={"error": str(e)},
                 )
 
-        diagnostics.register_health_check('strategy_generator', check_strategy_generator)
+        diagnostics.register_health_check(
+            "strategy_generator", check_strategy_generator
+        )
 
         # Run health check
         state = await diagnostics.run_health_check()
 
         # Should have strategy generator health data
-        assert 'strategy_generator' in state.component_statuses
-        sg_status = state.component_statuses['strategy_generator']
+        assert "strategy_generator" in state.component_statuses
+        sg_status = state.component_statuses["strategy_generator"]
 
         assert sg_status.status in [HealthStatus.HEALTHY, HealthStatus.DEGRADED]
-        assert 'Generator healthy:' in sg_status.message
+        assert "Generator healthy:" in sg_status.message

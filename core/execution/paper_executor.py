@@ -6,13 +6,12 @@ Handles paper trading order execution and simulation.
 
 import logging
 from decimal import Decimal
-from typing import Dict, Any, Optional
-from utils.time import now_ms
+from typing import Any, Dict, Optional
 
 from core.types.order_types import Order, OrderStatus
-from utils.logger import get_trade_logger
-from utils.adapter import signal_to_dict
 from risk.risk_manager import _safe_quantize
+from utils.logger import get_trade_logger
+from utils.time import now_ms
 
 logger = logging.getLogger(__name__)
 trade_logger = get_trade_logger()
@@ -42,12 +41,20 @@ class PaperOrderExecutor:
             initial_balance: Initial balance amount, or None for default
         """
         try:
-            self.paper_balance = Decimal(initial_balance) if initial_balance is not None else Decimal("0")
+            self.paper_balance = (
+                Decimal(initial_balance)
+                if initial_balance is not None
+                else Decimal("0")
+            )
         except Exception:
             self.paper_balance = Decimal("0")
 
-    def set_portfolio_mode(self, portfolio_mode: bool, pairs: Optional[list] = None, 
-                          allocation: Optional[Dict[str, float]] = None) -> None:
+    def set_portfolio_mode(
+        self,
+        portfolio_mode: bool,
+        pairs: Optional[list] = None,
+        allocation: Optional[Dict[str, float]] = None,
+    ) -> None:
         """Configure portfolio mode settings.
 
         Args:
@@ -84,9 +91,10 @@ class PaperOrderExecutor:
             Dictionary containing simulated order execution details.
         """
         # Determine side
-        side = getattr(signal, 'side', None)
+        side = getattr(signal, "side", None)
         if side is None:
             from core.contracts import SignalType
+
             if signal.signal_type == SignalType.ENTRY_LONG:
                 side = "buy"
             elif signal.signal_type == SignalType.ENTRY_SHORT:
@@ -104,7 +112,9 @@ class PaperOrderExecutor:
         fee = self._calculate_fee(cost)
 
         # Check balance
-        symbol = getattr(signal, "symbol", None) or (signal.get("symbol") if isinstance(signal, dict) else None)
+        symbol = getattr(signal, "symbol", None) or (
+            signal.get("symbol") if isinstance(signal, dict) else None
+        )
         if side == "buy":
             if self.portfolio_mode and symbol:
                 # Check per-symbol balance in portfolio mode
@@ -118,7 +128,10 @@ class PaperOrderExecutor:
 
         # Convert order_type to OrderType enum
         from core.types.order_types import OrderType
-        order_type = getattr(signal, "order_type", None) or signal.get("order_type", OrderType.MARKET)
+
+        order_type = getattr(signal, "order_type", None) or signal.get(
+            "order_type", OrderType.MARKET
+        )
         if isinstance(order_type, str):
             try:
                 order_type_enum = OrderType(order_type.lower())
@@ -139,8 +152,12 @@ class PaperOrderExecutor:
             filled=Decimal(signal.amount),
             remaining=Decimal(0),
             cost=cost,
-            params=getattr(signal, "params", {}) or ({"stop_loss": getattr(signal, "stop_loss", None)}),
-            fee={"cost": float(fee), "currency": self.config.get("order", {}).get("base_currency", "USDT")},
+            params=getattr(signal, "params", {})
+            or ({"stop_loss": getattr(signal, "stop_loss", None)}),
+            fee={
+                "cost": float(fee),
+                "currency": self.config.get("order", {}).get("base_currency", "USDT"),
+            },
             trailing_stop=(
                 Decimal(str(signal.trailing_stop.get("price")))
                 if getattr(signal, "trailing_stop", None)
@@ -152,20 +169,22 @@ class PaperOrderExecutor:
         )
 
         # Update paper balance (support per-pair balances when portfolio_mode enabled)
-        symbol = getattr(signal, "symbol", None) or (signal.get("symbol") if isinstance(signal, dict) else None)
+        symbol = getattr(signal, "symbol", None) or (
+            signal.get("symbol") if isinstance(signal, dict) else None
+        )
         if self.portfolio_mode and symbol:
             # ensure per-symbol balance exists
             bal = self.paper_balances.setdefault(symbol, Decimal(self.paper_balance))
             if side == "buy":
-                bal -= (cost + fee)
+                bal -= cost + fee
             else:
-                bal += (cost - fee)
+                bal += cost - fee
             self.paper_balances[symbol] = bal.quantize(Decimal("0.01"))
         else:
             if side == "buy":
-                self.paper_balance -= (cost + fee)
+                self.paper_balance -= cost + fee
             else:
-                self.paper_balance += (cost - fee)
+                self.paper_balance += cost - fee
             self.paper_balance = self.paper_balance.quantize(Decimal("0.01"))
 
         self.trade_count += 1
@@ -182,7 +201,11 @@ class PaperOrderExecutor:
         """
         # Get fee rate from paper config section, fallback to order section, then root
         paper_config = self.config.get("paper", {})
-        fee_rate = paper_config.get("trade_fee") or self.config.get("order", {}).get("trade_fee") or self.config.get("trade_fee", "0.001")
+        fee_rate = (
+            paper_config.get("trade_fee")
+            or self.config.get("order", {}).get("trade_fee")
+            or self.config.get("trade_fee", "0.001")
+        )
         fee_rate = Decimal(str(fee_rate))
         return cost * fee_rate
 
@@ -210,7 +233,11 @@ class PaperOrderExecutor:
         """
         # Get slippage from paper config section, fallback to order section, then root
         paper_config = self.config.get("paper", {})
-        slippage = paper_config.get("slippage") or self.config.get("order", {}).get("slippage") or self.config.get("slippage", "0.0005")
+        slippage = (
+            paper_config.get("slippage")
+            or self.config.get("order", {}).get("slippage")
+            or self.config.get("slippage", "0.0005")
+        )
         slippage = Decimal(str(slippage))
         price = self._extract_price(signal)
         try:
@@ -222,7 +249,6 @@ class PaperOrderExecutor:
         else:
             adjusted = price_d * (1 - slippage)
         return adjusted.quantize(Decimal("0.0001"))
-
 
     def get_balance(self) -> Decimal:
         """Get current paper balance."""

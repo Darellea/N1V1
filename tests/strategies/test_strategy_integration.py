@@ -13,21 +13,19 @@ Tests cover:
 - Multi-symbol and multi-timeframe scenarios
 """
 
-import pytest
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Dict, List, Optional
+from unittest.mock import patch
+
 import numpy as np
 import pandas as pd
-from decimal import Decimal
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
-from typing import Dict, Any, List, Optional
-from datetime import datetime, timezone
+import pytest
 
-from strategies.base_strategy import BaseStrategy, StrategyConfig
-from strategies.rsi_strategy import RSIStrategy
-from strategies.bollinger_reversion_strategy import BollingerReversionStrategy
-from strategies.atr_breakout_strategy import ATRBreakoutStrategy
-from core.contracts import TradingSignal, SignalType, SignalStrength
+from core.contracts import SignalStrength, SignalType, TradingSignal
 from risk.risk_manager import RiskManager
-from data.data_fetcher import DataFetcher
+from strategies.base_strategy import StrategyConfig
+from strategies.rsi_strategy import RSIStrategy
 
 
 class MockDataFetcher:
@@ -42,7 +40,7 @@ class MockDataFetcher:
 
     def _generate_mock_data(self) -> Dict[str, pd.DataFrame]:
         """Generate realistic mock OHLCV data for testing."""
-        dates = pd.date_range('2023-01-01', periods=200, freq='1h')
+        dates = pd.date_range("2023-01-01", periods=200, freq="1h")
 
         # Generate BTC data with trend and volatility
         np.random.seed(42)
@@ -50,37 +48,50 @@ class MockDataFetcher:
         returns = np.random.normal(0.0001, 0.02, len(dates))
         btc_prices = base_price * np.exp(np.cumsum(returns))
 
-        btc_data = pd.DataFrame({
-            'open': btc_prices,
-            'high': btc_prices * (1 + np.random.uniform(0, 0.02, len(dates))),
-            'low': btc_prices * (1 - np.random.uniform(0, 0.02, len(dates))),
-            'close': btc_prices * (1 + np.random.normal(0, 0.01, len(dates))),
-            'volume': np.random.uniform(100, 1000, len(dates))
-        }, index=dates)
+        btc_data = pd.DataFrame(
+            {
+                "open": btc_prices,
+                "high": btc_prices * (1 + np.random.uniform(0, 0.02, len(dates))),
+                "low": btc_prices * (1 - np.random.uniform(0, 0.02, len(dates))),
+                "close": btc_prices * (1 + np.random.normal(0, 0.01, len(dates))),
+                "volume": np.random.uniform(100, 1000, len(dates)),
+            },
+            index=dates,
+        )
 
         # Ensure high >= max(open, close) and low <= min(open, close)
-        btc_data['high'] = np.maximum(btc_data[['open', 'close']].max(axis=1), btc_data['high'])
-        btc_data['low'] = np.minimum(btc_data[['open', 'close']].min(axis=1), btc_data['low'])
+        btc_data["high"] = np.maximum(
+            btc_data[["open", "close"]].max(axis=1), btc_data["high"]
+        )
+        btc_data["low"] = np.minimum(
+            btc_data[["open", "close"]].min(axis=1), btc_data["low"]
+        )
 
         # Generate ETH data
         eth_prices = btc_prices * 0.1  # Different scale
-        eth_data = pd.DataFrame({
-            'open': eth_prices,
-            'high': eth_prices * (1 + np.random.uniform(0, 0.02, len(dates))),
-            'low': eth_prices * (1 - np.random.uniform(0, 0.02, len(dates))),
-            'close': eth_prices * (1 + np.random.normal(0, 0.01, len(dates))),
-            'volume': np.random.uniform(1000, 10000, len(dates))
-        }, index=dates)
+        eth_data = pd.DataFrame(
+            {
+                "open": eth_prices,
+                "high": eth_prices * (1 + np.random.uniform(0, 0.02, len(dates))),
+                "low": eth_prices * (1 - np.random.uniform(0, 0.02, len(dates))),
+                "close": eth_prices * (1 + np.random.normal(0, 0.01, len(dates))),
+                "volume": np.random.uniform(1000, 10000, len(dates)),
+            },
+            index=dates,
+        )
 
-        eth_data['high'] = np.maximum(eth_data[['open', 'close']].max(axis=1), eth_data['high'])
-        eth_data['low'] = np.minimum(eth_data[['open', 'close']].min(axis=1), eth_data['low'])
+        eth_data["high"] = np.maximum(
+            eth_data[["open", "close"]].max(axis=1), eth_data["high"]
+        )
+        eth_data["low"] = np.minimum(
+            eth_data[["open", "close"]].min(axis=1), eth_data["low"]
+        )
 
-        return {
-            'BTC/USDT': btc_data,
-            'ETH/USDT': eth_data
-        }
+        return {"BTC/USDT": btc_data, "ETH/USDT": eth_data}
 
-    async def get_historical_data(self, symbol: str, timeframe: str, limit: int = 100) -> Optional[pd.DataFrame]:
+    async def get_historical_data(
+        self, symbol: str, timeframe: str, limit: int = 100
+    ) -> Optional[pd.DataFrame]:
         """Mock historical data retrieval."""
         self.call_count += 1
         self.last_symbol = symbol
@@ -94,7 +105,9 @@ class MockDataFetcher:
             return data.tail(limit)
         return data
 
-    async def get_multiple_historical_data(self, symbols: List[str], timeframe: str = '1h', limit: int = 100) -> Dict[str, pd.DataFrame]:
+    async def get_multiple_historical_data(
+        self, symbols: List[str], timeframe: str = "1h", limit: int = 100
+    ) -> Dict[str, pd.DataFrame]:
         """Mock multiple symbol data retrieval."""
         result = {}
         for symbol in symbols:
@@ -126,8 +139,8 @@ def rsi_strategy_config():
             "stop_loss_pct": 0.05,
             "take_profit_pct": 0.1,
             "volume_period": 10,
-            "volume_threshold": 1.5
-        }
+            "volume_threshold": 1.5,
+        },
     )
 
 
@@ -142,7 +155,7 @@ def risk_manager_config():
         "fixed_percent": Decimal("0.1"),
         "require_stop_loss": True,
         "stop_loss_method": "percentage",
-        "stop_loss_percentage": Decimal("0.02")
+        "stop_loss_percentage": Decimal("0.02"),
     }
 
 
@@ -150,7 +163,9 @@ class TestStrategyIntegrationWorkflow:
     """Integration tests for complete strategy execution workflow."""
 
     @pytest.mark.asyncio
-    async def test_end_to_end_rsi_strategy_workflow(self, mock_data_fetcher, rsi_strategy_config):
+    async def test_end_to_end_rsi_strategy_workflow(
+        self, mock_data_fetcher, rsi_strategy_config
+    ):
         """
         Test complete end-to-end workflow for RSI strategy.
 
@@ -212,8 +227,8 @@ class TestStrategyIntegrationWorkflow:
                 "overbought": 70,
                 "oversold": 30,
                 "position_size": 0.1,
-                "volume_threshold": 1.0  # Lower threshold for testing
-            }
+                "volume_threshold": 1.0,  # Lower threshold for testing
+            },
         )
 
         strategy = RSIStrategy(config)
@@ -240,13 +255,16 @@ class TestStrategyIntegrationWorkflow:
         Verifies that strategies handle errors gracefully and continue
         processing when possible.
         """
+
         # Create mock data fetcher that sometimes fails
         class FailingDataFetcher(MockDataFetcher):
             def __init__(self):
                 super().__init__()
                 self.fail_count = 0
 
-            async def get_historical_data(self, symbol: str, timeframe: str, limit: int = 100):
+            async def get_historical_data(
+                self, symbol: str, timeframe: str, limit: int = 100
+            ):
                 self.fail_count += 1
                 if self.fail_count <= 2:
                     # Fail on first two calls
@@ -277,16 +295,20 @@ class TestStrategyIntegrationWorkflow:
         historical data for indicator calculation.
         """
         # Create data fetcher with minimal data
-        minimal_data = pd.DataFrame({
-            'close': [100.0, 101.0, 102.0],
-            'high': [101.0, 102.0, 103.0],
-            'low': [99.0, 100.0, 101.0],
-            'open': [100.0, 101.0, 102.0],
-            'volume': [1000, 1000, 1000]
-        })
+        minimal_data = pd.DataFrame(
+            {
+                "close": [100.0, 101.0, 102.0],
+                "high": [101.0, 102.0, 103.0],
+                "low": [99.0, 100.0, 101.0],
+                "open": [100.0, 101.0, 102.0],
+                "volume": [1000, 1000, 1000],
+            }
+        )
 
         class MinimalDataFetcher:
-            async def get_historical_data(self, symbol: str, timeframe: str, limit: int = 100):
+            async def get_historical_data(
+                self, symbol: str, timeframe: str, limit: int = 100
+            ):
                 return minimal_data
 
         fetcher = MinimalDataFetcher()
@@ -304,7 +326,9 @@ class TestStrategyRiskManagerIntegration:
     """Integration tests for strategy and risk manager interactions."""
 
     @pytest.mark.asyncio
-    async def test_strategy_signal_risk_validation(self, mock_data_fetcher, rsi_strategy_config, risk_manager_config):
+    async def test_strategy_signal_risk_validation(
+        self, mock_data_fetcher, rsi_strategy_config, risk_manager_config
+    ):
         """
         Test integration between strategy signal generation and risk validation.
 
@@ -332,11 +356,11 @@ class TestStrategyRiskManagerIntegration:
             # Convert DataFrame to dict format expected by risk manager
             if market_data is not None:
                 market_dict = {
-                    'close': market_data['close'].values,
-                    'high': market_data['high'].values,
-                    'low': market_data['low'].values,
-                    'open': market_data['open'].values,
-                    'volume': market_data['volume'].values
+                    "close": market_data["close"].values,
+                    "high": market_data["high"].values,
+                    "low": market_data["low"].values,
+                    "open": market_data["open"].values,
+                    "volume": market_data["volume"].values,
                 }
             else:
                 market_dict = None
@@ -348,7 +372,9 @@ class TestStrategyRiskManagerIntegration:
                 valid_signals.append(signal)
 
         # Verify that risk validation works
-        assert len(valid_signals) <= len(signals)  # Risk manager may reject some signals
+        assert len(valid_signals) <= len(
+            signals
+        )  # Risk manager may reject some signals
 
         # Verify valid signals have required risk management fields
         for signal in valid_signals:
@@ -357,7 +383,9 @@ class TestStrategyRiskManagerIntegration:
             assert signal.amount > 0
 
     @pytest.mark.asyncio
-    async def test_risk_manager_position_sizing_integration(self, mock_data_fetcher, rsi_strategy_config, risk_manager_config):
+    async def test_risk_manager_position_sizing_integration(
+        self, mock_data_fetcher, rsi_strategy_config, risk_manager_config
+    ):
         """
         Test risk manager position sizing with strategy signals.
 
@@ -381,29 +409,33 @@ class TestStrategyRiskManagerIntegration:
             order_type="market",
             amount=Decimal("0"),  # Zero to trigger position sizing calculation
             current_price=Decimal("50000"),
-            timestamp=datetime.now(timezone.utc)
+            timestamp=datetime.now(timezone.utc),
         )
 
         # Convert market data for risk manager
         market_dict = None
         if market_data is not None:
             market_dict = {
-                'close': market_data['close'].values[-20:],  # Last 20 periods
-                'high': market_data['high'].values[-20:],
-                'low': market_data['low'].values[-20:],
-                'open': market_data['open'].values[-20:],
-                'volume': market_data['volume'].values[-20:]
+                "close": market_data["close"].values[-20:],  # Last 20 periods
+                "high": market_data["high"].values[-20:],
+                "low": market_data["low"].values[-20:],
+                "open": market_data["open"].values[-20:],
+                "volume": market_data["volume"].values[-20:],
             }
 
         # Calculate position size
-        position_size = await risk_manager.calculate_position_size(test_signal, market_dict)
+        position_size = await risk_manager.calculate_position_size(
+            test_signal, market_dict
+        )
 
         # Verify position size is reasonable
         assert position_size > 0
         assert position_size <= Decimal("3000")  # Max 30% of $10k account
 
     @pytest.mark.asyncio
-    async def test_risk_manager_stop_loss_integration(self, mock_data_fetcher, risk_manager_config):
+    async def test_risk_manager_stop_loss_integration(
+        self, mock_data_fetcher, risk_manager_config
+    ):
         """
         Test risk manager stop loss calculation with market data.
 
@@ -424,22 +456,24 @@ class TestStrategyRiskManagerIntegration:
             order_type="market",
             amount=Decimal("1000"),
             current_price=Decimal("50000"),
-            timestamp=datetime.now(timezone.utc)
+            timestamp=datetime.now(timezone.utc),
         )
 
         # Convert market data
         market_dict = None
         if market_data is not None:
             market_dict = {
-                'close': market_data['close'].values[-20:],
-                'high': market_data['high'].values[-20:],
-                'low': market_data['low'].values[-20:],
-                'open': market_data['open'].values[-20:],
-                'volume': market_data['volume'].values[-20:]
+                "close": market_data["close"].values[-20:],
+                "high": market_data["high"].values[-20:],
+                "low": market_data["low"].values[-20:],
+                "open": market_data["open"].values[-20:],
+                "volume": market_data["volume"].values[-20:],
             }
 
         # Calculate stop loss
-        stop_loss = await risk_manager.calculate_dynamic_stop_loss(test_signal, market_dict)
+        stop_loss = await risk_manager.calculate_dynamic_stop_loss(
+            test_signal, market_dict
+        )
 
         # Verify stop loss is calculated and reasonable
         assert stop_loss is not None
@@ -450,7 +484,9 @@ class TestStrategyRiskManagerIntegration:
         assert Decimal("0.01") <= loss_pct <= Decimal("0.1")  # 1% to 10% stop loss
 
     @pytest.mark.asyncio
-    async def test_portfolio_risk_limits_integration(self, mock_data_fetcher, rsi_strategy_config, risk_manager_config):
+    async def test_portfolio_risk_limits_integration(
+        self, mock_data_fetcher, rsi_strategy_config, risk_manager_config
+    ):
         """
         Test portfolio-level risk limits with multiple strategy signals.
 
@@ -470,11 +506,11 @@ class TestStrategyRiskManagerIntegration:
         market_dict = None
         if market_data is not None:
             market_dict = {
-                'close': market_data['close'].values[-20:],
-                'high': market_data['high'].values[-20:],
-                'low': market_data['low'].values[-20:],
-                'open': market_data['open'].values[-20:],
-                'volume': market_data['volume'].values[-20:]
+                "close": market_data["close"].values[-20:],
+                "high": market_data["high"].values[-20:],
+                "low": market_data["low"].values[-20:],
+                "open": market_data["open"].values[-20:],
+                "volume": market_data["volume"].values[-20:],
             }
 
         # Evaluate signals and track total exposure
@@ -507,6 +543,7 @@ class TestStrategyDataFetcherIntegration:
         Verifies that data fetcher caching works correctly and
         reduces redundant data requests.
         """
+
         # Create data fetcher with caching simulation
         class CachingDataFetcher(MockDataFetcher):
             def __init__(self):
@@ -515,7 +552,9 @@ class TestStrategyDataFetcherIntegration:
                 self.cache_hits = 0
                 self.cache_misses = 0
 
-            async def get_historical_data(self, symbol: str, timeframe: str, limit: int = 100):
+            async def get_historical_data(
+                self, symbol: str, timeframe: str, limit: int = 100
+            ):
                 cache_key = f"{symbol}_{timeframe}_{limit}"
 
                 if cache_key in self.cache:
@@ -550,6 +589,7 @@ class TestStrategyDataFetcherIntegration:
         Verifies that strategies can recover from data fetcher errors
         and continue processing.
         """
+
         # Create unreliable data fetcher
         class UnreliableDataFetcher(MockDataFetcher):
             def __init__(self):
@@ -557,7 +597,9 @@ class TestStrategyDataFetcherIntegration:
                 self.error_count = 0
                 self.max_errors = 2
 
-            async def get_historical_data(self, symbol: str, timeframe: str, limit: int = 100):
+            async def get_historical_data(
+                self, symbol: str, timeframe: str, limit: int = 100
+            ):
                 if self.error_count < self.max_errors:
                     self.error_count += 1
                     raise ConnectionError(f"Simulated network error {self.error_count}")
@@ -583,22 +625,33 @@ class TestStrategyDataFetcherIntegration:
         Verifies that strategies can work with multi-timeframe data
         when available from the data fetcher.
         """
+
         # Create data fetcher with multi-timeframe support
         class MultiTimeframeDataFetcher(MockDataFetcher):
-            async def get_historical_data(self, symbol: str, timeframe: str, limit: int = 100):
+            async def get_historical_data(
+                self, symbol: str, timeframe: str, limit: int = 100
+            ):
                 # Simulate different data based on timeframe
                 if timeframe == "4h":
                     # Aggregate hourly data to 4-hour
-                    hourly_data = await super().get_historical_data(symbol, "1h", limit * 4)
+                    hourly_data = await super().get_historical_data(
+                        symbol, "1h", limit * 4
+                    )
                     if hourly_data is not None:
                         # Simple aggregation (in real implementation would be more sophisticated)
-                        return hourly_data.resample('4H').agg({
-                            'open': 'first',
-                            'high': 'max',
-                            'low': 'min',
-                            'close': 'last',
-                            'volume': 'sum'
-                        }).dropna()
+                        return (
+                            hourly_data.resample("4H")
+                            .agg(
+                                {
+                                    "open": "first",
+                                    "high": "max",
+                                    "low": "min",
+                                    "close": "last",
+                                    "volume": "sum",
+                                }
+                            )
+                            .dropna()
+                        )
 
                 return await super().get_historical_data(symbol, timeframe, limit)
 
@@ -624,18 +677,28 @@ class TestErrorScenariosIntegration:
         Verifies that strategies handle corrupted or invalid market data
         gracefully without crashing.
         """
+
         # Create data fetcher with corrupted data
         class CorruptedDataFetcher:
-            async def get_historical_data(self, symbol: str, timeframe: str, limit: int = 100):
+            async def get_historical_data(
+                self, symbol: str, timeframe: str, limit: int = 100
+            ):
                 # Return data with NaN values and invalid data
-                dates = pd.date_range('2023-01-01', periods=50, freq='1h')
-                corrupted_data = pd.DataFrame({
-                    'close': [100.0 if i % 5 != 0 else np.nan for i in range(50)],  # Some NaN values
-                    'high': [101.0 if i % 7 != 0 else np.nan for i in range(50)],
-                    'low': [99.0 if i % 3 != 0 else np.nan for i in range(50)],
-                    'open': [100.0] * 50,
-                    'volume': [-100 if i % 10 == 0 else 1000 for i in range(50)]  # Some negative volumes
-                }, index=dates)
+                dates = pd.date_range("2023-01-01", periods=50, freq="1h")
+                corrupted_data = pd.DataFrame(
+                    {
+                        "close": [
+                            100.0 if i % 5 != 0 else np.nan for i in range(50)
+                        ],  # Some NaN values
+                        "high": [101.0 if i % 7 != 0 else np.nan for i in range(50)],
+                        "low": [99.0 if i % 3 != 0 else np.nan for i in range(50)],
+                        "open": [100.0] * 50,
+                        "volume": [
+                            -100 if i % 10 == 0 else 1000 for i in range(50)
+                        ],  # Some negative volumes
+                    },
+                    index=dates,
+                )
 
                 return corrupted_data
 
@@ -657,9 +720,12 @@ class TestErrorScenariosIntegration:
         Verifies that strategies handle empty data responses
         from data fetchers appropriately.
         """
+
         # Create data fetcher that returns empty data
         class EmptyDataFetcher:
-            async def get_historical_data(self, symbol: str, timeframe: str, limit: int = 100):
+            async def get_historical_data(
+                self, symbol: str, timeframe: str, limit: int = 100
+            ):
                 return pd.DataFrame()  # Empty DataFrame
 
         empty_fetcher = EmptyDataFetcher()
@@ -684,7 +750,9 @@ class TestErrorScenariosIntegration:
 
         # Create data fetcher that simulates timeouts
         class TimeoutDataFetcher:
-            async def get_historical_data(self, symbol: str, timeframe: str, limit: int = 100):
+            async def get_historical_data(
+                self, symbol: str, timeframe: str, limit: int = 100
+            ):
                 await asyncio.sleep(0.1)  # Simulate delay
                 raise asyncio.TimeoutError("Network timeout")
 
@@ -699,7 +767,9 @@ class TestErrorScenariosIntegration:
         assert isinstance(signals, list)
 
     @pytest.mark.asyncio
-    async def test_risk_manager_circuit_breaker_integration(self, mock_data_fetcher, risk_manager_config):
+    async def test_risk_manager_circuit_breaker_integration(
+        self, mock_data_fetcher, risk_manager_config
+    ):
         """
         Test risk manager circuit breaker behavior in integration.
 
@@ -717,7 +787,7 @@ class TestErrorScenariosIntegration:
             order_type="market",
             amount=Decimal("1000"),
             current_price=Decimal("50000"),
-            timestamp=datetime.now(timezone.utc)
+            timestamp=datetime.now(timezone.utc),
         )
 
         # Get market data
@@ -725,15 +795,19 @@ class TestErrorScenariosIntegration:
         market_dict = None
         if market_data is not None:
             market_dict = {
-                'close': market_data['close'].values[-20:],
-                'high': market_data['high'].values[-20:],
-                'low': market_data['low'].values[-20:],
-                'open': market_data['open'].values[-20:],
-                'volume': market_data['volume'].values[-20:]
+                "close": market_data["close"].values[-20:],
+                "high": market_data["high"].values[-20:],
+                "low": market_data["low"].values[-20:],
+                "open": market_data["open"].values[-20:],
+                "volume": market_data["volume"].values[-20:],
             }
 
         # Test circuit breaker by simulating failures
-        with patch.object(risk_manager, '_get_current_balance', side_effect=Exception("Simulated failure")):
+        with patch.object(
+            risk_manager,
+            "_get_current_balance",
+            side_effect=Exception("Simulated failure"),
+        ):
             # First few calls should fail but not trigger circuit breaker
             for _ in range(3):
                 result = await risk_manager.evaluate_signal(test_signal, market_dict)
@@ -741,7 +815,7 @@ class TestErrorScenariosIntegration:
 
         # Verify circuit breaker stats
         stats = risk_manager.get_circuit_breaker_stats()
-        assert 'position_size_circuit_breaker' in stats
+        assert "position_size_circuit_breaker" in stats
 
 
 class TestPerformanceIntegration:
@@ -756,17 +830,24 @@ class TestPerformanceIntegration:
         efficiently without excessive memory usage or timeouts.
         """
         # Create large dataset
-        dates = pd.date_range('2020-01-01', periods=5000, freq='1h')  # ~6 months of data
-        large_data = pd.DataFrame({
-            'close': np.random.uniform(50000, 51000, 5000),
-            'high': np.random.uniform(50500, 51500, 5000),
-            'low': np.random.uniform(49500, 50500, 5000),
-            'open': np.random.uniform(50000, 51000, 5000),
-            'volume': np.random.uniform(100, 1000, 5000)
-        }, index=dates)
+        dates = pd.date_range(
+            "2020-01-01", periods=5000, freq="1h"
+        )  # ~6 months of data
+        large_data = pd.DataFrame(
+            {
+                "close": np.random.uniform(50000, 51000, 5000),
+                "high": np.random.uniform(50500, 51500, 5000),
+                "low": np.random.uniform(49500, 50500, 5000),
+                "open": np.random.uniform(50000, 51000, 5000),
+                "volume": np.random.uniform(100, 1000, 5000),
+            },
+            index=dates,
+        )
 
         class LargeDataFetcher:
-            async def get_historical_data(self, symbol: str, timeframe: str, limit: int = 100):
+            async def get_historical_data(
+                self, symbol: str, timeframe: str, limit: int = 100
+            ):
                 if len(large_data) > limit:
                     return large_data.tail(limit)
                 return large_data
@@ -781,8 +862,8 @@ class TestPerformanceIntegration:
                 "rsi_period": 14,
                 "overbought": 70,
                 "oversold": 30,
-                "volume_threshold": 1.0
-            }
+                "volume_threshold": 1.0,
+            },
         )
 
         fetcher = LargeDataFetcher()
@@ -816,8 +897,8 @@ class TestPerformanceIntegration:
                     "rsi_period": 14,
                     "overbought": 70,
                     "oversold": 30,
-                    "volume_threshold": 1.0
-                }
+                    "volume_threshold": 1.0,
+                },
             )
 
             fetcher = MockDataFetcher()

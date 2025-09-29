@@ -8,25 +8,26 @@ and versioning of stored knowledge.
 
 from __future__ import annotations
 
-import json
+import asyncio
 import csv
+import gzip
+import json
+import logging
 import sqlite3
 import threading
-from typing import Dict, List, Optional, Any, Union
-from pathlib import Path
-from datetime import datetime
-import hashlib
-import gzip
-import pickle
-import os
-import aiofiles
-import asyncio
-import logging
-import time
-import aiosqlite
 from abc import ABC, abstractmethod
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
-from .schema import KnowledgeEntry, KnowledgeQuery, KnowledgeQueryResult, validate_knowledge_entry, ValidationError
+import aiofiles
+import aiosqlite
+
+from .schema import (
+    KnowledgeEntry,
+    KnowledgeQuery,
+    KnowledgeQueryResult,
+    validate_knowledge_entry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +135,7 @@ class QueryFilterChain:
             ConfidenceFilter(),
             SampleSizeFilter(),
             TimeframeFilter(),
-            TagsFilter()
+            TagsFilter(),
         ]
 
     def apply(self, entry: KnowledgeEntry, query: KnowledgeQuery) -> bool:
@@ -157,6 +158,7 @@ class QueryFilterChain:
 import tempfile
 from pathlib import Path
 
+
 def sanitize_path(path: str) -> str:
     """
     Sanitize a path to prevent directory traversal attacks while allowing test temp directories.
@@ -178,7 +180,11 @@ def sanitize_path(path: str) -> str:
     cwd = Path.cwd().resolve()
     abs_path = Path(path).resolve()
 
-    if abs_path.is_relative_to(base_dir) or abs_path.is_relative_to(temp_dir) or abs_path.is_relative_to(cwd):
+    if (
+        abs_path.is_relative_to(base_dir)
+        or abs_path.is_relative_to(temp_dir)
+        or abs_path.is_relative_to(cwd)
+    ):
         return str(abs_path)
     raise PermissionError(f"Path traversal attempt detected: {abs_path}")
 
@@ -197,8 +203,15 @@ def validate_entry_data(entry_data: dict) -> None:
         ValueError: If the data does not match the expected schema.
     """
     required_keys = [
-        'id', 'market_condition', 'strategy_metadata', 'performance',
-        'outcome', 'confidence_score', 'sample_size', 'last_updated', 'tags'
+        "id",
+        "market_condition",
+        "strategy_metadata",
+        "performance",
+        "outcome",
+        "confidence_score",
+        "sample_size",
+        "last_updated",
+        "tags",
     ]
 
     # Check for required keys
@@ -207,26 +220,36 @@ def validate_entry_data(entry_data: dict) -> None:
             raise ValueError(f"Schema validation failed: Missing required key '{key}'")
 
     # Validate data types
-    if not isinstance(entry_data['id'], str):
+    if not isinstance(entry_data["id"], str):
         raise ValueError("Schema validation failed: 'id' must be a string")
-    if not isinstance(entry_data['market_condition'], dict):
-        raise ValueError("Schema validation failed: 'market_condition' must be a dictionary")
-    if not isinstance(entry_data['strategy_metadata'], dict):
-        raise ValueError("Schema validation failed: 'strategy_metadata' must be a dictionary")
-    if not isinstance(entry_data['performance'], dict):
+    if not isinstance(entry_data["market_condition"], dict):
+        raise ValueError(
+            "Schema validation failed: 'market_condition' must be a dictionary"
+        )
+    if not isinstance(entry_data["strategy_metadata"], dict):
+        raise ValueError(
+            "Schema validation failed: 'strategy_metadata' must be a dictionary"
+        )
+    if not isinstance(entry_data["performance"], dict):
         raise ValueError("Schema validation failed: 'performance' must be a dictionary")
-    if not isinstance(entry_data['outcome'], str):
+    if not isinstance(entry_data["outcome"], str):
         raise ValueError("Schema validation failed: 'outcome' must be a string")
-    if not isinstance(entry_data['confidence_score'], (int, float)):
-        raise ValueError("Schema validation failed: 'confidence_score' must be a number")
-    if not isinstance(entry_data['sample_size'], int):
+    if not isinstance(entry_data["confidence_score"], (int, float)):
+        raise ValueError(
+            "Schema validation failed: 'confidence_score' must be a number"
+        )
+    if not isinstance(entry_data["sample_size"], int):
         raise ValueError("Schema validation failed: 'sample_size' must be an integer")
-    if not isinstance(entry_data['last_updated'], str):
+    if not isinstance(entry_data["last_updated"], str):
         raise ValueError("Schema validation failed: 'last_updated' must be a string")
-    if not isinstance(entry_data['tags'], list):
+    if not isinstance(entry_data["tags"], list):
         raise ValueError("Schema validation failed: 'tags' must be a list")
     # notes can be None or str
-    if 'notes' in entry_data and entry_data['notes'] is not None and not isinstance(entry_data['notes'], str):
+    if (
+        "notes" in entry_data
+        and entry_data["notes"] is not None
+        and not isinstance(entry_data["notes"], str)
+    ):
         raise ValueError("Schema validation failed: 'notes' must be a string or None")
 
 
@@ -301,16 +324,16 @@ class JSONStorage(StorageBackend):
             if self.compress:
                 # Use thread for gzip decompression to keep async
                 compressed_data = await asyncio.to_thread(
-                    lambda: gzip.open(self.file_path, 'rb').read()
+                    lambda: gzip.open(self.file_path, "rb").read()
                 )
                 content = await asyncio.to_thread(
-                    lambda: gzip.decompress(compressed_data).decode('utf-8')
+                    lambda: gzip.decompress(compressed_data).decode("utf-8")
                 )
             else:
-                async with aiofiles.open(self.file_path, 'r', encoding='utf-8') as f:
+                async with aiofiles.open(self.file_path, "r", encoding="utf-8") as f:
                     content = await f.read()
 
-            for line in content.strip().split('\n'):
+            for line in content.strip().split("\n"):
                 if line.strip():
                     try:
                         entry_data = json.loads(line)
@@ -319,7 +342,9 @@ class JSONStorage(StorageBackend):
                         entry = KnowledgeEntry.from_dict(entry_data)
                         entries[entry.id] = entry
                     except Exception as e:
-                        print(f"Failed to load entry {entry_data.get('id', 'unknown')}: {e}")
+                        print(
+                            f"Failed to load entry {entry_data.get('id', 'unknown')}: {e}"
+                        )
 
         except Exception as e:
             print(f"Failed to load knowledge base: {e}")
@@ -342,25 +367,31 @@ class JSONStorage(StorageBackend):
                 self.file_path.parent.mkdir(parents=True, exist_ok=True)
 
                 lines = [json.dumps(entry.to_dict()) for entry in entries.values()]
-                content = '\n'.join(lines) + '\n'
+                content = "\n".join(lines) + "\n"
 
                 if self.compress:
                     # Use thread for gzip compression
                     compressed = await asyncio.to_thread(
-                        lambda: gzip.compress(content.encode('utf-8'))
+                        lambda: gzip.compress(content.encode("utf-8"))
                     )
-                    async with aiofiles.open(self.file_path, 'wb') as f:
+                    async with aiofiles.open(self.file_path, "wb") as f:
                         await f.write(compressed)
                 else:
-                    async with aiofiles.open(self.file_path, 'w', encoding='utf-8') as f:
+                    async with aiofiles.open(
+                        self.file_path, "w", encoding="utf-8"
+                    ) as f:
                         await f.write(content)
                 return  # Success
             except (OSError, IOError) as e:
                 if attempt < max_retries - 1:
-                    logging.warning(f"Save attempt {attempt + 1} failed: {e}. Retrying...")
-                    await asyncio.sleep(0.1 * (2 ** attempt))  # Exponential backoff
+                    logging.warning(
+                        f"Save attempt {attempt + 1} failed: {e}. Retrying..."
+                    )
+                    await asyncio.sleep(0.1 * (2**attempt))  # Exponential backoff
                 else:
-                    logging.error(f"Failed to save knowledge base after {max_retries} attempts: {e}")
+                    logging.error(
+                        f"Failed to save knowledge base after {max_retries} attempts: {e}"
+                    )
                     raise
             except Exception as e:
                 logging.error(f"Failed to save knowledge base: {e}")
@@ -383,7 +414,9 @@ class JSONStorage(StorageBackend):
         filter_chain = QueryFilterChain()
         return filter_chain.apply(entry, query)
 
-    def _sort_results(self, results: List[KnowledgeEntry], query: KnowledgeQuery) -> None:
+    def _sort_results(
+        self, results: List[KnowledgeEntry], query: KnowledgeQuery
+    ) -> None:
         """
         Sort the results based on the query sort criteria.
 
@@ -419,12 +452,12 @@ class JSONStorage(StorageBackend):
         if self.file_path.exists():
             try:
                 if self.compress:
-                    with gzip.open(self.file_path, 'rb') as f:
-                        content = f.read().decode('utf-8')
-                    lines = content.strip().split('\n')
+                    with gzip.open(self.file_path, "rb") as f:
+                        content = f.read().decode("utf-8")
+                    lines = content.strip().split("\n")
                 else:
-                    with open(self.file_path, 'r', encoding='utf-8') as f:
-                        lines = f.read().strip().split('\n')
+                    with open(self.file_path, "r", encoding="utf-8") as f:
+                        lines = f.read().strip().split("\n")
 
                 for line in lines:
                     if line.strip():
@@ -435,7 +468,9 @@ class JSONStorage(StorageBackend):
                             existing_entry = KnowledgeEntry.from_dict(entry_data)
                             entries[existing_entry.id] = existing_entry
                         except Exception as e:
-                            print(f"Failed to load entry {entry_data.get('id', 'unknown')}: {e}")
+                            print(
+                                f"Failed to load entry {entry_data.get('id', 'unknown')}: {e}"
+                            )
 
             except Exception as e:
                 print(f"Failed to load knowledge base: {e}")
@@ -459,20 +494,22 @@ class JSONStorage(StorageBackend):
 
         try:
             if self.compress:
-                with gzip.open(self.file_path, 'rb') as f:
-                    content = f.read().decode('utf-8')
-                lines = content.strip().split('\n')
+                with gzip.open(self.file_path, "rb") as f:
+                    content = f.read().decode("utf-8")
+                lines = content.strip().split("\n")
             else:
-                with open(self.file_path, 'r', encoding='utf-8') as f:
-                    lines = f.read().strip().split('\n')
+                with open(self.file_path, "r", encoding="utf-8") as f:
+                    lines = f.read().strip().split("\n")
 
             for line in lines:
                 if line.strip():
                     entry_data = json.loads(line)
-                    if entry_data['id'] == entry_id:
+                    if entry_data["id"] == entry_id:
                         validate_entry_data(entry_data)
                         entry = KnowledgeEntry.from_dict(entry_data)
-                        logger.info(f"Successfully retrieved knowledge entry {entry_id}")
+                        logger.info(
+                            f"Successfully retrieved knowledge entry {entry_id}"
+                        )
                         return entry
         except Exception as e:
             logger.error(f"Failed to get entry {entry_id}: {e}")
@@ -489,6 +526,7 @@ class JSONStorage(StorageBackend):
         for large knowledge bases. Only matching entries are collected and sorted.
         """
         import time
+
         start_time = time.time()
         logger.info(f"Starting knowledge query with limit {query.limit}")
 
@@ -500,12 +538,12 @@ class JSONStorage(StorageBackend):
 
         try:
             if self.compress:
-                with gzip.open(self.file_path, 'rb') as f:
-                    content = f.read().decode('utf-8')
-                lines = content.strip().split('\n')
+                with gzip.open(self.file_path, "rb") as f:
+                    content = f.read().decode("utf-8")
+                lines = content.strip().split("\n")
             else:
-                with open(self.file_path, 'r', encoding='utf-8') as f:
-                    lines = f.read().strip().split('\n')
+                with open(self.file_path, "r", encoding="utf-8") as f:
+                    lines = f.read().strip().split("\n")
 
             for line in lines:
                 if line.strip():
@@ -525,7 +563,7 @@ class JSONStorage(StorageBackend):
         self._sort_results(filtered, query)
 
         # Apply limit
-        results = filtered[:query.limit]
+        results = filtered[: query.limit]
 
         execution_time = time.time() - start_time
         return KnowledgeQueryResult(results, len(filtered), query, execution_time)
@@ -542,12 +580,12 @@ class JSONStorage(StorageBackend):
         if self.file_path.exists():
             try:
                 if self.compress:
-                    with gzip.open(self.file_path, 'rb') as f:
-                        content = f.read().decode('utf-8')
-                    lines = content.strip().split('\n')
+                    with gzip.open(self.file_path, "rb") as f:
+                        content = f.read().decode("utf-8")
+                    lines = content.strip().split("\n")
                 else:
-                    with open(self.file_path, 'r', encoding='utf-8') as f:
-                        lines = f.read().strip().split('\n')
+                    with open(self.file_path, "r", encoding="utf-8") as f:
+                        lines = f.read().strip().split("\n")
 
                 for line in lines:
                     if line.strip():
@@ -558,7 +596,9 @@ class JSONStorage(StorageBackend):
                             existing_entry = KnowledgeEntry.from_dict(entry_data)
                             entries[existing_entry.id] = existing_entry
                         except Exception as e:
-                            print(f"Failed to load entry {entry_data.get('id', 'unknown')}: {e}")
+                            print(
+                                f"Failed to load entry {entry_data.get('id', 'unknown')}: {e}"
+                            )
 
             except Exception as e:
                 print(f"Failed to load knowledge base: {e}")
@@ -582,12 +622,12 @@ class JSONStorage(StorageBackend):
 
         try:
             if self.compress:
-                with gzip.open(self.file_path, 'rb') as f:
-                    content = f.read().decode('utf-8')
-                lines = content.strip().split('\n')
+                with gzip.open(self.file_path, "rb") as f:
+                    content = f.read().decode("utf-8")
+                lines = content.strip().split("\n")
             else:
-                with open(self.file_path, 'r', encoding='utf-8') as f:
-                    lines = f.read().strip().split('\n')
+                with open(self.file_path, "r", encoding="utf-8") as f:
+                    lines = f.read().strip().split("\n")
 
             for line in lines:
                 if line.strip() and len(entries) < limit:
@@ -617,22 +657,22 @@ class JSONStorage(StorageBackend):
 
         if not self.file_path.exists():
             return {
-                'backend': 'json',
-                'total_entries': 0,
-                'avg_confidence': 0.0,
-                'avg_sample_size': 0.0,
-                'file_path': str(self.file_path),
-                'compressed': self.compress
+                "backend": "json",
+                "total_entries": 0,
+                "avg_confidence": 0.0,
+                "avg_sample_size": 0.0,
+                "file_path": str(self.file_path),
+                "compressed": self.compress,
             }
 
         try:
             if self.compress:
-                with gzip.open(self.file_path, 'rb') as f:
-                    content = f.read().decode('utf-8')
-                lines = content.strip().split('\n')
+                with gzip.open(self.file_path, "rb") as f:
+                    content = f.read().decode("utf-8")
+                lines = content.strip().split("\n")
             else:
-                with open(self.file_path, 'r', encoding='utf-8') as f:
-                    lines = f.read().strip().split('\n')
+                with open(self.file_path, "r", encoding="utf-8") as f:
+                    lines = f.read().strip().split("\n")
 
             for line in lines:
                 if line.strip():
@@ -640,8 +680,8 @@ class JSONStorage(StorageBackend):
                         entry_data = json.loads(line)
                         validate_entry_data(entry_data)
                         total_entries += 1
-                        total_confidence += entry_data['confidence_score']
-                        total_sample_size += entry_data['sample_size']
+                        total_confidence += entry_data["confidence_score"]
+                        total_sample_size += entry_data["sample_size"]
                     except Exception as e:
                         print(f"Failed to parse line for stats: {e}")
 
@@ -649,15 +689,17 @@ class JSONStorage(StorageBackend):
             print(f"Failed to get stats: {e}")
 
         avg_confidence = total_confidence / total_entries if total_entries > 0 else 0.0
-        avg_sample_size = total_sample_size / total_entries if total_entries > 0 else 0.0
+        avg_sample_size = (
+            total_sample_size / total_entries if total_entries > 0 else 0.0
+        )
 
         return {
-            'backend': 'json',
-            'total_entries': total_entries,
-            'avg_confidence': avg_confidence,
-            'avg_sample_size': avg_sample_size,
-            'file_path': str(self.file_path),
-            'compressed': self.compress
+            "backend": "json",
+            "total_entries": total_entries,
+            "avg_confidence": avg_confidence,
+            "avg_sample_size": avg_sample_size,
+            "file_path": str(self.file_path),
+            "compressed": self.compress,
         }
 
     async def cleanup(self) -> bool:
@@ -684,26 +726,26 @@ class CSVStorage(StorageBackend):
 
         try:
             with self._lock:
-                with open(self.file_path, 'r', encoding='utf-8') as f:
+                with open(self.file_path, "r", encoding="utf-8") as f:
                     reader = csv.DictReader(f)
                     for row in reader:
                         try:
                             # Parse nested JSON fields
-                            market_condition = json.loads(row['market_condition'])
-                            strategy_metadata = json.loads(row['strategy_metadata'])
-                            performance = json.loads(row['performance'])
+                            market_condition = json.loads(row["market_condition"])
+                            strategy_metadata = json.loads(row["strategy_metadata"])
+                            performance = json.loads(row["performance"])
 
                             entry_data = {
-                                'id': row['id'],
-                                'market_condition': market_condition,
-                                'strategy_metadata': strategy_metadata,
-                                'performance': performance,
-                                'outcome': row['outcome'],
-                                'confidence_score': float(row['confidence_score']),
-                                'sample_size': int(row['sample_size']),
-                                'last_updated': row['last_updated'],
-                                'tags': json.loads(row['tags']) if row['tags'] else [],
-                                'notes': row['notes'] if row['notes'] else None
+                                "id": row["id"],
+                                "market_condition": market_condition,
+                                "strategy_metadata": strategy_metadata,
+                                "performance": performance,
+                                "outcome": row["outcome"],
+                                "confidence_score": float(row["confidence_score"]),
+                                "sample_size": int(row["sample_size"]),
+                                "last_updated": row["last_updated"],
+                                "tags": json.loads(row["tags"]) if row["tags"] else [],
+                                "notes": row["notes"] if row["notes"] else None,
                             }
 
                             # Validate the entry data to prevent JSON injection attacks
@@ -712,7 +754,9 @@ class CSVStorage(StorageBackend):
                             entry = KnowledgeEntry.from_dict(entry_data)
                             self._entries[entry.id] = entry
                         except Exception as e:
-                            print(f"Failed to load entry {row.get('id', 'unknown')}: {e}")
+                            print(
+                                f"Failed to load entry {row.get('id', 'unknown')}: {e}"
+                            )
 
         except (csv.Error, FileNotFoundError) as e:
             print(f"Failed to load CSV knowledge base: {e}")
@@ -755,6 +799,7 @@ class CSVStorage(StorageBackend):
         making the logic modular and consistent with other storage backends.
         """
         import time
+
         start_time = time.time()
 
         with self._lock:
@@ -775,7 +820,7 @@ class CSVStorage(StorageBackend):
             filtered.sort(key=lambda x: x.sample_size, reverse=True)
 
         # Apply limit
-        results = filtered[:query.limit]
+        results = filtered[: query.limit]
 
         execution_time = time.time() - start_time
         return KnowledgeQueryResult(results, len(filtered), query, execution_time)
@@ -798,15 +843,23 @@ class CSVStorage(StorageBackend):
         """Get storage statistics."""
         with self._lock:
             total_entries = len(self._entries)
-            avg_confidence = sum(e.confidence_score for e in self._entries.values()) / total_entries if total_entries > 0 else 0
-            avg_sample_size = sum(e.sample_size for e in self._entries.values()) / total_entries if total_entries > 0 else 0
+            avg_confidence = (
+                sum(e.confidence_score for e in self._entries.values()) / total_entries
+                if total_entries > 0
+                else 0
+            )
+            avg_sample_size = (
+                sum(e.sample_size for e in self._entries.values()) / total_entries
+                if total_entries > 0
+                else 0
+            )
 
             return {
-                'backend': 'csv',
-                'total_entries': total_entries,
-                'avg_confidence': avg_confidence,
-                'avg_sample_size': avg_sample_size,
-                'file_path': str(self.file_path)
+                "backend": "csv",
+                "total_entries": total_entries,
+                "avg_confidence": avg_confidence,
+                "avg_sample_size": avg_sample_size,
+                "file_path": str(self.file_path),
             }
 
     async def cleanup(self) -> bool:
@@ -831,6 +884,7 @@ class CSVStorage(StorageBackend):
 # - Better performance with large datasets
 # - ACID compliance with advanced transaction features
 
+
 class SQLiteStorage(StorageBackend):
     """SQLite database storage backend with thread-safe operations."""
 
@@ -848,7 +902,8 @@ class SQLiteStorage(StorageBackend):
         with self._write_lock:
             conn = sqlite3.connect(str(self.db_path))
             try:
-                conn.execute('''
+                conn.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS knowledge_entries (
                         id TEXT PRIMARY KEY,
                         market_condition TEXT NOT NULL,
@@ -861,13 +916,22 @@ class SQLiteStorage(StorageBackend):
                         tags TEXT,
                         notes TEXT
                     )
-                ''')
+                """
+                )
 
                 # Create indexes for better query performance
-                conn.execute('CREATE INDEX IF NOT EXISTS idx_regime ON knowledge_entries(json_extract(market_condition, "$.regime"))')
-                conn.execute('CREATE INDEX IF NOT EXISTS idx_strategy_name ON knowledge_entries(json_extract(strategy_metadata, "$.name"))')
-                conn.execute('CREATE INDEX IF NOT EXISTS idx_confidence ON knowledge_entries(confidence_score)')
-                conn.execute('CREATE INDEX IF NOT EXISTS idx_sample_size ON knowledge_entries(sample_size)')
+                conn.execute(
+                    'CREATE INDEX IF NOT EXISTS idx_regime ON knowledge_entries(json_extract(market_condition, "$.regime"))'
+                )
+                conn.execute(
+                    'CREATE INDEX IF NOT EXISTS idx_strategy_name ON knowledge_entries(json_extract(strategy_metadata, "$.name"))'
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_confidence ON knowledge_entries(confidence_score)"
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_sample_size ON knowledge_entries(sample_size)"
+                )
 
                 conn.commit()
             finally:
@@ -887,21 +951,24 @@ class SQLiteStorage(StorageBackend):
         # in multi-threaded environments where concurrent writes could interfere
         with self._write_lock:
             async with aiosqlite.connect(str(self.db_path)) as db:
-                await db.execute('''INSERT OR REPLACE INTO knowledge_entries
+                await db.execute(
+                    """INSERT OR REPLACE INTO knowledge_entries
                     (id, market_condition, strategy_metadata, performance, outcome,
                      confidence_score, sample_size, last_updated, tags, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', (
-                    entry.id,
-                    json.dumps(entry.market_condition.to_dict()),
-                    json.dumps(entry.strategy_metadata.to_dict()),
-                    json.dumps(entry.performance.to_dict()),
-                    entry.outcome.value,
-                    entry.confidence_score,
-                    entry.sample_size,
-                    entry.last_updated.isoformat(),
-                    json.dumps(entry.tags),
-                    entry.notes
-                ))
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        entry.id,
+                        json.dumps(entry.market_condition.to_dict()),
+                        json.dumps(entry.strategy_metadata.to_dict()),
+                        json.dumps(entry.performance.to_dict()),
+                        entry.outcome.value,
+                        entry.confidence_score,
+                        entry.sample_size,
+                        entry.last_updated.isoformat(),
+                        json.dumps(entry.tags),
+                        entry.notes,
+                    ),
+                )
                 await db.commit()
                 return True
 
@@ -911,20 +978,22 @@ class SQLiteStorage(StorageBackend):
         # as SQLite allows multiple readers, and we create per-method connections
         async with aiosqlite.connect(str(self.db_path)) as db:
             try:
-                cursor = await db.execute('SELECT * FROM knowledge_entries WHERE id = ?', (entry_id,))
+                cursor = await db.execute(
+                    "SELECT * FROM knowledge_entries WHERE id = ?", (entry_id,)
+                )
                 row = await cursor.fetchone()
                 if row:
                     entry_data = {
-                        'id': row[0],
-                        'market_condition': json.loads(row[1]),
-                        'strategy_metadata': json.loads(row[2]),
-                        'performance': json.loads(row[3]),
-                        'outcome': row[4],
-                        'confidence_score': row[5],
-                        'sample_size': row[6],
-                        'last_updated': row[7],
-                        'tags': json.loads(row[8]) if row[8] else [],
-                        'notes': row[9]
+                        "id": row[0],
+                        "market_condition": json.loads(row[1]),
+                        "strategy_metadata": json.loads(row[2]),
+                        "performance": json.loads(row[3]),
+                        "outcome": row[4],
+                        "confidence_score": row[5],
+                        "sample_size": row[6],
+                        "last_updated": row[7],
+                        "tags": json.loads(row[8]) if row[8] else [],
+                        "notes": row[9],
                     }
                     # Validate the entry data to prevent JSON injection attacks
                     # This ensures the data conforms to the expected schema before processing
@@ -938,6 +1007,7 @@ class SQLiteStorage(StorageBackend):
     async def query_entries(self, query: KnowledgeQuery) -> KnowledgeQueryResult:
         """Query knowledge entries based on criteria."""
         import time
+
         start_time = time.time()
 
         # Read operations can be performed concurrently without locks
@@ -994,16 +1064,16 @@ class SQLiteStorage(StorageBackend):
             for row in rows:
                 try:
                     entry_data = {
-                        'id': row[0],
-                        'market_condition': json.loads(row[1]),
-                        'strategy_metadata': json.loads(row[2]),
-                        'performance': json.loads(row[3]),
-                        'outcome': row[4],
-                        'confidence_score': row[5],
-                        'sample_size': row[6],
-                        'last_updated': row[7],
-                        'tags': json.loads(row[8]) if row[8] else [],
-                        'notes': row[9]
+                        "id": row[0],
+                        "market_condition": json.loads(row[1]),
+                        "strategy_metadata": json.loads(row[2]),
+                        "performance": json.loads(row[3]),
+                        "outcome": row[4],
+                        "confidence_score": row[5],
+                        "sample_size": row[6],
+                        "last_updated": row[7],
+                        "tags": json.loads(row[8]) if row[8] else [],
+                        "notes": row[9],
                     }
                     # Validate the entry data to prevent JSON injection attacks
                     # This ensures the data conforms to the expected schema before processing
@@ -1036,7 +1106,7 @@ class SQLiteStorage(StorageBackend):
         with self._write_lock:
             conn = sqlite3.connect(str(self.db_path))
             try:
-                conn.execute('DELETE FROM knowledge_entries WHERE id = ?', (entry_id,))
+                conn.execute("DELETE FROM knowledge_entries WHERE id = ?", (entry_id,))
                 conn.commit()
                 return True
             except Exception as e:
@@ -1051,23 +1121,23 @@ class SQLiteStorage(StorageBackend):
         # as SQLite allows multiple readers, and we create per-method connections
         conn = sqlite3.connect(str(self.db_path))
         try:
-            cursor = conn.execute('SELECT * FROM knowledge_entries LIMIT ?', (limit,))
+            cursor = conn.execute("SELECT * FROM knowledge_entries LIMIT ?", (limit,))
             rows = cursor.fetchall()
 
             entries = []
             for row in rows:
                 try:
                     entry_data = {
-                        'id': row[0],
-                        'market_condition': json.loads(row[1]),
-                        'strategy_metadata': json.loads(row[2]),
-                        'performance': json.loads(row[3]),
-                        'outcome': row[4],
-                        'confidence_score': row[5],
-                        'sample_size': row[6],
-                        'last_updated': row[7],
-                        'tags': json.loads(row[8]) if row[8] else [],
-                        'notes': row[9]
+                        "id": row[0],
+                        "market_condition": json.loads(row[1]),
+                        "strategy_metadata": json.loads(row[2]),
+                        "performance": json.loads(row[3]),
+                        "outcome": row[4],
+                        "confidence_score": row[5],
+                        "sample_size": row[6],
+                        "last_updated": row[7],
+                        "tags": json.loads(row[8]) if row[8] else [],
+                        "notes": row[9],
                     }
                     # Validate the entry data to prevent JSON injection attacks
                     # This ensures the data conforms to the expected schema before processing
@@ -1091,28 +1161,30 @@ class SQLiteStorage(StorageBackend):
         conn = sqlite3.connect(str(self.db_path))
         try:
             # Get total entries
-            cursor = conn.execute('SELECT COUNT(*) FROM knowledge_entries')
+            cursor = conn.execute("SELECT COUNT(*) FROM knowledge_entries")
             total_entries = cursor.fetchone()[0]
 
             # Get average confidence and sample size
-            cursor = conn.execute('SELECT AVG(confidence_score), AVG(sample_size) FROM knowledge_entries')
+            cursor = conn.execute(
+                "SELECT AVG(confidence_score), AVG(sample_size) FROM knowledge_entries"
+            )
             avg_confidence, avg_sample_size = cursor.fetchone()
 
             return {
-                'backend': 'sqlite',
-                'total_entries': total_entries,
-                'avg_confidence': avg_confidence or 0,
-                'avg_sample_size': avg_sample_size or 0,
-                'db_path': str(self.db_path)
+                "backend": "sqlite",
+                "total_entries": total_entries,
+                "avg_confidence": avg_confidence or 0,
+                "avg_sample_size": avg_sample_size or 0,
+                "db_path": str(self.db_path),
             }
         except Exception as e:
             print(f"Failed to get SQLite stats: {e}")
             return {
-                'backend': 'sqlite',
-                'total_entries': 0,
-                'avg_confidence': 0,
-                'avg_sample_size': 0,
-                'db_path': str(self.db_path)
+                "backend": "sqlite",
+                "total_entries": 0,
+                "avg_confidence": 0,
+                "avg_sample_size": 0,
+                "db_path": str(self.db_path),
             }
         finally:
             conn.close()
@@ -1207,7 +1279,7 @@ class PostgreSQLStorage(StorageBackend):
 class KnowledgeStorage:
     """Main knowledge storage manager supporting multiple backends."""
 
-    def __init__(self, backend: str = 'json', **kwargs):
+    def __init__(self, backend: str = "json", **kwargs):
         """
         Initialize knowledge storage.
 
@@ -1220,15 +1292,15 @@ class KnowledgeStorage:
 
     def _create_backend(self, backend: str, **kwargs) -> StorageBackend:
         """Create storage backend instance."""
-        if backend == 'json':
-            file_path = kwargs.get('file_path', 'knowledge_base/knowledge.json')
-            compress = kwargs.get('compress', False)
+        if backend == "json":
+            file_path = kwargs.get("file_path", "knowledge_base/knowledge.json")
+            compress = kwargs.get("compress", False)
             return JSONStorage(file_path, compress)
-        elif backend == 'csv':
-            file_path = kwargs.get('file_path', 'knowledge_base/knowledge.csv')
+        elif backend == "csv":
+            file_path = kwargs.get("file_path", "knowledge_base/knowledge.csv")
             return CSVStorage(file_path)
-        elif backend == 'sqlite':
-            db_path = kwargs.get('db_path', 'knowledge_base/knowledge.db')
+        elif backend == "sqlite":
+            db_path = kwargs.get("db_path", "knowledge_base/knowledge.db")
             return SQLiteStorage(db_path)
         else:
             raise ValueError(f"Unsupported backend: {backend}")
@@ -1290,7 +1362,9 @@ class KnowledgeStorage:
                 except Exception as e:
                     logging.error(f"Failed to migrate entry {entry.id}: {e}")
 
-            print(f"Migrated {success_count}/{len(all_entries)} entries to {new_backend}")
+            print(
+                f"Migrated {success_count}/{len(all_entries)} entries to {new_backend}"
+            )
             return success_count == len(all_entries)
 
         except Exception as e:

@@ -5,20 +5,18 @@ Tests cover statistical anomaly detection, threshold monitoring, and edge cases.
 """
 
 import asyncio
-import pytest
 import statistics
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
-from typing import Dict, Any, List
+from unittest.mock import MagicMock
+
+import pytest
 
 from core.diagnostics import (
-    DiagnosticsManager,
-    HealthStatus,
-    HealthCheckResult,
-    AnomalyDetection,
     AlertSeverity,
+    DiagnosticsManager,
+    HealthCheckResult,
+    HealthStatus,
+    detect_drawdown_anomalies,
     detect_latency_anomalies,
-    detect_drawdown_anomalies
 )
 
 
@@ -36,12 +34,18 @@ class TestLatencyAnomalyDetection:
         diagnostics_manager.state.component_statuses["api"] = HealthCheckResult(
             component="api",
             status=HealthStatus.HEALTHY,
-            latency_ms=105.0  # Well within normal range
+            latency_ms=105.0,  # Well within normal range
         )
 
         # Add historical data with very low variance
         diagnostics_manager.state.performance_metrics["api"] = [
-            100.0, 101.0, 99.0, 102.0, 98.0, 103.0, 97.0  # Very stable
+            100.0,
+            101.0,
+            99.0,
+            102.0,
+            98.0,
+            103.0,
+            97.0,  # Very stable
         ]
 
         anomalies = asyncio.run(detect_latency_anomalies(diagnostics_manager))
@@ -54,12 +58,18 @@ class TestLatencyAnomalyDetection:
         diagnostics_manager.state.component_statuses["api"] = HealthCheckResult(
             component="api",
             status=HealthStatus.DEGRADED,
-            latency_ms=2500.0  # Much higher than normal
+            latency_ms=2500.0,  # Much higher than normal
         )
 
         # Add historical data with low variance
         diagnostics_manager.state.performance_metrics["api"] = [
-            100.0, 110.0, 95.0, 105.0, 98.0, 102.0, 115.0
+            100.0,
+            110.0,
+            95.0,
+            105.0,
+            98.0,
+            102.0,
+            115.0,
         ]
 
         anomalies = asyncio.run(detect_latency_anomalies(diagnostics_manager))
@@ -70,7 +80,9 @@ class TestLatencyAnomalyDetection:
         assert anomaly.component == "api"
         assert anomaly.metric == "latency_ms"
         assert anomaly.value == 2500.0
-        assert anomaly.severity == AlertSeverity.CRITICAL  # Very high spike gets CRITICAL
+        assert (
+            anomaly.severity == AlertSeverity.CRITICAL
+        )  # Very high spike gets CRITICAL
         assert "Latency spike detected" in anomaly.description
         assert anomaly.threshold > 0  # Should calculate a threshold
 
@@ -80,12 +92,16 @@ class TestLatencyAnomalyDetection:
         diagnostics_manager.state.component_statuses["api"] = HealthCheckResult(
             component="api",
             status=HealthStatus.CRITICAL,
-            latency_ms=10000.0  # Extremely high
+            latency_ms=10000.0,  # Extremely high
         )
 
         # Add historical data
         diagnostics_manager.state.performance_metrics["api"] = [
-            100.0, 110.0, 95.0, 105.0, 98.0
+            100.0,
+            110.0,
+            95.0,
+            105.0,
+            98.0,
         ]
 
         anomalies = asyncio.run(detect_latency_anomalies(diagnostics_manager))
@@ -95,15 +111,15 @@ class TestLatencyAnomalyDetection:
 
         assert anomaly.component == "api"
         assert anomaly.value == 10000.0
-        assert anomaly.severity == AlertSeverity.CRITICAL  # Very high spike gets CRITICAL
+        assert (
+            anomaly.severity == AlertSeverity.CRITICAL
+        )  # Very high spike gets CRITICAL
 
     def test_insufficient_historical_data(self, diagnostics_manager):
         """Test behavior with insufficient historical data."""
         # Set up latency data
         diagnostics_manager.state.component_statuses["api"] = HealthCheckResult(
-            component="api",
-            status=HealthStatus.HEALTHY,
-            latency_ms=200.0
+            component="api", status=HealthStatus.HEALTHY, latency_ms=200.0
         )
 
         # Add insufficient historical data (less than 5 samples)
@@ -117,14 +133,16 @@ class TestLatencyAnomalyDetection:
         """Test behavior when component has no latency data."""
         # Set up component without latency data
         diagnostics_manager.state.component_statuses["api"] = HealthCheckResult(
-            component="api",
-            status=HealthStatus.HEALTHY,
-            latency_ms=None
+            component="api", status=HealthStatus.HEALTHY, latency_ms=None
         )
 
         # Add historical data
         diagnostics_manager.state.performance_metrics["api"] = [
-            100.0, 110.0, 95.0, 105.0, 98.0
+            100.0,
+            110.0,
+            95.0,
+            105.0,
+            98.0,
         ]
 
         anomalies = asyncio.run(detect_latency_anomalies(diagnostics_manager))
@@ -134,30 +152,34 @@ class TestLatencyAnomalyDetection:
     def test_multiple_components_anomaly_detection(self, diagnostics_manager):
         """Test anomaly detection across multiple components."""
         # Set up multiple components
-        diagnostics_manager.state.component_statuses.update({
-            "api": HealthCheckResult(
-                component="api",
-                status=HealthStatus.DEGRADED,
-                latency_ms=2000.0  # Very high latency to trigger anomaly with tolerance
-            ),
-            "database": HealthCheckResult(
-                component="database",
-                status=HealthStatus.HEALTHY,
-                latency_ms=50.0  # Normal latency
-            ),
-            "cache": HealthCheckResult(
-                component="cache",
-                status=HealthStatus.HEALTHY,
-                latency_ms=120.0  # Normal latency
-            )
-        })
+        diagnostics_manager.state.component_statuses.update(
+            {
+                "api": HealthCheckResult(
+                    component="api",
+                    status=HealthStatus.DEGRADED,
+                    latency_ms=2000.0,  # Very high latency to trigger anomaly with tolerance
+                ),
+                "database": HealthCheckResult(
+                    component="database",
+                    status=HealthStatus.HEALTHY,
+                    latency_ms=50.0,  # Normal latency
+                ),
+                "cache": HealthCheckResult(
+                    component="cache",
+                    status=HealthStatus.HEALTHY,
+                    latency_ms=120.0,  # Normal latency
+                ),
+            }
+        )
 
         # Add historical data for each
-        diagnostics_manager.state.performance_metrics.update({
-            "api": [100.0, 110.0, 95.0, 105.0, 98.0],
-            "database": [40.0, 45.0, 50.0, 48.0, 52.0],
-            "cache": [100.0, 110.0, 95.0, 105.0, 98.0]
-        })
+        diagnostics_manager.state.performance_metrics.update(
+            {
+                "api": [100.0, 110.0, 95.0, 105.0, 98.0],
+                "database": [40.0, 45.0, 50.0, 48.0, 52.0],
+                "cache": [100.0, 110.0, 95.0, 105.0, 98.0],
+            }
+        )
 
         anomalies = asyncio.run(detect_latency_anomalies(diagnostics_manager))
 
@@ -170,9 +192,7 @@ class TestLatencyAnomalyDetection:
         """Test that anomaly thresholds are calculated correctly."""
         # Set up test data
         diagnostics_manager.state.component_statuses["api"] = HealthCheckResult(
-            component="api",
-            status=HealthStatus.HEALTHY,
-            latency_ms=300.0
+            component="api", status=HealthStatus.HEALTHY, latency_ms=300.0
         )
 
         # Add historical data with known statistics
@@ -188,7 +208,9 @@ class TestLatencyAnomalyDetection:
         anomalies = asyncio.run(detect_latency_anomalies(diagnostics_manager))
 
         if anomalies:
-            assert abs(anomalies[0].threshold - expected_threshold) < 1.0  # Allow some tolerance for floating point
+            assert (
+                abs(anomalies[0].threshold - expected_threshold) < 1.0
+            )  # Allow some tolerance for floating point
 
 
 class TestDrawdownAnomalyDetection:
@@ -205,22 +227,32 @@ class TestDrawdownAnomalyDetection:
         return MagicMock()
 
     @pytest.mark.asyncio
-    async def test_drawdown_anomaly_detection_not_implemented(self, diagnostics_manager, mock_portfolio_manager):
+    async def test_drawdown_anomaly_detection_not_implemented(
+        self, diagnostics_manager, mock_portfolio_manager
+    ):
         """Test that drawdown anomaly detection returns empty list (not implemented)."""
-        anomalies = await detect_drawdown_anomalies(mock_portfolio_manager, diagnostics_manager)
+        anomalies = await detect_drawdown_anomalies(
+            mock_portfolio_manager, diagnostics_manager
+        )
 
         # Currently returns empty list as implementation is placeholder
         assert isinstance(anomalies, list)
         assert len(anomalies) == 0
 
     @pytest.mark.asyncio
-    async def test_drawdown_anomaly_detection_with_exception(self, diagnostics_manager, mock_portfolio_manager):
+    async def test_drawdown_anomaly_detection_with_exception(
+        self, diagnostics_manager, mock_portfolio_manager
+    ):
         """Test drawdown anomaly detection error handling."""
         # Mock the portfolio manager to raise an exception
-        mock_portfolio_manager.some_method = MagicMock(side_effect=Exception("Test error"))
+        mock_portfolio_manager.some_method = MagicMock(
+            side_effect=Exception("Test error")
+        )
 
         # Should not raise exception, should return empty list
-        anomalies = await detect_drawdown_anomalies(mock_portfolio_manager, diagnostics_manager)
+        anomalies = await detect_drawdown_anomalies(
+            mock_portfolio_manager, diagnostics_manager
+        )
 
         assert isinstance(anomalies, list)
         assert len(anomalies) == 0
@@ -231,18 +263,14 @@ class TestAnomalyDetectionConfiguration:
 
     def test_custom_std_dev_threshold(self):
         """Test custom standard deviation threshold."""
-        config = {
-            'anomaly_std_dev_threshold': 3.0
-        }
+        config = {"anomaly_std_dev_threshold": 3.0}
         diagnostics = DiagnosticsManager(config)
 
         assert diagnostics.anomaly_std_dev_threshold == 3.0
 
     def test_custom_latency_window_size(self):
         """Test custom latency window size."""
-        config = {
-            'latency_window_size': 20
-        }
+        config = {"latency_window_size": 20}
         diagnostics = DiagnosticsManager(config)
 
         assert diagnostics.latency_window_size == 20
@@ -298,11 +326,15 @@ class TestAnomalySeverityLevels:
         diagnostics_manager.state.component_statuses["api"] = HealthCheckResult(
             component="api",
             status=HealthStatus.DEGRADED,
-            latency_ms=250.0  # Moderate spike
+            latency_ms=250.0,  # Moderate spike
         )
 
         diagnostics_manager.state.performance_metrics["api"] = [
-            100.0, 110.0, 95.0, 105.0, 98.0
+            100.0,
+            110.0,
+            95.0,
+            105.0,
+            98.0,
         ]
 
         anomalies = asyncio.run(detect_latency_anomalies(diagnostics_manager))
@@ -333,14 +365,20 @@ class TestRollingWindowManagement:
         window_size = diagnostics_manager.latency_window_size
 
         # Add initial data
-        diagnostics_manager.state.performance_metrics[component] = [100.0, 110.0, 95.0, 105.0, 98.0]
+        diagnostics_manager.state.performance_metrics[component] = [
+            100.0,
+            110.0,
+            95.0,
+            105.0,
+            98.0,
+        ]
 
         # Add more data points through anomaly detection (which triggers window trimming)
         for i in range(window_size + 5):
             diagnostics_manager.state.component_statuses[component] = HealthCheckResult(
                 component=component,
                 status=HealthStatus.HEALTHY,
-                latency_ms=float(i + 200)
+                latency_ms=float(i + 200),
             )
 
             # This will trigger the rolling window trimming
@@ -365,7 +403,7 @@ class TestRollingWindowManagement:
             diagnostics_manager.state.component_statuses[component] = HealthCheckResult(
                 component=component,
                 status=HealthStatus.HEALTHY,
-                latency_ms=float(i + 200)
+                latency_ms=float(i + 200),
             )
 
             # This will trigger the rolling window trimming
@@ -397,9 +435,7 @@ class TestEdgeCases:
     def test_zero_latency_values(self, diagnostics_manager):
         """Test anomaly detection with zero latency values."""
         diagnostics_manager.state.component_statuses["api"] = HealthCheckResult(
-            component="api",
-            status=HealthStatus.HEALTHY,
-            latency_ms=0.0
+            component="api", status=HealthStatus.HEALTHY, latency_ms=0.0
         )
 
         diagnostics_manager.state.performance_metrics["api"] = [0.0, 0.0, 0.0, 0.0, 0.0]
@@ -414,10 +450,16 @@ class TestEdgeCases:
         diagnostics_manager.state.component_statuses["api"] = HealthCheckResult(
             component="api",
             status=HealthStatus.HEALTHY,
-            latency_ms=-100.0  # Negative latency (shouldn't happen in practice)
+            latency_ms=-100.0,  # Negative latency (shouldn't happen in practice)
         )
 
-        diagnostics_manager.state.performance_metrics["api"] = [50.0, 60.0, 40.0, 55.0, 45.0]
+        diagnostics_manager.state.performance_metrics["api"] = [
+            50.0,
+            60.0,
+            40.0,
+            55.0,
+            45.0,
+        ]
 
         # Should handle gracefully without crashing
         anomalies = asyncio.run(detect_latency_anomalies(diagnostics_manager))
@@ -428,14 +470,16 @@ class TestEdgeCases:
     def test_extreme_variance_in_historical_data(self, diagnostics_manager):
         """Test anomaly detection with extreme variance in historical data."""
         diagnostics_manager.state.component_statuses["api"] = HealthCheckResult(
-            component="api",
-            status=HealthStatus.HEALTHY,
-            latency_ms=200.0
+            component="api", status=HealthStatus.HEALTHY, latency_ms=200.0
         )
 
         # Historical data with extreme variance
         diagnostics_manager.state.performance_metrics["api"] = [
-            1.0, 1000.0, 500.0, 50.0, 2000.0
+            1.0,
+            1000.0,
+            500.0,
+            50.0,
+            2000.0,
         ]
 
         anomalies = asyncio.run(detect_latency_anomalies(diagnostics_manager))
@@ -466,9 +510,7 @@ class TestPerformanceMetrics:
 
         # Add some latency data
         diagnostics_manager.state.component_statuses[component] = HealthCheckResult(
-            component=component,
-            status=HealthStatus.HEALTHY,
-            latency_ms=150.0
+            component=component, status=HealthStatus.HEALTHY, latency_ms=150.0
         )
 
         # Run anomaly detection to trigger metrics tracking
@@ -476,7 +518,9 @@ class TestPerformanceMetrics:
 
         # Should now have metrics for the component
         assert component in diagnostics_manager.state.performance_metrics
-        assert isinstance(diagnostics_manager.state.performance_metrics[component], list)
+        assert isinstance(
+            diagnostics_manager.state.performance_metrics[component], list
+        )
 
 
 if __name__ == "__main__":

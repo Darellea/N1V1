@@ -6,10 +6,11 @@ risk-adjusted returns, and portfolio optimization principles.
 """
 
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, Tuple
-from decimal import Decimal
 import statistics
+from datetime import datetime
+from decimal import Decimal
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 
 from utils.logger import get_trade_logger
@@ -40,21 +41,24 @@ class AllocationEngine:
         self.logger = get_trade_logger()
 
         # Configuration with defaults
-        self.min_weight = self.config.get('min_weight', 0.05)  # 5%
-        self.max_weight = self.config.get('max_weight', 0.4)   # 40%
-        self.risk_free_rate = self.config.get('risk_free_rate', 0.02)  # 2%
-        self.performance_window_days = self.config.get('performance_window_days', 30)
-        self.rebalance_threshold = self.config.get('rebalance_threshold', 0.05)  # 5%
+        self.min_weight = self.config.get("min_weight", 0.05)  # 5%
+        self.max_weight = self.config.get("max_weight", 0.4)  # 40%
+        self.risk_free_rate = self.config.get("risk_free_rate", 0.02)  # 2%
+        self.performance_window_days = self.config.get("performance_window_days", 30)
+        self.rebalance_threshold = self.config.get("rebalance_threshold", 0.05)  # 5%
 
         # Risk parameters
-        self.max_correlation = self.config.get('max_correlation', 0.7)
-        self.target_volatility = self.config.get('target_volatility', 0.15)  # 15%
+        self.max_correlation = self.config.get("max_correlation", 0.7)
+        self.target_volatility = self.config.get("target_volatility", 0.15)  # 15%
 
         logger.info("AllocationEngine initialized")
 
-    def calculate_allocations(self, strategy_performance: Dict[str, List[Dict[str, Any]]],
-                            allocation_method: str = 'sharpe_weighted',
-                            total_capital: Decimal = Decimal('10000')) -> Dict[str, Dict[str, Any]]:
+    def calculate_allocations(
+        self,
+        strategy_performance: Dict[str, List[Dict[str, Any]]],
+        allocation_method: str = "sharpe_weighted",
+        total_capital: Decimal = Decimal("10000"),
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Calculate capital allocations for strategies.
 
@@ -71,16 +75,18 @@ class AllocationEngine:
             return {}
 
         try:
-            if allocation_method == 'sharpe_weighted':
+            if allocation_method == "sharpe_weighted":
                 weights = self._calculate_sharpe_weights(strategy_performance)
-            elif allocation_method == 'sortino_weighted':
+            elif allocation_method == "sortino_weighted":
                 weights = self._calculate_sortino_weights(strategy_performance)
-            elif allocation_method == 'kelly_weighted':
+            elif allocation_method == "kelly_weighted":
                 weights = self._calculate_kelly_weights(strategy_performance)
-            elif allocation_method == 'equal_weighted':
+            elif allocation_method == "equal_weighted":
                 weights = self._calculate_equal_weights(strategy_performance)
-            elif allocation_method == 'volatility_targeted':
-                weights = self._calculate_volatility_targeted_weights(strategy_performance)
+            elif allocation_method == "volatility_targeted":
+                weights = self._calculate_volatility_targeted_weights(
+                    strategy_performance
+                )
             else:
                 logger.warning(f"Unknown allocation method: {allocation_method}")
                 weights = self._calculate_equal_weights(strategy_performance)
@@ -93,21 +99,27 @@ class AllocationEngine:
             for strategy_id, weight in constrained_weights.items():
                 capital_allocated = total_capital * Decimal(str(weight))
                 allocations[strategy_id] = {
-                    'weight': weight,
-                    'capital_allocated': capital_allocated,
-                    'method': allocation_method,
-                    'calculated_at': datetime.now()
+                    "weight": weight,
+                    "capital_allocated": capital_allocated,
+                    "method": allocation_method,
+                    "calculated_at": datetime.now(),
                 }
 
-            logger.info(f"Calculated allocations for {len(allocations)} strategies using {allocation_method}")
+            logger.info(
+                f"Calculated allocations for {len(allocations)} strategies using {allocation_method}"
+            )
             return allocations
 
         except Exception as e:
             logger.exception(f"Error calculating allocations: {e}")
             # Fallback to equal weights
-            return self._calculate_fallback_allocations(strategy_performance, total_capital)
+            return self._calculate_fallback_allocations(
+                strategy_performance, total_capital
+            )
 
-    def _calculate_sharpe_weights(self, strategy_performance: Dict[str, List[Dict[str, Any]]]) -> Dict[str, float]:
+    def _calculate_sharpe_weights(
+        self, strategy_performance: Dict[str, List[Dict[str, Any]]]
+    ) -> Dict[str, float]:
         """Calculate weights based on Sharpe ratios."""
         weights = {}
         total_score = 0.0
@@ -121,7 +133,9 @@ class AllocationEngine:
                 weights[strategy_id] = score
                 total_score += score
             else:
-                weights[strategy_id] = 0.1  # Minimum weight for strategies with insufficient data
+                weights[
+                    strategy_id
+                ] = 0.1  # Minimum weight for strategies with insufficient data
                 total_score += 0.1
 
         # Normalize weights
@@ -131,7 +145,9 @@ class AllocationEngine:
 
         return weights
 
-    def _calculate_sortino_weights(self, strategy_performance: Dict[str, List[Dict[str, Any]]]) -> Dict[str, float]:
+    def _calculate_sortino_weights(
+        self, strategy_performance: Dict[str, List[Dict[str, Any]]]
+    ) -> Dict[str, float]:
         """Calculate weights based on Sortino ratios."""
         weights = {}
         total_score = 0.0
@@ -154,7 +170,9 @@ class AllocationEngine:
 
         return weights
 
-    def _calculate_kelly_weights(self, strategy_performance: Dict[str, List[Dict[str, Any]]]) -> Dict[str, float]:
+    def _calculate_kelly_weights(
+        self, strategy_performance: Dict[str, List[Dict[str, Any]]]
+    ) -> Dict[str, float]:
         """Calculate weights based on Kelly criterion."""
         weights = {}
 
@@ -169,21 +187,31 @@ class AllocationEngine:
 
         return weights
 
-    def _calculate_equal_weights(self, strategy_performance: Dict[str, List[Dict[str, Any]]]) -> Dict[str, float]:
+    def _calculate_equal_weights(
+        self, strategy_performance: Dict[str, List[Dict[str, Any]]]
+    ) -> Dict[str, float]:
         """Calculate equal weights for all strategies."""
         if not strategy_performance:
             return {}
 
         equal_weight = 1.0 / len(strategy_performance)
-        return {strategy_id: equal_weight for strategy_id in strategy_performance.keys()}
+        return {
+            strategy_id: equal_weight for strategy_id in strategy_performance.keys()
+        }
 
-    def _calculate_volatility_targeted_weights(self, strategy_performance: Dict[str, List[Dict[str, Any]]]) -> Dict[str, float]:
+    def _calculate_volatility_targeted_weights(
+        self, strategy_performance: Dict[str, List[Dict[str, Any]]]
+    ) -> Dict[str, float]:
         """Calculate weights to achieve target portfolio volatility."""
         try:
             # Extract returns for each strategy
             strategy_returns = {}
             for strategy_id, performance_history in strategy_performance.items():
-                returns = [p.get('daily_return', 0.0) for p in performance_history if 'daily_return' in p]
+                returns = [
+                    p.get("daily_return", 0.0)
+                    for p in performance_history
+                    if "daily_return" in p
+                ]
                 if len(returns) >= 5:
                     strategy_returns[strategy_id] = returns
 
@@ -228,7 +256,9 @@ class AllocationEngine:
 
         # Apply min/max constraints
         for strategy_id, weight in weights.items():
-            constrained_weights[strategy_id] = max(self.min_weight, min(self.max_weight, weight))
+            constrained_weights[strategy_id] = max(
+                self.min_weight, min(self.max_weight, weight)
+            )
 
         # Renormalize to ensure sum = 1.0
         total_weight = sum(constrained_weights.values())
@@ -238,29 +268,38 @@ class AllocationEngine:
 
         return constrained_weights
 
-    def _calculate_fallback_allocations(self, strategy_performance: Dict[str, List[Dict[str, Any]]],
-                                       total_capital: Decimal) -> Dict[str, Dict[str, Any]]:
+    def _calculate_fallback_allocations(
+        self,
+        strategy_performance: Dict[str, List[Dict[str, Any]]],
+        total_capital: Decimal,
+    ) -> Dict[str, Dict[str, Any]]:
         """Calculate fallback allocations when main calculation fails."""
         equal_weight = 1.0 / len(strategy_performance) if strategy_performance else 0.0
 
         allocations = {}
         for strategy_id in strategy_performance.keys():
             allocations[strategy_id] = {
-                'weight': equal_weight,
-                'capital_allocated': total_capital * Decimal(str(equal_weight)),
-                'method': 'fallback_equal',
-                'calculated_at': datetime.now()
+                "weight": equal_weight,
+                "capital_allocated": total_capital * Decimal(str(equal_weight)),
+                "method": "fallback_equal",
+                "calculated_at": datetime.now(),
             }
 
         return allocations
 
-    def _calculate_sharpe_ratio(self, performance_history: List[Dict[str, Any]]) -> Optional[float]:
+    def _calculate_sharpe_ratio(
+        self, performance_history: List[Dict[str, Any]]
+    ) -> Optional[float]:
         """Calculate Sharpe ratio from performance history."""
         if len(performance_history) < 5:
             return None
 
         try:
-            returns = [p.get('daily_return', 0.0) for p in performance_history if 'daily_return' in p]
+            returns = [
+                p.get("daily_return", 0.0)
+                for p in performance_history
+                if "daily_return" in p
+            ]
 
             if len(returns) < 2:
                 return None
@@ -272,20 +311,28 @@ class AllocationEngine:
                 return None
 
             # Annualized Sharpe ratio (assuming daily returns)
-            sharpe_ratio = (avg_return - self.risk_free_rate) / std_return * (252 ** 0.5)
+            sharpe_ratio = (
+                (avg_return - self.risk_free_rate) / std_return * (252**0.5)
+            )
             return sharpe_ratio
 
         except Exception as e:
             logger.warning(f"Error calculating Sharpe ratio: {e}")
             return None
 
-    def _calculate_sortino_ratio(self, performance_history: List[Dict[str, Any]]) -> Optional[float]:
+    def _calculate_sortino_ratio(
+        self, performance_history: List[Dict[str, Any]]
+    ) -> Optional[float]:
         """Calculate Sortino ratio from performance history."""
         if len(performance_history) < 5:
             return None
 
         try:
-            returns = [p.get('daily_return', 0.0) for p in performance_history if 'daily_return' in p]
+            returns = [
+                p.get("daily_return", 0.0)
+                for p in performance_history
+                if "daily_return" in p
+            ]
 
             if len(returns) < 2:
                 return None
@@ -302,14 +349,18 @@ class AllocationEngine:
                 return None
 
             # Annualized Sortino ratio
-            sortino_ratio = (avg_return - self.risk_free_rate) / downside_std * (252 ** 0.5)
+            sortino_ratio = (
+                (avg_return - self.risk_free_rate) / downside_std * (252**0.5)
+            )
             return sortino_ratio
 
         except Exception as e:
             logger.warning(f"Error calculating Sortino ratio: {e}")
             return None
 
-    def _calculate_kelly_fraction(self, performance_history: List[Dict[str, Any]]) -> Optional[float]:
+    def _calculate_kelly_fraction(
+        self, performance_history: List[Dict[str, Any]]
+    ) -> Optional[float]:
         """Calculate Kelly fraction from performance history."""
         if len(performance_history) < 10:
             return None
@@ -320,7 +371,7 @@ class AllocationEngine:
             losses = []
 
             for record in performance_history:
-                pnl = record.get('pnl', 0)
+                pnl = record.get("pnl", 0)
                 if pnl > 0:
                     wins.append(pnl)
                 elif pnl < 0:
@@ -352,8 +403,11 @@ class AllocationEngine:
             logger.warning(f"Error calculating Kelly fraction: {e}")
             return None
 
-    def should_rebalance(self, current_allocations: Dict[str, Dict[str, Any]],
-                        new_allocations: Dict[str, Dict[str, Any]]) -> bool:
+    def should_rebalance(
+        self,
+        current_allocations: Dict[str, Dict[str, Any]],
+        new_allocations: Dict[str, Dict[str, Any]],
+    ) -> bool:
         """
         Determine if rebalancing is needed based on allocation changes.
 
@@ -369,9 +423,11 @@ class AllocationEngine:
 
         total_deviation = 0.0
 
-        for strategy_id in set(current_allocations.keys()) | set(new_allocations.keys()):
-            current_weight = current_allocations.get(strategy_id, {}).get('weight', 0.0)
-            new_weight = new_allocations.get(strategy_id, {}).get('weight', 0.0)
+        for strategy_id in set(current_allocations.keys()) | set(
+            new_allocations.keys()
+        ):
+            current_weight = current_allocations.get(strategy_id, {}).get("weight", 0.0)
+            new_weight = new_allocations.get(strategy_id, {}).get("weight", 0.0)
 
             deviation = abs(current_weight - new_weight)
             total_deviation += deviation
@@ -379,7 +435,9 @@ class AllocationEngine:
         # Check if total deviation exceeds threshold
         return total_deviation > self.rebalance_threshold
 
-    def calculate_correlation_matrix(self, strategy_performance: Dict[str, List[Dict[str, Any]]]) -> Optional[np.ndarray]:
+    def calculate_correlation_matrix(
+        self, strategy_performance: Dict[str, List[Dict[str, Any]]]
+    ) -> Optional[np.ndarray]:
         """
         Calculate correlation matrix between strategies.
 
@@ -393,7 +451,11 @@ class AllocationEngine:
             # Extract returns for each strategy
             strategy_returns = {}
             for strategy_id, performance_history in strategy_performance.items():
-                returns = [p.get('daily_return', 0.0) for p in performance_history if 'daily_return' in p]
+                returns = [
+                    p.get("daily_return", 0.0)
+                    for p in performance_history
+                    if "daily_return" in p
+                ]
                 if len(returns) >= 5:
                     strategy_returns[strategy_id] = returns
 
@@ -413,8 +475,11 @@ class AllocationEngine:
             logger.exception(f"Error calculating correlation matrix: {e}")
             return None
 
-    def optimize_for_risk_parity(self, strategy_performance: Dict[str, List[Dict[str, Any]]],
-                                target_volatility: float = None) -> Dict[str, float]:
+    def optimize_for_risk_parity(
+        self,
+        strategy_performance: Dict[str, List[Dict[str, Any]]],
+        target_volatility: float = None,
+    ) -> Dict[str, float]:
         """
         Optimize allocations for risk parity (equal risk contribution).
 
@@ -432,7 +497,11 @@ class AllocationEngine:
             # Calculate volatilities
             volatilities = {}
             for strategy_id, performance_history in strategy_performance.items():
-                returns = [p.get('daily_return', 0.0) for p in performance_history if 'daily_return' in p]
+                returns = [
+                    p.get("daily_return", 0.0)
+                    for p in performance_history
+                    if "daily_return" in p
+                ]
                 if len(returns) >= 5:
                     volatilities[strategy_id] = statistics.stdev(returns)
 
@@ -462,6 +531,8 @@ class AllocationEngine:
 
 
 # Factory function for creating allocation engines
-def create_allocation_engine(config: Optional[Dict[str, Any]] = None) -> AllocationEngine:
+def create_allocation_engine(
+    config: Optional[Dict[str, Any]] = None
+) -> AllocationEngine:
     """Create an allocation engine instance."""
     return AllocationEngine(config)

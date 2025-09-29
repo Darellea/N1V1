@@ -1,7 +1,9 @@
 import asyncio
-import pytest
 import warnings
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
 from core.task_manager import TaskManager
 
 
@@ -82,11 +84,15 @@ class TestTaskManager:
 
         # Suppress AsyncMock warnings in this test
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message=".*coroutine.*never awaited.*", category=RuntimeWarning)
+            warnings.filterwarnings(
+                "ignore",
+                message=".*coroutine.*never awaited.*",
+                category=RuntimeWarning,
+            )
 
             # Use AsyncMock properly for async functions
             mock_sleep = AsyncMock(return_value=None)
-            with patch('asyncio.sleep', mock_sleep):
+            with patch("asyncio.sleep", mock_sleep):
                 with pytest.raises(RuntimeError, match="TaskManager is shutting down"):
                     tm.create_task(asyncio.sleep(0.1))
 
@@ -123,7 +129,7 @@ class TestTaskManager:
         tm = TaskManager()
 
         # Mock the logger to avoid actual logging during test
-        import logging
+
         with pytest.MonkeyPatch().context() as m:
             mock_logger = MagicMock()
             m.setattr("core.task_manager.logger", mock_logger)

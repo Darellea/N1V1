@@ -6,26 +6,26 @@ Tests specific lines: 30, 227-232, 298, 319-330, 333, 338-345, 357-359,
 374-395, 430-432, 436-439, 452-463, 473-539, 558, 563.
 """
 
-import pytest
 import json
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-import copy
+from unittest.mock import MagicMock, patch
+
 import jsonschema
+import pytest
 from pydantic import ValidationError
 
 from utils.config_loader import (
     ConfigLoader,
-    load_config,
-    get_config,
-    set_config,
-    get_masked_config,
+    ConfigModel,
     DatabaseConfig,
     ExchangeConfig,
     RiskConfig,
-    ConfigModel
+    get_config,
+    get_masked_config,
+    load_config,
+    set_config,
 )
 
 
@@ -40,14 +40,14 @@ class TestConfigLoader:
         """Clean up after each test."""
         # Reset environment variables that might have been set during tests
         env_vars_to_clean = [
-            'CRYPTOBOT_ENVIRONMENT_MODE',
-            'CRYPTOBOT_EXCHANGE_API_KEY',
-            'CRYPTOBOT_EXCHANGE_API_SECRET',
-            'CRYPTOBOT_EXCHANGE_SANDBOX',
-            'CRYPTOBOT_NOTIFICATIONS_DISCORD_ENABLED',
-            'CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL',
-            'CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN',
-            'CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID'
+            "CRYPTOBOT_ENVIRONMENT_MODE",
+            "CRYPTOBOT_EXCHANGE_API_KEY",
+            "CRYPTOBOT_EXCHANGE_API_SECRET",
+            "CRYPTOBOT_EXCHANGE_SANDBOX",
+            "CRYPTOBOT_NOTIFICATIONS_DISCORD_ENABLED",
+            "CRYPTOBOT_NOTIFICATIONS_DISCORD_WEBHOOK_URL",
+            "CRYPTOBOT_NOTIFICATIONS_DISCORD_BOT_TOKEN",
+            "CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID",
         ]
         for var in env_vars_to_clean:
             if var in os.environ:
@@ -56,14 +56,14 @@ class TestConfigLoader:
     def test_line_30_dotenv_loading(self):
         """Test line 30: dotenv loading functionality."""
         # Test that dotenv loading is attempted when .env file exists
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.env', delete=False) as f:
-            f.write('CRYPTOBOT_ENVIRONMENT_MODE=test\n')
-            f.write('CRYPTOBOT_EXCHANGE_API_KEY=test_key\n')
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
+            f.write("CRYPTOBOT_ENVIRONMENT_MODE=test\n")
+            f.write("CRYPTOBOT_EXCHANGE_API_KEY=test_key\n")
             env_file = f.name
 
         try:
             # Test that the dotenv_path is set correctly when .env exists
-            from utils.config_loader import dotenv_path
+
             # The dotenv_path should be set to the .env file if it exists
             # This tests that the logic for checking .env file existence works
             assert Path(env_file).exists()
@@ -74,8 +74,8 @@ class TestConfigLoader:
         """Test loading config when file doesn't exist."""
         # Test that the method handles file not found gracefully
         # Since validation happens after file loading, we'll test the file existence check
-        with patch('pathlib.Path.exists', return_value=False):
-            with patch.object(self.loader, '_validate_config'):
+        with patch("pathlib.Path.exists", return_value=False):
+            with patch.object(self.loader, "_validate_config"):
                 # The method should proceed with default config when file doesn't exist
                 result = self.loader.load_config("nonexistent_config.json")
                 # Should return default config
@@ -84,8 +84,8 @@ class TestConfigLoader:
 
     def test_load_config_invalid_json(self):
         """Test loading config with invalid JSON."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            f.write('{invalid json content')
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+            f.write("{invalid json content")
             config_file = f.name
 
         try:
@@ -106,10 +106,10 @@ class TestConfigLoader:
             "monitoring": {},
             "notifications": {},
             "logging": {},
-            "advanced": {}
+            "advanced": {},
         }
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(config_data, f)
             config_file = f.name
 
@@ -127,28 +127,28 @@ class TestConfigLoader:
         # Set up test config
         self.loader._config = {
             "environment": {"mode": "paper"},
-            "exchange": {"api_key": "file_key", "api_secret": "file_secret"}
+            "exchange": {"api_key": "file_key", "api_secret": "file_secret"},
         }
 
         # Set environment variables
-        os.environ['CRYPTOBOT_ENVIRONMENT_MODE'] = 'live'
-        os.environ['CRYPTOBOT_EXCHANGE_API_KEY'] = 'env_key'
-        os.environ['CRYPTOBOT_EXCHANGE_API_SECRET'] = 'env_secret'
+        os.environ["CRYPTOBOT_ENVIRONMENT_MODE"] = "live"
+        os.environ["CRYPTOBOT_EXCHANGE_API_KEY"] = "env_key"
+        os.environ["CRYPTOBOT_EXCHANGE_API_SECRET"] = "env_secret"
 
         # Apply overrides
         self.loader._apply_env_overrides()
 
         # Verify overrides were applied
-        assert self.loader._config["environment"]["mode"] == 'live'
-        assert self.loader._config["exchange"]["api_key"] == 'env_key'
-        assert self.loader._config["exchange"]["api_secret"] == 'env_secret'
+        assert self.loader._config["environment"]["mode"] == "live"
+        assert self.loader._config["exchange"]["api_key"] == "env_key"
+        assert self.loader._config["exchange"]["api_secret"] == "env_secret"
 
     def test_apply_env_overrides_json_parsing(self):
         """Test JSON parsing in environment variable overrides."""
         self.loader._config = {"test": {"value": "original"}}
 
         # Set environment variable with JSON value
-        os.environ['CRYPTOBOT_TEST_VALUE'] = '{"nested": {"key": "parsed_value"}}'
+        os.environ["CRYPTOBOT_TEST_VALUE"] = '{"nested": {"key": "parsed_value"}}'
 
         self.loader._apply_env_overrides()
 
@@ -158,7 +158,7 @@ class TestConfigLoader:
         """Test non-JSON environment variable values."""
         self.loader._config = {"test": {"value": "original"}}
 
-        os.environ['CRYPTOBOT_TEST_VALUE'] = 'simple_string'
+        os.environ["CRYPTOBOT_TEST_VALUE"] = "simple_string"
 
         self.loader._apply_env_overrides()
 
@@ -166,13 +166,7 @@ class TestConfigLoader:
 
     def test_flatten_config_nested_dict(self):
         """Test flattening nested dictionary configuration."""
-        config = {
-            "level1": {
-                "level2": {
-                    "key": "value"
-                }
-            }
-        }
+        config = {"level1": {"level2": {"key": "value"}}}
 
         result = self.loader._flatten_config(config)
 
@@ -180,9 +174,7 @@ class TestConfigLoader:
 
     def test_flatten_config_with_list(self):
         """Test flattening configuration with lists."""
-        config = {
-            "items": ["item1", "item2", {"nested": "value"}]
-        }
+        config = {"items": ["item1", "item2", {"nested": "value"}]}
 
         result = self.loader._flatten_config(config)
 
@@ -234,7 +226,7 @@ class TestConfigLoader:
             "monitoring": {},
             "notifications": {},
             "logging": {},
-            "advanced": {}
+            "advanced": {},
         }
 
         # Should not raise exception
@@ -244,7 +236,7 @@ class TestConfigLoader:
         """Test validation with invalid schema."""
         self.loader._config = {
             "environment": {"mode": "invalid_mode"},  # Invalid enum value
-            "exchange": {"name": "test"}
+            "exchange": {"name": "test"},
         }
 
         with pytest.raises(jsonschema.ValidationError):
@@ -262,7 +254,7 @@ class TestConfigLoader:
             "monitoring": {},
             "notifications": {},
             "logging": {},
-            "advanced": {}
+            "advanced": {},
         }
 
         # JSON schema validation catches this first
@@ -275,17 +267,20 @@ class TestConfigLoader:
         # Test live mode without sandbox and missing credentials
         self.loader._config = {
             "environment": {"mode": "live"},
-            "exchange": {"name": "test", "sandbox": False}
+            "exchange": {"name": "test", "sandbox": False},
         }
 
         # Mock credential manager to return None (no credentials available)
-        with patch('utils.config_loader.get_credential_manager') as mock_get_cred_mgr:
+        with patch("utils.config_loader.get_credential_manager") as mock_get_cred_mgr:
             mock_cred_mgr = MagicMock()
             mock_cred_mgr.get_credential.return_value = None
             mock_get_cred_mgr.return_value = mock_cred_mgr
 
             from utils.security import SecurityException
-            with pytest.raises(SecurityException, match="Live mode requires exchange credentials"):
+
+            with pytest.raises(
+                SecurityException, match="Live mode requires exchange credentials"
+            ):
                 self.loader._enforce_live_secrets()
 
     def test_line_333_enforce_live_secrets_exchange_with_creds(self):
@@ -296,14 +291,14 @@ class TestConfigLoader:
                 "name": "test",
                 "sandbox": False,
                 "api_key": "test_key",
-                "api_secret": "test_secret"
-            }
+                "api_secret": "test_secret",
+            },
         }
 
         # Mock credential manager to return valid credentials
-        with patch('utils.config_loader.get_credential_manager') as mock_get_cred_mgr:
+        with patch("utils.config_loader.get_credential_manager") as mock_get_cred_mgr:
             mock_cred_mgr = MagicMock()
-            mock_cred_mgr.get_credential.return_value = 'test_value'
+            mock_cred_mgr.get_credential.return_value = "test_value"
             mock_get_cred_mgr.return_value = mock_cred_mgr
 
             # Should not raise exception
@@ -319,26 +314,29 @@ class TestConfigLoader:
                 "name": "test",
                 "sandbox": False,
                 "api_key": "test_key",
-                "api_secret": "test_secret"
+                "api_secret": "test_secret",
             },
-            "notifications": {
-                "discord": {"enabled": True}
-            }
+            "notifications": {"discord": {"enabled": True}},
         }
 
         # Mock credential manager to return None for Discord credentials
-        with patch('utils.config_loader.get_credential_manager') as mock_get_cred_mgr:
+        with patch("utils.config_loader.get_credential_manager") as mock_get_cred_mgr:
             mock_cred_mgr = MagicMock()
+
             # Return valid exchange credentials but None for Discord
             def mock_get_credential(key):
-                if key in ['exchange_api_key', 'exchange_api_secret']:
-                    return 'test_value'
+                if key in ["exchange_api_key", "exchange_api_secret"]:
+                    return "test_value"
                 return None
+
             mock_cred_mgr.get_credential.side_effect = mock_get_credential
             mock_get_cred_mgr.return_value = mock_cred_mgr
 
             from utils.security import SecurityException
-            with pytest.raises(SecurityException, match="Discord notifications are enabled"):
+
+            with pytest.raises(
+                SecurityException, match="Discord notifications are enabled"
+            ):
                 self.loader._enforce_live_secrets()
 
     def test_enforce_live_secrets_discord_with_webhook(self):
@@ -349,20 +347,20 @@ class TestConfigLoader:
                 "name": "test",
                 "sandbox": False,
                 "api_key": "test_key",
-                "api_secret": "test_secret"
+                "api_secret": "test_secret",
             },
             "notifications": {
                 "discord": {
                     "enabled": True,
-                    "webhook_url": "https://discord.com/api/webhooks/test"
+                    "webhook_url": "https://discord.com/api/webhooks/test",
                 }
-            }
+            },
         }
 
         # Mock credential manager to return valid credentials
-        with patch('utils.config_loader.get_credential_manager') as mock_get_cred_mgr:
+        with patch("utils.config_loader.get_credential_manager") as mock_get_cred_mgr:
             mock_cred_mgr = MagicMock()
-            mock_cred_mgr.get_credential.return_value = 'test_value'
+            mock_cred_mgr.get_credential.return_value = "test_value"
             mock_get_cred_mgr.return_value = mock_cred_mgr
 
             # Should not raise exception
@@ -376,21 +374,21 @@ class TestConfigLoader:
                 "name": "test",
                 "sandbox": False,
                 "api_key": "test_key",
-                "api_secret": "test_secret"
+                "api_secret": "test_secret",
             },
             "notifications": {
                 "discord": {
                     "enabled": True,
                     "bot_token": "test_token",
-                    "channel_id": "123456789"
+                    "channel_id": "123456789",
                 }
-            }
+            },
         }
 
         # Mock credential manager to return valid credentials
-        with patch('utils.config_loader.get_credential_manager') as mock_get_cred_mgr:
+        with patch("utils.config_loader.get_credential_manager") as mock_get_cred_mgr:
             mock_cred_mgr = MagicMock()
-            mock_cred_mgr.get_credential.return_value = 'test_value'
+            mock_cred_mgr.get_credential.return_value = "test_value"
             mock_get_cred_mgr.return_value = mock_cred_mgr
 
             # Should not raise exception
@@ -400,7 +398,7 @@ class TestConfigLoader:
         """Test that secrets are not enforced in paper mode."""
         self.loader._config = {
             "environment": {"mode": "paper"},
-            "exchange": {"name": "test"}
+            "exchange": {"name": "test"},
         }
 
         # Should not raise exception
@@ -410,7 +408,7 @@ class TestConfigLoader:
         """Test that secrets are not enforced in sandbox mode."""
         self.loader._config = {
             "environment": {"mode": "live"},
-            "exchange": {"name": "test", "sandbox": True}
+            "exchange": {"name": "test", "sandbox": True},
         }
 
         # Should not raise exception
@@ -419,13 +417,7 @@ class TestConfigLoader:
     @pytest.mark.asyncio
     async def test_lines_357_359_get_method(self):
         """Test lines 357-359: Get method functionality."""
-        self.loader._config = {
-            "level1": {
-                "level2": {
-                    "key": "value"
-                }
-            }
-        }
+        self.loader._config = {"level1": {"level2": {"key": "value"}}}
 
         # Test successful retrieval
         assert self.loader.get("level1.level2.key") == "value"
@@ -457,7 +449,7 @@ class TestConfigLoader:
             "monitoring": {},
             "notifications": {},
             "logging": {},
-            "advanced": {}
+            "advanced": {},
         }
 
         # This should work
@@ -477,7 +469,7 @@ class TestConfigLoader:
             "monitoring": {},
             "notifications": {},
             "logging": {},
-            "advanced": {}
+            "advanced": {},
         }
 
         # This should fail validation
@@ -505,12 +497,9 @@ class TestConfigLoader:
             "exchange": {
                 "api_key": "secret_key",
                 "api_secret": "secret_value",
-                "normal_field": "normal_value"
+                "normal_field": "normal_value",
             },
-            "database": {
-                "password": "secret_password",
-                "username": "normal_user"
-            }
+            "database": {"password": "secret_password", "username": "normal_user"},
         }
 
         masked = self.loader.mask_sensitive(config)
@@ -524,14 +513,7 @@ class TestConfigLoader:
     @pytest.mark.asyncio
     async def test_lines_436_439_mask_sensitive_nested(self):
         """Test lines 436-439: Mask sensitive values in nested structures."""
-        config = {
-            "nested": {
-                "deep": {
-                    "api_key": "secret",
-                    "other": "normal"
-                }
-            }
-        }
+        config = {"nested": {"deep": {"api_key": "secret", "other": "normal"}}}
 
         masked = self.loader.mask_sensitive(config)
 
@@ -541,7 +523,7 @@ class TestConfigLoader:
     @pytest.mark.asyncio
     async def test_lines_452_463_generate_template(self):
         """Test lines 452-463: Generate configuration template."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             template_file = f.name
 
         try:
@@ -550,7 +532,7 @@ class TestConfigLoader:
             # Verify file was created and contains expected content
             assert Path(template_file).exists()
 
-            with open(template_file, 'r') as f:
+            with open(template_file, "r") as f:
                 template_data = json.load(f)
 
             assert "environment" in template_data
@@ -566,13 +548,13 @@ class TestConfigLoader:
     @pytest.mark.asyncio
     async def test_lines_473_539_generate_template_content(self):
         """Test lines 473-539: Template content structure."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             template_file = f.name
 
         try:
             ConfigLoader.generate_template(template_file)
 
-            with open(template_file, 'r') as f:
+            with open(template_file, "r") as f:
                 template_data = json.load(f)
 
             # Verify specific template structure
@@ -602,10 +584,10 @@ class TestConfigLoader:
             "monitoring": {},
             "notifications": {},
             "logging": {},
-            "advanced": {}
+            "advanced": {},
         }
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(config_data, f)
             config_file = f.name
 
@@ -631,10 +613,10 @@ class TestConfigLoader:
             "notifications": {},
             "logging": {},
             "advanced": {},
-            "test": {"key": "value"}
+            "test": {"key": "value"},
         }
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(config_data, f)
             config_file = f.name
 
@@ -658,10 +640,10 @@ class TestConfigLoader:
             "monitoring": {},
             "notifications": {},
             "logging": {},
-            "advanced": {}
+            "advanced": {},
         }
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(config_data, f)
             config_file = f.name
 
@@ -680,11 +662,11 @@ class TestConfigLoader:
             "exchange": {
                 "name": "test",
                 "api_key": "secret_key",
-                "api_secret": "secret_value"
-            }
+                "api_secret": "secret_value",
+            },
         }
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(config_data, f)
             config_file = f.name
 
@@ -709,7 +691,7 @@ class TestConfigModels:
             port=5432,
             username="user",
             password="pass",
-            database="test_db"
+            database="test_db",
         )
 
         assert config.host == "localhost"
@@ -725,7 +707,7 @@ class TestConfigModels:
             api_key="test_key",
             api_secret="test_secret",
             sandbox=True,
-            timeout=30000
+            timeout=30000,
         )
 
         assert config.name == "kucoin"
@@ -737,10 +719,7 @@ class TestConfigModels:
     def test_risk_config_model(self):
         """Test RiskConfig model."""
         config = RiskConfig(
-            stop_loss=0.02,
-            take_profit=0.04,
-            position_size=0.1,
-            max_position_size=0.3
+            stop_loss=0.02, take_profit=0.04, position_size=0.1, max_position_size=0.3
         )
 
         assert config.stop_loss == 0.02
@@ -760,7 +739,7 @@ class TestConfigModels:
             "monitoring": {},
             "notifications": {},
             "logging": {},
-            "advanced": {}
+            "advanced": {},
         }
 
         model = ConfigModel(**config_data)
@@ -778,22 +757,14 @@ class TestConfigLoaderEdgeCases:
     def test_deeply_nested_config_access(self):
         """Test accessing deeply nested configuration values."""
         self.loader._config = {
-            "level1": {
-                "level2": {
-                    "level3": {
-                        "level4": "deep_value"
-                    }
-                }
-            }
+            "level1": {"level2": {"level3": {"level4": "deep_value"}}}
         }
 
         assert self.loader.get("level1.level2.level3.level4") == "deep_value"
 
     def test_config_with_array_values(self):
         """Test configuration with array values."""
-        self.loader._config = {
-            "strategies": ["strategy1", "strategy2", "strategy3"]
-        }
+        self.loader._config = {"strategies": ["strategy1", "strategy2", "strategy3"]}
 
         # Test that we can access the whole array
         assert self.loader.get("strategies") == ["strategy1", "strategy2", "strategy3"]
@@ -813,10 +784,10 @@ class TestConfigLoaderEdgeCases:
             "array": [1, 2, 3],
             "nested": {"key": "value"},
             "boolean": True,
-            "number": 42
+            "number": 42,
         }
 
-        os.environ['CRYPTOBOT_TEST_VALUE'] = json.dumps(complex_value)
+        os.environ["CRYPTOBOT_TEST_VALUE"] = json.dumps(complex_value)
 
         self.loader._apply_env_overrides()
 
@@ -827,14 +798,9 @@ class TestConfigLoaderEdgeCases:
         original = {
             "exchange": {
                 "api_key": "secret",
-                "nested": {
-                    "api_secret": "also_secret",
-                    "normal": "visible"
-                }
+                "nested": {"api_secret": "also_secret", "normal": "visible"},
             },
-            "other": {
-                "visible": "value"
-            }
+            "other": {"visible": "value"},
         }
 
         masked = self.loader.mask_sensitive(original)
@@ -856,7 +822,7 @@ class TestConfigLoaderEdgeCases:
         """Test that validation errors provide helpful messages."""
         self.loader._config = {
             "environment": {"mode": "invalid_mode"},
-            "exchange": {"name": "test"}
+            "exchange": {"name": "test"},
         }
 
         with pytest.raises(jsonschema.ValidationError) as exc_info:
@@ -871,13 +837,15 @@ class TestConfigLoaderEdgeCases:
             "environment": {"mode": "paper"},
             "exchange": {"name": "test"},
             "trading": {},
-            "risk_management": {"stop_loss": "not_a_number"},  # This will be caught by JSON schema first
+            "risk_management": {
+                "stop_loss": "not_a_number"
+            },  # This will be caught by JSON schema first
             "backtesting": {},
             "strategies": {},
             "monitoring": {},
             "notifications": {},
             "logging": {},
-            "advanced": {}
+            "advanced": {},
         }
 
         # JSON schema validation happens first and will catch the string value for stop_loss
@@ -886,7 +854,9 @@ class TestConfigLoaderEdgeCases:
 
         error_msg = str(exc_info.value)
         # The error should mention either stop_loss or the invalid type
-        assert "stop_loss" in error_msg or "number" in error_msg or "string" in error_msg
+        assert (
+            "stop_loss" in error_msg or "number" in error_msg or "string" in error_msg
+        )
 
     def test_config_reset_without_original(self):
         """Test reset method when no original config exists."""

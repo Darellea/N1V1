@@ -5,20 +5,18 @@ Abstract base class for all optimization techniques.
 Defines the interface and common functionality for strategy optimization.
 """
 
-from abc import ABC, abstractmethod
-from typing import Dict, List, Any, Optional, Union
-import logging
 import json
+import logging
 import os
+from abc import ABC, abstractmethod
+from dataclasses import asdict, dataclass
 from datetime import datetime
-from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
-import pandas as pd
 import numpy as np
-from dataclasses import dataclass, asdict
+import pandas as pd
 
 from backtest.backtester import compute_backtest_metrics
-
 
 # ============================================================================
 # DISTRIBUTED PROCESSING SUPPORT
@@ -48,6 +46,7 @@ from backtest.backtester import compute_backtest_metrics
 # - Allow switching between backends based on problem size and available resources
 # ============================================================================
 
+
 class OptimizerBackend(ABC):
     """
     Abstract base class for optimization execution backends.
@@ -59,7 +58,9 @@ class OptimizerBackend(ABC):
     """
 
     @abstractmethod
-    def evaluate_fitness_batch(self, strategy_instances: List[Any], data: pd.DataFrame) -> List[float]:
+    def evaluate_fitness_batch(
+        self, strategy_instances: List[Any], data: pd.DataFrame
+    ) -> List[float]:
         """
         Evaluate fitness for multiple strategy instances in parallel.
 
@@ -120,9 +121,9 @@ class DistributedOptimizer(OptimizerBackend):
         self.distributed_client = None
 
         # Configuration for distributed execution
-        self.num_workers = config.get('num_workers', 4)
-        self.framework = config.get('framework', 'ray')  # 'ray' or 'dask'
-        self.cluster_address = config.get('cluster_address', None)
+        self.num_workers = config.get("num_workers", 4)
+        self.framework = config.get("framework", "ray")  # 'ray' or 'dask'
+        self.cluster_address = config.get("cluster_address", None)
 
     def initialize(self, config: Dict[str, Any]) -> None:
         """
@@ -140,16 +141,18 @@ class DistributedOptimizer(OptimizerBackend):
         self.logger.info(f"Initializing {self.framework} distributed backend")
 
         # Placeholder implementation - would initialize Ray/Dask here
-        if self.framework == 'ray':
+        if self.framework == "ray":
             # import ray
             # ray.init(address=self.cluster_address, num_cpus=self.num_workers)
             self.logger.info("Ray distributed backend initialized (placeholder)")
-        elif self.framework == 'dask':
+        elif self.framework == "dask":
             # from dask.distributed import Client
             # self.distributed_client = Client(self.cluster_address)
             self.logger.info("Dask distributed backend initialized (placeholder)")
 
-    def evaluate_fitness_batch(self, strategy_instances: List[Any], data: pd.DataFrame) -> List[float]:
+    def evaluate_fitness_batch(
+        self, strategy_instances: List[Any], data: pd.DataFrame
+    ) -> List[float]:
         """
         Evaluate fitness for multiple strategies in parallel using distributed computing.
 
@@ -166,7 +169,9 @@ class DistributedOptimizer(OptimizerBackend):
         Returns:
             List of fitness scores
         """
-        self.logger.info(f"Evaluating {len(strategy_instances)} strategies using {self.framework}")
+        self.logger.info(
+            f"Evaluating {len(strategy_instances)} strategies using {self.framework}"
+        )
 
         # Placeholder implementation - would use Ray/Dask for parallel execution
         fitness_scores = []
@@ -177,7 +182,7 @@ class DistributedOptimizer(OptimizerBackend):
             # fitness_scores.append(fitness)
 
             # Placeholder: simulate distributed evaluation
-            fitness_scores.append(float('-inf'))  # Placeholder score
+            fitness_scores.append(float("-inf"))  # Placeholder score
 
         # In real implementation:
         # return ray.get(fitness_scores) if self.framework == 'ray' else [f.result() for f in fitness_scores]
@@ -224,13 +229,13 @@ class OptimizationResult:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         data = asdict(self)
-        data['timestamp'] = self.timestamp.isoformat()
+        data["timestamp"] = self.timestamp.isoformat()
         return data
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'OptimizationResult':
+    def from_dict(cls, data: Dict[str, Any]) -> "OptimizationResult":
         """Create from dictionary."""
-        data['timestamp'] = datetime.fromisoformat(data['timestamp'])
+        data["timestamp"] = datetime.fromisoformat(data["timestamp"])
         return cls(**data)
 
 
@@ -251,21 +256,31 @@ class ParameterBounds:
             raise ValueError("Parameter name must be a non-empty string")
 
         if self.param_type not in ["int", "float", "categorical"]:
-            raise ValueError(f"Invalid param_type: {self.param_type}. Must be 'int', 'float', or 'categorical'")
+            raise ValueError(
+                f"Invalid param_type: {self.param_type}. Must be 'int', 'float', or 'categorical'"
+            )
 
         if self.param_type == "categorical":
             if self.categories is None or not isinstance(self.categories, list):
-                raise ValueError("Categories must be provided for categorical parameters")
+                raise ValueError(
+                    "Categories must be provided for categorical parameters"
+                )
             if len(self.categories) == 0:
                 raise ValueError("Categories list cannot be empty")
         else:
             # For int/float parameters, validate min_value and max_value
             if not isinstance(self.min_value, (int, float)):
-                raise TypeError(f"min_value must be numeric, got {type(self.min_value)}")
+                raise TypeError(
+                    f"min_value must be numeric, got {type(self.min_value)}"
+                )
             if not isinstance(self.max_value, (int, float)):
-                raise TypeError(f"max_value must be numeric, got {type(self.max_value)}")
+                raise TypeError(
+                    f"max_value must be numeric, got {type(self.max_value)}"
+                )
             if self.min_value >= self.max_value:
-                raise ValueError(f"min_value ({self.min_value}) must be less than max_value ({self.max_value})")
+                raise ValueError(
+                    f"min_value ({self.min_value}) must be less than max_value ({self.max_value})"
+                )
 
         if self.step is not None:
             if not isinstance(self.step, (int, float)):
@@ -280,12 +295,19 @@ class ParameterBounds:
         elif self.param_type == "int":
             return isinstance(value, int) and self.min_value <= value <= self.max_value
         else:  # float
-            return isinstance(value, (int, float)) and self.min_value <= value <= self.max_value
+            return (
+                isinstance(value, (int, float))
+                and self.min_value <= value <= self.max_value
+            )
 
     def clamp_value(self, value: Any) -> Any:
         """Clamp value to bounds."""
         if self.param_type == "categorical":
-            return value if value in (self.categories or []) else (self.categories[0] if self.categories else value)
+            return (
+                value
+                if value in (self.categories or [])
+                else (self.categories[0] if self.categories else value)
+            )
         elif self.param_type == "int":
             return max(self.min_value, min(self.max_value, int(value)))
         else:  # float
@@ -323,23 +345,26 @@ class BaseOptimizer(ABC):
         self.current_iteration = 0
         self.total_evaluations = 0
         self.best_params: Optional[Dict[str, Any]] = None
-        self.best_fitness = float('-inf')
+        self.best_fitness = float("-inf")
         self.results_history: List[Dict[str, Any]] = []
 
         # Fitness function configuration
-        self.fitness_metric = config.get('fitness_metric', 'sharpe_ratio')
-        self.fitness_weights = config.get('fitness_weights', {
-            'sharpe_ratio': 1.0,
-            'total_return': 0.3,
-            'win_rate': 0.2,
-            'max_drawdown': -0.1  # Negative weight for minimization
-        })
+        self.fitness_metric = config.get("fitness_metric", "sharpe_ratio")
+        self.fitness_weights = config.get(
+            "fitness_weights",
+            {
+                "sharpe_ratio": 1.0,
+                "total_return": 0.3,
+                "win_rate": 0.2,
+                "max_drawdown": -0.1,  # Negative weight for minimization
+            },
+        )
 
     def _setup_logging(self) -> None:
         """Setup logging for the optimizer."""
         handler = logging.StreamHandler()
         formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
         handler.setFormatter(formatter)
         self.logger.addHandler(handler)
@@ -371,9 +396,11 @@ class BaseOptimizer(ABC):
                 continue
             if name in self.parameter_bounds:
                 bounds = self.parameter_bounds[name]
-                if bounds.param_type in ('int', 'float'):
+                if bounds.param_type in ("int", "float"):
                     if not (bounds.min_value <= value <= bounds.max_value):
-                        self.logger.warning(f"Parameter {name}={value} is out of bounds")
+                        self.logger.warning(
+                            f"Parameter {name}={value} is out of bounds"
+                        )
                         return False
         return True
 
@@ -410,7 +437,7 @@ class BaseOptimizer(ABC):
             equity_progression = self._run_backtest(strategy_instance, data)
 
             if not equity_progression:
-                return float('-inf')
+                return float("-inf")
 
             # Compute metrics
             metrics = compute_backtest_metrics(equity_progression)
@@ -424,9 +451,11 @@ class BaseOptimizer(ABC):
 
         except Exception as e:
             self.logger.error(f"Error evaluating fitness: {str(e)}")
-            return float('-inf')
+            return float("-inf")
 
-    def _run_backtest(self, strategy_instance, data: pd.DataFrame) -> List[Dict[str, Any]]:
+    def _run_backtest(
+        self, strategy_instance, data: pd.DataFrame
+    ) -> List[Dict[str, Any]]:
         """
         Run backtest for strategy evaluation.
 
@@ -456,13 +485,18 @@ class BaseOptimizer(ABC):
                     current_equity += pnl
                     trade_count += 1
 
-                    equity_progression.append({
-                        'trade_id': trade_count,
-                        'timestamp': data.index[i] if hasattr(data.index, '__getitem__') else i,
-                        'equity': current_equity,
-                        'pnl': pnl,
-                        'cumulative_return': (current_equity - initial_equity) / initial_equity
-                    })
+                    equity_progression.append(
+                        {
+                            "trade_id": trade_count,
+                            "timestamp": data.index[i]
+                            if hasattr(data.index, "__getitem__")
+                            else i,
+                            "equity": current_equity,
+                            "pnl": pnl,
+                            "cumulative_return": (current_equity - initial_equity)
+                            / initial_equity,
+                        }
+                    )
 
             return equity_progression
 
@@ -507,9 +541,7 @@ class BaseOptimizer(ABC):
             self.best_fitness = fitness
             self.best_params = params.copy()
 
-            self.logger.info(
-                f"New best fitness: {fitness:.4f} with params: {params}"
-            )
+            self.logger.info(f"New best fitness: {fitness:.4f} with params: {params}")
 
     def save_results(self, output_path: str) -> str:
         """
@@ -533,20 +565,20 @@ class BaseOptimizer(ABC):
         os.makedirs(os.path.dirname(safe_path), exist_ok=True)
 
         result = OptimizationResult(
-            strategy_name=self.config.get('strategy_name', 'unknown'),
+            strategy_name=self.config.get("strategy_name", "unknown"),
             optimizer_type=self.__class__.__name__,
             best_params=self.best_params or {},
             best_fitness=self.best_fitness,
             fitness_metric=self.fitness_metric,
             iterations=self.current_iteration,
             total_evaluations=self.total_evaluations,
-            optimization_time=self.config.get('optimization_time', 0.0),
+            optimization_time=self.config.get("optimization_time", 0.0),
             timestamp=datetime.now(),
             results_history=self.results_history,
-            convergence_info=self._get_convergence_info()
+            convergence_info=self._get_convergence_info(),
         )
 
-        with open(safe_path, 'w') as f:
+        with open(safe_path, "w") as f:
             json.dump(result.to_dict(), f, indent=2)
 
         self.logger.info(f"Results saved to {safe_path}")
@@ -576,7 +608,7 @@ class BaseOptimizer(ABC):
             return None
 
         try:
-            with open(safe_path, 'r') as f:
+            with open(safe_path, "r") as f:
                 data = json.load(f)
 
             result = OptimizationResult.from_dict(data)
@@ -602,20 +634,22 @@ class BaseOptimizer(ABC):
             return None
 
         # Calculate convergence metrics
-        recent_fitness = [r['fitness'] for r in self.results_history[-10:]]
+        recent_fitness = [r["fitness"] for r in self.results_history[-10:]]
         if len(recent_fitness) >= 2:
             fitness_std = np.std(recent_fitness)
             fitness_trend = np.polyfit(range(len(recent_fitness)), recent_fitness, 1)[0]
 
             return {
-                'recent_fitness_std': fitness_std,
-                'fitness_trend': fitness_trend,
-                'converged': fitness_std < 0.01 and abs(fitness_trend) < 0.001
+                "recent_fitness_std": fitness_std,
+                "fitness_trend": fitness_trend,
+                "converged": fitness_std < 0.01 and abs(fitness_trend) < 0.001,
             }
 
         return None
 
-    def _validate_and_sanitize_path(self, user_path: str, operation: str) -> Optional[str]:
+    def _validate_and_sanitize_path(
+        self, user_path: str, operation: str
+    ) -> Optional[str]:
         """
         Validate and sanitize file paths to prevent directory traversal attacks.
 
@@ -633,7 +667,7 @@ class BaseOptimizer(ABC):
         try:
             # Define the safe base directory for file operations
             # This should be configurable but defaults to 'results' directory
-            base_dir = self.config.get('results_directory', 'results')
+            base_dir = self.config.get("results_directory", "results")
 
             # Convert to absolute path and resolve any symlinks/canonicalize
             # This prevents directory traversal using .. or symlinks
@@ -644,7 +678,10 @@ class BaseOptimizer(ABC):
             base_dir_abs = os.path.abspath(base_dir)
 
             # Check if resolved path starts with base directory path
-            if not resolved_path.startswith(base_dir_abs + os.sep) and resolved_path != base_dir_abs:
+            if (
+                not resolved_path.startswith(base_dir_abs + os.sep)
+                and resolved_path != base_dir_abs
+            ):
                 self.logger.error(
                     f"SECURITY: Path traversal attempt blocked in {operation} operation. "
                     f"User path: {user_path}, Resolved: {resolved_path}, Base: {base_dir_abs}"
@@ -652,17 +689,21 @@ class BaseOptimizer(ABC):
                 return None
 
             # Additional validation: ensure no null bytes or other dangerous characters
-            if '\x00' in resolved_path:
+            if "\x00" in resolved_path:
                 self.logger.error(f"SECURITY: Null byte detected in path: {user_path}")
                 return None
 
             # Ensure the path doesn't contain dangerous characters
-            dangerous_chars = ['<', '>', '|', '*', '?']
+            dangerous_chars = ["<", ">", "|", "*", "?"]
             if any(char in resolved_path for char in dangerous_chars):
-                self.logger.error(f"SECURITY: Dangerous characters in path: {user_path}")
+                self.logger.error(
+                    f"SECURITY: Dangerous characters in path: {user_path}"
+                )
                 return None
 
-            self.logger.debug(f"Path validation successful for {operation}: {resolved_path}")
+            self.logger.debug(
+                f"Path validation successful for {operation}: {resolved_path}"
+            )
             return resolved_path
 
         except Exception as e:
@@ -691,11 +732,11 @@ class BaseOptimizer(ABC):
             Summary dictionary
         """
         return {
-            'optimizer_type': self.__class__.__name__,
-            'iterations': self.current_iteration,
-            'total_evaluations': self.total_evaluations,
-            'best_fitness': self.best_fitness,
-            'best_params': self.best_params,
-            'fitness_metric': self.fitness_metric,
-            'convergence_info': self._get_convergence_info()
+            "optimizer_type": self.__class__.__name__,
+            "iterations": self.current_iteration,
+            "total_evaluations": self.total_evaluations,
+            "best_fitness": self.best_fitness,
+            "best_params": self.best_params,
+            "fitness_metric": self.fitness_metric,
+            "convergence_info": self._get_convergence_info(),
         }

@@ -32,22 +32,26 @@ from data.constants import (
     MAX_RETRIES,
     RETRY_DELAY,
     DEFAULT_RATE_LIMIT,
-    CACHE_BASE_DIR
+    CACHE_BASE_DIR,
 )
 
 
 class PathTraversalError(Exception):
     """Raised when path traversal is detected in cache directory."""
+
     pass
 
 
 class CacheLoadError(Exception):
     """Raised when critical cache data cannot be loaded due to parsing failures."""
+
     pass
+
 
 logger = logging.getLogger(__name__)
 # logging is configured by the application entrypoint; avoid reconfiguring here.
 # If needed, call setup_logging at startup: setup_logging(config)
+
 
 class DataFetcher(IDataFetcher):
     """
@@ -57,6 +61,7 @@ class DataFetcher(IDataFetcher):
 
     class _ExchangeWrapper:
         """Lightweight wrapper for CCXT exchanges with proxy handling."""
+
         def __init__(self, exchange, parent):
             self._exchange = exchange
             self._parent = parent
@@ -66,7 +71,7 @@ class DataFetcher(IDataFetcher):
             return getattr(self._exchange, item)
 
         def __setattr__(self, item, value):
-            if item.startswith('_'):
+            if item.startswith("_"):
                 # Private attributes stored directly on wrapper
                 super().__setattr__(item, value)
             elif item == "proxies":
@@ -76,7 +81,7 @@ class DataFetcher(IDataFetcher):
                 except Exception:
                     pass
                 try:
-                    self._parent.config['proxy'] = value
+                    self._parent.config["proxy"] = value
                 except Exception:
                     pass
             else:
@@ -126,7 +131,7 @@ class DataFetcher(IDataFetcher):
             except Exception:
                 pass
             try:
-                self._parent.config['proxy'] = value
+                self._parent.config["proxy"] = value
             except Exception:
                 pass
 
@@ -142,10 +147,12 @@ class DataFetcher(IDataFetcher):
         self.session: Optional[ClientSession] = None
         self.last_request_time = 0
         self.request_count = 0
-        self.max_requests_per_second = config.get('rate_limit', 10)
+        self.max_requests_per_second = config.get("rate_limit", 10)
         self._last_request_time = None
-        self.cache_enabled = config.get('cache_enabled', True)
-        self._cache_dir_raw = config.get('cache_dir', '.market_cache')  # Keep raw config for compatibility
+        self.cache_enabled = config.get("cache_enabled", True)
+        self._cache_dir_raw = config.get(
+            "cache_dir", ".market_cache"
+        )  # Keep raw config for compatibility
         self._cache_dir_path = self._cache_dir_raw
 
         if self.cache_enabled:
@@ -176,25 +183,27 @@ class DataFetcher(IDataFetcher):
     def _initialize_exchange(self) -> None:
         """Initialize the CCXT exchange instance."""
         exchange_config = {
-            'apiKey': self.config.get('api_key', ''),
-            'secret': self.config.get('api_secret', ''),
-            'password': self.config.get('api_passphrase', ''),
-            'enableRateLimit': True,
-            'options': {
-                'defaultType': 'spot',
-                'adjustForTimeDifference': True,
+            "apiKey": self.config.get("api_key", ""),
+            "secret": self.config.get("api_secret", ""),
+            "password": self.config.get("api_passphrase", ""),
+            "enableRateLimit": True,
+            "options": {
+                "defaultType": "spot",
+                "adjustForTimeDifference": True,
             },
-            'timeout': self.config.get('timeout', 30000),
+            "timeout": self.config.get("timeout", 30000),
         }
 
-        if self.config.get('proxy'):
-            exchange_config['proxy'] = self.config['proxy']
+        if self.config.get("proxy"):
+            exchange_config["proxy"] = self.config["proxy"]
 
-        exchange_class = getattr(ccxt, self.config['name'])
+        exchange_class = getattr(ccxt, self.config["name"])
         exchange_instance = exchange_class(exchange_config)
 
         # Store wrapped exchange in private attribute; property below exposes it.
-        object.__setattr__(self, "_exchange", self._ExchangeWrapper(exchange_instance, self))
+        object.__setattr__(
+            self, "_exchange", self._ExchangeWrapper(exchange_instance, self)
+        )
 
     @property
     def exchange(self):
@@ -218,7 +227,7 @@ class DataFetcher(IDataFetcher):
                 return getattr(self._exchange, item)
 
             def __setattr__(self, item, value):
-                if item.startswith('_'):
+                if item.startswith("_"):
                     # Private attributes stored directly on wrapper
                     super().__setattr__(item, value)
                 elif item == "proxies":
@@ -228,7 +237,7 @@ class DataFetcher(IDataFetcher):
                     except Exception:
                         pass
                     try:
-                        self._parent.config['proxy'] = value
+                        self._parent.config["proxy"] = value
                     except Exception:
                         pass
                 else:
@@ -279,12 +288,11 @@ class DataFetcher(IDataFetcher):
                 except Exception:
                     pass
                 try:
-                    self._parent.config['proxy'] = value
+                    self._parent.config["proxy"] = value
                 except Exception:
                     pass
 
         object.__setattr__(self, "_exchange", DynamicWrapper(value, self))
-
 
     async def initialize(self) -> None:
         """Initialize the data fetcher and load markets."""
@@ -301,7 +309,7 @@ class DataFetcher(IDataFetcher):
         timeframe: str,
         limit: int,
         since: Optional[int],
-        force_fresh: bool
+        force_fresh: bool,
     ) -> Optional[str]:
         """
         Prepare cache key for historical data if caching is enabled.
@@ -332,6 +340,7 @@ class DataFetcher(IDataFetcher):
             Awaited result if coroutine, otherwise direct result
         """
         import asyncio
+
         if asyncio.iscoroutine(result):
             return await result
         else:
@@ -339,11 +348,7 @@ class DataFetcher(IDataFetcher):
             return result
 
     async def _fetch_from_exchange(
-        self,
-        symbol: str,
-        timeframe: str,
-        limit: int,
-        since: Optional[int]
+        self, symbol: str, timeframe: str, limit: int, since: Optional[int]
     ) -> Optional[List]:
         """
         Fetch raw OHLCV data from the exchange.
@@ -360,10 +365,7 @@ class DataFetcher(IDataFetcher):
         try:
             logger.debug(f"Fetching historical data for {symbol} {timeframe}")
             fetch_result = self.exchange.fetch_ohlcv(
-                symbol=symbol,
-                timeframe=timeframe,
-                limit=limit,
-                since=since
+                symbol=symbol, timeframe=timeframe, limit=limit, since=since
             )
             candles = await self._maybe_await(fetch_result)
             return candles
@@ -383,12 +385,16 @@ class DataFetcher(IDataFetcher):
             True if data is valid, False otherwise
         """
         try:
-            if any((not hasattr(row, '__len__') or len(row) < 6) for row in candles):
-                logger.warning(f"Malformed OHLCV data returned for {symbol}; returning empty DataFrame")
+            if any((not hasattr(row, "__len__") or len(row) < 6) for row in candles):
+                logger.warning(
+                    f"Malformed OHLCV data returned for {symbol}; returning empty DataFrame"
+                )
                 return False
         except TypeError:
             # candles may be a single row or unexpected type -> treat as malformed
-            logger.warning(f"Malformed OHLCV data type for {symbol}; returning empty DataFrame")
+            logger.warning(
+                f"Malformed OHLCV data type for {symbol}; returning empty DataFrame"
+            )
             return False
 
         return True
@@ -412,7 +418,9 @@ class DataFetcher(IDataFetcher):
         # Strategy 1: integer milliseconds
         if "timestamp" in df.columns:
             try:
-                df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", errors="raise")
+                df["timestamp"] = pd.to_datetime(
+                    df["timestamp"], unit="ms", errors="raise"
+                )
                 df.set_index("timestamp", inplace=True, drop=True)
                 return df
             except Exception:
@@ -420,7 +428,9 @@ class DataFetcher(IDataFetcher):
 
             # Strategy 3: string timestamp parsing
             try:
-                df["timestamp"] = pd.to_datetime(df["timestamp"], errors="raise", utc=True)
+                df["timestamp"] = pd.to_datetime(
+                    df["timestamp"], errors="raise", utc=True
+                )
                 df["timestamp"] = df["timestamp"].dt.tz_localize(None)  # normalize tz
                 df.set_index("timestamp", inplace=True, drop=True)
                 return df
@@ -467,73 +477,82 @@ class DataFetcher(IDataFetcher):
             self._save_to_cache(cache_key, df)
 
     async def _throttle(self):
-       now = time.time()
-       min_interval = 1.0 / self.max_requests_per_second
-       if self._last_request_time is not None:
-           elapsed = now - self._last_request_time
-           if elapsed < min_interval:
-               await asyncio.sleep(min_interval - elapsed)
-       self._last_request_time = time.time()
+        now = time.time()
+        min_interval = 1.0 / self.max_requests_per_second
+        if self._last_request_time is not None:
+            elapsed = now - self._last_request_time
+            if elapsed < min_interval:
+                await asyncio.sleep(min_interval - elapsed)
+        self._last_request_time = time.time()
 
     async def get_historical_data(
         self,
         symbol: str,
-        timeframe: str = '1h',
+        timeframe: str = "1h",
         limit: int = 100,
         since: Optional[int] = None,
-        force_fresh: bool = True
+        force_fresh: bool = True,
     ) -> pd.DataFrame:
         try:
             # Try to load from cache if not force_fresh and caching enabled
             if not force_fresh and self.config.get("cache_enabled"):
-                cached = await self._load_from_cache(self._get_cache_key(symbol, timeframe, limit, since))
+                cached = await self._load_from_cache(
+                    self._get_cache_key(symbol, timeframe, limit, since)
+                )
                 if cached is not None and not cached.empty:
                     return cached
 
             await self._throttle()
-            candles = await self._maybe_await(self.exchange.fetch_ohlcv(
-                symbol=symbol,
-                timeframe=timeframe,
-                limit=limit,
-                since=since
-            ))
+            candles = await self._maybe_await(
+                self.exchange.fetch_ohlcv(
+                    symbol=symbol, timeframe=timeframe, limit=limit, since=since
+                )
+            )
             if not candles:
-                return pd.DataFrame(columns=["open","high","low","close","volume"])
+                return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
 
             # Validate candle data - ensure all candles have exactly 6 fields
             if not all(len(candle) == 6 for candle in candles):
-                logger.warning(f"Malformed candle data for {symbol}; returning empty DataFrame")
-                return pd.DataFrame(columns=["open","high","low","close","volume"])
+                logger.warning(
+                    f"Malformed candle data for {symbol}; returning empty DataFrame"
+                )
+                return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
 
-            df = pd.DataFrame(candles, columns=["timestamp","open","high","low","close","volume"])
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", errors="coerce", utc=True)
+            df = pd.DataFrame(
+                candles, columns=["timestamp", "open", "high", "low", "close", "volume"]
+            )
+            df["timestamp"] = pd.to_datetime(
+                df["timestamp"], unit="ms", errors="coerce", utc=True
+            )
             df.set_index("timestamp", inplace=True)
 
             # Cache the data if caching is enabled
             if self.config.get("cache_enabled"):
-                await self._save_to_cache(self._get_cache_key(symbol, timeframe, limit, since), df)
+                await self._save_to_cache(
+                    self._get_cache_key(symbol, timeframe, limit, since), df
+                )
 
             return df
         except Exception as e:
             logger.error(f"Unexpected error in get_historical_data: {e}")
-            return pd.DataFrame(columns=["open","high","low","close","volume"])
+            return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
 
     async def get_realtime_data(
         self,
         symbols: List[str],
         tickers: bool = True,
         orderbooks: bool = False,
-        depth: int = 5
+        depth: int = 5,
     ) -> Dict:
         """
         Get real-time market data for multiple symbols.
-        
+
         Args:
             symbols: List of trading pair symbols
             tickers: Whether to fetch ticker data
             orderbooks: Whether to fetch order book data
             depth: Order book depth if fetching
-            
+
         Returns:
             Dictionary of real-time data for each symbol
         """
@@ -560,15 +579,15 @@ class DataFetcher(IDataFetcher):
                     logger.error(f"Error fetching realtime data: {str(data)}")
                     continue
 
-                if 'symbol' in data:
-                    symbol = data['symbol']
+                if "symbol" in data:
+                    symbol = data["symbol"]
                     if symbol not in results:
                         results[symbol] = {}
-                    
-                    if 'bid' in data and 'ask' in data:  # Ticker data
-                        results[symbol]['ticker'] = data
-                    elif 'bids' in data and 'asks' in data:  # Order book data
-                        results[symbol]['orderbook'] = data
+
+                    if "bid" in data and "ask" in data:  # Ticker data
+                        results[symbol]["ticker"] = data
+                    elif "bids" in data and "asks" in data:  # Order book data
+                        results[symbol]["orderbook"] = data
 
             return results
 
@@ -581,15 +600,15 @@ class DataFetcher(IDataFetcher):
         try:
             ticker = await self.exchange.fetch_ticker(symbol)
             return {
-                'symbol': symbol,
-                'timestamp': ticker['timestamp'],
-                'last': ticker['last'],
-                'bid': ticker['bid'],
-                'ask': ticker['ask'],
-                'high': ticker['high'],
-                'low': ticker['low'],
-                'volume': ticker['baseVolume'],
-                'change': ticker['percentage'],
+                "symbol": symbol,
+                "timestamp": ticker["timestamp"],
+                "last": ticker["last"],
+                "bid": ticker["bid"],
+                "ask": ticker["ask"],
+                "high": ticker["high"],
+                "low": ticker["low"],
+                "volume": ticker["baseVolume"],
+                "change": ticker["percentage"],
             }
         except (ccxt.BaseError, ClientError) as e:
             logger.error(f"Error fetching ticker for {symbol}: {str(e)}")
@@ -600,12 +619,12 @@ class DataFetcher(IDataFetcher):
         try:
             orderbook = await self.exchange.fetch_order_book(symbol, limit=depth)
             return {
-                'symbol': symbol,
-                'timestamp': orderbook['timestamp'],
-                'bids': orderbook['bids'][:depth],
-                'asks': orderbook['asks'][:depth],
-                'bid_volume': sum(bid[1] for bid in orderbook['bids'][:depth]),
-                'ask_volume': sum(ask[1] for ask in orderbook['asks'][:depth]),
+                "symbol": symbol,
+                "timestamp": orderbook["timestamp"],
+                "bids": orderbook["bids"][:depth],
+                "asks": orderbook["asks"][:depth],
+                "bid_volume": sum(bid[1] for bid in orderbook["bids"][:depth]),
+                "ask_volume": sum(ask[1] for ask in orderbook["asks"][:depth]),
             }
         except (ccxt.BaseError, ClientError) as e:
             logger.error(f"Error fetching orderbook for {symbol}: {str(e)}")
@@ -630,11 +649,15 @@ class DataFetcher(IDataFetcher):
         try:
             rate_limit = float(raw_rate) if raw_rate is not None else DEFAULT_RATE_LIMIT
         except Exception:
-            logger.warning(f"Invalid rate_limit in config ({raw_rate}); defaulting to {DEFAULT_RATE_LIMIT} req/s")
+            logger.warning(
+                f"Invalid rate_limit in config ({raw_rate}); defaulting to {DEFAULT_RATE_LIMIT} req/s"
+            )
             rate_limit = DEFAULT_RATE_LIMIT
 
         if rate_limit <= 0:
-            logger.warning("Configured rate_limit <= 0; falling back to 1 req/s to avoid division by zero")
+            logger.warning(
+                "Configured rate_limit <= 0; falling back to 1 req/s to avoid division by zero"
+            )
             rate_limit = 1.0
 
         # Minimum interval between requests (seconds). Clamp to a small positive floor to avoid extremely small sleeps.
@@ -642,7 +665,7 @@ class DataFetcher(IDataFetcher):
 
         # If we have a recent last_request_time, enforce min_interval with a small jitter to spread bursts.
         if elapsed is not None and elapsed < min_interval:
-            jitter = (random.random() * min_interval * 0.1)  # up to 10% jitter
+            jitter = random.random() * min_interval * 0.1  # up to 10% jitter
             sleep_time = (min_interval - elapsed) + jitter
             sleep_time = max(0.0, sleep_time)
             await asyncio.sleep(sleep_time)
@@ -657,10 +680,13 @@ class DataFetcher(IDataFetcher):
             pause = max(1.0, min_interval)
             await asyncio.sleep(pause + (random.random() * 0.5))
 
-    def _get_cache_key(self, symbol: str, timeframe: str,
-                      limit: int, since: Optional[int] = None) -> str:
+    def _get_cache_key(
+        self, symbol: str, timeframe: str, limit: int, since: Optional[int] = None
+    ) -> str:
         """Generate a cache key for historical data requests."""
-        key_str = f"{symbol}_{timeframe}_{limit}_{since if since is not None else 'none'}"
+        key_str = (
+            f"{symbol}_{timeframe}_{limit}_{since if since is not None else 'none'}"
+        )
         return hashlib.md5(key_str.encode()).hexdigest()
 
     def _is_cache_critical(self, cache_key: str) -> bool:
@@ -675,7 +701,7 @@ class DataFetcher(IDataFetcher):
         """
         # For now, consider cache data critical if it contains certain keywords
         # This can be extended based on business requirements
-        critical_keywords = ['btc', 'eth', 'major', 'critical', 'primary']
+        critical_keywords = ["btc", "eth", "major", "critical", "primary"]
 
         cache_key_lower = cache_key.lower()
         return any(keyword in cache_key_lower for keyword in critical_keywords)
@@ -735,15 +761,15 @@ class DataFetcher(IDataFetcher):
         # Convert DataFrame to dict with string timestamps for JSON serialization
         df_dict = df.reset_index()
         # Ensure the timestamp column is named 'timestamp'
-        if df.index.name != 'timestamp':
-            df_dict = df_dict.rename(columns={df.index.name or 'index': 'timestamp'})
-        df_dict['timestamp'] = df_dict['timestamp'].astype(str)
+        if df.index.name != "timestamp":
+            df_dict = df_dict.rename(columns={df.index.name or "index": "timestamp"})
+        df_dict["timestamp"] = df_dict["timestamp"].astype(str)
         cache_data = {
             "timestamp": int(pd.Timestamp.now().timestamp() * 1000),
-            "data": df_dict.to_dict('records')
+            "data": df_dict.to_dict("records"),
         }
 
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             json.dump(cache_data, f)
 
     def _load_from_cache(self, cache_key: str, max_age_hours: int = 24):
@@ -756,7 +782,9 @@ class DataFetcher(IDataFetcher):
             # No running loop, run synchronously
             return asyncio.run(self._load_from_cache_async(cache_key, max_age_hours))
 
-    async def _load_from_cache_async(self, cache_key: str, max_age_hours: int = 24) -> Optional[pd.DataFrame]:
+    async def _load_from_cache_async(
+        self, cache_key: str, max_age_hours: int = 24
+    ) -> Optional[pd.DataFrame]:
         """Async implementation of cache loading."""
         if not self.cache_enabled or not self._cache_dir_path:
             return None
@@ -765,7 +793,7 @@ class DataFetcher(IDataFetcher):
         if not path.exists():
             return None
 
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             data = json.load(f)
 
         # Check if cache is expired
@@ -796,14 +824,12 @@ class DataFetcher(IDataFetcher):
         """Async version for explicit async usage."""
         return await self._load_from_cache_async(cache_key)
 
-
-
     async def get_multiple_historical_data(
         self,
         symbols: List[str],
-        timeframe: str = '1h',
+        timeframe: str = "1h",
         limit: int = 1000,
-        since: Optional[int] = None
+        since: Optional[int] = None,
     ) -> Dict[str, pd.DataFrame]:
         """
         Get historical data for multiple symbols concurrently.

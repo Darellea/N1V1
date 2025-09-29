@@ -3,10 +3,11 @@ Database models for the crypto trading bot API.
 Uses SQLAlchemy with SQLite for persistence.
 """
 
-from sqlalchemy import Column, Integer, String, Float, DateTime, create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
-from datetime import datetime
 import os
+from datetime import datetime
+
+from sqlalchemy import Column, DateTime, Float, Integer, String, create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 Base = declarative_base()
 
@@ -15,13 +16,16 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./trading_bot.db")
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+    connect_args={"check_same_thread": False}
+    if DATABASE_URL.startswith("sqlite")
+    else {},
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 class Order(Base):
     """Model for storing trade orders."""
+
     __tablename__ = "orders"
 
     id = Column(String, primary_key=True, index=True)
@@ -37,6 +41,7 @@ class Order(Base):
 
 class Signal(Base):
     """Model for storing trading signals."""
+
     __tablename__ = "signals"
 
     id = Column(String, primary_key=True, index=True)
@@ -49,6 +54,7 @@ class Signal(Base):
 
 class Equity(Base):
     """Model for storing equity progression."""
+
     __tablename__ = "equity"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)

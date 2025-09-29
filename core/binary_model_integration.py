@@ -7,23 +7,22 @@ to choose long/short logic and strategy, then flows to Risk Manager and Order Ex
 """
 
 import logging
-import asyncio
-import pandas as pd
-import numpy as np
-from typing import Dict, Any, Optional, List, Tuple, Union
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, Dict, Optional, Union
 
-from ml.trainer import CalibratedModel
-from strategies.regime.strategy_selector import get_strategy_selector, StrategySelector
-from strategies.regime.market_regime import get_market_regime_detector
+import numpy as np
+import pandas as pd
+
+from core.binary_model_metrics import get_binary_model_metrics_collector
+from core.contracts import SignalStrength, SignalType, TradingSignal
 from knowledge_base.schema import MarketRegime
+from ml.trainer import CalibratedModel
 from risk.risk_manager import RiskManager
-from core.contracts import TradingSignal, SignalType, SignalStrength
-from core.types import TradingMode
+from strategies.regime.market_regime import get_market_regime_detector
+from strategies.regime.strategy_selector import StrategySelector, get_strategy_selector
 from utils.config_loader import get_config
 from utils.logger import get_trade_logger
-from core.binary_model_metrics import get_binary_model_metrics_collector
 
 logger = logging.getLogger(__name__)
 trade_logger = get_trade_logger()
@@ -36,6 +35,7 @@ _last_config = None
 @dataclass
 class BinaryModelResult:
     """Result from binary model prediction."""
+
     should_trade: bool
     probability: float
     confidence: float
@@ -47,6 +47,7 @@ class BinaryModelResult:
 @dataclass
 class StrategySelectionResult:
     """Result from strategy selection process."""
+
     selected_strategy: Optional[type]
     direction: str  # "long", "short", or "neutral"
     regime: Union[str, MarketRegime]
@@ -58,6 +59,7 @@ class StrategySelectionResult:
 @dataclass
 class IntegratedTradingDecision:
     """Complete trading decision with all components integrated."""
+
     should_trade: bool
     binary_probability: float
     selected_strategy: Optional[type]
@@ -82,7 +84,11 @@ class BinaryModelIntegration:
     4. Order Executor receives complete trading decision
     """
 
-    def __init__(self, config: Dict[str, Any], strategy_selector: Optional[StrategySelector] = None):
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        strategy_selector: Optional[StrategySelector] = None,
+    ):
         """
         Initialize the binary model integration.
 
@@ -103,13 +109,20 @@ class BinaryModelIntegration:
         self.risk_manager: Optional[RiskManager] = None
 
         # Integration settings
-        self.require_regime_confirmation = binary_config.get("require_regime_confirmation", True)
-        self.use_adaptive_position_sizing = binary_config.get("use_adaptive_position_sizing", True)
+        self.require_regime_confirmation = binary_config.get(
+            "require_regime_confirmation", True
+        )
+        self.use_adaptive_position_sizing = binary_config.get(
+            "use_adaptive_position_sizing", True
+        )
 
-        logger.info(f"BinaryModelIntegration initialized: enabled={self.enabled}, threshold={self.binary_threshold}")
+        logger.info(
+            f"BinaryModelIntegration initialized: enabled={self.enabled}, threshold={self.binary_threshold}"
+        )
 
-    async def initialize(self, binary_model: CalibratedModel,
-                        risk_manager: RiskManager) -> None:
+    async def initialize(
+        self, binary_model: CalibratedModel, risk_manager: RiskManager
+    ) -> None:
         """
         Initialize with required components.
 
@@ -126,8 +139,9 @@ class BinaryModelIntegration:
 
         logger.info("BinaryModelIntegration components initialized")
 
-    async def process_market_data(self, market_data: pd.DataFrame,
-                                symbol: str) -> IntegratedTradingDecision:
+    async def process_market_data(
+        self, market_data: pd.DataFrame, symbol: str
+    ) -> IntegratedTradingDecision:
         """
         Process market data through the complete integration pipeline.
 
@@ -155,23 +169,29 @@ class BinaryModelIntegration:
             strategy_result = await self._select_strategy(market_data, binary_result)
 
             # Step 3: Risk management validation
-            risk_result = await self._validate_risk(market_data, strategy_result, symbol)
+            risk_result = await self._validate_risk(
+                market_data, strategy_result, symbol
+            )
 
             # Step 4: Create integrated decision
             decision = await self._create_integrated_decision(
                 binary_result, strategy_result, risk_result, symbol
             )
 
-            logger.info(f"Integrated decision for {symbol}: trade={decision.should_trade}, "
-                       f"strategy={decision.selected_strategy.__name__ if decision.selected_strategy else None}, "
-                       f"direction={decision.direction}")
+            logger.info(
+                f"Integrated decision for {symbol}: trade={decision.should_trade}, "
+                f"strategy={decision.selected_strategy.__name__ if decision.selected_strategy else None}, "
+                f"direction={decision.direction}"
+            )
 
             return decision
 
         except Exception as e:
             logger.error(f"Binary model prediction failed: {e}")
             if self.enabled:
-                reasoning = "Binary integration disabled"  # enhanced tests expect this wording
+                reasoning = (
+                    "Binary integration disabled"  # enhanced tests expect this wording
+                )
             else:
                 reasoning = "Integration error"
             return IntegratedTradingDecision(
@@ -185,10 +205,12 @@ class BinaryModelIntegration:
                 take_profit=None,
                 risk_score=1.0,
                 reasoning=reasoning,
-                timestamp=datetime.now()
+                timestamp=datetime.now(),
             )
 
-    async def _predict_binary_model(self, market_data: pd.DataFrame, symbol: str = "unknown") -> BinaryModelResult:
+    async def _predict_binary_model(
+        self, market_data: pd.DataFrame, symbol: str = "unknown"
+    ) -> BinaryModelResult:
         """
         Make prediction using the binary model.
 
@@ -206,7 +228,7 @@ class BinaryModelIntegration:
                     confidence=0.0,
                     threshold=self.binary_threshold,
                     features={},
-                    timestamp=datetime.now()
+                    timestamp=datetime.now(),
                 )
 
             # Extract features from market data (same as used in training)
@@ -227,7 +249,7 @@ class BinaryModelIntegration:
                 confidence=confidence,
                 threshold=self.binary_threshold,
                 features=features,
-                timestamp=datetime.now()
+                timestamp=datetime.now(),
             )
 
             # Log prediction with enhanced logging
@@ -236,7 +258,7 @@ class BinaryModelIntegration:
                 probability=probability,
                 threshold=self.binary_threshold,
                 regime="unknown",  # Will be updated when regime is detected
-                features=features
+                features=features,
             )
 
             # Record prediction in metrics collector
@@ -246,7 +268,7 @@ class BinaryModelIntegration:
                 probability=probability,
                 threshold=self.binary_threshold,
                 regime="unknown",
-                features=features
+                features=features,
             )
 
             return result
@@ -259,11 +281,12 @@ class BinaryModelIntegration:
                 confidence=0.0,
                 threshold=self.binary_threshold,
                 features={},
-                timestamp=datetime.now()
+                timestamp=datetime.now(),
             )
 
-    async def _select_strategy(self, market_data: pd.DataFrame,
-                             binary_result: BinaryModelResult) -> StrategySelectionResult:
+    async def _select_strategy(
+        self, market_data: pd.DataFrame, binary_result: BinaryModelResult
+    ) -> StrategySelectionResult:
         """
         Select trading strategy based on market regime.
 
@@ -295,14 +318,17 @@ class BinaryModelIntegration:
             # Get risk multiplier for the regime (fallback if not available)
             try:
                 from strategies.regime.market_regime import get_risk_multiplier
+
                 risk_multiplier = get_risk_multiplier(regime_result.regime_name)
             except ImportError:
                 # Fallback to default risk multiplier
                 risk_multiplier = 1.0
 
-            reasoning = f"Regime: {regime_result.regime_name} (confidence: {regime_result.confidence_score:.3f}), " \
-                       f"Strategy: {selected_strategy.__name__ if selected_strategy else 'None'}, " \
-                       f"Direction: {direction}"
+            reasoning = (
+                f"Regime: {regime_result.regime_name} (confidence: {regime_result.confidence_score:.3f}), "
+                f"Strategy: {selected_strategy.__name__ if selected_strategy else 'None'}, "
+                f"Direction: {direction}"
+            )
 
             return StrategySelectionResult(
                 selected_strategy=selected_strategy,
@@ -310,7 +336,7 @@ class BinaryModelIntegration:
                 regime=regime_result.regime_name,
                 confidence=regime_result.confidence_score,
                 reasoning=reasoning,
-                risk_multiplier=risk_multiplier
+                risk_multiplier=risk_multiplier,
             )
 
         except Exception as e:
@@ -321,12 +347,15 @@ class BinaryModelIntegration:
                 regime=MarketRegime.UNKNOWN,  # use enum, not string
                 confidence=0.0,
                 reasoning="Strategy selection failed",
-                risk_multiplier=1.0
+                risk_multiplier=1.0,
             )
 
-    async def _validate_risk(self, market_data: pd.DataFrame,
-                           strategy_result: StrategySelectionResult,
-                           symbol: str) -> Dict[str, Any]:
+    async def _validate_risk(
+        self,
+        market_data: pd.DataFrame,
+        strategy_result: StrategySelectionResult,
+        symbol: str,
+    ) -> Dict[str, Any]:
         """
         Validate trade against risk management rules.
 
@@ -341,21 +370,31 @@ class BinaryModelIntegration:
         try:
             # Create a trading signal for risk evaluation
             try:
-                current_price = float(market_data['close'].iloc[-1]) if not market_data.empty else 100.0
+                current_price = (
+                    float(market_data["close"].iloc[-1])
+                    if not market_data.empty
+                    else 100.0
+                )
                 signal = TradingSignal(
-                    strategy_id=strategy_result.selected_strategy.__name__ if strategy_result.selected_strategy else "binary_integration",
+                    strategy_id=strategy_result.selected_strategy.__name__
+                    if strategy_result.selected_strategy
+                    else "binary_integration",
                     symbol=symbol,
-                    signal_type=SignalType.ENTRY_LONG if strategy_result.direction == "long" else SignalType.ENTRY_SHORT,
+                    signal_type=SignalType.ENTRY_LONG
+                    if strategy_result.direction == "long"
+                    else SignalType.ENTRY_SHORT,
                     order_type="market",  # Default order type
                     signal_strength=SignalStrength.MODERATE,
                     current_price=current_price,
                     amount=1000.0,  # Default amount, will be overridden by position sizing
                     timestamp=datetime.now(),
                     metadata={
-                        "strategy": strategy_result.selected_strategy.__name__ if strategy_result.selected_strategy else "unknown",
+                        "strategy": strategy_result.selected_strategy.__name__
+                        if strategy_result.selected_strategy
+                        else "unknown",
                         "regime": strategy_result.regime,
-                        "binary_confidence": 0.0  # Will be set from binary result
-                    }
+                        "binary_confidence": 0.0,  # Will be set from binary result
+                    },
                 )
             except Exception as e:
                 logger.error(f"Failed to create trading signal: {e}")
@@ -364,7 +403,7 @@ class BinaryModelIntegration:
                     "position_size": 0.0,
                     "stop_loss": None,
                     "take_profit": None,
-                    "risk_score": 1.0
+                    "risk_score": 1.0,
                 }
 
             # Evaluate signal through risk manager
@@ -372,8 +411,12 @@ class BinaryModelIntegration:
 
             if risk_approved:
                 # Calculate position parameters
-                position_size = await self.risk_manager.calculate_position_size(signal, market_data)
-                stop_loss = await self.risk_manager.calculate_dynamic_stop_loss(signal, market_data)
+                position_size = await self.risk_manager.calculate_position_size(
+                    signal, market_data
+                )
+                stop_loss = await self.risk_manager.calculate_dynamic_stop_loss(
+                    signal, market_data
+                )
                 take_profit = await self.risk_manager.calculate_take_profit(signal)
 
                 return {
@@ -381,7 +424,7 @@ class BinaryModelIntegration:
                     "position_size": position_size,
                     "stop_loss": stop_loss,
                     "take_profit": take_profit,
-                    "risk_score": strategy_result.risk_multiplier
+                    "risk_score": strategy_result.risk_multiplier,
                 }
             else:
                 return {
@@ -389,7 +432,7 @@ class BinaryModelIntegration:
                     "position_size": 0.0,
                     "stop_loss": None,
                     "take_profit": None,
-                    "risk_score": 1.0
+                    "risk_score": 1.0,
                 }
 
         except Exception as e:
@@ -399,13 +442,16 @@ class BinaryModelIntegration:
                 "position_size": 0.0,
                 "stop_loss": None,
                 "take_profit": None,
-                "risk_score": 1.0
+                "risk_score": 1.0,
             }
 
-    async def _create_integrated_decision(self, binary_result: BinaryModelResult,
-                                         strategy_result: StrategySelectionResult,
-                                         risk_result: Dict[str, Any],
-                                         symbol: str) -> IntegratedTradingDecision:
+    async def _create_integrated_decision(
+        self,
+        binary_result: BinaryModelResult,
+        strategy_result: StrategySelectionResult,
+        risk_result: Dict[str, Any],
+        symbol: str,
+    ) -> IntegratedTradingDecision:
         """
         Create the final integrated trading decision.
 
@@ -418,15 +464,17 @@ class BinaryModelIntegration:
         Returns:
             Complete integrated trading decision
         """
-        should_trade = (binary_result.should_trade and
-                       risk_result.get("approved", False) and
-                       strategy_result.selected_strategy is not None)
+        should_trade = (
+            binary_result.should_trade
+            and risk_result.get("approved", False)
+            and strategy_result.selected_strategy is not None
+        )
 
         reasoning_parts = [
             f"Binary: {binary_result.probability:.3f} {'≥' if binary_result.should_trade else '<'} {binary_result.threshold}",
             f"Strategy: {strategy_result.selected_strategy.__name__ if strategy_result.selected_strategy else 'None'}",
             f"Regime: {strategy_result.regime} ({strategy_result.confidence:.3f})",
-            f"Risk: {'Approved' if risk_result.get('approved', False) else 'Rejected'}"
+            f"Risk: {'Approved' if risk_result.get('approved', False) else 'Rejected'}",
         ]
 
         decision = IntegratedTradingDecision(
@@ -440,7 +488,7 @@ class BinaryModelIntegration:
             take_profit=risk_result.get("take_profit"),
             risk_score=risk_result.get("risk_score", 1.0),
             reasoning=" | ".join(reasoning_parts),
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
         # Log decision outcome with enhanced logging
@@ -451,8 +499,10 @@ class BinaryModelIntegration:
             outcome="pending",  # Will be updated when trade closes
             pnl=0.0,  # Will be updated when trade closes
             regime=strategy_result.regime,
-            strategy=strategy_result.selected_strategy.__name__ if strategy_result.selected_strategy else "none",
-            probability=binary_result.probability
+            strategy=strategy_result.selected_strategy.__name__
+            if strategy_result.selected_strategy
+            else "none",
+            probability=binary_result.probability,
         )
 
         # Record decision outcome in metrics collector
@@ -463,7 +513,9 @@ class BinaryModelIntegration:
             outcome="pending",  # Will be updated when trade closes
             pnl=0.0,  # Will be updated when trade closes
             regime=strategy_result.regime,
-            strategy=strategy_result.selected_strategy.__name__ if strategy_result.selected_strategy else "none"
+            strategy=strategy_result.selected_strategy.__name__
+            if strategy_result.selected_strategy
+            else "none",
         )
 
         return decision
@@ -483,30 +535,30 @@ class BinaryModelIntegration:
                 return {}
 
             # Use same feature extraction as in trainer.py
-            close = market_data['close']
+            close = market_data["close"]
 
             features = {}
 
             # RSI
-            features['RSI'] = self._calculate_rsi(close)
+            features["RSI"] = self._calculate_rsi(close)
 
             # MACD
-            features['MACD'] = self._calculate_macd(close)
+            features["MACD"] = self._calculate_macd(close)
 
             # EMA 20
-            features['EMA_20'] = close.ewm(span=20).mean().iloc[-1]
+            features["EMA_20"] = close.ewm(span=20).mean().iloc[-1]
 
             # ATR
-            features['ATR'] = self._calculate_atr(market_data)
+            features["ATR"] = self._calculate_atr(market_data)
 
             # Stochastic RSI
-            features['StochRSI'] = self._calculate_stoch_rsi(close)
+            features["StochRSI"] = self._calculate_stoch_rsi(close)
 
             # Trend Strength
-            features['TrendStrength'] = self._calculate_trend_strength(close)
+            features["TrendStrength"] = self._calculate_trend_strength(close)
 
             # Volatility
-            features['Volatility'] = close.rolling(window=20).std().iloc[-1]
+            features["Volatility"] = close.rolling(window=20).std().iloc[-1]
 
             # Fill any NaN values
             for key, value in features.items():
@@ -531,7 +583,9 @@ class BinaryModelIntegration:
         except:
             return 50.0
 
-    def _calculate_macd(self, series: pd.Series, fast: int = 12, slow: int = 26) -> float:
+    def _calculate_macd(
+        self, series: pd.Series, fast: int = 12, slow: int = 26
+    ) -> float:
         """Calculate MACD."""
         try:
             if series is None or len(series) < slow:  # not enough data for MACD
@@ -546,10 +600,12 @@ class BinaryModelIntegration:
     def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> float:
         """Calculate ATR."""
         try:
-            high_low = df['high'] - df['low']
-            high_close = (df['high'] - df['close'].shift()).abs()
-            low_close = (df['low'] - df['close'].shift()).abs()
-            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            high_low = df["high"] - df["low"]
+            high_close = (df["high"] - df["close"].shift()).abs()
+            low_close = (df["low"] - df["close"].shift()).abs()
+            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(
+                axis=1
+            )
             atr = true_range.rolling(window=period).mean()
             return atr.iloc[-1] if not pd.isna(atr.iloc[-1]) else 0.0
         except:
@@ -558,8 +614,16 @@ class BinaryModelIntegration:
     def _calculate_stoch_rsi(self, series: pd.Series, period: int = 14) -> float:
         """Calculate Stochastic RSI."""
         try:
-            rsi = pd.Series([self._calculate_rsi(series.iloc[i:i+period]) for i in range(len(series))], index=series.index)
-            stoch_rsi = (rsi - rsi.rolling(window=period).min()) / (rsi.rolling(window=period).max() - rsi.rolling(window=period).min())
+            rsi = pd.Series(
+                [
+                    self._calculate_rsi(series.iloc[i : i + period])
+                    for i in range(len(series))
+                ],
+                index=series.index,
+            )
+            stoch_rsi = (rsi - rsi.rolling(window=period).min()) / (
+                rsi.rolling(window=period).max() - rsi.rolling(window=period).min()
+            )
             return stoch_rsi.iloc[-1] if not pd.isna(stoch_rsi.iloc[-1]) else 0.5
         except:
             return 0.5
@@ -568,6 +632,7 @@ class BinaryModelIntegration:
         """Calculate Trend Strength."""
         try:
             from scipy.stats import linregress
+
             if len(series) < period:
                 return 0.0
 
@@ -591,10 +656,12 @@ class BinaryModelIntegration:
             take_profit=None,
             risk_score=1.0,
             reasoning="Binary integration disabled",
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
-    def _create_skip_decision(self, binary_result: BinaryModelResult) -> IntegratedTradingDecision:
+    def _create_skip_decision(
+        self, binary_result: BinaryModelResult
+    ) -> IntegratedTradingDecision:
         """Create a skip decision based on binary model result."""
         # Handle special case of insufficient data
         if binary_result.probability == -1.0:
@@ -604,7 +671,9 @@ class BinaryModelIntegration:
 
         return IntegratedTradingDecision(
             should_trade=False,
-            binary_probability=binary_result.probability if binary_result.probability != -1.0 else 0.0,
+            binary_probability=binary_result.probability
+            if binary_result.probability != -1.0
+            else 0.0,
             selected_strategy=None,
             direction="neutral",
             regime=MarketRegime.UNKNOWN,
@@ -613,12 +682,14 @@ class BinaryModelIntegration:
             take_profit=None,
             risk_score=1.0,
             reasoning=reasoning,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
     def _create_error_decision(self) -> IntegratedTradingDecision:
         """Create an error decision."""
-        reasoning = "Binary integration disabled" if self.enabled else "Integration error"
+        reasoning = (
+            "Binary integration disabled" if self.enabled else "Integration error"
+        )
         return IntegratedTradingDecision(
             should_trade=False,
             binary_probability=0.0,
@@ -630,7 +701,7 @@ class BinaryModelIntegration:
             take_profit=None,
             risk_score=1.0,
             reasoning=reasoning,
-            timestamp=datetime.now()
+            timestamp=datetime.now(),
         )
 
 
@@ -638,7 +709,9 @@ def get_binary_integration(config_override=None) -> BinaryModelIntegration:
     """Get the singleton binary model integration instance."""
     global _binary_integration_instance, _last_config
     if config_override is not None:
-        _binary_integration_instance = BinaryModelIntegration(config_override.get("binary_integration", {}))
+        _binary_integration_instance = BinaryModelIntegration(
+            config_override.get("binary_integration", {})
+        )
         _last_config = config_override
     elif _binary_integration_instance is None:
         config = get_config("binary_integration")
@@ -647,7 +720,9 @@ def get_binary_integration(config_override=None) -> BinaryModelIntegration:
     return _binary_integration_instance
 
 
-async def integrate_binary_model(market_data: pd.DataFrame, symbol: str) -> IntegratedTradingDecision:
+async def integrate_binary_model(
+    market_data: pd.DataFrame, symbol: str
+) -> IntegratedTradingDecision:
     """
     Convenience function to process market data through binary model integration.
 

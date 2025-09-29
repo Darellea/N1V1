@@ -13,13 +13,11 @@ Key Features:
 - Async evaluation support
 """
 
-import asyncio
 import logging
-from typing import Dict, List, Any, Optional, Callable, Tuple
-from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -27,13 +25,13 @@ import pandas as pd
 from .config import get_distributed_evaluation_config
 from .genome import StrategyGenome
 
-
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class EvaluationResult:
     """Result of a single fitness evaluation."""
+
     genome: StrategyGenome
     fitness: float
     evaluation_time: float
@@ -71,27 +69,27 @@ class DistributedEvaluator:
         if config is None:
             eval_config = get_distributed_evaluation_config()
             config = {
-                'enabled': eval_config.enabled,
-                'max_workers': eval_config.max_workers,
-                'use_processes': eval_config.use_processes,
-                'worker_timeout': eval_config.worker_timeout,
-                'max_retries': eval_config.max_retries,
-                'cache_enabled': eval_config.cache_enabled,
-                'cache_max_size': eval_config.cache_max_size
+                "enabled": eval_config.enabled,
+                "max_workers": eval_config.max_workers,
+                "use_processes": eval_config.use_processes,
+                "worker_timeout": eval_config.worker_timeout,
+                "max_retries": eval_config.max_retries,
+                "cache_enabled": eval_config.cache_enabled,
+                "cache_max_size": eval_config.cache_max_size,
             }
 
         self.logger = logging.getLogger(f"{self.__class__.__name__}")
 
         # Core configuration
-        self.enabled = config.get('enabled', True)
-        self.max_workers = config.get('max_workers', mp.cpu_count())
-        self.use_processes = config.get('use_processes', False)
-        self.worker_timeout = config.get('worker_timeout', 300)
-        self.max_retries = config.get('max_retries', 3)
+        self.enabled = config.get("enabled", True)
+        self.max_workers = config.get("max_workers", mp.cpu_count())
+        self.use_processes = config.get("use_processes", False)
+        self.worker_timeout = config.get("worker_timeout", 300)
+        self.max_retries = config.get("max_retries", 3)
 
         # Caching
-        self.cache_enabled = config.get('cache_enabled', True)
-        self.cache_max_size = config.get('cache_max_size', 1000)
+        self.cache_enabled = config.get("cache_enabled", True)
+        self.cache_max_size = config.get("cache_max_size", 1000)
         self._evaluation_cache: Dict[str, EvaluationResult] = {}
 
         # Executor management
@@ -104,7 +102,9 @@ class DistributedEvaluator:
         self.cache_misses = 0
         self.failed_evaluations = 0
 
-        self.logger.info(f"DistributedEvaluator initialized with {self.max_workers} max workers")
+        self.logger.info(
+            f"DistributedEvaluator initialized with {self.max_workers} max workers"
+        )
 
     async def initialize(self) -> None:
         """Initialize the distributed evaluator."""
@@ -115,14 +115,21 @@ class DistributedEvaluator:
         # Initialize executors
         if self.use_processes:
             self.process_executor = ProcessPoolExecutor(max_workers=self.max_workers)
-            self.logger.info(f"Initialized ProcessPoolExecutor with {self.max_workers} workers")
+            self.logger.info(
+                f"Initialized ProcessPoolExecutor with {self.max_workers} workers"
+            )
         else:
             self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
-            self.logger.info(f"Initialized ThreadPoolExecutor with {self.max_workers} workers")
+            self.logger.info(
+                f"Initialized ThreadPoolExecutor with {self.max_workers} workers"
+            )
 
-    async def evaluate_population(self, population: List[StrategyGenome],
-                                data: pd.DataFrame,
-                                fitness_func: Optional[Callable] = None) -> List[EvaluationResult]:
+    async def evaluate_population(
+        self,
+        population: List[StrategyGenome],
+        data: pd.DataFrame,
+        fitness_func: Optional[Callable] = None,
+    ) -> List[EvaluationResult]:
         """
         Evaluate fitness of a population in parallel.
 
@@ -159,9 +166,13 @@ class DistributedEvaluator:
         # Evaluate remaining genomes
         if to_evaluate:
             if self.use_processes:
-                evaluated_results = await self._evaluate_with_processes(to_evaluate, data, fitness_func)
+                evaluated_results = await self._evaluate_with_processes(
+                    to_evaluate, data, fitness_func
+                )
             else:
-                evaluated_results = await self._evaluate_with_threads(to_evaluate, data, fitness_func)
+                evaluated_results = await self._evaluate_with_threads(
+                    to_evaluate, data, fitness_func
+                )
 
             # Cache results
             if self.cache_enabled:
@@ -182,9 +193,12 @@ class DistributedEvaluator:
 
         return all_results
 
-    async def _evaluate_with_threads(self, genomes: List[StrategyGenome],
-                                   data: pd.DataFrame,
-                                   fitness_func: Optional[Callable]) -> List[EvaluationResult]:
+    async def _evaluate_with_threads(
+        self,
+        genomes: List[StrategyGenome],
+        data: pd.DataFrame,
+        fitness_func: Optional[Callable],
+    ) -> List[EvaluationResult]:
         """Evaluate genomes using ThreadPoolExecutor."""
         if not self.executor:
             await self.initialize()
@@ -194,7 +208,9 @@ class DistributedEvaluator:
         # Submit all evaluation tasks
         future_to_genome = {}
         for genome in genomes:
-            future = self.executor.submit(self._evaluate_single_genome_sync, genome, data, fitness_func)
+            future = self.executor.submit(
+                self._evaluate_single_genome_sync, genome, data, fitness_func
+            )
             future_to_genome[future] = genome
 
         # Collect results as they complete
@@ -209,18 +225,21 @@ class DistributedEvaluator:
                 # Create error result
                 error_result = EvaluationResult(
                     genome=genome,
-                    fitness=float('-inf'),
+                    fitness=float("-inf"),
                     evaluation_time=0.0,
                     success=False,
-                    error_message=str(e)
+                    error_message=str(e),
                 )
                 results.append(error_result)
 
         return results
 
-    async def _evaluate_with_processes(self, genomes: List[StrategyGenome],
-                                     data: pd.DataFrame,
-                                     fitness_func: Optional[Callable]) -> List[EvaluationResult]:
+    async def _evaluate_with_processes(
+        self,
+        genomes: List[StrategyGenome],
+        data: pd.DataFrame,
+        fitness_func: Optional[Callable],
+    ) -> List[EvaluationResult]:
         """Evaluate genomes using ProcessPoolExecutor."""
         if not self.process_executor:
             await self.initialize()
@@ -230,7 +249,9 @@ class DistributedEvaluator:
         # Submit all evaluation tasks
         future_to_genome = {}
         for genome in genomes:
-            future = self.process_executor.submit(self._evaluate_single_genome_sync, genome, data, fitness_func)
+            future = self.process_executor.submit(
+                self._evaluate_single_genome_sync, genome, data, fitness_func
+            )
             future_to_genome[future] = genome
 
         # Collect results as they complete
@@ -245,18 +266,21 @@ class DistributedEvaluator:
                 # Create error result
                 error_result = EvaluationResult(
                     genome=genome,
-                    fitness=float('-inf'),
+                    fitness=float("-inf"),
                     evaluation_time=0.0,
                     success=False,
-                    error_message=str(e)
+                    error_message=str(e),
                 )
                 results.append(error_result)
 
         return results
 
-    async def _evaluate_sequential(self, genomes: List[StrategyGenome],
-                                 data: pd.DataFrame,
-                                 fitness_func: Optional[Callable]) -> List[EvaluationResult]:
+    async def _evaluate_sequential(
+        self,
+        genomes: List[StrategyGenome],
+        data: pd.DataFrame,
+        fitness_func: Optional[Callable],
+    ) -> List[EvaluationResult]:
         """Evaluate genomes sequentially (fallback mode)."""
         results = []
 
@@ -266,11 +290,15 @@ class DistributedEvaluator:
 
         return results
 
-    def _evaluate_single_genome_sync(self, genome: StrategyGenome,
-                                   data: pd.DataFrame,
-                                   fitness_func: Optional[Callable]) -> EvaluationResult:
+    def _evaluate_single_genome_sync(
+        self,
+        genome: StrategyGenome,
+        data: pd.DataFrame,
+        fitness_func: Optional[Callable],
+    ) -> EvaluationResult:
         """Synchronous evaluation of a single genome."""
         import time
+
         start_time = time.time()
 
         try:
@@ -285,7 +313,7 @@ class DistributedEvaluator:
                 genome=genome,
                 fitness=fitness,
                 evaluation_time=evaluation_time,
-                success=True
+                success=True,
             )
 
         except Exception as e:
@@ -294,13 +322,15 @@ class DistributedEvaluator:
 
             return EvaluationResult(
                 genome=genome,
-                fitness=float('-inf'),
+                fitness=float("-inf"),
                 evaluation_time=evaluation_time,
                 success=False,
-                error_message=str(e)
+                error_message=str(e),
             )
 
-    def _default_fitness_function(self, genome: StrategyGenome, data: pd.DataFrame) -> float:
+    def _default_fitness_function(
+        self, genome: StrategyGenome, data: pd.DataFrame
+    ) -> float:
         """Default fitness evaluation function."""
         try:
             # Simple fitness based on genome complexity and data characteristics
@@ -308,7 +338,7 @@ class DistributedEvaluator:
 
             # Add some data-based variation
             if not data.empty:
-                volatility = data['close'].pct_change().std()
+                volatility = data["close"].pct_change().std()
                 base_fitness += volatility * 10  # Reward strategies in volatile markets
 
             # Add randomness to simulate real evaluation
@@ -317,7 +347,7 @@ class DistributedEvaluator:
             return base_fitness
 
         except Exception:
-            return float('-inf')
+            return float("-inf")
 
     def _get_cache_key(self, genome: StrategyGenome, data: pd.DataFrame) -> str:
         """Generate a cache key for genome evaluation."""
@@ -326,9 +356,12 @@ class DistributedEvaluator:
         data_summary = f"{len(data)}_{data.index[0] if not data.empty else 'empty'}"
         return f"{gene_summary}_{data_summary}"
 
-    async def evaluate_population_async(self, population: List[StrategyGenome],
-                                      data: pd.DataFrame,
-                                      fitness_func: Optional[Callable] = None) -> List[EvaluationResult]:
+    async def evaluate_population_async(
+        self,
+        population: List[StrategyGenome],
+        data: pd.DataFrame,
+        fitness_func: Optional[Callable] = None,
+    ) -> List[EvaluationResult]:
         """
         Async version of population evaluation.
 
@@ -347,33 +380,43 @@ class DistributedEvaluator:
     def get_worker_status(self) -> Dict[str, Any]:
         """Get status of workers in the distributed evaluator."""
         status = {
-            'enabled': self.enabled,
-            'max_workers': self.max_workers,
-            'use_processes': self.use_processes,
-            'executor_active': (self.executor is not None) or (self.process_executor is not None),
-            'cache_enabled': self.cache_enabled,
-            'cache_size': len(self._evaluation_cache),
-            'cache_max_size': self.cache_max_size,
-            'total_evaluations': self.total_evaluations,
-            'cache_hits': self.cache_hits,
-            'cache_misses': self.cache_misses,
-            'failed_evaluations': self.failed_evaluations,
-            'cache_hit_rate': self.cache_hits / max(1, self.cache_hits + self.cache_misses)
+            "enabled": self.enabled,
+            "max_workers": self.max_workers,
+            "use_processes": self.use_processes,
+            "executor_active": (self.executor is not None)
+            or (self.process_executor is not None),
+            "cache_enabled": self.cache_enabled,
+            "cache_size": len(self._evaluation_cache),
+            "cache_max_size": self.cache_max_size,
+            "total_evaluations": self.total_evaluations,
+            "cache_hits": self.cache_hits,
+            "cache_misses": self.cache_misses,
+            "failed_evaluations": self.failed_evaluations,
+            "cache_hit_rate": self.cache_hits
+            / max(1, self.cache_hits + self.cache_misses),
         }
 
         # Add executor-specific information
         if self.executor:
-            status['executor_type'] = 'ThreadPoolExecutor'
+            status["executor_type"] = "ThreadPoolExecutor"
             try:
-                status['active_threads'] = len([t for t in self.executor._threads if t.is_alive()])
+                status["active_threads"] = len(
+                    [t for t in self.executor._threads if t.is_alive()]
+                )
             except Exception:
-                status['active_threads'] = 0
+                status["active_threads"] = 0
         elif self.process_executor:
-            status['executor_type'] = 'ProcessPoolExecutor'
+            status["executor_type"] = "ProcessPoolExecutor"
             try:
-                status['active_processes'] = len([p for p in self.process_executor._processes.values() if p.is_alive()])
+                status["active_processes"] = len(
+                    [
+                        p
+                        for p in self.process_executor._processes.values()
+                        if p.is_alive()
+                    ]
+                )
             except Exception:
-                status['active_processes'] = 0
+                status["active_processes"] = 0
 
         return status
 
@@ -406,26 +449,31 @@ class DistributedEvaluator:
         total_requests = self.cache_hits + self.cache_misses
 
         return {
-            'total_evaluations': self.total_evaluations,
-            'cache_hits': self.cache_hits,
-            'cache_misses': self.cache_misses,
-            'failed_evaluations': self.failed_evaluations,
-            'cache_hit_rate': self.cache_hits / max(1, total_requests),
-            'success_rate': (self.total_evaluations - self.failed_evaluations) / max(1, self.total_evaluations),
-            'average_evaluation_time': 0.0,  # Would need to track this
-            'cache_utilization': len(self._evaluation_cache) / self.cache_max_size
+            "total_evaluations": self.total_evaluations,
+            "cache_hits": self.cache_hits,
+            "cache_misses": self.cache_misses,
+            "failed_evaluations": self.failed_evaluations,
+            "cache_hit_rate": self.cache_hits / max(1, total_requests),
+            "success_rate": (self.total_evaluations - self.failed_evaluations)
+            / max(1, self.total_evaluations),
+            "average_evaluation_time": 0.0,  # Would need to track this
+            "cache_utilization": len(self._evaluation_cache) / self.cache_max_size,
         }
 
     def __str__(self) -> str:
         """String representation of the distributed evaluator."""
         status = self.get_worker_status()
-        return (f"DistributedEvaluator(workers={status['max_workers']}, "
-                f"cache={status['cache_size']}/{status['cache_max_size']}, "
-                f"hit_rate={status.get('cache_hit_rate', 0):.1%})")
+        return (
+            f"DistributedEvaluator(workers={status['max_workers']}, "
+            f"cache={status['cache_size']}/{status['cache_max_size']}, "
+            f"hit_rate={status.get('cache_hit_rate', 0):.1%})"
+        )
 
 
 # Convenience functions
-async def create_distributed_evaluator(config: Optional[Dict[str, Any]] = None) -> DistributedEvaluator:
+async def create_distributed_evaluator(
+    config: Optional[Dict[str, Any]] = None
+) -> DistributedEvaluator:
     """
     Create and initialize a distributed evaluator.
 
@@ -439,7 +487,10 @@ async def create_distributed_evaluator(config: Optional[Dict[str, Any]] = None) 
     await evaluator.initialize()
     return evaluator
 
-def get_distributed_evaluator(config: Optional[Dict[str, Any]] = None) -> DistributedEvaluator:
+
+def get_distributed_evaluator(
+    config: Optional[Dict[str, Any]] = None
+) -> DistributedEvaluator:
     """
     Get a distributed evaluator instance (synchronous wrapper).
 

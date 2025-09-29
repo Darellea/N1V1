@@ -8,18 +8,16 @@ This module provides comprehensive type hints for all complex methods,
 improving code clarity, IDE support, and static analysis capabilities.
 """
 
-from typing import Dict, List, Any, Optional, Tuple, Union, DefaultDict
 import ast
-import logging
-import time
-import random
 import json
+import random
+import time
 from collections import defaultdict
 from dataclasses import dataclass
-import asyncio
+from typing import Any, DefaultDict, Dict, List, Optional, Tuple, Union
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 try:
     import aiofiles
@@ -43,8 +41,8 @@ class MarketState:
 
     trend_strength: float  # -1 to 1 (negative = downtrend, positive = uptrend)
     volatility_regime: str  # 'low', 'medium', 'high'
-    volume_regime: str     # 'low', 'normal', 'high'
-    momentum: float        # -1 to 1 (negative = bearish, positive = bullish)
+    volume_regime: str  # 'low', 'normal', 'high'
+    momentum: float  # -1 to 1 (negative = bearish, positive = bullish)
 
     def to_tuple(self) -> Tuple:
         """Convert state to hashable tuple for Q-table."""
@@ -52,11 +50,11 @@ class MarketState:
             round(self.trend_strength, 2),
             self.volatility_regime,
             self.volume_regime,
-            round(self.momentum, 2)
+            round(self.momentum, 2),
         )
 
     @classmethod
-    def from_data(cls, data: pd.DataFrame) -> 'MarketState':
+    def from_data(cls, data: pd.DataFrame) -> "MarketState":
         """
         Create market state from OHLCV data.
 
@@ -67,38 +65,40 @@ class MarketState:
             MarketState instance
         """
         if len(data) < 20:
-            return cls(0.0, 'medium', 'normal', 0.0)
+            return cls(0.0, "medium", "normal", 0.0)
 
         # Calculate trend strength using moving averages
-        sma_short = data['close'].rolling(10).mean()
-        sma_long = data['close'].rolling(20).mean()
+        sma_short = data["close"].rolling(10).mean()
+        sma_long = data["close"].rolling(20).mean()
         trend_strength = (sma_short.iloc[-1] - sma_long.iloc[-1]) / sma_long.iloc[-1]
         trend_strength = max(-1.0, min(1.0, trend_strength))
 
         # Determine volatility regime
-        returns = data['close'].pct_change().dropna()
+        returns = data["close"].pct_change().dropna()
         volatility = returns.std() * np.sqrt(252)  # Annualized volatility
 
         if volatility < 0.3:  # 30%
-            vol_regime = 'low'
+            vol_regime = "low"
         elif volatility > 0.7:  # 70%
-            vol_regime = 'high'
+            vol_regime = "high"
         else:
-            vol_regime = 'medium'
+            vol_regime = "medium"
 
         # Determine volume regime
-        avg_volume = data['volume'].mean()
-        current_volume = data['volume'].iloc[-1]
+        avg_volume = data["volume"].mean()
+        current_volume = data["volume"].iloc[-1]
 
         if current_volume < avg_volume * 0.7:
-            volume_regime = 'low'
+            volume_regime = "low"
         elif current_volume > avg_volume * 1.3:
-            volume_regime = 'high'
+            volume_regime = "high"
         else:
-            volume_regime = 'normal'
+            volume_regime = "normal"
 
         # Calculate momentum
-        momentum = (data['close'].iloc[-1] - data['close'].iloc[-10]) / data['close'].iloc[-10]
+        momentum = (data["close"].iloc[-1] - data["close"].iloc[-10]) / data[
+            "close"
+        ].iloc[-10]
         momentum = max(-1.0, min(1.0, momentum))
 
         return cls(trend_strength, vol_regime, volume_regime, momentum)
@@ -131,15 +131,17 @@ class RLOptimizer(BaseOptimizer):
         super().__init__(config)
 
         # RL specific configuration
-        self.alpha = config.get('alpha', 0.1)  # Learning rate
-        self.gamma = config.get('gamma', 0.95)  # Discount factor
-        self.epsilon = config.get('epsilon', 0.1)  # Exploration rate
-        self.episodes = config.get('episodes', 100)
-        self.max_steps_per_episode = config.get('max_steps_per_episode', 50)
-        self.reward_function = config.get('reward_function', 'sharpe_ratio')
+        self.alpha = config.get("alpha", 0.1)  # Learning rate
+        self.gamma = config.get("gamma", 0.95)  # Discount factor
+        self.epsilon = config.get("epsilon", 0.1)  # Exploration rate
+        self.episodes = config.get("episodes", 100)
+        self.max_steps_per_episode = config.get("max_steps_per_episode", 50)
+        self.reward_function = config.get("reward_function", "sharpe_ratio")
 
         # Q-learning state
-        self.q_table: Dict[Tuple, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
+        self.q_table: Dict[Tuple, Dict[str, float]] = defaultdict(
+            lambda: defaultdict(float)
+        )
         self.strategy_actions: List[str] = []
 
         # Training state
@@ -161,7 +163,9 @@ class RLOptimizer(BaseOptimizer):
 
         self.logger.info("Starting Reinforcement Learning Optimization")
         self.logger.info(f"Episodes: {self.episodes}")
-        self.logger.info(f"Alpha: {self.alpha}, Gamma: {self.gamma}, Epsilon: {self.epsilon}")
+        self.logger.info(
+            f"Alpha: {self.alpha}, Gamma: {self.gamma}, Epsilon: {self.epsilon}"
+        )
 
         # Initialize available strategies
         self._initialize_strategy_actions()
@@ -176,14 +180,16 @@ class RLOptimizer(BaseOptimizer):
             episode_reward = self._run_episode(data)
 
             # Log episode results
-            self.logger.info(f"Episode {episode + 1} completed with total reward: {episode_reward:.4f}")
+            self.logger.info(
+                f"Episode {episode + 1} completed with total reward: {episode_reward:.4f}"
+            )
 
             # Decay exploration rate
             self.epsilon = max(0.01, self.epsilon * 0.995)
 
         # Finalize optimization
         optimization_time = time.time() - start_time
-        self.config['optimization_time'] = optimization_time
+        self.config["optimization_time"] = optimization_time
 
         self.logger.info(f"RL Optimization completed in {optimization_time:.2f}s")
         self.logger.info(f"Total episodes: {self.episodes}")
@@ -199,14 +205,16 @@ class RLOptimizer(BaseOptimizer):
         """
         # For demonstration, we'll use predefined strategy types
         self.strategy_actions = [
-            'trend_following',
-            'mean_reversion',
-            'breakout',
-            'scalping',
-            'swing'
+            "trend_following",
+            "mean_reversion",
+            "breakout",
+            "scalping",
+            "swing",
         ]
 
-        self.logger.info(f"Initialized {len(self.strategy_actions)} strategy actions: {self.strategy_actions}")
+        self.logger.info(
+            f"Initialized {len(self.strategy_actions)} strategy actions: {self.strategy_actions}"
+        )
 
     def _run_episode(self, data: MarketData) -> float:
         """
@@ -225,11 +233,13 @@ class RLOptimizer(BaseOptimizer):
         steps: int = 0
 
         # Start from a random position in the data
-        current_idx: int = random.randint(100, len(data) - self.max_steps_per_episode - 100)
+        current_idx: int = random.randint(
+            100, len(data) - self.max_steps_per_episode - 100
+        )
 
         while steps < self.max_steps_per_episode and current_idx < len(data) - 50:
             # Get current market state
-            window_data: MarketData = data.iloc[current_idx:current_idx + 50]
+            window_data: MarketData = data.iloc[current_idx : current_idx + 50]
             current_state: MarketState = MarketState.from_data(window_data)
 
             # Choose action (strategy) using epsilon-greedy policy
@@ -243,7 +253,7 @@ class RLOptimizer(BaseOptimizer):
             # Get next state
             next_state: Optional[MarketState] = None
             if next_idx < len(data) - 50:
-                next_window: MarketData = data.iloc[next_idx:next_idx + 50]
+                next_window: MarketData = data.iloc[next_idx : next_idx + 50]
                 next_state = MarketState.from_data(next_window)
 
             # Update Q-table
@@ -282,7 +292,9 @@ class RLOptimizer(BaseOptimizer):
         # If no Q-values exist, choose randomly
         return random.choice(self.strategy_actions)
 
-    def _execute_action(self, action: str, data: MarketData, current_idx: int) -> Tuple[float, int]:
+    def _execute_action(
+        self, action: str, data: MarketData, current_idx: int
+    ) -> Tuple[float, int]:
         """
         Execute an action and calculate reward.
 
@@ -307,7 +319,9 @@ class RLOptimizer(BaseOptimizer):
         segment_data: MarketData = data.iloc[current_idx:next_idx]
 
         # Calculate reward based on simulated performance
-        reward: float = self._calculate_action_reward(action, segment_data, strategy_params)
+        reward: float = self._calculate_action_reward(
+            action, segment_data, strategy_params
+        )
 
         return reward, next_idx
 
@@ -326,42 +340,43 @@ class RLOptimizer(BaseOptimizer):
         """
         # Action-specific parameter mappings
         action_params: Dict[str, StrategyParams] = {
-            'trend_following': {
-                'rsi_period': 14,
-                'ema_fast': 9,
-                'ema_slow': 21,
-                'adx_threshold': 25
+            "trend_following": {
+                "rsi_period": 14,
+                "ema_fast": 9,
+                "ema_slow": 21,
+                "adx_threshold": 25,
             },
-            'mean_reversion': {
-                'rsi_period': 14,
-                'bollinger_period': 20,
-                'bollinger_std': 2.0,
-                'oversold': 30,
-                'overbought': 70
+            "mean_reversion": {
+                "rsi_period": 14,
+                "bollinger_period": 20,
+                "bollinger_std": 2.0,
+                "oversold": 30,
+                "overbought": 70,
             },
-            'breakout': {
-                'lookback_period': 20,
-                'breakout_threshold': 0.02,
-                'volume_multiplier': 1.5
+            "breakout": {
+                "lookback_period": 20,
+                "breakout_threshold": 0.02,
+                "volume_multiplier": 1.5,
             },
-            'scalping': {
-                'fast_period': 5,
-                'slow_period': 10,
-                'stop_loss_pct': 0.005,
-                'take_profit_pct': 0.01
+            "scalping": {
+                "fast_period": 5,
+                "slow_period": 10,
+                "stop_loss_pct": 0.005,
+                "take_profit_pct": 0.01,
             },
-            'swing': {
-                'rsi_period': 14,
-                'macd_fast': 12,
-                'macd_slow': 26,
-                'macd_signal': 9
-            }
+            "swing": {
+                "rsi_period": 14,
+                "macd_fast": 12,
+                "macd_slow": 26,
+                "macd_signal": 9,
+            },
         }
 
         return action_params.get(action, {})
 
-    def _calculate_action_reward(self, action: str, data: MarketData,
-                               params: StrategyParams) -> float:
+    def _calculate_action_reward(
+        self, action: str, data: MarketData, params: StrategyParams
+    ) -> float:
         """
         Calculate reward for executing an action.
 
@@ -381,30 +396,36 @@ class RLOptimizer(BaseOptimizer):
 
         try:
             # Simple reward calculation based on price movement and action type
-            start_price: float = data['close'].iloc[0]
-            end_price: float = data['close'].iloc[-1]
+            start_price: float = data["close"].iloc[0]
+            end_price: float = data["close"].iloc[-1]
             price_return: float = (end_price - start_price) / start_price
 
             # Action-specific reward modifiers
             action_modifier: Dict[str, float] = {
-                'trend_following': 1.0,  # Standard reward
-                'mean_reversion': 1.2,  # Bonus for mean reversion in ranging markets
-                'breakout': 1.5,        # Bonus for breakout strategies
-                'scalping': 0.8,        # Penalty for frequent trading
-                'swing': 1.1           # Slight bonus for swing trading
+                "trend_following": 1.0,  # Standard reward
+                "mean_reversion": 1.2,  # Bonus for mean reversion in ranging markets
+                "breakout": 1.5,  # Bonus for breakout strategies
+                "scalping": 0.8,  # Penalty for frequent trading
+                "swing": 1.1,  # Slight bonus for swing trading
             }
             modifier: float = action_modifier.get(action, 1.0)
 
             # Volatility adjustment
-            returns = data['close'].pct_change().dropna()
+            returns = data["close"].pct_change().dropna()
             volatility: float = returns.std()
-            vol_modifier: float = 1.0 - (volatility * 2)  # Reduce reward in high volatility
+            vol_modifier: float = 1.0 - (
+                volatility * 2
+            )  # Reduce reward in high volatility
 
             # Volume confirmation
-            avg_volume: float = data['volume'].mean()
-            volume_modifier: float = 1.0 if avg_volume > data['volume'].quantile(0.5) else 0.8
+            avg_volume: float = data["volume"].mean()
+            volume_modifier: float = (
+                1.0 if avg_volume > data["volume"].quantile(0.5) else 0.8
+            )
 
-            base_reward: float = price_return * modifier * vol_modifier * volume_modifier
+            base_reward: float = (
+                price_return * modifier * vol_modifier * volume_modifier
+            )
 
             # Add Sharpe-like component
             if len(returns) > 1 and returns.std() > 0:
@@ -417,8 +438,13 @@ class RLOptimizer(BaseOptimizer):
             self.logger.debug(f"Reward calculation failed: {str(e)}")
             return 0.0
 
-    def _update_q_table(self, state: MarketState, action: str,
-                       reward: float, next_state: Optional[MarketState]) -> None:
+    def _update_q_table(
+        self,
+        state: MarketState,
+        action: str,
+        reward: float,
+        next_state: Optional[MarketState],
+    ) -> None:
         """
         Update Q-table using Q-learning update rule.
 
@@ -444,7 +470,9 @@ class RLOptimizer(BaseOptimizer):
             max_next_q = max(next_q_values.values()) if next_q_values else 0.0
 
         # Q-learning update
-        new_q: float = current_q + self.alpha * (reward + self.gamma * max_next_q - current_q)
+        new_q: float = current_q + self.alpha * (
+            reward + self.gamma * max_next_q - current_q
+        )
 
         # Update Q-table
         self.q_table[state_tuple][action] = new_q
@@ -464,16 +492,18 @@ class RLOptimizer(BaseOptimizer):
                 best_q_value = actions[best_action]
 
                 policy[str(state_tuple)] = {
-                    'best_action': best_action,
-                    'q_value': best_q_value,
-                    'all_actions': dict(actions)
+                    "best_action": best_action,
+                    "q_value": best_q_value,
+                    "all_actions": dict(actions),
                 }
 
         return {
-            'policy': policy,
-            'total_states_learned': len(policy),
-            'total_state_action_pairs': sum(len(actions) for actions in self.q_table.values()),
-            'strategy_actions': self.strategy_actions
+            "policy": policy,
+            "total_states_learned": len(policy),
+            "total_state_action_pairs": sum(
+                len(actions) for actions in self.q_table.values()
+            ),
+            "strategy_actions": self.strategy_actions,
         }
 
     def predict_action(self, market_data: MarketData) -> str:
@@ -554,15 +584,17 @@ class RLOptimizer(BaseOptimizer):
             Summary dictionary
         """
         summary = self.get_optimization_summary()
-        summary.update({
-            'episodes': self.episodes,
-            'total_steps': self.total_steps,
-            'alpha': self.alpha,
-            'gamma': self.gamma,
-            'final_epsilon': self.epsilon,
-            'states_learned': len(self.q_table),
-            'strategy_actions': self.strategy_actions,
-            'q_table_size': sum(len(actions) for actions in self.q_table.values())
-        })
+        summary.update(
+            {
+                "episodes": self.episodes,
+                "total_steps": self.total_steps,
+                "alpha": self.alpha,
+                "gamma": self.gamma,
+                "final_epsilon": self.epsilon,
+                "states_learned": len(self.q_table),
+                "strategy_actions": self.strategy_actions,
+                "q_table_size": sum(len(actions) for actions in self.q_table.values()),
+            }
+        )
 
         return summary

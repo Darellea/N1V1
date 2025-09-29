@@ -9,37 +9,30 @@ Tests cover:
 - Error handling and edge cases
 """
 
-import asyncio
-import pytest
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, Any, List
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
+import pytest
+
+from core.signal_router.event_bus import (
+    EnhancedEventBus,
+    EventBus,
+    create_enhanced_event_bus,
+    get_default_enhanced_event_bus,
+    get_default_event_bus,
+)
 from core.signal_router.events import (
     BaseEvent,
     EventType,
-    RegimeChangeEvent,
-    StrategySwitchEvent,
-    TradeExecutedEvent,
-    RiskLimitTriggeredEvent,
-    DiagnosticAlertEvent,
-    KnowledgeEntryCreatedEvent,
+    create_diagnostic_alert_event,
+    create_knowledge_entry_created_event,
     create_regime_change_event,
+    create_risk_limit_triggered_event,
     create_strategy_switch_event,
     create_trade_executed_event,
-    create_risk_limit_triggered_event,
-    create_diagnostic_alert_event,
-    create_knowledge_entry_created_event
 )
-from core.signal_router.event_bus import (
-    EventBus,
-    EnhancedEventBus,
-    get_default_event_bus,
-    get_default_enhanced_event_bus,
-    create_enhanced_event_bus
-)
-from utils.logger import TradeLogger, setup_logging
+from utils.logger import TradeLogger
 
 
 class TestEventDefinitions:
@@ -52,7 +45,7 @@ class TestEventDefinitions:
             source="test_component",
             timestamp=datetime.now(),
             payload={"test": "data"},
-            metadata={"extra": "info"}
+            metadata={"extra": "info"},
         )
 
         assert event.event_type == EventType.REGIME_CHANGE
@@ -67,7 +60,7 @@ class TestEventDefinitions:
             old_regime="trending",
             new_regime="sideways",
             confidence=0.85,
-            market_data={"volatility": 0.15}
+            market_data={"volatility": 0.15},
         )
 
         assert event.event_type == EventType.REGIME_CHANGE
@@ -82,7 +75,7 @@ class TestEventDefinitions:
             previous_strategy="RSI",
             new_strategy="MACD",
             rationale="Better performance in current regime",
-            confidence=0.92
+            confidence=0.92,
         )
 
         assert event.event_type == EventType.STRATEGY_SWITCH
@@ -101,7 +94,7 @@ class TestEventDefinitions:
             price=Decimal("50000"),
             slippage=Decimal("5"),
             commission=Decimal("2.5"),
-            strategy="RSIStrategy"
+            strategy="RSIStrategy",
         )
 
         assert event.event_type == EventType.TRADE_EXECUTED
@@ -122,7 +115,7 @@ class TestEventDefinitions:
             current_value=150.0,
             threshold_value=100.0,
             defensive_action="reduce_position_size",
-            symbol="BTC/USDT"
+            symbol="BTC/USDT",
         )
 
         assert event.event_type == EventType.RISK_LIMIT_TRIGGERED
@@ -139,7 +132,7 @@ class TestEventDefinitions:
             alert_type="warning",
             component="strategy_selector",
             message="High volatility detected",
-            details={"volatility": 0.25, "threshold": 0.20}
+            details={"volatility": 0.25, "threshold": 0.20},
         )
 
         assert event.event_type == EventType.DIAGNOSTIC_ALERT
@@ -155,7 +148,7 @@ class TestEventDefinitions:
             regime="trending",
             strategy="RSIStrategy",
             performance_metrics={"win_rate": 0.65, "sharpe": 1.2},
-            outcome="success"
+            outcome="success",
         )
 
         assert event.event_type == EventType.KNOWLEDGE_ENTRY_CREATED
@@ -190,11 +183,12 @@ class TestEventBus:
     def sample_event(self):
         """Create a sample event for testing."""
         from core.signal_router.event_bus import SignalEvent
+
         return SignalEvent(
             signal=MagicMock(),
             event_type="test_event",
             source="test_source",
-            metadata={"test": "metadata"}
+            metadata={"test": "metadata"},
         )
 
     def test_event_bus_initialization(self, event_bus):
@@ -332,7 +326,9 @@ class TestEnhancedEventBus:
         assert enhanced_event_bus._event_count == 1
 
     @pytest.mark.asyncio
-    async def test_publish_with_string_event_type(self, enhanced_event_bus, sample_base_event):
+    async def test_publish_with_string_event_type(
+        self, enhanced_event_bus, sample_base_event
+    ):
         """Test subscribing with string event type."""
         received_events = []
 
@@ -367,8 +363,11 @@ class TestEnhancedEventBus:
         assert len(history_filtered) == 5
 
     @pytest.mark.asyncio
-    async def test_error_handling_in_publish(self, enhanced_event_bus, sample_base_event):
+    async def test_error_handling_in_publish(
+        self, enhanced_event_bus, sample_base_event
+    ):
         """Test error handling during event publishing."""
+
         async def failing_handler(event):
             raise Exception("Test error")
 
@@ -386,9 +385,14 @@ class TestEnhancedEventBus:
         stats = enhanced_event_bus.get_stats()
 
         expected_keys = [
-            "total_events", "events_in_history", "dropped_events",
-            "error_count", "subscribers", "event_counts",
-            "buffer_size", "async_mode"
+            "total_events",
+            "events_in_history",
+            "dropped_events",
+            "error_count",
+            "subscribers",
+            "event_counts",
+            "buffer_size",
+            "async_mode",
         ]
 
         for key in expected_keys:
@@ -400,6 +404,7 @@ class TestEnhancedEventBus:
     @pytest.mark.asyncio
     async def test_clear_subscribers(self, enhanced_event_bus):
         """Test clearing all subscribers."""
+
         async def test_handler(event):
             pass
 
@@ -432,7 +437,7 @@ class TestEventDrivenLogging:
             symbol="BTC/USDT",
             side="buy",
             quantity=Decimal("0.1"),
-            price=Decimal("50000")
+            price=Decimal("50000"),
         )
 
         # Handle the event
@@ -451,7 +456,7 @@ class TestEventDrivenLogging:
             previous_strategy="RSI",
             new_strategy="MACD",
             rationale="Better performance",
-            confidence=0.9
+            confidence=0.9,
         )
 
         # Handle the event (should not raise)
@@ -468,7 +473,7 @@ class TestEventDrivenLogging:
             trigger_condition="exceeded",
             current_value=150.0,
             threshold_value=100.0,
-            defensive_action="reduce_positions"
+            defensive_action="reduce_positions",
         )
 
         # Handle the event (should not raise)
@@ -483,7 +488,7 @@ class TestEventDrivenLogging:
         event = create_diagnostic_alert_event(
             alert_type="warning",
             component="strategy_selector",
-            message="High volatility detected"
+            message="High volatility detected",
         )
 
         # Handle the event (should not raise)
@@ -500,7 +505,7 @@ class TestEventDrivenLogging:
             regime="trending",
             strategy="RSIStrategy",
             performance_metrics={"win_rate": 0.7},
-            outcome="success"
+            outcome="success",
         )
 
         # Handle the event (should not raise)
@@ -513,9 +518,7 @@ class TestEventDrivenLogging:
     async def test_regime_change_event_handling(self, trade_logger):
         """Test regime change event handling."""
         event = create_regime_change_event(
-            old_regime="trending",
-            new_regime="sideways",
-            confidence=0.85
+            old_regime="trending", new_regime="sideways", confidence=0.85
         )
 
         # Handle the event (should not raise)
@@ -534,8 +537,8 @@ class TestEventDrivenLogging:
             payload={
                 "component": "strategy_selector",
                 "status": "running",
-                "details": {"uptime": "1h 30m"}
-            }
+                "details": {"uptime": "1h 30m"},
+            },
         )
 
         # Handle the event (should not raise)
@@ -552,7 +555,7 @@ class TestEventDrivenLogging:
             event_type=MagicMock(),  # Mock to simulate unknown type
             source="test",
             timestamp=datetime.now(),
-            payload={}
+            payload={},
         )
 
         # Mock the event_type.value to return unknown
@@ -580,11 +583,7 @@ class TestGlobalInstances:
 
     def test_create_enhanced_event_bus(self):
         """Test creating a custom enhanced event bus."""
-        config = {
-            "async_mode": False,
-            "buffer_size": 500,
-            "log_all_events": False
-        }
+        config = {"async_mode": False, "buffer_size": 500, "log_all_events": False}
         bus = create_enhanced_event_bus(config)
 
         assert isinstance(bus, EnhancedEventBus)
@@ -614,7 +613,7 @@ class TestIntegration:
             symbol="ETH/USDT",
             side="sell",
             quantity=Decimal("1.0"),
-            price=Decimal("3000")
+            price=Decimal("3000"),
         )
 
         await event_bus.publish(event)
@@ -640,7 +639,7 @@ class TestIntegration:
         event_types = [
             EventType.TRADE_EXECUTED,
             EventType.STRATEGY_SWITCH,
-            EventType.RISK_LIMIT_TRIGGERED
+            EventType.RISK_LIMIT_TRIGGERED,
         ]
 
         for event_type in event_types:
@@ -648,9 +647,13 @@ class TestIntegration:
 
         # Publish different events
         events = [
-            create_trade_executed_event("t1", "BTC/USDT", "buy", Decimal("0.1"), Decimal("50000")),
+            create_trade_executed_event(
+                "t1", "BTC/USDT", "buy", Decimal("0.1"), Decimal("50000")
+            ),
             create_strategy_switch_event("RSI", "MACD", "Better fit", 0.9),
-            create_risk_limit_triggered_event("daily_loss", "exceeded", 120.0, 100.0, "pause_trading")
+            create_risk_limit_triggered_event(
+                "daily_loss", "exceeded", 120.0, 100.0, "pause_trading"
+            ),
         ]
 
         for event in events:

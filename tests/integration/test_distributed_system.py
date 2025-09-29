@@ -10,20 +10,20 @@ Tests the complete distributed architecture including:
 """
 
 import asyncio
-import pytest
 import time
-import json
-from typing import Dict, Any, List
-from unittest.mock import Mock, patch, AsyncMock
+from typing import Any, Dict
+from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
+
+from core.bot_engine import DistributedExecutor, DistributedScheduler
 from core.task_manager import (
+    InMemoryQueueAdapter,
+    KafkaAdapter,
+    RabbitMQAdapter,
     TaskManager,
     TaskMessage,
-    InMemoryQueueAdapter,
-    RabbitMQAdapter,
-    KafkaAdapter
 )
-from core.bot_engine import BotEngine, DistributedScheduler, DistributedExecutor
 
 
 class TestDistributedTaskManager:
@@ -32,13 +32,7 @@ class TestDistributedTaskManager:
     @pytest.fixture
     def config(self) -> Dict[str, Any]:
         """Test configuration for distributed system."""
-        return {
-            "queue": {
-                "type": "in_memory",
-                "max_workers": 2,
-                "worker_timeout": 30
-            }
-        }
+        return {"queue": {"type": "in_memory", "max_workers": 2, "worker_timeout": 30}}
 
     @pytest.fixture
     async def task_manager(self, config: Dict[str, Any]) -> TaskManager:
@@ -53,9 +47,9 @@ class TestDistributedTaskManager:
         """Test basic task enqueue and dequeue operations."""
         # Create a test task
         task_data = {
-            'action': 'process_signal',
-            'symbol': 'BTC/USDT',
-            'timestamp': time.time()
+            "action": "process_signal",
+            "symbol": "BTC/USDT",
+            "timestamp": time.time(),
         }
 
         # Enqueue task
@@ -67,7 +61,7 @@ class TestDistributedTaskManager:
         dequeued_task = await task_manager.queue_adapter.dequeue_task()
         assert dequeued_task is not None
         assert dequeued_task.task_id == task_id
-        assert dequeued_task.task_type == 'signal'
+        assert dequeued_task.task_type == "signal"
         assert dequeued_task.payload == task_data
 
     @pytest.mark.asyncio
@@ -80,11 +74,11 @@ class TestDistributedTaskManager:
             processed_tasks.append(payload)
             return True
 
-        task_manager.register_task_handler('test', test_handler)
+        task_manager.register_task_handler("test", test_handler)
 
         # Enqueue a test task
-        task_data = {'test_key': 'test_value'}
-        task_id = await task_manager.enqueue_task('test', task_data)
+        task_data = {"test_key": "test_value"}
+        task_id = await task_manager.enqueue_task("test", task_data)
 
         # Start a worker
         await task_manager.start_workers(1)
@@ -112,11 +106,11 @@ class TestDistributedTaskManager:
                 raise Exception("Simulated failure")
             return True
 
-        task_manager.register_task_handler('failing_test', failing_handler)
+        task_manager.register_task_handler("failing_test", failing_handler)
 
         # Enqueue failing task
-        task_data = {'test': 'failure_retry'}
-        task_id = await task_manager.enqueue_task('failing_test', task_data)
+        task_data = {"test": "failure_retry"}
+        task_id = await task_manager.enqueue_task("failing_test", task_data)
 
         # Start worker
         await task_manager.start_workers(1)
@@ -135,16 +129,16 @@ class TestDistributedTaskManager:
         """Test queue status monitoring."""
         # Enqueue multiple tasks
         for i in range(5):
-            await task_manager.enqueue_signal_task({'task': i})
+            await task_manager.enqueue_signal_task({"task": i})
 
         # Get queue status
         status = await task_manager.get_queue_status()
 
-        assert 'queue_depth' in status
-        assert 'active_workers' in status
-        assert 'max_workers' in status
-        assert status['queue_depth'] == 5
-        assert status['max_workers'] == 2
+        assert "queue_depth" in status
+        assert "active_workers" in status
+        assert "max_workers" in status
+        assert status["queue_depth"] == 5
+        assert status["max_workers"] == 2
 
 
 class TestQueueAdapters:
@@ -153,16 +147,14 @@ class TestQueueAdapters:
     @pytest.mark.asyncio
     async def test_in_memory_adapter(self):
         """Test in-memory queue adapter."""
-        config = {'max_size': 100}
+        config = {"max_size": 100}
         adapter = InMemoryQueueAdapter(config)
 
         await adapter.connect()
 
         # Test enqueue/dequeue
         task = TaskMessage(
-            task_id='test_1',
-            task_type='signal',
-            payload={'test': 'data'}
+            task_id="test_1", task_type="signal", payload={"test": "data"}
         )
 
         success = await adapter.enqueue_task(task)
@@ -170,7 +162,7 @@ class TestQueueAdapters:
 
         dequeued = await adapter.dequeue_task()
         assert dequeued is not None
-        assert dequeued.task_id == 'test_1'
+        assert dequeued.task_id == "test_1"
 
         await adapter.disconnect()
 
@@ -178,13 +170,13 @@ class TestQueueAdapters:
     async def test_rabbitmq_adapter_mock(self):
         """Test RabbitMQ adapter with mocked connection."""
         config = {
-            'host': 'localhost',
-            'port': 5672,
-            'user': 'guest',
-            'password': 'guest'
+            "host": "localhost",
+            "port": 5672,
+            "user": "guest",
+            "password": "guest",
         }
 
-        with patch('core.task_manager.aio_pika') as mock_aio_pika:
+        with patch("core.task_manager.aio_pika") as mock_aio_pika:
             # Mock the connection and channel
             mock_connection = AsyncMock()
             mock_channel = AsyncMock()
@@ -211,12 +203,9 @@ class TestQueueAdapters:
     @pytest.mark.asyncio
     async def test_kafka_adapter_mock(self):
         """Test Kafka adapter with mocked connection."""
-        config = {
-            'bootstrap_servers': ['localhost:9092'],
-            'group_id': 'test_group'
-        }
+        config = {"bootstrap_servers": ["localhost:9092"], "group_id": "test_group"}
 
-        with patch('core.task_manager.aiokafka') as mock_aiokafka:
+        with patch("core.task_manager.aiokafka") as mock_aiokafka:
             # Mock producers and consumers
             mock_producer = AsyncMock()
             mock_consumer = AsyncMock()
@@ -238,12 +227,7 @@ class TestDistributedScheduler:
 
     @pytest.fixture
     def config(self) -> Dict[str, Any]:
-        return {
-            "queue": {
-                "type": "in_memory",
-                "max_workers": 2
-            }
-        }
+        return {"queue": {"type": "in_memory", "max_workers": 2}}
 
     @pytest.fixture
     async def scheduler(self, config: Dict[str, Any]) -> DistributedScheduler:
@@ -257,8 +241,8 @@ class TestDistributedScheduler:
     async def test_signal_scheduling(self, scheduler: DistributedScheduler):
         """Test signal processing task scheduling."""
         market_data = {
-            'BTC/USDT': {'close': [50000, 51000]},
-            'ETH/USDT': {'close': [3000, 3100]}
+            "BTC/USDT": {"close": [50000, 51000]},
+            "ETH/USDT": {"close": [3000, 3100]},
         }
 
         task_id = await scheduler.schedule_signal_processing(market_data)
@@ -266,16 +250,16 @@ class TestDistributedScheduler:
 
         # Verify task was enqueued
         status = await scheduler.get_queue_status()
-        assert status['queue_depth'] >= 1
+        assert status["queue_depth"] >= 1
 
     @pytest.mark.asyncio
     async def test_backtest_scheduling(self, scheduler: DistributedScheduler):
         """Test backtest task scheduling."""
         backtest_config = {
-            'strategy': 'RSIStrategy',
-            'start_date': '2023-01-01',
-            'end_date': '2023-12-31',
-            'symbol': 'BTC/USDT'
+            "strategy": "RSIStrategy",
+            "start_date": "2023-01-01",
+            "end_date": "2023-12-31",
+            "symbol": "BTC/USDT",
         }
 
         task_id = await scheduler.schedule_backtest(backtest_config)
@@ -285,9 +269,9 @@ class TestDistributedScheduler:
     async def test_optimization_scheduling(self, scheduler: DistributedScheduler):
         """Test optimization task scheduling."""
         optimization_config = {
-            'algorithm': 'genetic',
-            'population_size': 50,
-            'generations': 20
+            "algorithm": "genetic",
+            "population_size": 50,
+            "generations": 20,
         }
 
         task_id = await scheduler.schedule_optimization(optimization_config)
@@ -299,12 +283,7 @@ class TestDistributedExecutor:
 
     @pytest.fixture
     def config(self) -> Dict[str, Any]:
-        return {
-            "queue": {
-                "type": "in_memory",
-                "max_workers": 1
-            }
-        }
+        return {"queue": {"type": "in_memory", "max_workers": 1}}
 
     @pytest.fixture
     async def executor(self, config: Dict[str, Any]) -> DistributedExecutor:
@@ -316,9 +295,9 @@ class TestDistributedExecutor:
     @pytest.mark.asyncio
     async def test_task_handler_registration(self, executor: DistributedExecutor):
         """Test task handler registration."""
-        assert 'signal' in executor.task_manager.task_handlers
-        assert 'backtest' in executor.task_manager.task_handlers
-        assert 'optimization' in executor.task_manager.task_handlers
+        assert "signal" in executor.task_manager.task_handlers
+        assert "backtest" in executor.task_manager.task_handlers
+        assert "optimization" in executor.task_manager.task_handlers
 
     @pytest.mark.asyncio
     async def test_signal_task_processing(self, executor: DistributedExecutor):
@@ -334,8 +313,8 @@ class TestDistributedExecutor:
 
         # Create and process signal task
         task_payload = {
-            'market_data': {'BTC/USDT': {'close': [50000]}},
-            'pairs': ['BTC/USDT']
+            "market_data": {"BTC/USDT": {"close": [50000]}},
+            "pairs": ["BTC/USDT"],
         }
 
         success = await executor._handle_signal_task(task_payload)
@@ -377,12 +356,7 @@ class TestFaultTolerance:
 
     @pytest.fixture
     def config(self) -> Dict[str, Any]:
-        return {
-            "queue": {
-                "type": "in_memory",
-                "max_workers": 2
-            }
-        }
+        return {"queue": {"type": "in_memory", "max_workers": 2}}
 
     @pytest.mark.asyncio
     async def test_worker_crash_recovery(self, config: Dict[str, Any]):
@@ -399,10 +373,10 @@ class TestFaultTolerance:
                 raise Exception("Simulated crash")
             return True
 
-        task_manager.register_task_handler('crash_test', crashing_handler)
+        task_manager.register_task_handler("crash_test", crashing_handler)
 
         # Enqueue task
-        await task_manager.enqueue_task('crash_test', {'test': 'crash'})
+        await task_manager.enqueue_task("crash_test", {"test": "crash"})
 
         # Start worker
         await task_manager.start_workers(1)
@@ -438,11 +412,11 @@ class TestFaultTolerance:
         task_manager.queue_adapter.enqueue_task = failing_enqueue
 
         # Try to enqueue task
-        success = await task_manager.enqueue_task('test', {'data': 'test'})
+        success = await task_manager.enqueue_task("test", {"data": "test"})
         assert not success  # First attempt should fail
 
         # Second attempt should succeed
-        success = await task_manager.enqueue_task('test', {'data': 'test'})
+        success = await task_manager.enqueue_task("test", {"data": "test"})
         assert success
 
         await task_manager.shutdown_queue()
@@ -453,12 +427,7 @@ class TestLoadBalancing:
 
     @pytest.fixture
     def config(self) -> Dict[str, Any]:
-        return {
-            "queue": {
-                "type": "in_memory",
-                "max_workers": 3
-            }
-        }
+        return {"queue": {"type": "in_memory", "max_workers": 3}}
 
     @pytest.mark.asyncio
     async def test_task_distribution(self, config: Dict[str, Any]):
@@ -469,16 +438,16 @@ class TestLoadBalancing:
         worker_task_counts = {}
 
         async def counting_handler(payload: Dict[str, Any], **kwargs) -> bool:
-            worker_id = payload.get('worker_id', 'unknown')
+            worker_id = payload.get("worker_id", "unknown")
             worker_task_counts[worker_id] = worker_task_counts.get(worker_id, 0) + 1
             await asyncio.sleep(0.01)  # Simulate processing time
             return True
 
-        task_manager.register_task_handler('count_test', counting_handler)
+        task_manager.register_task_handler("count_test", counting_handler)
 
         # Enqueue multiple tasks
         for i in range(10):
-            await task_manager.enqueue_task('count_test', {'task_id': i})
+            await task_manager.enqueue_task("count_test", {"task_id": i})
 
         # Start multiple workers
         await task_manager.start_workers(3)
@@ -507,15 +476,15 @@ class TestLoadBalancing:
         processing_order = []
 
         async def ordered_handler(payload: Dict[str, Any], **kwargs) -> bool:
-            processing_order.append(payload['priority'])
+            processing_order.append(payload["priority"])
             return True
 
-        task_manager.register_task_handler('priority_test', ordered_handler)
+        task_manager.register_task_handler("priority_test", ordered_handler)
 
         # Enqueue tasks with different priorities
-        await task_manager.enqueue_task('priority_test', {'priority': 1}, priority=1)
-        await task_manager.enqueue_task('priority_test', {'priority': 3}, priority=3)
-        await task_manager.enqueue_task('priority_test', {'priority': 2}, priority=2)
+        await task_manager.enqueue_task("priority_test", {"priority": 1}, priority=1)
+        await task_manager.enqueue_task("priority_test", {"priority": 3}, priority=3)
+        await task_manager.enqueue_task("priority_test", {"priority": 2}, priority=2)
 
         # Start worker
         await task_manager.start_workers(1)

@@ -14,16 +14,15 @@ Features:
 """
 
 import asyncio
-import time
-from typing import Dict, Any, Optional
-import aiohttp
-from aiohttp import web
 import ssl
-import json
+import time
+from typing import Any, Dict, Optional
 
-from core.metrics_collector import get_metrics_collector, MetricsCollector
-from .logging_utils import get_structured_logger
-from .logging_utils import LogSensitivity
+from aiohttp import web
+
+from core.metrics_collector import MetricsCollector, get_metrics_collector
+
+from .logging_utils import LogSensitivity, get_structured_logger
 
 logger = get_structured_logger("metrics_endpoint", LogSensitivity.INFO)
 
@@ -42,27 +41,33 @@ class MetricsEndpoint:
     def __init__(self, config_or_collector):
         if isinstance(config_or_collector, MetricsCollector):
             self.metrics_collector = config_or_collector
-            self.config = getattr(self.metrics_collector, 'config', {})  # Try to get config from collector
+            self.config = getattr(
+                self.metrics_collector, "config", {}
+            )  # Try to get config from collector
         elif isinstance(config_or_collector, dict):
             self.config = config_or_collector
             self.metrics_collector = get_metrics_collector()
         else:
-            raise TypeError("MetricsEndpoint expects a dict config or MetricsCollector instance")
+            raise TypeError(
+                "MetricsEndpoint expects a dict config or MetricsCollector instance"
+            )
 
         # Server configuration
-        self.host = self.config.get('host', '0.0.0.0')
-        self.port = self.config.get('port', 9090)
-        self.path = self.config.get('path', '/metrics')
+        self.host = self.config.get("host", "0.0.0.0")
+        self.port = self.config.get("port", 9090)
+        self.path = self.config.get("path", "/metrics")
 
         # Security configuration - enable auth by default for secure access
-        self.enable_auth = self.config.get('enable_auth', True)  # secure default
-        self.auth_token = self.config.get('auth_token', '')
+        self.enable_auth = self.config.get("enable_auth", True)  # secure default
+        self.auth_token = self.config.get("auth_token", "")
         # If auth_token is provided and auth not explicitly disabled, enable auth
-        if self.auth_token and 'enable_auth' not in self.config:
+        if self.auth_token and "enable_auth" not in self.config:
             self.enable_auth = True
         # If auth_token is not provided but auth is enabled, log warning
         if not self.auth_token and self.enable_auth:
-            logger.warning("Authentication enabled but no auth_token provided - metrics endpoint will reject all requests")
+            logger.warning(
+                "Authentication enabled but no auth_token provided - metrics endpoint will reject all requests"
+            )
 
         # Apply secure defaults
         self.enable_tls = self.config.get("enable_tls", True)
@@ -70,15 +75,19 @@ class MetricsEndpoint:
         self.key_file = self.config.get("key_file")
 
         # Validation: downgrade TLS if explicitly enabled but incomplete
-        if "enable_tls" in self.config and self.config["enable_tls"] and not (self.cert_file and self.key_file):
+        if (
+            "enable_tls" in self.config
+            and self.config["enable_tls"]
+            and not (self.cert_file and self.key_file)
+        ):
             logger.warning(
                 "TLS enabled but cert_file/key_file not provided - falling back to HTTP"
             )
             self.enable_tls = False
 
         # Performance configuration
-        self.max_concurrent_requests = self.config.get('max_concurrent_requests', 10)
-        self.request_timeout = self.config.get('request_timeout', 5.0)
+        self.max_concurrent_requests = self.config.get("max_concurrent_requests", 10)
+        self.request_timeout = self.config.get("request_timeout", 5.0)
 
         # Server state
         self.app: Optional[web.Application] = None
@@ -91,7 +100,14 @@ class MetricsEndpoint:
         self.error_count = 0
         self.avg_response_time = 0.0
 
-        logger.info(f"MetricsEndpoint initialized on {self.host}:{self.port}{self.path}", component="metrics_endpoint", operation="initialize", host=self.host, port=self.port, path=self.path)
+        logger.info(
+            f"MetricsEndpoint initialized on {self.host}:{self.port}{self.path}",
+            component="metrics_endpoint",
+            operation="initialize",
+            host=self.host,
+            port=self.port,
+            path=self.path,
+        )
 
     def create_app(self) -> web.Application:
         """Create aiohttp application for the metrics endpoint."""
@@ -103,8 +119,8 @@ class MetricsEndpoint:
 
         # Add routes
         app.router.add_get(self.path, self._metrics_handler)
-        app.router.add_get('/health', self._health_handler)
-        app.router.add_get('/', self._root_handler)
+        app.router.add_get("/health", self._health_handler)
+        app.router.add_get("/", self._root_handler)
 
         return app
 
@@ -124,51 +140,79 @@ class MetricsEndpoint:
 
             # Add routes
             self.app.router.add_get(self.path, self._metrics_handler)
-            self.app.router.add_get('/health', self._health_handler)
-            self.app.router.add_get('/', self._root_handler)
+            self.app.router.add_get("/health", self._health_handler)
+            self.app.router.add_get("/", self._root_handler)
 
             # Configure SSL if enabled
             if self.enable_tls and self.cert_file and self.key_file:
                 ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
                 ssl_context.load_cert_chain(self.cert_file, self.key_file)
-                logger.info("SSL/TLS configured for metrics endpoint", component="metrics_endpoint", operation="start")
+                logger.info(
+                    "SSL/TLS configured for metrics endpoint",
+                    component="metrics_endpoint",
+                    operation="start",
+                )
 
             # Create runner and site
             self.runner = web.AppRunner(
                 self.app,
                 access_log=None,  # Disable access logging for performance
-                keepalive_timeout=30.0
+                keepalive_timeout=30.0,
             )
             await self.runner.setup()
 
             self.site = web.TCPSite(
-                self.runner,
-                self.host,
-                self.port,
-                ssl_context=ssl_context
+                self.runner, self.host, self.port, ssl_context=ssl_context
             )
             await self.site.start()
 
             self._running = True
-            logger.info(f"✅ Metrics endpoint started on {self.host}:{self.port}{self.path}", component="metrics_endpoint", operation="start", host=self.host, port=self.port, path=self.path)
+            logger.info(
+                f"✅ Metrics endpoint started on {self.host}:{self.port}{self.path}",
+                component="metrics_endpoint",
+                operation="start",
+                host=self.host,
+                port=self.port,
+                path=self.path,
+            )
 
         except FileNotFoundError as e:
-            logger.error(f"SSL certificate/key file not found: {e}", component="metrics_endpoint", operation="start", error=str(e))
+            logger.error(
+                f"SSL certificate/key file not found: {e}",
+                component="metrics_endpoint",
+                operation="start",
+                error=str(e),
+            )
             # Ensure cleanup on failure
             await self._cleanup_on_failure()
             raise
         except ssl.SSLError as e:
-            logger.error(f"SSL configuration error: {e}", component="metrics_endpoint", operation="start", error=str(e))
+            logger.error(
+                f"SSL configuration error: {e}",
+                component="metrics_endpoint",
+                operation="start",
+                error=str(e),
+            )
             # Ensure cleanup on failure
             await self._cleanup_on_failure()
             raise
         except OSError as e:
-            logger.error(f"Network binding error: {e}", component="metrics_endpoint", operation="start", error=str(e))
+            logger.error(
+                f"Network binding error: {e}",
+                component="metrics_endpoint",
+                operation="start",
+                error=str(e),
+            )
             # Ensure cleanup on failure
             await self._cleanup_on_failure()
             raise
         except Exception as e:
-            logger.exception(f"Failed to start metrics endpoint: {e}", component="metrics_endpoint", operation="start", error=str(e))
+            logger.exception(
+                f"Failed to start metrics endpoint: {e}",
+                component="metrics_endpoint",
+                operation="start",
+                error=str(e),
+            )
             # Ensure cleanup on failure
             await self._cleanup_on_failure()
             raise
@@ -186,10 +230,19 @@ class MetricsEndpoint:
                 await self.runner.cleanup()
 
             self._running = False
-            logger.info("✅ Metrics endpoint stopped", component="metrics_endpoint", operation="stop")
+            logger.info(
+                "✅ Metrics endpoint stopped",
+                component="metrics_endpoint",
+                operation="stop",
+            )
 
         except Exception as e:
-            logger.exception(f"Error stopping metrics endpoint: {e}", component="metrics_endpoint", operation="stop", error=str(e))
+            logger.exception(
+                f"Error stopping metrics endpoint: {e}",
+                component="metrics_endpoint",
+                operation="stop",
+                error=str(e),
+            )
             # Ensure cleanup even on error
             await self._cleanup_on_failure()
         finally:
@@ -220,10 +273,19 @@ class MetricsEndpoint:
             self.app = None
             self._running = False
 
-            logger.debug("Metrics endpoint cleanup completed after failure", component="metrics_endpoint", operation="cleanup")
+            logger.debug(
+                "Metrics endpoint cleanup completed after failure",
+                component="metrics_endpoint",
+                operation="cleanup",
+            )
 
         except Exception as e:
-            logger.error(f"Error during cleanup: {e}", component="metrics_endpoint", operation="cleanup", error=str(e))
+            logger.error(
+                f"Error during cleanup: {e}",
+                component="metrics_endpoint",
+                operation="cleanup",
+                error=str(e),
+            )
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -253,8 +315,8 @@ class MetricsEndpoint:
                 self.avg_response_time = (self.avg_response_time + response_time) / 2
 
             # Add performance headers
-            response.headers['X-Response-Time'] = f"{response_time:.3f}s"
-            response.headers['X-Request-Count'] = str(self.request_count)
+            response.headers["X-Response-Time"] = f"{response_time:.3f}s"
+            response.headers["X-Request-Count"] = str(self.request_count)
 
             return response
 
@@ -276,10 +338,12 @@ class MetricsEndpoint:
 
         # For /metrics, require Bearer token authentication
         if request.path == "/metrics":
-            auth_header = request.headers.get('Authorization', '')
+            auth_header = request.headers.get("Authorization", "")
 
-            if not auth_header.startswith('Bearer '):
-                raise web.HTTPUnauthorized(text="Missing or invalid authorization header")
+            if not auth_header.startswith("Bearer "):
+                raise web.HTTPUnauthorized(
+                    text="Missing or invalid authorization header"
+                )
 
             token = auth_header[7:]  # Remove 'Bearer ' prefix
 
@@ -301,12 +365,12 @@ class MetricsEndpoint:
 
             return web.Response(
                 text=full_output,
-                content_type='text/plain; version=0.0.4',
-                charset='utf-8',
+                content_type="text/plain; version=0.0.4",
+                charset="utf-8",
                 headers={
-                    'Content-Encoding': 'identity',
-                    'Cache-Control': 'no-cache, no-store, must-revalidate'
-                }
+                    "Content-Encoding": "identity",
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                },
             )
 
         except Exception as e:
@@ -321,25 +385,25 @@ class MetricsEndpoint:
         health_status = {
             "status": "healthy",
             "timestamp": time.time(),
-            "uptime": time.time() - getattr(self, '_start_time', time.time()),
+            "uptime": time.time() - getattr(self, "_start_time", time.time()),
             "metrics_collector": "healthy" if self.metrics_collector else "unhealthy",
             "request_count": self.request_count,
             "error_count": self.error_count,
-            "avg_response_time": self.avg_response_time
+            "avg_response_time": self.avg_response_time,
         }
 
         # Use orjson for faster JSON serialization if available, fallback to json
         try:
             import orjson
-            json_data = orjson.dumps(health_status).decode('utf-8')
+
+            json_data = orjson.dumps(health_status).decode("utf-8")
         except ImportError:
             import json
+
             json_data = json.dumps(health_status)
 
         return web.Response(
-            text=json_data,
-            content_type='application/json',
-            charset='utf-8'
+            text=json_data, content_type="application/json", charset="utf-8"
         )
 
     async def _root_handler(self, request: web.Request) -> web.Response:
@@ -350,23 +414,23 @@ class MetricsEndpoint:
             "endpoints": {
                 "/metrics": "Prometheus metrics exposition format",
                 "/health": "Health check endpoint",
-                "/": "Service information"
+                "/": "Service information",
             },
-            "status": "running" if self._running else "stopped"
+            "status": "running" if self._running else "stopped",
         }
 
         # Use orjson for faster JSON serialization if available, fallback to json
         try:
             import orjson
-            json_data = orjson.dumps(info).decode('utf-8')
+
+            json_data = orjson.dumps(info).decode("utf-8")
         except ImportError:
             import json
+
             json_data = json.dumps(info)
 
         return web.Response(
-            text=json_data,
-            content_type='application/json',
-            charset='utf-8'
+            text=json_data, content_type="application/json", charset="utf-8"
         )
 
     def _get_endpoint_metrics(self) -> str:
@@ -374,22 +438,32 @@ class MetricsEndpoint:
         metrics_lines = []
 
         # Endpoint request metrics
-        metrics_lines.append("# HELP metrics_endpoint_requests_total Total number of requests to metrics endpoint")
+        metrics_lines.append(
+            "# HELP metrics_endpoint_requests_total Total number of requests to metrics endpoint"
+        )
         metrics_lines.append("# TYPE metrics_endpoint_requests_total counter")
         metrics_lines.append(f"metrics_endpoint_requests_total {self.request_count}")
 
         # Endpoint error metrics
-        metrics_lines.append("# HELP metrics_endpoint_errors_total Total number of errors in metrics endpoint")
+        metrics_lines.append(
+            "# HELP metrics_endpoint_errors_total Total number of errors in metrics endpoint"
+        )
         metrics_lines.append("# TYPE metrics_endpoint_errors_total counter")
         metrics_lines.append(f"metrics_endpoint_errors_total {self.error_count}")
 
         # Endpoint performance metrics
-        metrics_lines.append("# HELP metrics_endpoint_response_time_seconds Average response time for metrics endpoint")
+        metrics_lines.append(
+            "# HELP metrics_endpoint_response_time_seconds Average response time for metrics endpoint"
+        )
         metrics_lines.append("# TYPE metrics_endpoint_response_time_seconds gauge")
-        metrics_lines.append(f"metrics_endpoint_response_time_seconds {self.avg_response_time}")
+        metrics_lines.append(
+            f"metrics_endpoint_response_time_seconds {self.avg_response_time}"
+        )
 
         # Endpoint status
-        metrics_lines.append("# HELP metrics_endpoint_status Status of metrics endpoint (1=running, 0=stopped)")
+        metrics_lines.append(
+            "# HELP metrics_endpoint_status Status of metrics endpoint (1=running, 0=stopped)"
+        )
         metrics_lines.append("# TYPE metrics_endpoint_status gauge")
         metrics_lines.append(f"metrics_endpoint_status {1 if self._running else 0}")
 
@@ -406,7 +480,7 @@ class MetricsEndpoint:
             "error_count": self.error_count,
             "avg_response_time": self.avg_response_time,
             "auth_enabled": self.enable_auth,
-            "tls_enabled": self.enable_tls
+            "tls_enabled": self.enable_tls,
         }
 
 
@@ -428,9 +502,14 @@ def create_metrics_endpoint(config: Optional[Dict[str, Any]] = None) -> MetricsE
     # Register cleanup handler for application exit
     if not _endpoint_cleanup_registered:
         import atexit
+
         atexit.register(_cleanup_endpoint_on_exit)
         _endpoint_cleanup_registered = True
-        logger.info("Metrics endpoint cleanup handler registered with atexit", component="metrics_endpoint", operation="initialize")
+        logger.info(
+            "Metrics endpoint cleanup handler registered with atexit",
+            component="metrics_endpoint",
+            operation="initialize",
+        )
 
     return _metrics_endpoint
 
@@ -457,11 +536,13 @@ DEFAULT_ENDPOINT_CONFIG = {
     "cert_file": "",
     "key_file": "",
     "max_concurrent_requests": 10,
-    "request_timeout": 5.0
+    "request_timeout": 5.0,
 }
 
 
-async def start_metrics_endpoint(config: Optional[Dict[str, Any]] = None) -> MetricsEndpoint:
+async def start_metrics_endpoint(
+    config: Optional[Dict[str, Any]] = None
+) -> MetricsEndpoint:
     """Start the metrics endpoint with the given configuration."""
     endpoint = create_metrics_endpoint(config or DEFAULT_ENDPOINT_CONFIG)
     await endpoint.start()
@@ -481,11 +562,11 @@ async def integrate_with_bot_engine(bot_engine) -> None:
     """Integrate metrics endpoint with BotEngine."""
     # Add trading metrics collectors
     from core.metrics_collector import (
-        collect_trading_metrics,
+        collect_binary_model_metrics,
+        collect_exchange_metrics,
         collect_risk_metrics,
         collect_strategy_metrics,
-        collect_exchange_metrics,
-        collect_binary_model_metrics
+        collect_trading_metrics,
     )
 
     collector = get_metrics_collector()
@@ -503,13 +584,10 @@ async def integrate_with_bot_engine(bot_engine) -> None:
 
 # Example usage
 if __name__ == "__main__":
+
     async def main():
         # Create and start metrics endpoint
-        config = {
-            "host": "localhost",
-            "port": 9090,
-            "enable_auth": False
-        }
+        config = {"host": "localhost", "port": 9090, "enable_auth": False}
 
         endpoint = await start_metrics_endpoint(config)
 

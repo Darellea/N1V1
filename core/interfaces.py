@@ -6,14 +6,14 @@ enabling loose coupling and testability through dependency injection.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List, Protocol
 from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum
+from typing import Any, Dict, List, Optional, Protocol
 
 
 class EvictionPolicy(Enum):
     """Cache eviction policies."""
+
     LRU = "lru"  # Least Recently Used
     LFU = "lfu"  # Least Frequently Used
     TTL = "ttl"  # Time To Live based
@@ -22,6 +22,7 @@ class EvictionPolicy(Enum):
 @dataclass
 class MemoryConfig:
     """Configuration for memory management."""
+
     max_memory_mb: float = 500.0
     warning_memory_mb: float = 400.0
     cleanup_memory_mb: float = 350.0
@@ -87,7 +88,9 @@ class SignalProcessorInterface(ABC):
         pass
 
     @abstractmethod
-    async def evaluate_risk(self, signals: List[Any], market_data: Dict[str, Any]) -> List[Any]:
+    async def evaluate_risk(
+        self, signals: List[Any], market_data: Dict[str, Any]
+    ) -> List[Any]:
         """Evaluate signals through risk management."""
         pass
 
@@ -149,7 +152,9 @@ class PerformanceTrackerInterface(ABC):
     """Abstract interface for performance tracking operations."""
 
     @abstractmethod
-    def update_performance_metrics(self, pnl: float, current_equity: Optional[float] = None) -> None:
+    def update_performance_metrics(
+        self, pnl: float, current_equity: Optional[float] = None
+    ) -> None:
         """Update performance metrics after a trade."""
         pass
 
@@ -221,8 +226,14 @@ class MemoryManagerInterface(ABC):
     """Abstract interface for memory management operations."""
 
     @abstractmethod
-    def get_object_from_pool(self, pool_name: str, factory_func: callable,
-                           max_pool_size: int = 50, *args, **kwargs) -> Any:
+    def get_object_from_pool(
+        self,
+        pool_name: str,
+        factory_func: callable,
+        max_pool_size: int = 50,
+        *args,
+        **kwargs,
+    ) -> Any:
         """Get object from pool or create new one."""
         pass
 
@@ -252,8 +263,11 @@ class ComponentFactoryInterface(ABC):
         pass
 
     @abstractmethod
-    def create_signal_processor(self, config: Dict[str, Any],
-                              risk_manager: Optional[RiskManagerInterface] = None) -> SignalProcessorInterface:
+    def create_signal_processor(
+        self,
+        config: Dict[str, Any],
+        risk_manager: Optional[RiskManagerInterface] = None,
+    ) -> SignalProcessorInterface:
         """Create signal processor instance."""
         pass
 
@@ -268,7 +282,9 @@ class ComponentFactoryInterface(ABC):
         pass
 
     @abstractmethod
-    def create_performance_tracker(self, config: Dict[str, Any]) -> PerformanceTrackerInterface:
+    def create_performance_tracker(
+        self, config: Dict[str, Any]
+    ) -> PerformanceTrackerInterface:
         """Create performance tracker instance."""
         pass
 
@@ -292,6 +308,7 @@ class ComponentFactoryInterface(ABC):
 @dataclass
 class CacheConfig:
     """Configuration for cache behavior."""
+
     host: str = "localhost"
     port: int = 6379
     db: int = 0
@@ -314,7 +331,7 @@ class CacheConfig:
                 "klines": 30,
                 "funding_rate": 60,
                 "mark_price": 10,
-                "default": 30
+                "default": 30,
             }
         if self.memory_config is None:
             self.memory_config = MemoryConfig()
@@ -323,6 +340,7 @@ class CacheConfig:
 @dataclass
 class DataManagerConfig:
     """Configuration for data manager."""
+
     cache_enabled: bool = True
     cache_ttl: int = 60
     portfolio_mode: bool = False
@@ -331,6 +349,7 @@ class DataManagerConfig:
 @dataclass
 class PerformanceTrackerConfig:
     """Configuration for performance tracker."""
+
     starting_balance: float = 1000.0
     enable_detailed_tracking: bool = True
 
@@ -338,6 +357,7 @@ class PerformanceTrackerConfig:
 @dataclass
 class TradingCoordinatorConfig:
     """Configuration for trading coordinator."""
+
     update_interval: int = 60
     enable_safe_mode_checks: bool = True
     max_concurrent_operations: int = 10

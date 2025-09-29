@@ -5,27 +5,22 @@ This module tests the new dependency injection architecture and centralized
 configuration system to ensure components are properly decoupled and configurable.
 """
 
-import pytest
-import asyncio
-from unittest.mock import Mock, patch
-from typing import Dict, Any
+from unittest.mock import patch
 
-from core.interfaces import (
-    DataManagerInterface,
-    SignalProcessorInterface,
-    RiskManagerInterface,
-    OrderExecutorInterface,
-    PerformanceTrackerInterface,
-    StateManagerInterface,
-    CacheInterface,
-    MemoryManagerInterface
-)
-from core.config_manager import ConfigManager, get_config_manager
-from core.component_factory import ComponentFactory, get_component_factory
+import pytest
+
 from core.cache import RedisCache
+from core.component_factory import ComponentFactory, get_component_factory
+from core.config_manager import ConfigManager, get_config_manager
+from core.data_manager import DataManager
+from core.interfaces import (
+    CacheInterface,
+    DataManagerInterface,
+    MemoryManagerInterface,
+    PerformanceTrackerInterface,
+)
 from core.memory_manager import MemoryManager
 from core.performance_tracker import PerformanceTracker
-from core.data_manager import DataManager
 
 
 class TestDependencyInjection:
@@ -37,26 +32,26 @@ class TestDependencyInjection:
             "environment": {"mode": "paper"},
             "trading": {"portfolio_mode": False, "initial_balance": 1000.0},
             "cache": {"enabled": True, "ttl": 60},
-            "memory": {"enable_monitoring": False}
+            "memory": {"enable_monitoring": False},
         }
 
     def test_config_manager_initialization(self):
         """Test that ConfigManager initializes correctly."""
-        with patch('core.config_manager.ConfigManager._load_config'):
+        with patch("core.config_manager.ConfigManager._load_config"):
             config_manager = ConfigManager()
             assert config_manager is not None
-            assert hasattr(config_manager, '_config')
+            assert hasattr(config_manager, "_config")
 
     def test_config_value_retrieval(self):
         """Test configuration value retrieval."""
-        with patch('core.config_manager.ConfigManager._load_config'):
+        with patch("core.config_manager.ConfigManager._load_config"):
             config_manager = ConfigManager()
 
             # Test getting existing values
             cache_config = config_manager.get_cache_config()
             assert cache_config is not None
-            assert hasattr(cache_config, 'host')
-            assert hasattr(cache_config, 'port')
+            assert hasattr(cache_config, "host")
+            assert hasattr(cache_config, "port")
 
     def test_component_factory_creation(self):
         """Test component factory creates components correctly."""
@@ -65,14 +60,14 @@ class TestDependencyInjection:
         # Test data manager creation
         data_manager = factory.create_data_manager(self.config)
         assert isinstance(data_manager, DataManagerInterface)
-        assert hasattr(data_manager, 'fetch_market_data')
-        assert hasattr(data_manager, 'set_trading_pairs')
+        assert hasattr(data_manager, "fetch_market_data")
+        assert hasattr(data_manager, "set_trading_pairs")
 
         # Test performance tracker creation
         perf_tracker = factory.create_performance_tracker(self.config)
         assert isinstance(perf_tracker, PerformanceTrackerInterface)
-        assert hasattr(perf_tracker, 'update_performance_metrics')
-        assert hasattr(perf_tracker, 'record_trade_equity')
+        assert hasattr(perf_tracker, "update_performance_metrics")
+        assert hasattr(perf_tracker, "record_trade_equity")
 
     def test_cache_component_creation(self):
         """Test cache component creation with configuration."""
@@ -80,9 +75,9 @@ class TestDependencyInjection:
 
         cache = factory.create_cache(self.config)
         assert isinstance(cache, CacheInterface)
-        assert hasattr(cache, 'get')
-        assert hasattr(cache, 'set')
-        assert hasattr(cache, 'get_cache_stats')
+        assert hasattr(cache, "get")
+        assert hasattr(cache, "set")
+        assert hasattr(cache, "get_cache_stats")
 
     def test_memory_manager_creation(self):
         """Test memory manager creation with configuration."""
@@ -90,8 +85,8 @@ class TestDependencyInjection:
 
         memory_mgr = factory.create_memory_manager(self.config)
         assert isinstance(memory_mgr, MemoryManagerInterface)
-        assert hasattr(memory_mgr, 'get_memory_stats')
-        assert hasattr(memory_mgr, 'trigger_cleanup')
+        assert hasattr(memory_mgr, "get_memory_stats")
+        assert hasattr(memory_mgr, "trigger_cleanup")
 
     def test_component_caching(self):
         """Test that components are cached and reused."""
@@ -106,7 +101,7 @@ class TestDependencyInjection:
 
     def test_configuration_override(self):
         """Test configuration value override functionality."""
-        with patch('core.config_manager.ConfigManager._load_config'):
+        with patch("core.config_manager.ConfigManager._load_config"):
             config_manager = ConfigManager()
 
             # Test setting and getting override values
@@ -116,7 +111,7 @@ class TestDependencyInjection:
 
     def test_config_validation(self):
         """Test configuration validation."""
-        with patch('core.config_manager.ConfigManager._load_config'):
+        with patch("core.config_manager.ConfigManager._load_config"):
             config_manager = ConfigManager()
 
             # Test valid configuration
@@ -149,7 +144,7 @@ class TestDependencyInjection:
 
     def test_config_manager_global_instance(self):
         """Test global config manager instance."""
-        with patch('core.config_manager.ConfigManager._load_config'):
+        with patch("core.config_manager.ConfigManager._load_config"):
             manager1 = get_config_manager()
             manager2 = get_config_manager()
 
@@ -166,7 +161,7 @@ class TestConfigurationIntegration:
             "environment": {"mode": "paper"},
             "trading": {"portfolio_mode": False, "initial_balance": 2000.0},
             "cache": {"enabled": True, "ttl": 120},
-            "memory": {"enable_monitoring": True, "max_memory_mb": 600.0}
+            "memory": {"enable_monitoring": True, "max_memory_mb": 600.0},
         }
 
     def test_data_manager_config_integration(self):
@@ -191,7 +186,7 @@ class TestConfigurationIntegration:
 
         memory_mgr = factory.create_memory_manager(self.config)
         # Should use configured values
-        assert hasattr(memory_mgr, '_memory_thresholds')
+        assert hasattr(memory_mgr, "_memory_thresholds")
         assert "warning_mb" in memory_mgr._memory_thresholds
 
     def test_cache_config_integration(self):
@@ -200,7 +195,7 @@ class TestConfigurationIntegration:
 
         cache = factory.create_cache(self.config)
         # Should have configuration applied
-        assert hasattr(cache, 'config')
+        assert hasattr(cache, "config")
         assert cache.config is not None
 
 
@@ -213,8 +208,8 @@ class TestComponentIsolation:
         from core.interfaces import DataManagerInterface, SignalProcessorInterface
 
         # Verify interfaces are abstract
-        assert hasattr(DataManagerInterface, '__abstractmethods__')
-        assert hasattr(SignalProcessorInterface, '__abstractmethods__')
+        assert hasattr(DataManagerInterface, "__abstractmethods__")
+        assert hasattr(SignalProcessorInterface, "__abstractmethods__")
 
     def test_factory_creates_correct_types(self):
         """Test factory creates components of correct types."""
@@ -240,7 +235,7 @@ class TestConfigurationPersistence:
 
     def test_config_save_load(self):
         """Test saving and loading configuration."""
-        with patch('core.config_manager.ConfigManager._load_config'):
+        with patch("core.config_manager.ConfigManager._load_config"):
             config_manager = ConfigManager()
 
             # Modify configuration
@@ -248,16 +243,16 @@ class TestConfigurationPersistence:
 
             # Save would work if file system was available
             # For now, just test the method exists
-            assert hasattr(config_manager, 'save_config')
+            assert hasattr(config_manager, "save_config")
             assert callable(config_manager.save_config)
 
     def test_config_reload(self):
         """Test configuration reloading."""
-        with patch('core.config_manager.ConfigManager._load_config'):
+        with patch("core.config_manager.ConfigManager._load_config"):
             config_manager = ConfigManager()
 
             # Reload should work
-            assert hasattr(config_manager, 'reload_config')
+            assert hasattr(config_manager, "reload_config")
             assert callable(config_manager.reload_config)
 
 

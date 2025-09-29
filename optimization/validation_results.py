@@ -13,12 +13,11 @@ Key Features:
 - Performance metrics calculation and comparison
 """
 
-from typing import Dict, List, Any, Optional
-from dataclasses import dataclass, field
-from datetime import datetime
 import json
 import os
-from pathlib import Path
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -63,19 +62,19 @@ class AssetValidationResult:
             Dictionary representation of the result
         """
         return {
-            'asset': self.asset.to_dict(),
-            'optimized_params': self.optimized_params,
-            'primary_metrics': self.primary_metrics,
-            'validation_metrics': self.validation_metrics,
-            'pass_criteria': self.pass_criteria,
-            'overall_pass': self.overall_pass,
-            'validation_time': self.validation_time,
-            'error_message': self.error_message,
-            'timestamp': datetime.now().isoformat()
+            "asset": self.asset.to_dict(),
+            "optimized_params": self.optimized_params,
+            "primary_metrics": self.primary_metrics,
+            "validation_metrics": self.validation_metrics,
+            "pass_criteria": self.pass_criteria,
+            "overall_pass": self.overall_pass,
+            "validation_time": self.validation_time,
+            "error_message": self.error_message,
+            "timestamp": datetime.now().isoformat(),
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'AssetValidationResult':
+    def from_dict(cls, data: Dict[str, Any]) -> "AssetValidationResult":
         """
         Create from dictionary.
 
@@ -86,15 +85,16 @@ class AssetValidationResult:
             AssetValidationResult instance
         """
         from .asset_selector import ValidationAsset
+
         return cls(
-            asset=ValidationAsset.from_dict(data['asset']),
-            optimized_params=data.get('optimized_params', {}),
-            primary_metrics=data.get('primary_metrics', {}),
-            validation_metrics=data.get('validation_metrics', {}),
-            pass_criteria=data.get('pass_criteria', {}),
-            overall_pass=data.get('overall_pass', False),
-            validation_time=data.get('validation_time', 0.0),
-            error_message=data.get('error_message')
+            asset=ValidationAsset.from_dict(data["asset"]),
+            optimized_params=data.get("optimized_params", {}),
+            primary_metrics=data.get("primary_metrics", {}),
+            validation_metrics=data.get("validation_metrics", {}),
+            pass_criteria=data.get("pass_criteria", {}),
+            overall_pass=data.get("overall_pass", False),
+            validation_time=data.get("validation_time", 0.0),
+            error_message=data.get("error_message"),
         )
 
     def get_performance_summary(self) -> Dict[str, Any]:
@@ -105,15 +105,15 @@ class AssetValidationResult:
             Dictionary with key performance indicators
         """
         return {
-            'asset_symbol': self.asset.symbol,
-            'asset_name': self.asset.name,
-            'sharpe_ratio': self.validation_metrics.get('sharpe_ratio', 0),
-            'total_return': self.validation_metrics.get('total_return', 0),
-            'win_rate': self.validation_metrics.get('win_rate', 0),
-            'max_drawdown': self.validation_metrics.get('max_drawdown', 0),
-            'profit_factor': self.validation_metrics.get('profit_factor', 0),
-            'overall_pass': self.overall_pass,
-            'validation_time': self.validation_time
+            "asset_symbol": self.asset.symbol,
+            "asset_name": self.asset.name,
+            "sharpe_ratio": self.validation_metrics.get("sharpe_ratio", 0),
+            "total_return": self.validation_metrics.get("total_return", 0),
+            "win_rate": self.validation_metrics.get("win_rate", 0),
+            "max_drawdown": self.validation_metrics.get("max_drawdown", 0),
+            "profit_factor": self.validation_metrics.get("profit_factor", 0),
+            "overall_pass": self.overall_pass,
+            "validation_time": self.validation_time,
         }
 
     def get_criteria_details(self) -> Dict[str, Any]:
@@ -124,11 +124,11 @@ class AssetValidationResult:
             Dictionary with criteria evaluation details
         """
         return {
-            'asset_symbol': self.asset.symbol,
-            'pass_criteria': self.pass_criteria,
-            'overall_pass': self.overall_pass,
-            'failed_criteria': [k for k, v in self.pass_criteria.items() if not v],
-            'passed_criteria': [k for k, v in self.pass_criteria.items() if v]
+            "asset_symbol": self.asset.symbol,
+            "pass_criteria": self.pass_criteria,
+            "overall_pass": self.overall_pass,
+            "failed_criteria": [k for k, v in self.pass_criteria.items() if not v],
+            "passed_criteria": [k for k, v in self.pass_criteria.items() if v],
         }
 
 
@@ -172,20 +172,20 @@ class CrossAssetValidationResult:
             Dictionary representation of the complete validation result
         """
         return {
-            'strategy_name': self.strategy_name,
-            'primary_asset': self.primary_asset,
-            'validation_assets': [asset.to_dict() for asset in self.validation_assets],
-            'asset_results': [result.to_dict() for result in self.asset_results],
-            'aggregate_metrics': self.aggregate_metrics,
-            'pass_rate': self.pass_rate,
-            'overall_pass': self.overall_pass,
-            'robustness_score': self.robustness_score,
-            'timestamp': self.timestamp.isoformat(),
-            'total_time': self.total_time
+            "strategy_name": self.strategy_name,
+            "primary_asset": self.primary_asset,
+            "validation_assets": [asset.to_dict() for asset in self.validation_assets],
+            "asset_results": [result.to_dict() for result in self.asset_results],
+            "aggregate_metrics": self.aggregate_metrics,
+            "pass_rate": self.pass_rate,
+            "overall_pass": self.overall_pass,
+            "robustness_score": self.robustness_score,
+            "timestamp": self.timestamp.isoformat(),
+            "total_time": self.total_time,
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'CrossAssetValidationResult':
+    def from_dict(cls, data: Dict[str, Any]) -> "CrossAssetValidationResult":
         """
         Create from dictionary.
 
@@ -196,19 +196,26 @@ class CrossAssetValidationResult:
             CrossAssetValidationResult instance
         """
         from .asset_selector import ValidationAsset
+
         return cls(
-            strategy_name=data.get('strategy_name', 'unknown'),
-            primary_asset=data.get('primary_asset', 'unknown'),
-            validation_assets=[ValidationAsset.from_dict(asset_data)
-                             for asset_data in data.get('validation_assets', [])],
-            asset_results=[AssetValidationResult.from_dict(result_data)
-                          for result_data in data.get('asset_results', [])],
-            aggregate_metrics=data.get('aggregate_metrics', {}),
-            pass_rate=data.get('pass_rate', 0.0),
-            overall_pass=data.get('overall_pass', False),
-            robustness_score=data.get('robustness_score', 0.0),
-            timestamp=datetime.fromisoformat(data.get('timestamp', datetime.now().isoformat())),
-            total_time=data.get('total_time', 0.0)
+            strategy_name=data.get("strategy_name", "unknown"),
+            primary_asset=data.get("primary_asset", "unknown"),
+            validation_assets=[
+                ValidationAsset.from_dict(asset_data)
+                for asset_data in data.get("validation_assets", [])
+            ],
+            asset_results=[
+                AssetValidationResult.from_dict(result_data)
+                for result_data in data.get("asset_results", [])
+            ],
+            aggregate_metrics=data.get("aggregate_metrics", {}),
+            pass_rate=data.get("pass_rate", 0.0),
+            overall_pass=data.get("overall_pass", False),
+            robustness_score=data.get("robustness_score", 0.0),
+            timestamp=datetime.fromisoformat(
+                data.get("timestamp", datetime.now().isoformat())
+            ),
+            total_time=data.get("total_time", 0.0),
         )
 
     def get_summary_report(self) -> Dict[str, Any]:
@@ -218,21 +225,23 @@ class CrossAssetValidationResult:
         Returns:
             Dictionary containing key validation metrics and insights
         """
-        successful_validations = len([r for r in self.asset_results if not r.error_message])
+        successful_validations = len(
+            [r for r in self.asset_results if not r.error_message]
+        )
         failed_validations = len([r for r in self.asset_results if r.error_message])
 
         return {
-            'strategy_name': self.strategy_name,
-            'primary_asset': self.primary_asset,
-            'total_validation_assets': len(self.validation_assets),
-            'successful_validations': successful_validations,
-            'failed_validations': failed_validations,
-            'pass_rate': self.pass_rate,
-            'overall_pass': self.overall_pass,
-            'robustness_score': self.robustness_score,
-            'total_time': self.total_time,
-            'timestamp': self.timestamp.isoformat(),
-            'aggregate_metrics': self.aggregate_metrics
+            "strategy_name": self.strategy_name,
+            "primary_asset": self.primary_asset,
+            "total_validation_assets": len(self.validation_assets),
+            "successful_validations": successful_validations,
+            "failed_validations": failed_validations,
+            "pass_rate": self.pass_rate,
+            "overall_pass": self.overall_pass,
+            "robustness_score": self.robustness_score,
+            "total_time": self.total_time,
+            "timestamp": self.timestamp.isoformat(),
+            "aggregate_metrics": self.aggregate_metrics,
         }
 
     def get_asset_performance_comparison(self) -> pd.DataFrame:
@@ -247,31 +256,43 @@ class CrossAssetValidationResult:
         for result in self.asset_results:
             if result.error_message:
                 # Include failed validations with NaN values
-                performance_data.append({
-                    'asset_symbol': result.asset.symbol,
-                    'asset_name': result.asset.name,
-                    'sharpe_ratio': np.nan,
-                    'total_return': np.nan,
-                    'win_rate': np.nan,
-                    'max_drawdown': np.nan,
-                    'profit_factor': np.nan,
-                    'overall_pass': False,
-                    'validation_time': result.validation_time,
-                    'error': result.error_message
-                })
+                performance_data.append(
+                    {
+                        "asset_symbol": result.asset.symbol,
+                        "asset_name": result.asset.name,
+                        "sharpe_ratio": np.nan,
+                        "total_return": np.nan,
+                        "win_rate": np.nan,
+                        "max_drawdown": np.nan,
+                        "profit_factor": np.nan,
+                        "overall_pass": False,
+                        "validation_time": result.validation_time,
+                        "error": result.error_message,
+                    }
+                )
             else:
-                performance_data.append({
-                    'asset_symbol': result.asset.symbol,
-                    'asset_name': result.asset.name,
-                    'sharpe_ratio': result.validation_metrics.get('sharpe_ratio', 0),
-                    'total_return': result.validation_metrics.get('total_return', 0),
-                    'win_rate': result.validation_metrics.get('win_rate', 0),
-                    'max_drawdown': result.validation_metrics.get('max_drawdown', 0),
-                    'profit_factor': result.validation_metrics.get('profit_factor', 0),
-                    'overall_pass': result.overall_pass,
-                    'validation_time': result.validation_time,
-                    'error': None
-                })
+                performance_data.append(
+                    {
+                        "asset_symbol": result.asset.symbol,
+                        "asset_name": result.asset.name,
+                        "sharpe_ratio": result.validation_metrics.get(
+                            "sharpe_ratio", 0
+                        ),
+                        "total_return": result.validation_metrics.get(
+                            "total_return", 0
+                        ),
+                        "win_rate": result.validation_metrics.get("win_rate", 0),
+                        "max_drawdown": result.validation_metrics.get(
+                            "max_drawdown", 0
+                        ),
+                        "profit_factor": result.validation_metrics.get(
+                            "profit_factor", 0
+                        ),
+                        "overall_pass": result.overall_pass,
+                        "validation_time": result.validation_time,
+                        "error": None,
+                    }
+                )
 
         return pd.DataFrame(performance_data)
 
@@ -302,7 +323,9 @@ class CrossAssetValidationResult:
         # Calculate pass rates
         pass_rates = {}
         for criterion, count in criteria_counts.items():
-            pass_rates[criterion] = count / total_valid_results if total_valid_results > 0 else 0.0
+            pass_rates[criterion] = (
+                count / total_valid_results if total_valid_results > 0 else 0.0
+            )
 
         return pass_rates
 
@@ -319,13 +342,15 @@ class CrossAssetValidationResult:
             if not result.overall_pass:
                 failed_criteria = [k for k, v in result.pass_criteria.items() if not v]
 
-                failed_assets.append({
-                    'asset_symbol': result.asset.symbol,
-                    'asset_name': result.asset.name,
-                    'error_message': result.error_message,
-                    'failed_criteria': failed_criteria,
-                    'validation_time': result.validation_time
-                })
+                failed_assets.append(
+                    {
+                        "asset_symbol": result.asset.symbol,
+                        "asset_name": result.asset.name,
+                        "error_message": result.error_message,
+                        "failed_criteria": failed_criteria,
+                        "validation_time": result.validation_time,
+                    }
+                )
 
         return failed_assets
 
@@ -342,16 +367,18 @@ class CrossAssetValidationResult:
             return None
 
         # Find asset with highest Sharpe ratio
-        best_result = max(valid_results,
-                         key=lambda r: r.validation_metrics.get('sharpe_ratio', float('-inf')))
+        best_result = max(
+            valid_results,
+            key=lambda r: r.validation_metrics.get("sharpe_ratio", float("-inf")),
+        )
 
         return {
-            'asset_symbol': best_result.asset.symbol,
-            'asset_name': best_result.asset.name,
-            'sharpe_ratio': best_result.validation_metrics.get('sharpe_ratio', 0),
-            'total_return': best_result.validation_metrics.get('total_return', 0),
-            'win_rate': best_result.validation_metrics.get('win_rate', 0),
-            'overall_pass': best_result.overall_pass
+            "asset_symbol": best_result.asset.symbol,
+            "asset_name": best_result.asset.name,
+            "sharpe_ratio": best_result.validation_metrics.get("sharpe_ratio", 0),
+            "total_return": best_result.validation_metrics.get("total_return", 0),
+            "win_rate": best_result.validation_metrics.get("win_rate", 0),
+            "overall_pass": best_result.overall_pass,
         }
 
     def get_worst_performing_asset(self) -> Optional[Dict[str, Any]]:
@@ -367,16 +394,18 @@ class CrossAssetValidationResult:
             return None
 
         # Find asset with lowest Sharpe ratio
-        worst_result = min(valid_results,
-                          key=lambda r: r.validation_metrics.get('sharpe_ratio', float('inf')))
+        worst_result = min(
+            valid_results,
+            key=lambda r: r.validation_metrics.get("sharpe_ratio", float("inf")),
+        )
 
         return {
-            'asset_symbol': worst_result.asset.symbol,
-            'asset_name': worst_result.asset.name,
-            'sharpe_ratio': worst_result.validation_metrics.get('sharpe_ratio', 0),
-            'total_return': worst_result.validation_metrics.get('total_return', 0),
-            'win_rate': worst_result.validation_metrics.get('win_rate', 0),
-            'overall_pass': worst_result.overall_pass
+            "asset_symbol": worst_result.asset.symbol,
+            "asset_name": worst_result.asset.name,
+            "sharpe_ratio": worst_result.validation_metrics.get("sharpe_ratio", 0),
+            "total_return": worst_result.validation_metrics.get("total_return", 0),
+            "win_rate": worst_result.validation_metrics.get("win_rate", 0),
+            "overall_pass": worst_result.overall_pass,
         }
 
     def save_to_file(self, file_path: str) -> None:
@@ -388,11 +417,11 @@ class CrossAssetValidationResult:
         """
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
-        with open(file_path, 'w') as f:
+        with open(file_path, "w") as f:
             json.dump(self.to_dict(), f, indent=2, default=str)
 
     @classmethod
-    def load_from_file(cls, file_path: str) -> 'CrossAssetValidationResult':
+    def load_from_file(cls, file_path: str) -> "CrossAssetValidationResult":
         """
         Load validation results from a JSON file.
 
@@ -405,7 +434,7 @@ class CrossAssetValidationResult:
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"Results file not found: {file_path}")
 
-        with open(file_path, 'r') as f:
+        with open(file_path, "r") as f:
             data = json.load(f)
 
         return cls.from_dict(data)
@@ -427,12 +456,14 @@ class CrossAssetValidationResult:
         Returns:
             Human-readable summary
         """
-        return (f"CrossAssetValidationResult(strategy={self.strategy_name}, "
-                f"primary_asset={self.primary_asset}, "
-                f"assets_tested={len(self.validation_assets)}, "
-                f"pass_rate={self.pass_rate:.1%}, "
-                f"overall_pass={self.overall_pass}, "
-                f"robustness={self.robustness_score:.3f})")
+        return (
+            f"CrossAssetValidationResult(strategy={self.strategy_name}, "
+            f"primary_asset={self.primary_asset}, "
+            f"assets_tested={len(self.validation_assets)}, "
+            f"pass_rate={self.pass_rate:.1%}, "
+            f"overall_pass={self.overall_pass}, "
+            f"robustness={self.robustness_score:.3f})"
+        )
 
 
 class ValidationResultAnalyzer:
@@ -464,21 +495,23 @@ class ValidationResultAnalyzer:
         total_times = [r.total_time for r in results]
 
         return {
-            'num_results': len(results),
-            'avg_pass_rate': np.mean(pass_rates),
-            'std_pass_rate': np.std(pass_rates),
-            'best_pass_rate': max(pass_rates),
-            'worst_pass_rate': min(pass_rates),
-            'avg_robustness': np.mean(robustness_scores),
-            'std_robustness': np.std(robustness_scores),
-            'best_robustness': max(robustness_scores),
-            'worst_robustness': min(robustness_scores),
-            'avg_time': np.mean(total_times),
-            'total_time': sum(total_times)
+            "num_results": len(results),
+            "avg_pass_rate": np.mean(pass_rates),
+            "std_pass_rate": np.std(pass_rates),
+            "best_pass_rate": max(pass_rates),
+            "worst_pass_rate": min(pass_rates),
+            "avg_robustness": np.mean(robustness_scores),
+            "std_robustness": np.std(robustness_scores),
+            "best_robustness": max(robustness_scores),
+            "worst_robustness": min(robustness_scores),
+            "avg_time": np.mean(total_times),
+            "total_time": sum(total_times),
         }
 
     @staticmethod
-    def find_common_failures(results: List[CrossAssetValidationResult]) -> Dict[str, int]:
+    def find_common_failures(
+        results: List[CrossAssetValidationResult],
+    ) -> Dict[str, int]:
         """
         Find assets that commonly fail validation across multiple results.
 
@@ -499,7 +532,9 @@ class ValidationResultAnalyzer:
         return failure_counts
 
     @staticmethod
-    def generate_performance_matrix(results: List[CrossAssetValidationResult]) -> pd.DataFrame:
+    def generate_performance_matrix(
+        results: List[CrossAssetValidationResult],
+    ) -> pd.DataFrame:
         """
         Generate a performance matrix across strategies and assets.
 
@@ -523,8 +558,10 @@ class ValidationResultAnalyzer:
         # Build performance matrix
         matrix_data = []
         for result in results:
-            row = {'strategy': result.strategy_name}
-            asset_performance = {asset.symbol: False for asset in result.validation_assets}
+            row = {"strategy": result.strategy_name}
+            asset_performance = {
+                asset.symbol: False for asset in result.validation_assets
+            }
 
             for asset_result in result.asset_results:
                 asset_performance[asset_result.asset.symbol] = asset_result.overall_pass

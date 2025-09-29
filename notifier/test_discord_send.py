@@ -1,8 +1,8 @@
+import asyncio
+import logging
 import os
 import sys
-import asyncio
 import traceback
-import logging
 
 # Ensure repository root is on sys.path so 'notifier' package can be imported when running this script directly.
 repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -37,6 +37,7 @@ discord_config = {
     "channel_id": os.getenv("CRYPTOBOT_NOTIFICATIONS_DISCORD_CHANNEL_ID"),
 }
 
+
 async def main():
     logger = logging.getLogger(__name__)
     logger.info("Using configuration:")
@@ -57,7 +58,10 @@ async def main():
     try:
         ok = await notifier.send_notification(
             "TESTING FROM THE REPO ⚠️⚠️⚠️",
-            embed_data={"title": "Testing from N1V1", "description": "If You Read This. The Module Works!"},
+            embed_data={
+                "title": "Testing from N1V1",
+                "description": "If You Read This. The Module Works!",
+            },
         )
         logger.info("send_notification returned: %s", ok)
     except Exception:
@@ -70,6 +74,7 @@ async def main():
         except Exception:
             logger.error("Notifier.shutdown raised an exception:")
             traceback.print_exc()
+
 
 if __name__ == "__main__":
     try:

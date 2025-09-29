@@ -5,25 +5,26 @@ Provides centralized logging configuration, structured logging with consistent s
 log level standardization, and log aggregation and analysis capabilities.
 """
 
+import json
 import logging
 import logging.config
-import json
-import sys
+import re
 import threading
 import time
-from typing import Dict, Any, List, Optional, Union
-from pathlib import Path
-from datetime import datetime, timedelta
 from collections import defaultdict, deque
-import asyncio
-import re
 from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
 from utils.constants import (
-    PROJECT_ROOT, LOGS_DIR, DEFAULT_LOG_FILE, ERROR_LOG_FILE,
-    DEFAULT_LOG_FORMAT, DETAILED_LOG_FORMAT, LOG_LEVELS
+    DEFAULT_LOG_FILE,
+    DEFAULT_LOG_FORMAT,
+    DETAILED_LOG_FORMAT,
+    ERROR_LOG_FILE,
+    LOG_LEVELS,
+    LOGS_DIR,
 )
-from utils.error_handler import ErrorHandler, TradingError
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class LogEntry:
     """Structured log entry with consistent schema."""
+
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     level: str = "INFO"
     logger_name: str = ""
@@ -39,7 +41,7 @@ class LogEntry:
     function: str = ""
     line_number: int = 0
     thread_id: int = field(default_factory=lambda: threading.get_ident())
-    process_id: int = field(default_factory=lambda: __import__('os').getpid())
+    process_id: int = field(default_factory=lambda: __import__("os").getpid())
     correlation_id: Optional[str] = None
     user_id: Optional[str] = None
     session_id: Optional[str] = None
@@ -72,7 +74,7 @@ class LogEntry:
             "context": self.context,
             "error_code": self.error_code,
             "stack_trace": self.stack_trace,
-            "performance_metrics": self.performance_metrics
+            "performance_metrics": self.performance_metrics,
         }
 
     def to_json(self) -> str:
@@ -85,15 +87,15 @@ class StructuredLogRecord(logging.LogRecord):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.correlation_id = getattr(self, 'correlation_id', None)
-        self.user_id = getattr(self, 'user_id', None)
-        self.session_id = getattr(self, 'session_id', None)
-        self.request_id = getattr(self, 'request_id', None)
-        self.component = getattr(self, 'component', 'unknown')
-        self.operation = getattr(self, 'operation', '')
-        self.context = getattr(self, 'context', {})
-        self.error_code = getattr(self, 'error_code', None)
-        self.performance_metrics = getattr(self, 'performance_metrics', {})
+        self.correlation_id = getattr(self, "correlation_id", None)
+        self.user_id = getattr(self, "user_id", None)
+        self.session_id = getattr(self, "session_id", None)
+        self.request_id = getattr(self, "request_id", None)
+        self.component = getattr(self, "component", "unknown")
+        self.operation = getattr(self, "operation", "")
+        self.context = getattr(self, "context", {})
+        self.error_code = getattr(self, "error_code", None)
+        self.performance_metrics = getattr(self, "performance_metrics", {})
 
 
 class StructuredJSONFormatter(logging.Formatter):
@@ -106,18 +108,18 @@ class StructuredJSONFormatter(logging.Formatter):
             level=record.levelname,
             logger_name=record.name,
             message=record.getMessage(),
-            module=getattr(record, 'module', ''),
-            function=getattr(record, 'funcName', ''),
-            line_number=getattr(record, 'lineno', 0),
-            correlation_id=getattr(record, 'correlation_id', None),
-            user_id=getattr(record, 'user_id', None),
-            session_id=getattr(record, 'session_id', None),
-            request_id=getattr(record, 'request_id', None),
-            component=getattr(record, 'component', 'unknown'),
-            operation=getattr(record, 'operation', ''),
-            context=getattr(record, 'context', {}),
-            error_code=getattr(record, 'error_code', None),
-            performance_metrics=getattr(record, 'performance_metrics', {})
+            module=getattr(record, "module", ""),
+            function=getattr(record, "funcName", ""),
+            line_number=getattr(record, "lineno", 0),
+            correlation_id=getattr(record, "correlation_id", None),
+            user_id=getattr(record, "user_id", None),
+            session_id=getattr(record, "session_id", None),
+            request_id=getattr(record, "request_id", None),
+            component=getattr(record, "component", "unknown"),
+            operation=getattr(record, "operation", ""),
+            context=getattr(record, "context", {}),
+            error_code=getattr(record, "error_code", None),
+            performance_metrics=getattr(record, "performance_metrics", {}),
         )
 
         # Add exception info if present
@@ -130,9 +132,9 @@ class StructuredJSONFormatter(logging.Formatter):
 class ContextualFormatter(logging.Formatter):
     """Formatter that includes contextual information."""
 
-    def __init__(self, fmt=None, datefmt=None, style='%', context_keys=None):
+    def __init__(self, fmt=None, datefmt=None, style="%", context_keys=None):
         super().__init__(fmt, datefmt, style)
-        self.context_keys = context_keys or ['correlation_id', 'user_id', 'component']
+        self.context_keys = context_keys or ["correlation_id", "user_id", "component"]
 
     def format(self, record: logging.LogRecord) -> str:
         """Format log record with contextual information."""
@@ -174,24 +176,24 @@ class LogAggregator:
     def _update_metrics(self, entry: LogEntry):
         """Update aggregation metrics."""
         # Error rate tracking
-        if entry.level in ['ERROR', 'CRITICAL']:
+        if entry.level in ["ERROR", "CRITICAL"]:
             hour_key = entry.timestamp[:13]  # YYYY-MM-DDTHH
-            if 'error_rate' not in self.metrics:
-                self.metrics['error_rate'] = defaultdict(int)
-            self.metrics['error_rate'][hour_key] += 1
+            if "error_rate" not in self.metrics:
+                self.metrics["error_rate"] = defaultdict(int)
+            self.metrics["error_rate"][hour_key] += 1
 
         # Component activity
-        if 'component_activity' not in self.metrics:
-            self.metrics['component_activity'] = defaultdict(int)
-        self.metrics['component_activity'][entry.component] += 1
+        if "component_activity" not in self.metrics:
+            self.metrics["component_activity"] = defaultdict(int)
+        self.metrics["component_activity"][entry.component] += 1
 
         # Performance metrics
         if entry.performance_metrics:
-            if 'performance' not in self.metrics:
-                self.metrics['performance'] = defaultdict(list)
+            if "performance" not in self.metrics:
+                self.metrics["performance"] = defaultdict(list)
             for key, value in entry.performance_metrics.items():
                 if isinstance(value, (int, float)):
-                    self.metrics['performance'][key].append(value)
+                    self.metrics["performance"][key].append(value)
 
     def _check_patterns(self, entry: LogEntry):
         """Check log entry against defined patterns."""
@@ -202,29 +204,31 @@ class LogAggregator:
             "high_error_rate": r"error.*rate.*high|too many errors",
             "security_breach": r"security|breach|unauthorized|intrusion",
             "performance_degradation": r"slow|timeout|degraded|latency",
-            "resource_exhaustion": r"out of memory|disk full|cpu high"
+            "resource_exhaustion": r"out of memory|disk full|cpu high",
         }
 
         for pattern_name, pattern in alert_patterns.items():
             if re.search(pattern, message):
-                self.alerts.append({
-                    "timestamp": entry.timestamp,
-                    "pattern": pattern_name,
-                    "level": entry.level,
-                    "message": entry.message,
-                    "component": entry.component
-                })
+                self.alerts.append(
+                    {
+                        "timestamp": entry.timestamp,
+                        "pattern": pattern_name,
+                        "level": entry.level,
+                        "message": entry.message,
+                        "component": entry.component,
+                    }
+                )
 
     def get_metrics_report(self) -> Dict[str, Any]:
         """Generate metrics report."""
         return {
             "total_entries": len(self.entries),
             "time_range": self._get_time_range(),
-            "error_rate_trend": dict(self.metrics.get('error_rate', {})),
-            "component_activity": dict(self.metrics.get('component_activity', {})),
+            "error_rate_trend": dict(self.metrics.get("error_rate", {})),
+            "component_activity": dict(self.metrics.get("component_activity", {})),
             "performance_summary": self._get_performance_summary(),
             "active_alerts": len(self.alerts),
-            "recent_alerts": self.alerts[-10:] if self.alerts else []
+            "recent_alerts": self.alerts[-10:] if self.alerts else [],
         }
 
     def _get_time_range(self) -> Dict[str, str]:
@@ -233,14 +237,11 @@ class LogAggregator:
             return {"start": None, "end": None}
 
         timestamps = [e.timestamp for e in self.entries]
-        return {
-            "start": min(timestamps),
-            "end": max(timestamps)
-        }
+        return {"start": min(timestamps), "end": max(timestamps)}
 
     def _get_performance_summary(self) -> Dict[str, Any]:
         """Get performance metrics summary."""
-        perf_data = self.metrics.get('performance', {})
+        perf_data = self.metrics.get("performance", {})
         summary = {}
 
         for metric, values in perf_data.items():
@@ -250,13 +251,20 @@ class LogAggregator:
                     "avg": sum(values) / len(values),
                     "min": min(values),
                     "max": max(values),
-                    "p95": sorted(values)[int(len(values) * 0.95)] if len(values) > 1 else max(values)
+                    "p95": sorted(values)[int(len(values) * 0.95)]
+                    if len(values) > 1
+                    else max(values),
                 }
 
         return summary
 
-    def search_logs(self, query: str, level: Optional[str] = None,
-                   component: Optional[str] = None, limit: int = 100) -> List[LogEntry]:
+    def search_logs(
+        self,
+        query: str,
+        level: Optional[str] = None,
+        component: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[LogEntry]:
         """Search logs with filters."""
         results = []
 
@@ -284,11 +292,11 @@ class LogLevelValidator:
     def __init__(self):
         self.allowed_levels = set(LOG_LEVELS.keys())
         self.level_hierarchy = {
-            'DEBUG': 10,
-            'INFO': 20,
-            'WARNING': 30,
-            'ERROR': 40,
-            'CRITICAL': 50
+            "DEBUG": 10,
+            "INFO": 20,
+            "WARNING": 30,
+            "ERROR": 40,
+            "CRITICAL": 50,
         }
 
     def validate_level(self, level: str) -> bool:
@@ -304,9 +312,9 @@ class LogLevelValidator:
             for name, value in self.level_hierarchy.items():
                 if level == value:
                     return name
-            return 'INFO'  # Default
+            return "INFO"  # Default
         else:
-            return 'INFO'
+            return "INFO"
 
     def should_log(self, message_level: str, logger_level: str) -> bool:
         """Check if a message should be logged based on levels."""
@@ -316,7 +324,9 @@ class LogLevelValidator:
 
     def get_valid_levels(self) -> List[str]:
         """Get list of valid log levels."""
-        return sorted(self.allowed_levels, key=lambda x: self.level_hierarchy.get(x, 99))
+        return sorted(
+            self.allowed_levels, key=lambda x: self.level_hierarchy.get(x, 99)
+        )
 
 
 class LoggingConfigurationManager:
@@ -333,7 +343,7 @@ class LoggingConfigurationManager:
     def load_configuration(self, config_file: Optional[str] = None) -> Dict[str, Any]:
         """Load logging configuration from file or use defaults."""
         if config_file and Path(config_file).exists():
-            with open(config_file, 'r') as f:
+            with open(config_file, "r") as f:
                 self.config = json.load(f)
         else:
             self.config = self._get_default_config()
@@ -349,27 +359,21 @@ class LoggingConfigurationManager:
             "version": 1,
             "disable_existing_loggers": False,
             "formatters": {
-                "standard": {
-                    "format": DEFAULT_LOG_FORMAT
-                },
-                "detailed": {
-                    "format": DETAILED_LOG_FORMAT
-                },
-                "json": {
-                    "()": "utils.logging_manager.StructuredJSONFormatter"
-                },
+                "standard": {"format": DEFAULT_LOG_FORMAT},
+                "detailed": {"format": DETAILED_LOG_FORMAT},
+                "json": {"()": "utils.logging_manager.StructuredJSONFormatter"},
                 "contextual": {
                     "()": "utils.logging_manager.ContextualFormatter",
                     "format": DEFAULT_LOG_FORMAT,
-                    "context_keys": ["correlation_id", "component", "operation"]
-                }
+                    "context_keys": ["correlation_id", "component", "operation"],
+                },
             },
             "handlers": {
                 "console": {
                     "class": "logging.StreamHandler",
                     "level": "INFO",
                     "formatter": "standard",
-                    "stream": "ext://sys.stdout"
+                    "stream": "ext://sys.stdout",
                 },
                 "file": {
                     "class": "logging.handlers.RotatingFileHandler",
@@ -377,7 +381,7 @@ class LoggingConfigurationManager:
                     "formatter": "detailed",
                     "filename": str(DEFAULT_LOG_FILE),
                     "maxBytes": 10 * 1024 * 1024,  # 10MB
-                    "backupCount": 5
+                    "backupCount": 5,
                 },
                 "error_file": {
                     "class": "logging.handlers.RotatingFileHandler",
@@ -385,7 +389,7 @@ class LoggingConfigurationManager:
                     "formatter": "json",
                     "filename": str(ERROR_LOG_FILE),
                     "maxBytes": 10 * 1024 * 1024,
-                    "backupCount": 5
+                    "backupCount": 5,
                 },
                 "json_file": {
                     "class": "logging.handlers.RotatingFileHandler",
@@ -393,25 +397,22 @@ class LoggingConfigurationManager:
                     "formatter": "json",
                     "filename": str(LOGS_DIR / "structured.log"),
                     "maxBytes": 50 * 1024 * 1024,  # 50MB
-                    "backupCount": 3
-                }
+                    "backupCount": 3,
+                },
             },
             "loggers": {
                 "trading_system": {
                     "level": "DEBUG",
                     "handlers": ["console", "file", "error_file", "json_file"],
-                    "propagate": False
+                    "propagate": False,
                 },
                 "utils": {
                     "level": "INFO",
                     "handlers": ["console", "file"],
-                    "propagate": False
-                }
+                    "propagate": False,
+                },
             },
-            "root": {
-                "level": "INFO",
-                "handlers": ["console"]
-            }
+            "root": {"level": "INFO", "handlers": ["console"]},
         }
 
     def _validate_config(self):
@@ -428,7 +429,9 @@ class LoggingConfigurationManager:
 
         for formatter in required_formatters:
             if formatter not in available_formatters:
-                logger.warning(f"Required formatter '{formatter}' not found in configuration")
+                logger.warning(
+                    f"Required formatter '{formatter}' not found in configuration"
+                )
 
     def apply_configuration(self):
         """Apply the logging configuration."""
@@ -448,18 +451,11 @@ class LoggingConfigurationManager:
                 "console": {
                     "class": "logging.StreamHandler",
                     "level": "INFO",
-                    "formatter": "standard"
+                    "formatter": "standard",
                 }
             },
-            "formatters": {
-                "standard": {
-                    "format": DEFAULT_LOG_FORMAT
-                }
-            },
-            "root": {
-                "level": "INFO",
-                "handlers": ["console"]
-            }
+            "formatters": {"standard": {"format": DEFAULT_LOG_FORMAT}},
+            "root": {"level": "INFO", "handlers": ["console"]},
         }
 
         logging.config.dictConfig(fallback_config)
@@ -481,14 +477,14 @@ class LoggingConfigurationManager:
 
         # Check if JSON handler already exists
         for handler in logger_instance.handlers:
-            if hasattr(handler, 'formatter') and isinstance(handler.formatter, StructuredJSONFormatter):
+            if hasattr(handler, "formatter") and isinstance(
+                handler.formatter, StructuredJSONFormatter
+            ):
                 return  # Already has structured handler
 
         # Add structured handler
         json_handler = logging.handlers.RotatingFileHandler(
-            LOGS_DIR / "structured.log",
-            maxBytes=50 * 1024 * 1024,
-            backupCount=3
+            LOGS_DIR / "structured.log", maxBytes=50 * 1024 * 1024, backupCount=3
         )
         json_handler.setFormatter(StructuredJSONFormatter())
         json_handler.setLevel(logging.INFO)
@@ -503,7 +499,9 @@ class LoggingConfigurationManager:
             "configured_handlers": list(self.config.get("handlers", {}).keys()),
             "configured_formatters": list(self.config.get("formatters", {}).keys()),
             "log_levels": self._get_current_log_levels(),
-            "validation_status": "valid" if self._validate_config() is None else "has_warnings"
+            "validation_status": "valid"
+            if self._validate_config() is None
+            else "has_warnings",
         }
 
     def _get_current_log_levels(self) -> Dict[str, str]:
@@ -548,7 +546,7 @@ class LoggingManager:
         logger_instance = logging.getLogger(name)
 
         # Add component context
-        if not hasattr(logger_instance, '_component'):
+        if not hasattr(logger_instance, "_component"):
             logger_instance._component = component
 
         return logger_instance
@@ -566,25 +564,36 @@ class LoggingManager:
         """Clear logging context."""
         self.context.clear()
 
-    def log_with_context(self, logger: logging.Logger, level: str, message: str,
-                        **kwargs):
+    def log_with_context(
+        self, logger: logging.Logger, level: str, message: str, **kwargs
+    ):
         """Log a message with additional context."""
         # Merge global context with local context
         full_context = {**self.context, **kwargs}
 
         # Add structured fields
         extra = {
-            'correlation_id': full_context.get('correlation_id'),
-            'user_id': full_context.get('user_id'),
-            'session_id': full_context.get('session_id'),
-            'request_id': full_context.get('request_id'),
-            'component': full_context.get('component', 'unknown'),
-            'operation': full_context.get('operation', ''),
-            'context': {k: v for k, v in full_context.items()
-                       if k not in ['correlation_id', 'user_id', 'session_id',
-                                  'request_id', 'component', 'operation']},
-            'error_code': full_context.get('error_code'),
-            'performance_metrics': full_context.get('performance_metrics', {})
+            "correlation_id": full_context.get("correlation_id"),
+            "user_id": full_context.get("user_id"),
+            "session_id": full_context.get("session_id"),
+            "request_id": full_context.get("request_id"),
+            "component": full_context.get("component", "unknown"),
+            "operation": full_context.get("operation", ""),
+            "context": {
+                k: v
+                for k, v in full_context.items()
+                if k
+                not in [
+                    "correlation_id",
+                    "user_id",
+                    "session_id",
+                    "request_id",
+                    "component",
+                    "operation",
+                ]
+            },
+            "error_code": full_context.get("error_code"),
+            "performance_metrics": full_context.get("performance_metrics", {}),
         }
 
         # Remove None values
@@ -592,8 +601,9 @@ class LoggingManager:
 
         logger.log(getattr(logging, level.upper()), message, extra=extra)
 
-    def log_performance(self, operation: str, duration: float,
-                       component: str = "unknown", **metrics):
+    def log_performance(
+        self, operation: str, duration: float, component: str = "unknown", **metrics
+    ):
         """Log performance metrics."""
         self.log_with_context(
             logger=logging.getLogger(f"{component}.performance"),
@@ -604,12 +614,17 @@ class LoggingManager:
             performance_metrics={
                 "duration_seconds": duration,
                 "operation": operation,
-                **metrics
-            }
+                **metrics,
+            },
         )
 
-    def log_error(self, error: Exception, component: str = "unknown",
-                 operation: str = "", error_code: Optional[str] = None):
+    def log_error(
+        self,
+        error: Exception,
+        component: str = "unknown",
+        operation: str = "",
+        error_code: Optional[str] = None,
+    ):
         """Log an error with full context."""
         import traceback
 
@@ -620,7 +635,7 @@ class LoggingManager:
             component=component,
             operation=operation,
             error_code=error_code or type(error).__name__,
-            stack_trace=traceback.format_exc()
+            stack_trace=traceback.format_exc(),
         )
 
     def get_system_report(self) -> Dict[str, Any]:
@@ -631,19 +646,23 @@ class LoggingManager:
             "validation": {
                 "log_levels_valid": True,  # Would implement full validation
                 "configuration_valid": True,
-                "handlers_active": len(logging.root.handlers) > 0
+                "handlers_active": len(logging.root.handlers) > 0,
             },
             "context": self.context.copy(),
-            "active_correlations": self._correlation_counter
+            "active_correlations": self._correlation_counter,
         }
 
     def search_logs(self, query: str, **filters) -> List[LogEntry]:
         """Search aggregated logs."""
         return self.aggregator.search_logs(query, **filters)
 
-    def export_logs(self, output_file: str, format: str = "json",
-                   start_time: Optional[datetime] = None,
-                   end_time: Optional[datetime] = None):
+    def export_logs(
+        self,
+        output_file: str,
+        format: str = "json",
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+    ):
         """Export logs in specified format."""
         entries = list(self.aggregator.entries)
 
@@ -651,7 +670,9 @@ class LoggingManager:
         if start_time or end_time:
             filtered_entries = []
             for entry in entries:
-                entry_time = datetime.fromisoformat(entry.timestamp.replace('Z', '+00:00'))
+                entry_time = datetime.fromisoformat(
+                    entry.timestamp.replace("Z", "+00:00")
+                )
                 if start_time and entry_time < start_time:
                     continue
                 if end_time and entry_time > end_time:
@@ -660,11 +681,14 @@ class LoggingManager:
             entries = filtered_entries
 
         if format == "json":
-            with open(output_file, 'w') as f:
-                json.dump([entry.to_dict() for entry in entries], f, indent=2, default=str)
+            with open(output_file, "w") as f:
+                json.dump(
+                    [entry.to_dict() for entry in entries], f, indent=2, default=str
+                )
         elif format == "csv":
             import csv
-            with open(output_file, 'w', newline='') as f:
+
+            with open(output_file, "w", newline="") as f:
                 if entries:
                     writer = csv.DictWriter(f, fieldnames=entries[0].to_dict().keys())
                     writer.writeheader()
@@ -675,6 +699,7 @@ class LoggingManager:
 
 # Global logging manager instance
 _logging_manager = None
+
 
 def get_logging_manager() -> LoggingManager:
     """Get the global logging manager instance."""
@@ -697,14 +722,20 @@ def get_logger(name: str, component: str = "unknown") -> logging.Logger:
     return manager.get_logger(name, component)
 
 
-def log_performance(operation: str, duration: float, component: str = "unknown", **metrics):
+def log_performance(
+    operation: str, duration: float, component: str = "unknown", **metrics
+):
     """Log performance metrics."""
     manager = get_logging_manager()
     manager.log_performance(operation, duration, component, **metrics)
 
 
-def log_error(error: Exception, component: str = "unknown",
-             operation: str = "", error_code: Optional[str] = None):
+def log_error(
+    error: Exception,
+    component: str = "unknown",
+    operation: str = "",
+    error_code: Optional[str] = None,
+):
     """Log an error with context."""
     manager = get_logging_manager()
     manager.log_error(error, component, operation, error_code)
@@ -729,6 +760,7 @@ class LoggingContext:
 # Decorator for automatic performance logging
 def log_performance_decorator(component: str = "unknown"):
     """Decorator to automatically log function performance."""
+
     def decorator(func):
         def wrapper(*args, **kwargs):
             start_time = time.perf_counter()
@@ -748,4 +780,5 @@ def log_performance_decorator(component: str = "unknown"):
                 raise
 
         return wrapper
+
     return decorator

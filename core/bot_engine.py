@@ -8,33 +8,30 @@ while internally using decomposed components for better architecture.
 import asyncio
 import logging
 import time
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 import pandas as pd
-from typing import Dict, Optional, List, Any, Union
-from dataclasses import dataclass
-from core.types import TradingMode
 
-from utils.logger import setup_logging
-from utils.config_loader import ConfigLoader, get_config
-from data.data_fetcher import DataFetcher
-from strategies.base_strategy import BaseStrategy
-from risk.risk_manager import RiskManager
+from core.binary_model_integration import get_binary_integration
+from core.cache import close_cache, get_cache, initialize_cache
 from core.order_manager import OrderManager
 from core.signal_router import SignalRouter
-from notifier.discord_bot import DiscordNotifier
-from core.task_manager import TaskManager, TaskMessage
+from core.task_manager import TaskManager
 from core.timeframe_manager import TimeframeManager
-from strategies.regime.strategy_selector import get_strategy_selector, update_strategy_performance
-from core.cache import initialize_cache, get_cache, close_cache
 
 # Import decomposed components
-from core.trading_coordinator import TradingCoordinator
-from core.data_manager import DataManager
-from core.signal_processor import SignalProcessor
-from core.performance_tracker import PerformanceTracker
-from core.order_executor import OrderExecutor
-from core.state_manager import StateManager
-from core.binary_model_integration import get_binary_integration, BinaryModelIntegration
+from core.types import TradingMode
+from data.data_fetcher import DataFetcher
+from notifier.discord_bot import DiscordNotifier
+from risk.risk_manager import RiskManager
+from strategies.base_strategy import BaseStrategy
+from strategies.regime.strategy_selector import (
+    get_strategy_selector,
+    update_strategy_performance,
+)
+from utils.config_loader import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +61,6 @@ def now_ms() -> int:
         Current timestamp as integer milliseconds
     """
     return int(time.time() * 1000)
-
-
 
 
 @dataclass
@@ -112,7 +107,9 @@ class BotEngine:
             self.starting_balance = 1000.0
 
         # Update interval for main loop
-        self.update_interval = self.config.get("monitoring", {}).get("update_interval", 1.0)
+        self.update_interval = self.config.get("monitoring", {}).get(
+            "update_interval", 1.0
+        )
 
         # Core modules
         self.data_fetcher: Optional[DataFetcher] = None
@@ -126,19 +123,19 @@ class BotEngine:
         # Provide default mocks for testing compatibility
         if self.order_manager is None:
             from unittest.mock import AsyncMock, Mock
+
             self.order_manager = Mock(
                 get_equity=AsyncMock(return_value=0.0),
                 execute_order=AsyncMock(return_value={"pnl": 0.0}),
                 get_balance=AsyncMock(return_value=0.0),
                 get_active_order_count=AsyncMock(return_value=0),
                 get_open_position_count=AsyncMock(return_value=0),
-                safe_mode_active=False
+                safe_mode_active=False,
             )
 
         if self.risk_manager is None:
             self.risk_manager = Mock(
-                evaluate_signal=AsyncMock(return_value=True),
-                block_signals=False
+                evaluate_signal=AsyncMock(return_value=True), block_signals=False
             )
 
         if self.signal_router is None:
@@ -221,7 +218,7 @@ class BotEngine:
         if self.portfolio_mode:
             markets = exchange_config.get("markets", []) or []
             self.pairs = [m for m in markets if isinstance(m, str)]
-            
+
             # Fallback if markets is empty
             if not self.pairs:
                 configured_symbol = trading_config.get("symbol") or None
@@ -236,7 +233,11 @@ class BotEngine:
                 self.pairs = [configured_symbol]
             else:
                 markets = exchange_config.get("markets", []) or []
-                self.pairs = [markets[0]] if markets and isinstance(markets, list) and markets else []
+                self.pairs = (
+                    [markets[0]]
+                    if markets and isinstance(markets, list) and markets
+                    else []
+                )
 
     async def _initialize_cache(self) -> None:
         """Initialize Redis cache if configured."""
@@ -248,14 +249,16 @@ class BotEngine:
                 # Register cache shutdown hook
                 self._shutdown_hooks.append(close_cache)
             else:
-                logger.warning("Failed to initialize Redis cache, continuing without cache")
+                logger.warning(
+                    "Failed to initialize Redis cache, continuing without cache"
+                )
         else:
             logger.info("Redis cache disabled in configuration")
 
     async def _initialize_core_modules(self) -> None:
         """Initialize core trading modules."""
         exchange_config = self.config["exchange"]
-        
+
         # Initialize data fetcher
         self.data_fetcher = DataFetcher(exchange_config)
         await self.data_fetcher.initialize()
@@ -274,9 +277,13 @@ class BotEngine:
             for symbol in self.pairs:
                 default_timeframes = ["15m", "1h", "4h"]
                 if self.timeframe_manager.add_symbol(symbol, default_timeframes):
-                    logger.info(f"Registered {symbol} with timeframes: {default_timeframes}")
+                    logger.info(
+                        f"Registered {symbol} with timeframes: {default_timeframes}"
+                    )
                 else:
-                    logger.warning(f"Failed to register {symbol} with timeframe manager")
+                    logger.warning(
+                        f"Failed to register {symbol} with timeframe manager"
+                    )
 
         # Initialize risk manager
         self.risk_manager = RiskManager(self.config["risk_management"])
@@ -285,24 +292,30 @@ class BotEngine:
         self.order_manager = OrderManager(self.config, self.mode)
         if hasattr(self.order_manager, "shutdown"):
             self._shutdown_hooks.append(self.order_manager.shutdown)
-        
+
         # Configure order manager
         await self._configure_order_manager()
 
         # Initialize signal router
-        self.signal_router = SignalRouter(self.risk_manager, task_manager=self.task_manager)
+        self.signal_router = SignalRouter(
+            self.risk_manager, task_manager=self.task_manager
+        )
 
     async def _configure_order_manager(self) -> None:
         """Configure order manager with portfolio and pairs information."""
         try:
             self.order_manager.pairs = self.pairs
             self.order_manager.portfolio_mode = self.portfolio_mode
-            
+
             if hasattr(self.order_manager, "initialize_portfolio"):
                 allocation = self.config.get("trading", {}).get("pair_allocation", None)
-                await self.order_manager.initialize_portfolio(self.pairs, self.portfolio_mode, allocation)
+                await self.order_manager.initialize_portfolio(
+                    self.pairs, self.portfolio_mode, allocation
+                )
         except Exception:
-            logger.debug("OrderManager portfolio initialization skipped or failed", exc_info=True)
+            logger.debug(
+                "OrderManager portfolio initialization skipped or failed", exc_info=True
+            )
 
         # Set starting balance
         balance = self.config.get("trading", {}).get("initial_balance", 10000.0)
@@ -317,7 +330,9 @@ class BotEngine:
     async def _initialize_notifications(self) -> None:
         """Initialize notification system if enabled."""
         if self.config["notifications"]["discord"]["enabled"]:
-            self.notifier = DiscordNotifier(self.config["notifications"]["discord"], task_manager=self.task_manager)
+            self.notifier = DiscordNotifier(
+                self.config["notifications"]["discord"], task_manager=self.task_manager
+            )
             await self.notifier.initialize()
             if hasattr(self.notifier, "shutdown"):
                 self._shutdown_hooks.append(self.notifier.shutdown)
@@ -370,12 +385,14 @@ class BotEngine:
                     await self._trading_cycle()
                     self._update_display()
                     await asyncio.sleep(self.update_interval)
-                except Exception as e:
+                except Exception:
                     logger.error("Run loop failed", exc_info=True)
                     try:
                         await self._emergency_shutdown()
                     except Exception as shutdown_err:
-                        logger.error(f"Emergency shutdown failed: {shutdown_err}", exc_info=True)
+                        logger.error(
+                            f"Emergency shutdown failed: {shutdown_err}", exc_info=True
+                        )
                     self.state.running = False
                     break
 
@@ -395,10 +412,14 @@ class BotEngine:
                 for pair in self.pairs:
                     try:
                         # Always attempt to fetch data for each pair
-                        market_data_result = await maybe_await(self.data_fetcher.get_historical_data(pair))
+                        market_data_result = await maybe_await(
+                            self.data_fetcher.get_historical_data(pair)
+                        )
                         logger.debug(f"Fetched historical data for {pair}")
                     except Exception as e:
-                        logger.warning(f"Failed to fetch historical data for {pair}: {e}")
+                        logger.warning(
+                            f"Failed to fetch historical data for {pair}: {e}"
+                        )
                         continue
 
             # 2. Check safe mode conditions
@@ -428,28 +449,32 @@ class BotEngine:
         """Fetch market data with Redis caching and multi-timeframe support."""
         current_time = time.time()
         cache = get_cache()
-        
+
         # Check if we should use internal cache (fallback)
         use_internal_cache = not cache or not cache._connected
-        if use_internal_cache and self.market_data_cache and (current_time - self.cache_timestamp) < self.cache_ttl:
+        if (
+            use_internal_cache
+            and self.market_data_cache
+            and (current_time - self.cache_timestamp) < self.cache_ttl
+        ):
             logger.debug("Using internal cached market data")
             return self.market_data_cache
 
         try:
             # Fetch single-timeframe data
             market_data = await self._fetch_single_timeframe_data(cache)
-            
+
             # Fetch multi-timeframe data
             multi_timeframe_data = await self._fetch_multi_timeframe_data()
-            
+
             # Combine data
             combined_data = self._combine_market_data(market_data, multi_timeframe_data)
-            
+
             # Cache the fetched data
             self._cache_market_data(combined_data, current_time)
-            
+
             return combined_data
-            
+
         except Exception:
             logger.exception("Failed to fetch market data")
             # Return cached data if available, otherwise empty dict
@@ -462,14 +487,16 @@ class BotEngine:
     async def _fetch_single_timeframe_data(self, cache: Any) -> Dict[str, Any]:
         """Fetch single-timeframe market data with caching support."""
         market_data = {}
-        
+
         if self.portfolio_mode and hasattr(self.data_fetcher, "get_realtime_data"):
             market_data = await self._fetch_portfolio_realtime_data(cache)
-        elif not self.portfolio_mode and hasattr(self.data_fetcher, "get_historical_data"):
+        elif not self.portfolio_mode and hasattr(
+            self.data_fetcher, "get_historical_data"
+        ):
             market_data = await self._fetch_single_historical_data(cache)
         elif hasattr(self.data_fetcher, "get_multiple_historical_data"):
             market_data = await self._fetch_multiple_historical_data(cache)
-            
+
         return market_data
 
     async def _fetch_portfolio_realtime_data(self, cache: Any) -> Dict[str, Any]:
@@ -481,10 +508,12 @@ class BotEngine:
                 ticker_data = await cache.get_market_ticker(symbol)
                 if ticker_data:
                     cached_tickers[symbol] = ticker_data
-            
+
             if cached_tickers:
-                logger.debug(f"Using cached ticker data for {len(cached_tickers)} symbols")
-            
+                logger.debug(
+                    f"Using cached ticker data for {len(cached_tickers)} symbols"
+                )
+
             # Fetch fresh data if needed
             if len(cached_tickers) < len(self.pairs):
                 fresh_data = await self.data_fetcher.get_realtime_data(self.pairs)
@@ -493,7 +522,7 @@ class BotEngine:
                     await cache.set_market_ticker(symbol, ticker)
                 # Merge cached and fresh data
                 cached_tickers.update(fresh_data)
-            
+
             return cached_tickers
         else:
             # No Redis cache, fetch directly
@@ -504,9 +533,9 @@ class BotEngine:
         symbol = self.pairs[0] if self.pairs else None
         if not symbol:
             return {}
-            
+
         timeframe = self.config.get("backtesting", {}).get("timeframe", "1h")
-        
+
         if cache and cache._connected:
             # Try to get cached OHLCV data
             cached_ohlcv = await cache.get_ohlcv(symbol, timeframe)
@@ -535,26 +564,30 @@ class BotEngine:
         """Fetch multiple historical data with Redis caching."""
         if not self.pairs:
             return {}
-            
+
         if cache and cache._connected:
             # Try to get cached OHLCV data for all pairs
             cached_data = await cache.get_multiple_ohlcv(self.pairs)
-            
+
             # Determine which symbols need fresh data
             symbols_to_fetch = [s for s in self.pairs if not cached_data.get(s)]
-            
+
             if symbols_to_fetch:
                 # Fetch fresh data for missing symbols
-                fresh_data = await self.data_fetcher.get_multiple_historical_data(symbols_to_fetch)
-                
+                fresh_data = await self.data_fetcher.get_multiple_historical_data(
+                    symbols_to_fetch
+                )
+
                 # Update cache with fresh data
                 await cache.set_multiple_ohlcv(fresh_data, "1h")  # Default timeframe
-                
+
                 # Merge cached and fresh data
                 for symbol, data in fresh_data.items():
                     cached_data[symbol] = data
-            
-            logger.debug(f"Using cached OHLCV data for {len([d for d in cached_data.values() if d])} symbols")
+
+            logger.debug(
+                f"Using cached OHLCV data for {len([d for d in cached_data.values() if d])} symbols"
+            )
             return cached_data
         else:
             # No Redis cache, fetch directly
@@ -563,13 +596,15 @@ class BotEngine:
     async def _fetch_multi_timeframe_data(self) -> Dict[str, Any]:
         """Fetch multi-timeframe data for all symbols."""
         multi_timeframe_data = {}
-        
+
         if not self.timeframe_manager or not self.pairs:
             return multi_timeframe_data
-            
+
         for symbol in self.pairs:
             try:
-                synced_data = await self.timeframe_manager.fetch_multi_timeframe_data(symbol)
+                synced_data = await self.timeframe_manager.fetch_multi_timeframe_data(
+                    symbol
+                )
                 if synced_data:
                     multi_timeframe_data[symbol] = synced_data
                     logger.debug(f"Fetched multi-timeframe data for {symbol}")
@@ -577,29 +612,31 @@ class BotEngine:
                     logger.warning(f"Failed to fetch multi-timeframe data for {symbol}")
             except Exception as e:
                 logger.warning(f"Error fetching multi-timeframe data for {symbol}: {e}")
-                
+
         return multi_timeframe_data
 
-    def _combine_market_data(self, market_data: Dict[str, Any], multi_timeframe_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _combine_market_data(
+        self, market_data: Dict[str, Any], multi_timeframe_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Combine single-timeframe and multi-timeframe market data."""
         combined_data = market_data.copy()
-        
+
         for symbol, synced_data in multi_timeframe_data.items():
             if symbol in combined_data:
                 # Add multi-timeframe data to existing symbol data
                 combined_data[symbol] = {
-                    'single_timeframe': combined_data[symbol],
-                    'multi_timeframe': synced_data
+                    "single_timeframe": combined_data[symbol],
+                    "multi_timeframe": synced_data,
                 }
             else:
                 # Only multi-timeframe data available
-                combined_data[symbol] = {
-                    'multi_timeframe': synced_data
-                }
-                
+                combined_data[symbol] = {"multi_timeframe": synced_data}
+
         return combined_data
 
-    def _cache_market_data(self, combined_data: Dict[str, Any], current_time: float) -> None:
+    def _cache_market_data(
+        self, combined_data: Dict[str, Any], current_time: float
+    ) -> None:
         """Cache the fetched market data."""
         self.market_data_cache = combined_data
         self.cache_timestamp = current_time
@@ -614,13 +651,20 @@ class BotEngine:
                     logger.warning("Global safe mode active: skipping trading cycle")
                     self._safe_mode_notified = True
                     try:
-                        if self.notifier and self.config["notifications"]["discord"]["enabled"]:
-                            await self.notifier.send_alert("Bot entering SAFE MODE: suspending new trades.")
+                        if (
+                            self.notifier
+                            and self.config["notifications"]["discord"]["enabled"]
+                        ):
+                            await self.notifier.send_alert(
+                                "Bot entering SAFE MODE: suspending new trades."
+                            )
                     except Exception:
                         logger.exception("Failed to send safe-mode notification")
                 return True
         except Exception:
-            logger.exception("Failed to perform global safe-mode check; skipping trading cycle")
+            logger.exception(
+                "Failed to perform global safe-mode check; skipping trading cycle"
+            )
             return True
 
         try:
@@ -629,8 +673,13 @@ class BotEngine:
                 logger.warning("Order manager safe mode active: skipping trading cycle")
                 self._safe_mode_notified = True
                 try:
-                    if self.notifier and self.config["notifications"]["discord"]["enabled"]:
-                        await self.notifier.send_alert("Bot entering SAFE MODE: suspending new trades.")
+                    if (
+                        self.notifier
+                        and self.config["notifications"]["discord"]["enabled"]
+                    ):
+                        await self.notifier.send_alert(
+                            "Bot entering SAFE MODE: suspending new trades."
+                        )
                 except Exception:
                     logger.exception("Failed to send safe-mode notification")
                 return True
@@ -647,7 +696,9 @@ class BotEngine:
         if strategy_selector.enabled and market_data:
             primary_symbol = list(market_data.keys())[0] if market_data else None
             if primary_symbol and primary_symbol in market_data:
-                selected_strategy_class = strategy_selector.select_strategy(market_data[primary_symbol])
+                selected_strategy_class = strategy_selector.select_strategy(
+                    market_data[primary_symbol]
+                )
                 if selected_strategy_class:
                     selected_strategy = None
                     for strategy in self.strategies:
@@ -656,15 +707,28 @@ class BotEngine:
                             break
 
                     if selected_strategy:
-                        logger.info(f"Strategy selector chose: {selected_strategy_class.__name__}")
-                        strategy_signals = await selected_strategy.generate_signals(market_data, self._extract_multi_tf_data(market_data, primary_symbol))
+                        logger.info(
+                            f"Strategy selector chose: {selected_strategy_class.__name__}"
+                        )
+                        strategy_signals = await selected_strategy.generate_signals(
+                            market_data,
+                            self._extract_multi_tf_data(market_data, primary_symbol),
+                        )
                         signals.extend(strategy_signals)
                     else:
-                        logger.warning(f"Selected strategy {selected_strategy_class.__name__} not found in active strategies")
-                        signals = await self._generate_signals_from_all_strategies(market_data)
+                        logger.warning(
+                            f"Selected strategy {selected_strategy_class.__name__} not found in active strategies"
+                        )
+                        signals = await self._generate_signals_from_all_strategies(
+                            market_data
+                        )
                 else:
-                    logger.warning("Strategy selector returned no strategy, using all available strategies")
-                    signals = await self._generate_signals_from_all_strategies(market_data)
+                    logger.warning(
+                        "Strategy selector returned no strategy, using all available strategies"
+                    )
+                    signals = await self._generate_signals_from_all_strategies(
+                        market_data
+                    )
             else:
                 signals = await self._generate_signals_from_all_strategies(market_data)
         else:
@@ -672,22 +736,34 @@ class BotEngine:
 
         return signals
 
-    async def _generate_signals_from_all_strategies(self, market_data: Dict[str, Any]) -> List[Any]:
+    async def _generate_signals_from_all_strategies(
+        self, market_data: Dict[str, Any]
+    ) -> List[Any]:
         """Generate signals from all strategies when strategy selector is disabled or fails."""
         signals = []
         for strategy in self.strategies:
             try:
                 # Extract multi-timeframe data for the strategy's primary symbol
                 primary_symbol = list(market_data.keys())[0] if market_data else None
-                multi_tf_data = self._extract_multi_tf_data(market_data, primary_symbol) if primary_symbol else None
-                strategy_signals = await strategy.generate_signals(market_data, multi_tf_data)
+                multi_tf_data = (
+                    self._extract_multi_tf_data(market_data, primary_symbol)
+                    if primary_symbol
+                    else None
+                )
+                strategy_signals = await strategy.generate_signals(
+                    market_data, multi_tf_data
+                )
                 signals.extend(strategy_signals)
             except Exception as e:
-                logger.warning(f"Strategy {strategy.__class__.__name__} failed to generate signals: {e}")
+                logger.warning(
+                    f"Strategy {strategy.__class__.__name__} failed to generate signals: {e}"
+                )
                 continue
         return signals
 
-    async def _evaluate_risk(self, signals: List[Any], market_data: Dict[str, Any]) -> List[Any]:
+    async def _evaluate_risk(
+        self, signals: List[Any], market_data: Dict[str, Any]
+    ) -> List[Any]:
         """Evaluate signals through risk management and return approved signals."""
         approved_signals = []
         for signal in signals:
@@ -707,7 +783,10 @@ class BotEngine:
         # Find selected strategy if strategy selector is enabled
         if strategy_selector.enabled:
             for strategy in self.strategies:
-                if hasattr(strategy_selector, '_selected_strategy_class') and strategy_selector._selected_strategy_class:
+                if (
+                    hasattr(strategy_selector, "_selected_strategy_class")
+                    and strategy_selector._selected_strategy_class
+                ):
                     if type(strategy) == strategy_selector._selected_strategy_class:
                         selected_strategy = strategy
                         break
@@ -723,15 +802,23 @@ class BotEngine:
                     # Update strategy selector performance if enabled
                     if strategy_selector.enabled and selected_strategy:
                         pnl = order_result.get("pnl", 0.0)
-                        returns = pnl / self.starting_balance if self.starting_balance > 0 else 0.0
+                        returns = (
+                            pnl / self.starting_balance
+                            if self.starting_balance > 0
+                            else 0.0
+                        )
                         is_win = pnl > 0
-                        update_strategy_performance(selected_strategy.__class__.__name__, pnl, returns, is_win)
+                        update_strategy_performance(
+                            selected_strategy.__class__.__name__, pnl, returns, is_win
+                        )
 
                     # Record equity progression after each trade execution
                     try:
                         await self.record_trade_equity(order_result)
                     except Exception:
-                        logger.exception("Failed to record trade equity in trading cycle")
+                        logger.exception(
+                            "Failed to record trade equity in trading cycle"
+                        )
 
                 # Send notifications
                 if self.notifier:
@@ -763,7 +850,9 @@ class BotEngine:
             logger.warning(f"Failed to update active orders: {e}")
 
         try:
-            self.state.open_positions = await self.order_manager.get_open_position_count()
+            self.state.open_positions = (
+                await self.order_manager.get_open_position_count()
+            )
         except Exception as e:
             logger.warning(f"Failed to update open positions: {e}")
 
@@ -786,7 +875,9 @@ class BotEngine:
             self.performance_stats.setdefault("total_pnl", 0.0)
         if "equity_history" not in self.performance_stats:
             # Initialize with starting balance
-            self.performance_stats.setdefault("equity_history", [float(self.starting_balance)])
+            self.performance_stats.setdefault(
+                "equity_history", [float(self.starting_balance)]
+            )
         if "returns_history" not in self.performance_stats:
             self.performance_stats.setdefault("returns_history", [])
         if "wins" not in self.performance_stats:
@@ -880,7 +971,7 @@ class BotEngine:
             equity_val = await self._get_current_equity()
 
             # If equity is 0, try to calculate it from starting balance + total pnl
-            if equity_val == 0.0 and hasattr(self, 'performance_stats'):
+            if equity_val == 0.0 and hasattr(self, "performance_stats"):
                 total_pnl = self.performance_stats.get("total_pnl", 0.0)
                 # If we have pnl in order_result, use it to calculate equity for this trade
                 order_pnl = order_result.get("pnl", 0.0)
@@ -893,7 +984,9 @@ class BotEngine:
             cumulative_return = self._calculate_cumulative_return(equity_val)
 
             # Create and append record
-            record = self._create_equity_record(order_result, equity_val, cumulative_return)
+            record = self._create_equity_record(
+                order_result, equity_val, cumulative_return
+            )
             self.performance_stats.setdefault("equity_progression", []).append(record)
 
         except Exception:
@@ -912,16 +1005,15 @@ class BotEngine:
         """Calculate cumulative return relative to starting balance."""
         try:
             if self.starting_balance and float(self.starting_balance) > 0:
-                return (equity_val - float(self.starting_balance)) / float(self.starting_balance)
+                return (equity_val - float(self.starting_balance)) / float(
+                    self.starting_balance
+                )
             return 0.0
         except Exception:
             return 0.0
 
     def _create_equity_record(
-        self,
-        order_result: Dict[str, Any],
-        equity_val: float,
-        cumulative_return: float
+        self, order_result: Dict[str, Any], equity_val: float, cumulative_return: float
     ) -> Dict[str, Any]:
         """
         Create equity progression record from order execution result.
@@ -996,12 +1088,20 @@ class BotEngine:
                 trade_logger = None
                 try:
                     from utils.logger import get_trade_logger
+
                     trade_logger = get_trade_logger()
                 except Exception:
                     trade_logger = None
                 try:
                     if trade_logger:
-                        trade_logger.trade("Global safe mode activated", {"order_safe": order_safe, "router_block": router_block, "risk_block": risk_block})
+                        trade_logger.trade(
+                            "Global safe mode activated",
+                            {
+                                "order_safe": order_safe,
+                                "router_block": router_block,
+                                "risk_block": risk_block,
+                            },
+                        )
                 except Exception:
                     logger.exception("Failed to emit safe-mode trade log")
                 # Reset notification flag so notifier will be triggered on activation
@@ -1028,7 +1128,7 @@ class BotEngine:
             "equity": self.state.equity,
             "active_orders": self.state.active_orders,
             "open_positions": self.state.open_positions,
-            "performance_metrics": self.performance_stats
+            "performance_metrics": self.performance_stats,
         }
 
         # Update the display with the latest state
@@ -1045,18 +1145,20 @@ class BotEngine:
         except Exception:
             equity_str = str(self.state.equity)
 
-        logger.info(f"Bot Status - Mode: {self.mode.name}, Status: {'PAUSED' if self.state.paused else 'RUNNING'}, "
-                   f"Balance: {balance_str}, Equity: {equity_str}, "
-                   f"Active Orders: {self.state.active_orders}, Open Positions: {self.state.open_positions}, "
-                   f"Total PnL: {self.performance_stats.get('total_pnl', 0.0):.2f}, "
-                   f"Win Rate: {self.performance_stats.get('win_rate', 0.0):.2%}")
+        logger.info(
+            f"Bot Status - Mode: {self.mode.name}, Status: {'PAUSED' if self.state.paused else 'RUNNING'}, "
+            f"Balance: {balance_str}, Equity: {equity_str}, "
+            f"Active Orders: {self.state.active_orders}, Open Positions: {self.state.open_positions}, "
+            f"Total PnL: {self.performance_stats.get('total_pnl', 0.0):.2f}, "
+            f"Win Rate: {self.performance_stats.get('win_rate', 0.0):.2%}"
+        )
 
     def print_status_table(self) -> None:
         """Print the Trading Bot Status table in a formatted table layout."""
         try:
             # Prepare data
             mode = self.mode.name
-            status = 'PAUSED' if self.state.paused else 'RUNNING'
+            status = "PAUSED" if self.state.paused else "RUNNING"
 
             balance_str = f"{float(self.state.balance):.2f} {self.config['exchange']['base_currency']}"
             equity_str = f"{float(self.state.equity):.2f} {self.config['exchange']['base_currency']}"
@@ -1128,7 +1230,7 @@ class BotEngine:
             try:
                 await asyncio.wait_for(
                     self.notifier.send_alert("🚨 EMERGENCY SHUTDOWN TRIGGERED!"),
-                    timeout=10.0
+                    timeout=10.0,
                 )
             except asyncio.TimeoutError:
                 logger.warning("Emergency alert timed out")
@@ -1139,8 +1241,7 @@ class BotEngine:
         if self.order_manager:
             try:
                 await asyncio.wait_for(
-                    self.order_manager.cancel_all_orders(),
-                    timeout=30.0
+                    self.order_manager.cancel_all_orders(), timeout=30.0
                 )
             except asyncio.TimeoutError:
                 logger.warning("Order cancellation timed out")
@@ -1149,7 +1250,9 @@ class BotEngine:
 
         await self.shutdown()
 
-    async def _process_binary_integration(self, market_data: Dict[str, Any]) -> List[Any]:
+    async def _process_binary_integration(
+        self, market_data: Dict[str, Any]
+    ) -> List[Any]:
         """
         Process market data through binary model integration.
 
@@ -1173,8 +1276,8 @@ class BotEngine:
                 try:
                     # Extract DataFrame from market data
                     if isinstance(data, dict):
-                        if 'single_timeframe' in data:
-                            df = data['single_timeframe']
+                        if "single_timeframe" in data:
+                            df = data["single_timeframe"]
                         else:
                             # Convert dict to DataFrame
                             df = pd.DataFrame(data)
@@ -1182,22 +1285,26 @@ class BotEngine:
                         df = data
 
                     if df.empty:
-                        logger.debug(f"Insufficient data for {symbol}, skipping binary integration")
+                        logger.debug(
+                            f"Insufficient data for {symbol}, skipping binary integration"
+                        )
                         continue
 
                     # Process through binary integration
                     decision = await binary_integration.process_market_data(df, symbol)
 
                     if decision.should_trade:
-                        integrated_decisions.append({
-                            'symbol': symbol,
-                            'decision': decision,
-                            'market_data': df
-                        })
-                        logger.info(f"Binary integration approved trade for {symbol}: {decision.reasoning}")
+                        integrated_decisions.append(
+                            {"symbol": symbol, "decision": decision, "market_data": df}
+                        )
+                        logger.info(
+                            f"Binary integration approved trade for {symbol}: {decision.reasoning}"
+                        )
 
                 except Exception as e:
-                    logger.error(f"Error processing binary integration for {symbol}: {e}")
+                    logger.error(
+                        f"Error processing binary integration for {symbol}: {e}"
+                    )
                     continue
 
             return integrated_decisions
@@ -1206,7 +1313,9 @@ class BotEngine:
             logger.error(f"Binary integration processing failed: {e}")
             return []
 
-    async def _execute_integrated_decisions(self, integrated_decisions: List[Dict[str, Any]]) -> None:
+    async def _execute_integrated_decisions(
+        self, integrated_decisions: List[Dict[str, Any]]
+    ) -> None:
         """
         Execute integrated trading decisions from binary model.
 
@@ -1215,12 +1324,14 @@ class BotEngine:
         """
         for decision_data in integrated_decisions:
             try:
-                symbol = decision_data['symbol']
-                decision = decision_data['decision']
-                market_data = decision_data['market_data']
+                symbol = decision_data["symbol"]
+                decision = decision_data["decision"]
+                market_data = decision_data["market_data"]
 
                 # Create trading signal from integrated decision
-                signal = self._create_signal_from_decision(decision, symbol, market_data)
+                signal = self._create_signal_from_decision(
+                    decision, symbol, market_data
+                )
 
                 if signal:
                     # Execute the order
@@ -1235,27 +1346,42 @@ class BotEngine:
                             strategy_selector = get_strategy_selector()
                             if strategy_selector.enabled:
                                 pnl = order_result.get("pnl", 0.0)
-                                returns = pnl / self.starting_balance if self.starting_balance > 0 else 0.0
+                                returns = (
+                                    pnl / self.starting_balance
+                                    if self.starting_balance > 0
+                                    else 0.0
+                                )
                                 is_win = pnl > 0
-                                update_strategy_performance(decision.selected_strategy.__name__, pnl, returns, is_win)
+                                update_strategy_performance(
+                                    decision.selected_strategy.__name__,
+                                    pnl,
+                                    returns,
+                                    is_win,
+                                )
 
                         # Record equity progression
                         try:
                             await self.record_trade_equity(order_result)
                         except Exception:
-                            logger.exception("Failed to record trade equity in integrated decision")
+                            logger.exception(
+                                "Failed to record trade equity in integrated decision"
+                            )
 
                     # Send notifications
                     if self.notifier:
                         await self.notifier.send_order_notification(order_result)
 
-                    logger.info(f"Executed integrated decision for {symbol}: {decision.reasoning}")
+                    logger.info(
+                        f"Executed integrated decision for {symbol}: {decision.reasoning}"
+                    )
 
             except Exception as e:
                 logger.error(f"Error executing integrated decision: {e}")
                 continue
 
-    def _create_signal_from_decision(self, decision: Any, symbol: str, market_data: pd.DataFrame) -> Optional[Any]:
+    def _create_signal_from_decision(
+        self, decision: Any, symbol: str, market_data: pd.DataFrame
+    ) -> Optional[Any]:
         """
         Create a trading signal from integrated decision.
 
@@ -1268,8 +1394,9 @@ class BotEngine:
             Trading signal or None
         """
         try:
-            from core.contracts import TradingSignal, SignalType, SignalStrength
             from datetime import datetime
+
+            from core.contracts import SignalStrength, SignalType, TradingSignal
 
             # Determine signal type based on direction
             if decision.direction == "long":
@@ -1281,10 +1408,14 @@ class BotEngine:
                 return None
 
             # Get current price
-            current_price = market_data['close'].iloc[-1] if not market_data.empty else 0.0
+            current_price = (
+                market_data["close"].iloc[-1] if not market_data.empty else 0.0
+            )
 
             # Safe defaults for TradingSignal fields
-            strategy_id = getattr(decision.selected_strategy, "__name__", "UnknownStrategy")
+            strategy_id = getattr(
+                decision.selected_strategy, "__name__", "UnknownStrategy"
+            )
             signal_strength_value = getattr(decision, "binary_probability", 1.0)
 
             # Convert signal_strength to SignalStrength enum
@@ -1322,8 +1453,8 @@ class BotEngine:
                     "regime": getattr(decision, "regime", None),
                     "binary_probability": signal_strength_value,
                     "risk_score": getattr(decision, "risk_score", None),
-                    "reasoning": reasoning
-                }
+                    "reasoning": reasoning,
+                },
             )
 
             return signal
@@ -1332,7 +1463,9 @@ class BotEngine:
             logger.error(f"Error creating signal from decision: {e}")
             return None
 
-    def _extract_multi_tf_data(self, market_data: Dict[str, Any], symbol: str) -> Optional[Dict[str, Any]]:
+    def _extract_multi_tf_data(
+        self, market_data: Dict[str, Any], symbol: str
+    ) -> Optional[Dict[str, Any]]:
         """
         Extract multi-timeframe data for a specific symbol from market data.
 
@@ -1350,11 +1483,11 @@ class BotEngine:
             symbol_data = market_data[symbol]
 
             # Check if symbol_data is a dict with multi_timeframe key
-            if isinstance(symbol_data, dict) and 'multi_timeframe' in symbol_data:
-                return symbol_data['multi_timeframe']
+            if isinstance(symbol_data, dict) and "multi_timeframe" in symbol_data:
+                return symbol_data["multi_timeframe"]
 
             # Check if symbol_data is a SyncedData object directly
-            if hasattr(symbol_data, 'data') and hasattr(symbol_data, 'timestamp'):
+            if hasattr(symbol_data, "data") and hasattr(symbol_data, "timestamp"):
                 return symbol_data
 
             return None
@@ -1380,24 +1513,29 @@ class DistributedScheduler:
             self._initialized = True
             logger.info("DistributedScheduler initialized")
 
-    async def schedule_signal_processing(self, market_data: Dict[str, Any],
-                                       correlation_id: Optional[str] = None) -> str:
+    async def schedule_signal_processing(
+        self, market_data: Dict[str, Any], correlation_id: Optional[str] = None
+    ) -> str:
         """Schedule signal processing task."""
         task_data = {
-            'market_data': market_data,
-            'pairs': getattr(self.task_manager, '_bot_engine', None).pairs if hasattr(self.task_manager, '_bot_engine') else [],
-            'timestamp': time.time()
+            "market_data": market_data,
+            "pairs": getattr(self.task_manager, "_bot_engine", None).pairs
+            if hasattr(self.task_manager, "_bot_engine")
+            else [],
+            "timestamp": time.time(),
         }
 
         return await self.task_manager.enqueue_signal_task(task_data)
 
-    async def schedule_backtest(self, backtest_config: Dict[str, Any],
-                              correlation_id: Optional[str] = None) -> str:
+    async def schedule_backtest(
+        self, backtest_config: Dict[str, Any], correlation_id: Optional[str] = None
+    ) -> str:
         """Schedule backtest task."""
         return await self.task_manager.enqueue_backtest_task(backtest_config)
 
-    async def schedule_optimization(self, optimization_config: Dict[str, Any],
-                                  correlation_id: Optional[str] = None) -> str:
+    async def schedule_optimization(
+        self, optimization_config: Dict[str, Any], correlation_id: Optional[str] = None
+    ) -> str:
         """Schedule optimization task."""
         return await self.task_manager.enqueue_optimization_task(optimization_config)
 
@@ -1415,11 +1553,13 @@ class DistributedExecutor:
         self._initialized = False
 
         # Register task handlers
-        self.task_manager.register_task_handler('signal', self._handle_signal_task)
-        self.task_manager.register_task_handler('backtest', self._handle_backtest_task)
-        self.task_manager.register_task_handler('optimization', self._handle_optimization_task)
+        self.task_manager.register_task_handler("signal", self._handle_signal_task)
+        self.task_manager.register_task_handler("backtest", self._handle_backtest_task)
+        self.task_manager.register_task_handler(
+            "optimization", self._handle_optimization_task
+        )
 
-    async def initialize(self, bot_engine: 'BotEngine') -> None:
+    async def initialize(self, bot_engine: "BotEngine") -> None:
         """Initialize the distributed executor."""
         if not self._initialized:
             self.bot_engine = bot_engine
@@ -1429,19 +1569,23 @@ class DistributedExecutor:
     async def _handle_signal_task(self, payload: Dict[str, Any], **kwargs) -> bool:
         """Handle signal processing task."""
         try:
-            correlation_id = kwargs.get('correlation_id', 'unknown')
-            logger.info(f"Processing signal task", extra={'correlation_id': correlation_id})
+            correlation_id = kwargs.get("correlation_id", "unknown")
+            logger.info(
+                "Processing signal task", extra={"correlation_id": correlation_id}
+            )
 
-            market_data = payload.get('market_data', {})
-            pairs = payload.get('pairs', [])
+            market_data = payload.get("market_data", {})
+            pairs = payload.get("pairs", [])
 
             # Process signals using bot engine methods
-            if hasattr(self, 'bot_engine'):
+            if hasattr(self, "bot_engine"):
                 # Generate signals
                 signals = await self.bot_engine._generate_signals(market_data)
 
                 # Evaluate risk
-                approved_signals = await self.bot_engine._evaluate_risk(signals, market_data)
+                approved_signals = await self.bot_engine._evaluate_risk(
+                    signals, market_data
+                )
 
                 # Execute orders
                 await self.bot_engine._execute_orders(approved_signals)
@@ -1449,48 +1593,76 @@ class DistributedExecutor:
                 # Update state
                 await self.bot_engine._update_state()
 
-                logger.info(f"Signal task completed successfully", extra={'correlation_id': correlation_id})
+                logger.info(
+                    "Signal task completed successfully",
+                    extra={"correlation_id": correlation_id},
+                )
                 return True
             else:
                 logger.error("Bot engine not available for signal processing")
                 return False
 
         except Exception as e:
-            logger.error(f"Signal task processing failed: {e}", extra={'correlation_id': kwargs.get('correlation_id', 'unknown')}, exc_info=True)
+            logger.error(
+                f"Signal task processing failed: {e}",
+                extra={"correlation_id": kwargs.get("correlation_id", "unknown")},
+                exc_info=True,
+            )
             return False
 
     async def _handle_backtest_task(self, payload: Dict[str, Any], **kwargs) -> bool:
         """Handle backtest task."""
         try:
-            correlation_id = kwargs.get('correlation_id', 'unknown')
-            logger.info(f"Processing backtest task", extra={'correlation_id': correlation_id})
+            correlation_id = kwargs.get("correlation_id", "unknown")
+            logger.info(
+                "Processing backtest task", extra={"correlation_id": correlation_id}
+            )
 
             # Extract backtest configuration
             backtest_config = payload
 
             # Run backtest (placeholder - would integrate with existing backtest system)
             # For now, just log the task
-            logger.info(f"Backtest task completed for config: {backtest_config}", extra={'correlation_id': correlation_id})
+            logger.info(
+                f"Backtest task completed for config: {backtest_config}",
+                extra={"correlation_id": correlation_id},
+            )
             return True
 
         except Exception as e:
-            logger.error(f"Backtest task processing failed: {e}", extra={'correlation_id': kwargs.get('correlation_id', 'unknown')}, exc_info=True)
+            logger.error(
+                f"Backtest task processing failed: {e}",
+                extra={"correlation_id": kwargs.get("correlation_id", "unknown")},
+                exc_info=True,
+            )
             return False
 
-    async def _handle_optimization_task(self, payload: Dict[str, Any], **kwargs) -> bool:
+    async def _handle_optimization_task(
+        self, payload: Dict[str, Any], **kwargs
+    ) -> bool:
         """Handle optimization task."""
         try:
-            correlation_id = kwargs.get('correlation_id', 'unknown')
-            logger.info(f"Processing optimization task", extra={'correlation_id': correlation_id})
+            correlation_id = kwargs.get("correlation_id", "unknown")
+            logger.info(
+                "Processing optimization task",
+                extra={"correlation_id": correlation_id},
+            )
 
             # Extract optimization configuration
             optimization_config = payload
 
             # Run optimization (placeholder - would integrate with existing optimization system)
             # For now, just log the task
-            logger.info(f"Optimization task completed for config: {optimization_config}", extra={'correlation_id': correlation_id})
+            logger.info(
+                f"Optimization task completed for config: {optimization_config}",
+                extra={"correlation_id": correlation_id},
+            )
             return True
 
         except Exception as e:
-            logger.error(f"Optimization task processing failed: {e}", extra={'correlation_id': kwargs.get('correlation_id', 'unknown')}, exc_info=True)
+            logger.error(
+                f"Optimization task processing failed: {e}",
+                extra={"correlation_id": kwargs.get("correlation_id", "unknown")},
+                exc_info=True,
+            )
             return False

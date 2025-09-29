@@ -7,33 +7,37 @@ Tests the optimizations made to:
 2. Redundant DataFrame copies in data_fetcher.py cache operations
 """
 
-import time
-import pandas as pd
-import numpy as np
-from typing import List
 import asyncio
-import tempfile
 import os
+import time
+from typing import List
 
-# Import the optimized modules
-from data.historical_loader import HistoricalDataLoader
+import numpy as np
+import pandas as pd
+
 from data.data_fetcher import DataFetcher
 
+# Import the optimized modules
 
-def create_test_dataframes(count: int = 50, rows_per_df: int = 1000) -> List[pd.DataFrame]:
+
+def create_test_dataframes(
+    count: int = 50, rows_per_df: int = 1000
+) -> List[pd.DataFrame]:
     """Create test DataFrames for benchmarking."""
     dfs = []
-    base_time = pd.Timestamp('2023-01-01')
+    base_time = pd.Timestamp("2023-01-01")
 
     for i in range(count):
         # Create OHLCV data
-        timestamps = pd.date_range(base_time + pd.Timedelta(hours=i*24), periods=rows_per_df, freq='1h')
+        timestamps = pd.date_range(
+            base_time + pd.Timedelta(hours=i * 24), periods=rows_per_df, freq="1h"
+        )
         data = {
-            'open': np.random.uniform(100, 200, rows_per_df),
-            'high': np.random.uniform(150, 250, rows_per_df),
-            'low': np.random.uniform(50, 150, rows_per_df),
-            'close': np.random.uniform(100, 200, rows_per_df),
-            'volume': np.random.uniform(1000, 10000, rows_per_df)
+            "open": np.random.uniform(100, 200, rows_per_df),
+            "high": np.random.uniform(150, 250, rows_per_df),
+            "low": np.random.uniform(50, 150, rows_per_df),
+            "close": np.random.uniform(100, 200, rows_per_df),
+            "volume": np.random.uniform(1000, 10000, rows_per_df),
         }
         df = pd.DataFrame(data, index=timestamps)
         dfs.append(df)
@@ -97,12 +101,12 @@ async def benchmark_cache_operations():
     os.makedirs(temp_dir, exist_ok=True)
     try:
         config = {
-            'cache_enabled': True,
-            'cache_dir': temp_dir,
-            'name': 'binance',
-            'api_key': '',
-            'api_secret': '',
-            'rate_limit': 10
+            "cache_enabled": True,
+            "cache_dir": temp_dir,
+            "name": "binance",
+            "api_key": "",
+            "api_secret": "",
+            "rate_limit": 10,
         }
 
         fetcher = DataFetcher(config)
@@ -123,11 +127,14 @@ async def benchmark_cache_operations():
 
         print(f"Cache save time: {save_time:.4f} seconds")
         print(f"Cache load time: {load_time:.4f} seconds")
-        print(f"Data integrity: ✓ Verified")
-        print(f"Cache file size: {os.path.getsize(os.path.join(temp_dir, f'{cache_key}.json'))} bytes")
+        print("Data integrity: ✓ Verified")
+        print(
+            f"Cache file size: {os.path.getsize(os.path.join(temp_dir, f'{cache_key}.json'))} bytes"
+        )
     finally:
         # Clean up temporary directory
         import shutil
+
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
 

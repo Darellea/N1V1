@@ -5,18 +5,18 @@ Extends Prometheus metrics to track binary model health, calibration, and perfor
 Provides comprehensive monitoring for the binary entry model integration.
 """
 
-import asyncio
-import time
 import logging
-from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 
-from core.metrics_collector import MetricsCollector, get_metrics_collector
-# Removed circular import - will import locally when needed
-from strategies.regime.market_regime import get_market_regime_detector
-from utils.logger import get_trade_logger
+from core.metrics_collector import MetricsCollector
 from utils.config_loader import get_config
+
+# Removed circular import - will import locally when needed
+from utils.logger import get_trade_logger
+
 
 # Safe config access
 def _safe_get_config(key: str = None, default=None):
@@ -25,6 +25,7 @@ def _safe_get_config(key: str = None, default=None):
         return cfg.get(key, default) if key else cfg
     except Exception:
         return default
+
 
 # Safe import for binary integration
 try:
@@ -66,9 +67,15 @@ class BinaryModelMetricsCollector:
 
         # Drift detection
         self.drift_thresholds = {
-            "trade_frequency_change": config.get("drift_detection", {}).get("trade_frequency_change", 0.5),
-            "accuracy_drop": config.get("drift_detection", {}).get("accuracy_drop", 0.1),
-            "calibration_error": config.get("drift_detection", {}).get("calibration_error", 0.2)
+            "trade_frequency_change": config.get("drift_detection", {}).get(
+                "trade_frequency_change", 0.5
+            ),
+            "accuracy_drop": config.get("drift_detection", {}).get(
+                "accuracy_drop", 0.1
+            ),
+            "calibration_error": config.get("drift_detection", {}).get(
+                "calibration_error", 0.2
+            ),
         }
 
         # Rolling window for metrics
@@ -94,9 +101,7 @@ class BinaryModelMetricsCollector:
         try:
             # Always attempt to record at least one metric
             await collector.record_metric(
-                "binary_model_collections_total",
-                1,
-                {"model": "entry_model"}
+                "binary_model_collections_total", 1, {"model": "entry_model"}
             )
 
             # Current threshold - use safe import
@@ -107,7 +112,7 @@ class BinaryModelMetricsCollector:
                         await collector.record_metric(
                             "binary_model_threshold",
                             binary_integration.binary_threshold,
-                            {"model": "entry_model"}
+                            {"model": "entry_model"},
                         )
                 except Exception:
                     pass
@@ -118,7 +123,7 @@ class BinaryModelMetricsCollector:
                 await collector.record_metric(
                     "binary_model_average_ptrade",
                     avg_ptrade,
-                    {"model": "entry_model", "window": f"{self.metrics_window_hours}h"}
+                    {"model": "entry_model", "window": f"{self.metrics_window_hours}h"},
                 )
 
             # Trade frequency by regime
@@ -127,34 +132,28 @@ class BinaryModelMetricsCollector:
                 await collector.record_metric(
                     "binary_model_trades_by_regime_total",
                     count,
-                    {"model": "entry_model", "regime": regime}
+                    {"model": "entry_model", "regime": regime},
                 )
 
             # Realized vs predicted hit rate
             hit_rate_metrics = self._calculate_hit_rate_metrics()
             for metric_name, value in hit_rate_metrics.items():
                 await collector.record_metric(
-                    f"binary_model_{metric_name}",
-                    value,
-                    {"model": "entry_model"}
+                    f"binary_model_{metric_name}", value, {"model": "entry_model"}
                 )
 
             # Model health metrics
             health_metrics = self._calculate_model_health_metrics()
             for metric_name, value in health_metrics.items():
                 await collector.record_metric(
-                    f"binary_model_{metric_name}",
-                    value,
-                    {"model": "entry_model"}
+                    f"binary_model_{metric_name}", value, {"model": "entry_model"}
                 )
 
             # Calibration metrics
             calibration_metrics = self._calculate_calibration_metrics()
             for metric_name, value in calibration_metrics.items():
                 await collector.record_metric(
-                    f"binary_model_{metric_name}",
-                    value,
-                    {"model": "entry_model"}
+                    f"binary_model_{metric_name}", value, {"model": "entry_model"}
                 )
 
             # Drift detection
@@ -163,14 +162,21 @@ class BinaryModelMetricsCollector:
                 await collector.record_metric(
                     f"binary_model_drift_{indicator_name}",
                     value,
-                    {"model": "entry_model"}
+                    {"model": "entry_model"},
                 )
 
         except Exception as e:
             logger.error(f"Error collecting binary model metrics: {e}")
 
-    def record_prediction(self, symbol: str, probability: float, threshold: float,
-                         regime: str, features: Dict[str, float], decision: str = None) -> None:
+    def record_prediction(
+        self,
+        symbol: str,
+        probability: float,
+        threshold: float,
+        regime: str,
+        features: Dict[str, float],
+        decision: str = None,
+    ) -> None:
         """
         Record a binary model prediction.
 
@@ -191,7 +197,7 @@ class BinaryModelMetricsCollector:
             dec = decision or ("trade" if prob >= thr else "skip")
         except (ValueError, TypeError):
             prob = 0.5  # Default
-            thr = 0.6   # Default
+            thr = 0.6  # Default
             dec = "skip"  # Default
 
         prediction_record = {
@@ -201,19 +207,26 @@ class BinaryModelMetricsCollector:
             "threshold": thr,
             "regime": str(regime) if regime else "unknown",
             "features": features if isinstance(features, dict) else {},
-            "decision": dec
+            "decision": dec,
         }
 
         self.prediction_history.append(prediction_record)
 
         # Maintain history size
         if len(self.prediction_history) > self.max_history_size:
-            self.prediction_history = self.prediction_history[-self.max_history_size:]
+            self.prediction_history = self.prediction_history[-self.max_history_size :]
 
         logger.debug(f"Recorded binary model prediction: {symbol} p={prob:.3f}")
 
-    def record_decision_outcome(self, symbol: str, decision: str, outcome: str,
-                               pnl: float, regime: str, strategy: str) -> None:
+    def record_decision_outcome(
+        self,
+        symbol: str,
+        decision: str,
+        outcome: str,
+        pnl: float,
+        regime: str,
+        strategy: str,
+    ) -> None:
         """
         Record the outcome of a trading decision.
 
@@ -230,7 +243,11 @@ class BinaryModelMetricsCollector:
 
         try:
             # Validate and convert data types with defaults
-            pnl_val = float(pnl) if pnl is not None and isinstance(pnl, (int, float, str)) else 0.0
+            pnl_val = (
+                float(pnl)
+                if pnl is not None and isinstance(pnl, (int, float, str))
+                else 0.0
+            )
         except (ValueError, TypeError):
             pnl_val = 0.0  # Default
 
@@ -241,8 +258,9 @@ class BinaryModelMetricsCollector:
         symbol_str = str(symbol) if symbol else "unknown"
 
         # Compute was_correct safely
-        was_correct = (decision_str == "trade" and outcome_str == "profit") or \
-                     (decision_str == "skip" and outcome_str != "profit")
+        was_correct = (decision_str == "trade" and outcome_str == "profit") or (
+            decision_str == "skip" and outcome_str != "profit"
+        )
 
         decision_record = {
             "timestamp": datetime.now(),
@@ -252,14 +270,14 @@ class BinaryModelMetricsCollector:
             "pnl": pnl_val,
             "regime": regime_str,
             "strategy": strategy_str,
-            "was_correct": was_correct
+            "was_correct": was_correct,
         }
 
         self.decision_history.append(decision_record)
 
         # Maintain history size
         if len(self.decision_history) > self.max_history_size:
-            self.decision_history = self.decision_history[-self.max_history_size:]
+            self.decision_history = self.decision_history[-self.max_history_size :]
 
         # Update regime performance
         if regime_str not in self.regime_performance:
@@ -268,7 +286,7 @@ class BinaryModelMetricsCollector:
                 "correct_decisions": 0,
                 "total_pnl": 0.0,
                 "winning_trades": 0,
-                "total_trades": 0
+                "total_trades": 0,
             }
 
         regime_stats = self.regime_performance[regime_str]
@@ -281,7 +299,9 @@ class BinaryModelMetricsCollector:
             if pnl_val > 0:
                 regime_stats["winning_trades"] += 1
 
-        logger.debug(f"Recorded decision outcome: {symbol_str} {decision_str} -> {outcome_str} (PnL: {pnl_val:.2f})")
+        logger.debug(
+            f"Recorded decision outcome: {symbol_str} {decision_str} -> {outcome_str} (PnL: {pnl_val:.2f})"
+        )
 
     def _calculate_average_ptrade(self) -> Optional[float]:
         """Calculate average p_trade from recent predictions."""
@@ -291,15 +311,21 @@ class BinaryModelMetricsCollector:
         # Get predictions from the last metrics window
         cutoff_time = datetime.now() - timedelta(hours=self.metrics_window_hours)
         recent_predictions = [
-            p for p in self.prediction_history
-            if isinstance(p.get("timestamp"), datetime) and p["timestamp"] > cutoff_time and
-               isinstance(p.get("probability"), (int, float))
+            p
+            for p in self.prediction_history
+            if isinstance(p.get("timestamp"), datetime)
+            and p["timestamp"] > cutoff_time
+            and isinstance(p.get("probability"), (int, float))
         ]
 
         if not recent_predictions:
             return None
 
-        probabilities = [p["probability"] for p in recent_predictions if isinstance(p["probability"], (int, float))]
+        probabilities = [
+            p["probability"]
+            for p in recent_predictions
+            if isinstance(p["probability"], (int, float))
+        ]
         return np.mean(probabilities) if probabilities else None
 
     def _calculate_regime_trade_counts(self) -> Dict[str, int]:
@@ -309,8 +335,11 @@ class BinaryModelMetricsCollector:
         # Get decisions from the last metrics window
         cutoff_time = datetime.now() - timedelta(hours=self.metrics_window_hours)
         recent_decisions = [
-            d for d in self.decision_history
-            if isinstance(d.get("timestamp"), datetime) and d["timestamp"] > cutoff_time and d.get("decision") == "trade"
+            d
+            for d in self.decision_history
+            if isinstance(d.get("timestamp"), datetime)
+            and d["timestamp"] > cutoff_time
+            and d.get("decision") == "trade"
         ]
 
         for decision in recent_decisions:
@@ -329,7 +358,8 @@ class BinaryModelMetricsCollector:
         # Get decisions from the last metrics window
         cutoff_time = datetime.now() - timedelta(hours=self.metrics_window_hours)
         recent_decisions = [
-            d for d in self.decision_history
+            d
+            for d in self.decision_history
             if isinstance(d.get("timestamp"), datetime) and d["timestamp"] > cutoff_time
         ]
 
@@ -338,19 +368,31 @@ class BinaryModelMetricsCollector:
 
         # Overall accuracy
         total_decisions = len(recent_decisions)
-        correct_decisions = sum(1 for d in recent_decisions if d.get("was_correct", False))
-        metrics["accuracy"] = correct_decisions / total_decisions if total_decisions > 0 else 0.0
+        correct_decisions = sum(
+            1 for d in recent_decisions if d.get("was_correct", False)
+        )
+        metrics["accuracy"] = (
+            correct_decisions / total_decisions if total_decisions > 0 else 0.0
+        )
 
         # Precision (when we predict trade, how often are we right?)
-        trade_predictions = [d for d in recent_decisions if d.get("decision") == "trade"]
+        trade_predictions = [
+            d for d in recent_decisions if d.get("decision") == "trade"
+        ]
         if trade_predictions:
-            correct_trades = sum(1 for d in trade_predictions if d.get("outcome") == "profit")
+            correct_trades = sum(
+                1 for d in trade_predictions if d.get("outcome") == "profit"
+            )
             metrics["precision"] = correct_trades / len(trade_predictions)
 
         # Recall (how many profitable opportunities did we capture?)
-        profitable_opportunities = [d for d in recent_decisions if d.get("outcome") == "profit"]
+        profitable_opportunities = [
+            d for d in recent_decisions if d.get("outcome") == "profit"
+        ]
         if profitable_opportunities:
-            captured_opportunities = sum(1 for d in profitable_opportunities if d.get("decision") == "trade")
+            captured_opportunities = sum(
+                1 for d in profitable_opportunities if d.get("decision") == "trade"
+            )
             metrics["recall"] = captured_opportunities / len(profitable_opportunities)
 
         # F1 Score
@@ -371,7 +413,8 @@ class BinaryModelMetricsCollector:
         # Get recent predictions
         cutoff_time = datetime.now() - timedelta(hours=self.metrics_window_hours)
         recent_predictions = [
-            p for p in self.prediction_history
+            p
+            for p in self.prediction_history
             if isinstance(p.get("timestamp"), datetime) and p["timestamp"] > cutoff_time
         ]
 
@@ -389,7 +432,9 @@ class BinaryModelMetricsCollector:
         # Decision distribution
         trade_decisions = sum(1 for p in recent_predictions if p["decision"] == "trade")
         total_predictions = len(recent_predictions)
-        metrics["trade_decision_ratio"] = trade_decisions / total_predictions if total_predictions > 0 else 0.0
+        metrics["trade_decision_ratio"] = (
+            trade_decisions / total_predictions if total_predictions > 0 else 0.0
+        )
 
         # Feature diversity (simplified)
         feature_keys = set()
@@ -411,7 +456,8 @@ class BinaryModelMetricsCollector:
         # Get recent decisions
         cutoff_time = datetime.now() - timedelta(hours=self.metrics_window_hours)
         recent_decisions = [
-            d for d in self.decision_history
+            d
+            for d in self.decision_history
             if isinstance(d.get("timestamp"), datetime) and d["timestamp"] > cutoff_time
         ]
 
@@ -436,33 +482,47 @@ class BinaryModelMetricsCollector:
                 if decision_symbol:
                     for pred in self.prediction_history:
                         pred_symbol = pred.get("symbol")
-                        if (pred_symbol and pred_symbol == decision_symbol and
-                            isinstance(pred.get("timestamp"), datetime) and
-                            isinstance(decision.get("timestamp"), datetime) and
-                            abs((pred["timestamp"] - decision["timestamp"]).total_seconds()) < 60):  # Within 1 minute
+                        if (
+                            pred_symbol
+                            and pred_symbol == decision_symbol
+                            and isinstance(pred.get("timestamp"), datetime)
+                            and isinstance(decision.get("timestamp"), datetime)
+                            and abs(
+                                (
+                                    pred["timestamp"] - decision["timestamp"]
+                                ).total_seconds()
+                            )
+                            < 60
+                        ):  # Within 1 minute
                             prediction = pred
                             break
 
-                if (prediction and isinstance(prediction.get("probability"), (int, float)) and
-                    bin_start <= prediction["probability"] < bin_end):
+                if (
+                    prediction
+                    and isinstance(prediction.get("probability"), (int, float))
+                    and bin_start <= prediction["probability"] < bin_end
+                ):
                     bin_decisions.append(decision)
 
             if bin_decisions:
                 # Calculate expected vs actual win rate
                 expected_win_rate = (bin_start + bin_end) / 2
-                actual_win_rate = sum(1 for d in bin_decisions if d["outcome"] == "profit") / len(bin_decisions)
+                actual_win_rate = sum(
+                    1 for d in bin_decisions if d["outcome"] == "profit"
+                ) / len(bin_decisions)
 
-                calibration_data.append({
-                    "expected": expected_win_rate,
-                    "actual": actual_win_rate,
-                    "count": len(bin_decisions)
-                })
+                calibration_data.append(
+                    {
+                        "expected": expected_win_rate,
+                        "actual": actual_win_rate,
+                        "count": len(bin_decisions),
+                    }
+                )
 
         # Calculate calibration error
         if calibration_data:
             calibration_errors = [
-                abs(data["expected"] - data["actual"])
-                for data in calibration_data
+                abs(data["expected"] - data["actual"]) for data in calibration_data
             ]
             metrics["calibration_error"] = np.mean(calibration_errors)
 
@@ -494,11 +554,18 @@ class BinaryModelMetricsCollector:
 
         # Trade frequency drift
         if historical and recent:
-            historical_trade_rate = sum(1 for p in historical if p["decision"] == "trade") / len(historical)
-            recent_trade_rate = sum(1 for p in recent if p["decision"] == "trade") / len(recent)
+            historical_trade_rate = sum(
+                1 for p in historical if p["decision"] == "trade"
+            ) / len(historical)
+            recent_trade_rate = sum(
+                1 for p in recent if p["decision"] == "trade"
+            ) / len(recent)
 
             if historical_trade_rate > 0:
-                trade_frequency_change = abs(recent_trade_rate - historical_trade_rate) / historical_trade_rate
+                trade_frequency_change = (
+                    abs(recent_trade_rate - historical_trade_rate)
+                    / historical_trade_rate
+                )
                 indicators["trade_frequency_change"] = trade_frequency_change
 
         # Prediction distribution drift
@@ -510,7 +577,9 @@ class BinaryModelMetricsCollector:
             recent_mean = np.mean(recent_probs)
 
             if historical_mean > 0:
-                prob_distribution_drift = abs(recent_mean - historical_mean) / historical_mean
+                prob_distribution_drift = (
+                    abs(recent_mean - historical_mean) / historical_mean
+                )
                 indicators["prediction_distribution_drift"] = prob_distribution_drift
 
         return indicators
@@ -531,28 +600,38 @@ class BinaryModelMetricsCollector:
             current_time = datetime.now()
 
             # Check trade frequency drift
-            trade_freq_change = self._calculate_drift_indicators().get("trade_frequency_change", 0)
+            trade_freq_change = self._calculate_drift_indicators().get(
+                "trade_frequency_change", 0
+            )
             if trade_freq_change > self.drift_thresholds["trade_frequency_change"]:
                 if self._should_alert("trade_frequency_drift", current_time):
-                    alerts.append({
-                        "alert_name": "BinaryModelTradeFrequencyDrift",
-                        "severity": "warning",
-                        "description": f"trade frequency changed by {trade_freq_change:.1f}",
-                        "value": trade_freq_change,
-                        "threshold": self.drift_thresholds["trade_frequency_change"]
-                    })
+                    alerts.append(
+                        {
+                            "alert_name": "BinaryModelTradeFrequencyDrift",
+                            "severity": "warning",
+                            "description": f"trade frequency changed by {trade_freq_change:.1f}",
+                            "value": trade_freq_change,
+                            "threshold": self.drift_thresholds[
+                                "trade_frequency_change"
+                            ],
+                        }
+                    )
 
             # Check calibration error
-            calibration_error = self._calculate_calibration_metrics().get("calibration_error", 0)
+            calibration_error = self._calculate_calibration_metrics().get(
+                "calibration_error", 0
+            )
             if calibration_error > self.drift_thresholds["calibration_error"]:
                 if self._should_alert("calibration_error", current_time):
-                    alerts.append({
-                        "alert_name": "BinaryModelCalibrationError",
-                        "severity": "warning",
-                        "description": f"Calibration error: {calibration_error:.3f}",
-                        "value": calibration_error,
-                        "threshold": self.drift_thresholds["calibration_error"]
-                    })
+                    alerts.append(
+                        {
+                            "alert_name": "BinaryModelCalibrationError",
+                            "severity": "warning",
+                            "description": f"Calibration error: {calibration_error:.3f}",
+                            "value": calibration_error,
+                            "threshold": self.drift_thresholds["calibration_error"],
+                        }
+                    )
 
             # Check accuracy drop
             hit_rate_metrics = self._calculate_hit_rate_metrics()
@@ -565,24 +644,28 @@ class BinaryModelMetricsCollector:
 
                 if accuracy_drop > self.drift_thresholds["accuracy_drop"]:
                     if self._should_alert("accuracy_drop", current_time):
-                        alerts.append({
-                            "alert_name": "BinaryModelAccuracyDrop",
-                            "severity": "critical",
-                            "description": f"Accuracy dropped by {accuracy_drop:.1%} to {accuracy:.1%}",
-                            "value": accuracy_drop,
-                            "threshold": self.drift_thresholds["accuracy_drop"]
-                        })
+                        alerts.append(
+                            {
+                                "alert_name": "BinaryModelAccuracyDrop",
+                                "severity": "critical",
+                                "description": f"Accuracy dropped by {accuracy_drop:.1%} to {accuracy:.1%}",
+                                "value": accuracy_drop,
+                                "threshold": self.drift_thresholds["accuracy_drop"],
+                            }
+                        )
             elif len(self.decision_history) > 50:  # Lower threshold for testing
                 # For testing purposes, trigger alert if accuracy is low
                 if accuracy <= 0.5:
                     if self._should_alert("accuracy_drop", current_time):
-                        alerts.append({
-                            "alert_name": "BinaryModelAccuracyDrop",
-                            "severity": "critical",
-                            "description": f"Accuracy dropped by {0.5 - accuracy:.1%} to {accuracy:.1%}",
-                            "value": 0.5 - accuracy,
-                            "threshold": self.drift_thresholds["accuracy_drop"]
-                        })
+                        alerts.append(
+                            {
+                                "alert_name": "BinaryModelAccuracyDrop",
+                                "severity": "critical",
+                                "description": f"Accuracy dropped by {0.5 - accuracy:.1%} to {accuracy:.1%}",
+                                "value": 0.5 - accuracy,
+                                "threshold": self.drift_thresholds["accuracy_drop"],
+                            }
+                        )
 
         except Exception as e:
             logger.error(f"Error checking for binary model alerts: {e}")
@@ -595,10 +678,14 @@ class BinaryModelMetricsCollector:
             return 0.5
 
         # Use first half for historical comparison
-        historical_decisions = self.decision_history[:len(self.decision_history)//2]
+        historical_decisions = self.decision_history[: len(self.decision_history) // 2]
         historical_correct = sum(1 for d in historical_decisions if d["was_correct"])
 
-        return historical_correct / len(historical_decisions) if historical_decisions else 0.5
+        return (
+            historical_correct / len(historical_decisions)
+            if historical_decisions
+            else 0.5
+        )
 
     def _should_alert(self, alert_type: str, current_time: datetime) -> bool:
         """Check if alert should be triggered based on cooldown."""
@@ -607,7 +694,9 @@ class BinaryModelMetricsCollector:
             self.last_alert_time[alert_type] = current_time
             return True
 
-        time_since_last_alert = (current_time - last_alert).total_seconds() / 60  # minutes
+        time_since_last_alert = (
+            current_time - last_alert
+        ).total_seconds() / 60  # minutes
         if time_since_last_alert >= self.alert_cooldown_minutes:
             self.last_alert_time[alert_type] = current_time
             return True
@@ -621,7 +710,7 @@ class BinaryModelMetricsCollector:
             "metrics_window_hours": self.metrics_window_hours,
             "total_predictions": len(self.prediction_history),
             "total_decisions": len(self.decision_history),
-            "regime_performance": self.regime_performance.copy()
+            "regime_performance": self.regime_performance.copy(),
         }
 
         # Add current metrics
@@ -630,7 +719,7 @@ class BinaryModelMetricsCollector:
             "hit_rate_metrics": self._calculate_hit_rate_metrics(),
             "health_metrics": self._calculate_model_health_metrics(),
             "calibration_metrics": self._calculate_calibration_metrics(),
-            "drift_indicators": self._calculate_drift_indicators()
+            "drift_indicators": self._calculate_drift_indicators(),
         }
 
         return report
@@ -648,6 +737,8 @@ def get_binary_model_metrics_collector() -> BinaryModelMetricsCollector:
     return _binary_model_metrics_collector
 
 
-def create_binary_model_metrics_collector(config: Optional[Dict[str, Any]] = None) -> BinaryModelMetricsCollector:
+def create_binary_model_metrics_collector(
+    config: Optional[Dict[str, Any]] = None
+) -> BinaryModelMetricsCollector:
     """Create a new binary model metrics collector instance."""
     return BinaryModelMetricsCollector(config or {})

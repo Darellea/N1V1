@@ -6,15 +6,14 @@ implemented in the core modules.
 """
 
 import asyncio
-import pytest
-from unittest.mock import Mock, patch, AsyncMock
-import logging
-import json
+from unittest.mock import AsyncMock, Mock, patch
 
-from core.logging_utils import get_structured_logger, LogSensitivity, StructuredLogger
+import pytest
+
 from core.cache import RedisCache
+from core.interfaces import CacheConfig, EvictionPolicy, MemoryConfig
+from core.logging_utils import LogSensitivity, StructuredLogger, get_structured_logger
 from core.metrics_endpoint import MetricsEndpoint
-from core.interfaces import CacheConfig, MemoryConfig, EvictionPolicy
 
 
 class TestStructuredLogging:
@@ -40,10 +39,7 @@ class TestStructuredLogging:
 
         # Test formatting with kwargs
         message = logger._format_structured_message(
-            "Test message",
-            component="test",
-            operation="test_op",
-            user_id="123"
+            "Test message", component="test", operation="test_op", user_id="123"
         )
 
         assert "Test message" in message
@@ -51,7 +47,7 @@ class TestStructuredLogging:
         assert "operation=test_op" in message
         assert "user_id=123" in message
 
-    @patch('core.logging_utils.logging')
+    @patch("core.logging_utils.logging")
     def test_log_levels(self, mock_logging):
         """Test different log levels work correctly."""
         logger = StructuredLogger("test", LogSensitivity.INFO)
@@ -88,7 +84,7 @@ class TestCacheResourceManagement:
                 "default": 300,
                 "market_ticker": 60,
                 "ohlcv": 300,
-                "account_balance": 30
+                "account_balance": 30,
             },
             max_cache_size=10000,
             eviction_policy=EvictionPolicy.LRU,
@@ -97,11 +93,11 @@ class TestCacheResourceManagement:
                 warning_memory_mb=400.0,
                 cleanup_memory_mb=350.0,
                 eviction_batch_size=100,
-                memory_check_interval=60.0
-            )
+                memory_check_interval=60.0,
+            ),
         )
 
-    @patch('core.cache.redis')
+    @patch("core.cache.redis")
     async def test_cache_context_manager(self, mock_redis, cache_config):
         """Test cache context manager functionality."""
         # Mock Redis client
@@ -121,7 +117,7 @@ class TestCacheResourceManagement:
         assert cache._connected is False
         mock_client.close.assert_called_once()
 
-    @patch('core.cache.redis')
+    @patch("core.cache.redis")
     async def test_cache_initialization_failure(self, mock_redis, cache_config):
         """Test cache initialization failure handling."""
         # Mock Redis client to fail
@@ -136,7 +132,7 @@ class TestCacheResourceManagement:
         assert success is False
         assert cache._connected is False
 
-    @patch('core.cache.redis')
+    @patch("core.cache.redis")
     async def test_cache_close_error_handling(self, mock_redis, cache_config):
         """Test cache close error handling."""
         # Mock Redis client
@@ -164,7 +160,7 @@ class TestMetricsEndpointResourceManagement:
             "port": 9090,
             "path": "/metrics",
             "enable_auth": False,
-            "enable_tls": False
+            "enable_tls": False,
         }
 
     async def test_endpoint_context_manager(self, endpoint_config):
@@ -213,14 +209,14 @@ class TestResourceCleanupIntegration:
             db=0,
             password=None,
             socket_timeout=5.0,
-            socket_connect_timeout=5.0
+            socket_connect_timeout=5.0,
         )
 
         endpoint_config = {
             "host": "localhost",
             "port": 9090,
             "enable_auth": False,
-            "enable_tls": False
+            "enable_tls": False,
         }
 
         # This would be the pattern for using both together
@@ -234,7 +230,7 @@ class TestResourceCleanupIntegration:
         # Note: Full integration test would require mocking Redis and aiohttp
         # but this tests the basic setup
 
-    @patch('core.cache.redis')
+    @patch("core.cache.redis")
     async def test_cache_context_manager_with_cleanup(self, mock_redis):
         """Test cache context manager with proper cleanup."""
         from core.cache import CacheContext
@@ -250,7 +246,7 @@ class TestResourceCleanupIntegration:
             db=0,
             password=None,
             socket_timeout=5.0,
-            socket_connect_timeout=5.0
+            socket_connect_timeout=5.0,
         )
 
         # Test context manager
@@ -267,7 +263,7 @@ class TestResourceCleanupIntegration:
             "host": "localhost",
             "port": 9090,
             "enable_auth": False,
-            "enable_tls": False
+            "enable_tls": False,
         }
 
         endpoint = MetricsEndpoint(endpoint_config)
@@ -279,10 +275,10 @@ class TestResourceCleanupIntegration:
         # Should have stopped
         assert endpoint._running is False
 
-    @patch('core.cache.redis')
+    @patch("core.cache.redis")
     async def test_cache_global_instance_cleanup(self, mock_redis):
         """Test global cache instance cleanup on exit."""
-        from core.cache import initialize_cache, close_cache, _cleanup_cache_on_exit
+        from core.cache import _cleanup_cache_on_exit, initialize_cache
 
         # Mock Redis client
         mock_client = AsyncMock()
@@ -294,7 +290,7 @@ class TestResourceCleanupIntegration:
             "port": 6379,
             "db": 0,
             "socket_timeout": 5.0,
-            "socket_connect_timeout": 5.0
+            "socket_connect_timeout": 5.0,
         }
 
         # Initialize cache
@@ -309,13 +305,16 @@ class TestResourceCleanupIntegration:
 
     async def test_endpoint_global_instance_cleanup(self):
         """Test global endpoint instance cleanup on exit."""
-        from core.metrics_endpoint import create_metrics_endpoint, _cleanup_endpoint_on_exit
+        from core.metrics_endpoint import (
+            _cleanup_endpoint_on_exit,
+            create_metrics_endpoint,
+        )
 
         endpoint_config = {
             "host": "localhost",
             "port": 9090,
             "enable_auth": False,
-            "enable_tls": False
+            "enable_tls": False,
         }
 
         # Create endpoint
@@ -337,7 +336,7 @@ class TestResourceCleanupIntegration:
             "enable_auth": False,
             "enable_tls": True,
             "cert_file": "/nonexistent/cert.pem",
-            "key_file": "/nonexistent/key.pem"
+            "key_file": "/nonexistent/key.pem",
         }
 
         endpoint = MetricsEndpoint(endpoint_config)
@@ -355,7 +354,6 @@ class TestResourceCleanupIntegration:
 
 if __name__ == "__main__":
     # Run basic tests
-    import sys
 
     async def run_async_tests():
         """Run async tests."""
@@ -372,10 +370,10 @@ if __name__ == "__main__":
             db=0,
             password=None,
             socket_timeout=5.0,
-            socket_connect_timeout=5.0
+            socket_connect_timeout=5.0,
         )
 
-        with patch('core.cache.redis') as mock_redis:
+        with patch("core.cache.redis") as mock_redis:
             mock_client = AsyncMock()
             mock_redis.Redis.return_value = mock_client
             mock_client.ping.return_value = True
@@ -392,7 +390,7 @@ if __name__ == "__main__":
             "host": "localhost",
             "port": 9090,
             "enable_auth": False,
-            "enable_tls": False
+            "enable_tls": False,
         }
 
         endpoint = MetricsEndpoint(endpoint_config)

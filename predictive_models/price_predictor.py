@@ -5,18 +5,19 @@ Predicts next candle price direction using various ML models.
 """
 
 import logging
-import numpy as np
-import pandas as pd
-from typing import Dict, Any, Optional, Tuple
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-import xgboost as xgb
-import lightgbm as lgb
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import TimeSeriesSplit
-import joblib
 import os
 from pathlib import Path
+from typing import Any, Dict, Tuple
+
+import joblib
+import lightgbm as lgb
+import numpy as np
+import pandas as pd
+import xgboost as xgb
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.preprocessing import StandardScaler
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +38,10 @@ class PricePredictor:
         self.model_type = config.get("type", "lightgbm")
         self.confidence_threshold = config.get("confidence_threshold", 0.6)
         self.lookback = config.get("lookback", 50)
-        self.model_path = config.get("model_path", f"models/price_{self.model_type}.pkl")
-        self.scaler_path = config.get("scaler_path", f"models/price_scaler.pkl")
+        self.model_path = config.get(
+            "model_path", f"models/price_{self.model_type}.pkl"
+        )
+        self.scaler_path = config.get("scaler_path", "models/price_scaler.pkl")
 
         self.model = None
         self.scaler = StandardScaler()
@@ -62,60 +65,68 @@ class PricePredictor:
 
         # Basic price features
         df = df.copy()
-        df['returns'] = df['close'].pct_change()
-        df['log_returns'] = np.log(df['close'] / df['close'].shift(1))
+        df["returns"] = df["close"].pct_change()
+        df["log_returns"] = np.log(df["close"] / df["close"].shift(1))
 
         # Moving averages
         for period in [5, 10, 20, 50]:
-            df[f'sma_{period}'] = df['close'].rolling(period).mean()
-            df[f'ema_{period}'] = df['close'].ewm(span=period).mean()
+            df[f"sma_{period}"] = df["close"].rolling(period).mean()
+            df[f"ema_{period}"] = df["close"].ewm(span=period).mean()
 
         # Price momentum
-        df['momentum_5'] = df['close'] / df['close'].shift(5) - 1
-        df['momentum_10'] = df['close'] / df['close'].shift(10) - 1
+        df["momentum_5"] = df["close"] / df["close"].shift(5) - 1
+        df["momentum_10"] = df["close"] / df["close"].shift(10) - 1
 
         # Volatility
-        df['volatility_10'] = df['returns'].rolling(10).std()
-        df['volatility_20'] = df['returns'].rolling(20).std()
+        df["volatility_10"] = df["returns"].rolling(10).std()
+        df["volatility_20"] = df["returns"].rolling(20).std()
 
         # Volume features
-        if 'volume' in df.columns:
-            df['volume_ma_10'] = df['volume'].rolling(10).mean()
-            df['volume_ratio'] = df['volume'] / df['volume_ma_10']
+        if "volume" in df.columns:
+            df["volume_ma_10"] = df["volume"].rolling(10).mean()
+            df["volume_ratio"] = df["volume"] / df["volume_ma_10"]
 
         # Technical indicators
         # RSI
-        delta = df['close'].diff()
+        delta = df["close"].diff()
         gain = (delta.where(delta > 0, 0)).rolling(14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
         rs = gain / loss
-        df['rsi'] = 100 - (100 / (1 + rs))
+        df["rsi"] = 100 - (100 / (1 + rs))
 
         # MACD
-        ema_12 = df['close'].ewm(span=12).mean()
-        ema_26 = df['close'].ewm(span=26).mean()
-        df['macd'] = ema_12 - ema_26
-        df['macd_signal'] = df['macd'].ewm(span=9).mean()
-        df['macd_hist'] = df['macd'] - df['macd_signal']
+        ema_12 = df["close"].ewm(span=12).mean()
+        ema_26 = df["close"].ewm(span=26).mean()
+        df["macd"] = ema_12 - ema_26
+        df["macd_signal"] = df["macd"].ewm(span=9).mean()
+        df["macd_hist"] = df["macd"] - df["macd_signal"]
 
         # Bollinger Bands
-        sma_20 = df['close'].rolling(20).mean()
-        std_20 = df['close'].rolling(20).std()
-        df['bb_upper'] = sma_20 + (std_20 * 2)
-        df['bb_lower'] = sma_20 - (std_20 * 2)
-        df['bb_position'] = (df['close'] - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])
+        sma_20 = df["close"].rolling(20).mean()
+        std_20 = df["close"].rolling(20).std()
+        df["bb_upper"] = sma_20 + (std_20 * 2)
+        df["bb_lower"] = sma_20 - (std_20 * 2)
+        df["bb_position"] = (df["close"] - df["bb_lower"]) / (
+            df["bb_upper"] - df["bb_lower"]
+        )
 
         # Drop NaN values
         df = df.dropna()
 
         # Select feature columns
-        exclude_cols = ['open', 'high', 'low', 'close', 'volume', 'timestamp']
+        exclude_cols = ["open", "high", "low", "close", "volume", "timestamp"]
         self.feature_columns = [col for col in df.columns if col not in exclude_cols]
 
         return df[self.feature_columns]
 
-    def _create_labels(self, df: pd.DataFrame, horizon: int = 5, profit_threshold: float = 0.005,
-                      include_fees: bool = True, fee_rate: float = 0.001) -> pd.Series:
+    def _create_labels(
+        self,
+        df: pd.DataFrame,
+        horizon: int = 5,
+        profit_threshold: float = 0.005,
+        include_fees: bool = True,
+        fee_rate: float = 0.001,
+    ) -> pd.Series:
         """
         Create binary labels for trading decisions with strict prevention of look-ahead bias.
 
@@ -130,8 +141,8 @@ class PricePredictor:
             Series with binary labels (1 for trade, 0 for skip)
         """
         # Calculate forward return over N bars
-        future_price = df['close'].shift(-horizon)
-        forward_return = (future_price - df['close']) / df['close']
+        future_price = df["close"].shift(-horizon)
+        forward_return = (future_price - df["close"]) / df["close"]
 
         # Account for trading fees if requested
         if include_fees:
@@ -153,15 +164,11 @@ class PricePredictor:
             return RandomForestClassifier(n_estimators=100, random_state=42)
         elif self.model_type == "xgboost":
             return xgb.XGBClassifier(
-                objective='binary:logistic',
-                random_state=42,
-                n_estimators=100
+                objective="binary:logistic", random_state=42, n_estimators=100
             )
         elif self.model_type == "lightgbm":
             return lgb.LGBMClassifier(
-                objective='binary',
-                random_state=42,
-                n_estimators=100
+                objective="binary", random_state=42, n_estimators=100
             )
         else:
             raise ValueError(f"Unsupported model type: {self.model_type}")
@@ -228,7 +235,7 @@ class PricePredictor:
             "val_accuracy": np.mean(val_scores),
             "final_accuracy": self.model.score(X_scaled, y),
             "n_samples": len(X),
-            "n_features": len(self.feature_columns)
+            "n_features": len(self.feature_columns),
         }
 
         logger.info(f"Model trained. Accuracy: {metrics['final_accuracy']:.3f}")
@@ -279,11 +286,13 @@ class PricePredictor:
             features_scaled = self.scaler.transform(latest_features)
 
             # Get predictions
-            if hasattr(self.model, 'predict_proba'):
+            if hasattr(self.model, "predict_proba"):
                 probabilities = self.model.predict_proba(features_scaled)[0]
                 # For binary classification, probabilities[1] is probability of positive class (trade)
                 predicted_class = np.argmax(probabilities)
-                confidence = probabilities[1] if len(probabilities) > 1 else probabilities[0]
+                confidence = (
+                    probabilities[1] if len(probabilities) > 1 else probabilities[0]
+                )
             else:
                 predicted_class = self.model.predict(features_scaled)[0]
                 confidence = 0.5  # Default confidence for models without predict_proba

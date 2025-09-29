@@ -5,17 +5,17 @@ Executes orders using Volume-Weighted Average Price strategy.
 """
 
 import logging
-import asyncio
-import uuid
 import time
-from typing import Dict, Any, List, Optional
+import uuid
+from datetime import datetime
 from decimal import Decimal
-from datetime import datetime, timedelta
+from typing import Any, Dict, List
 
-from .base_executor import BaseExecutor
-from core.contracts import TradingSignal, SignalType
+from core.contracts import SignalType, TradingSignal
 from core.types.order_types import Order, OrderStatus, OrderType
 from utils.logger import get_trade_logger
+
+from .base_executor import BaseExecutor
 
 logger = logging.getLogger(__name__)
 trade_logger = get_trade_logger()
@@ -46,8 +46,10 @@ class VWAPExecutor(BaseExecutor):
         self.fallback_mode = config.get("fallback_mode", "market")
         self.test_mode = config.get("test_mode", False)
 
-        self.logger.info(f"VWAPExecutor initialized: lookback={self.lookback_minutes}min, "
-                        f"parts={self.parts}, test_mode={self.test_mode}")
+        self.logger.info(
+            f"VWAPExecutor initialized: lookback={self.lookback_minutes}min, "
+            f"parts={self.parts}, test_mode={self.test_mode}"
+        )
 
     async def execute_order(self, signal: TradingSignal) -> List[Order]:
         """
@@ -62,15 +64,20 @@ class VWAPExecutor(BaseExecutor):
         if not self._validate_signal(signal):
             return []
 
-        self.logger.info(f"Executing VWAP order: {signal.symbol} {signal.amount} "
-                        f"using {self.lookback_minutes}min volume profile")
+        self.logger.info(
+            f"Executing VWAP order: {signal.symbol} {signal.amount} "
+            f"using {self.lookback_minutes}min volume profile"
+        )
 
-        trade_logger.trade("VWAP Order Start", {
-            "symbol": signal.symbol,
-            "amount": float(signal.amount),
-            "lookback_minutes": self.lookback_minutes,
-            "parts": self.parts
-        })
+        trade_logger.trade(
+            "VWAP Order Start",
+            {
+                "symbol": signal.symbol,
+                "amount": float(signal.amount),
+                "lookback_minutes": self.lookback_minutes,
+                "parts": self.parts,
+            },
+        )
 
         # Get volume profile and calculate execution weights
         volume_profile = await self._get_volume_profile(signal.symbol)
@@ -91,12 +98,16 @@ class VWAPExecutor(BaseExecutor):
                     await self._wait_for_volume_period(volume_profile, i)
 
                 # Create child order
-                child_signal = self._create_child_order(signal, amount, parent_order_id, i + 1)
-                child_signal.metadata.update({
-                    'total_parts': self.parts,
-                    'volume_weight': float(execution_weights[i]),
-                    'execution_period': i
-                })
+                child_signal = self._create_child_order(
+                    signal, amount, parent_order_id, i + 1
+                )
+                child_signal.metadata.update(
+                    {
+                        "total_parts": self.parts,
+                        "volume_weight": float(execution_weights[i]),
+                        "execution_period": i,
+                    }
+                )
 
                 # Execute child order
                 order = await self._execute_single_order(child_signal)
@@ -105,23 +116,32 @@ class VWAPExecutor(BaseExecutor):
 
                 # Log progress
                 progress = (i + 1) / self.parts * 100
-                self.logger.debug(f"VWAP progress: {i+1}/{self.parts} parts ({progress:.1f}%)")
+                self.logger.debug(
+                    f"VWAP progress: {i+1}/{self.parts} parts ({progress:.1f}%)"
+                )
 
             except Exception as e:
-                self.logger.error(f"Failed to execute VWAP part {i+1}/{self.parts}: {e}")
+                self.logger.error(
+                    f"Failed to execute VWAP part {i+1}/{self.parts}: {e}"
+                )
                 # Continue with remaining parts
 
         # Log completion
         completion_time = time.time() - start_time
-        self.logger.info(f"VWAP order completed: {len(executed_orders)}/{self.parts} parts "
-                        f"in {completion_time:.1f}s")
+        self.logger.info(
+            f"VWAP order completed: {len(executed_orders)}/{self.parts} parts "
+            f"in {completion_time:.1f}s"
+        )
 
-        trade_logger.trade("VWAP Order Complete", {
-            "symbol": signal.symbol,
-            "parts_executed": len(executed_orders),
-            "total_parts": self.parts,
-            "duration_actual": completion_time
-        })
+        trade_logger.trade(
+            "VWAP Order Complete",
+            {
+                "symbol": signal.symbol,
+                "parts_executed": len(executed_orders),
+                "total_parts": self.parts,
+                "duration_actual": completion_time,
+            },
+        )
 
         return executed_orders
 
@@ -153,16 +173,20 @@ class VWAPExecutor(BaseExecutor):
             # Add some randomness
             volume = base_volume * (0.5 + 0.5 * (i % 3) / 2)  # Vary by period
 
-            profile.append({
-                'period': i,
-                'volume': volume,
-                'hour': hour,
-                'is_high_volume': volume > 60
-            })
+            profile.append(
+                {
+                    "period": i,
+                    "volume": volume,
+                    "hour": hour,
+                    "is_high_volume": volume > 60,
+                }
+            )
 
         return profile
 
-    def _calculate_execution_weights(self, volume_profile: List[Dict[str, Any]]) -> List[float]:
+    def _calculate_execution_weights(
+        self, volume_profile: List[Dict[str, Any]]
+    ) -> List[float]:
         """
         Calculate execution weights based on volume profile.
 
@@ -177,7 +201,7 @@ class VWAPExecutor(BaseExecutor):
             return [1.0 / self.parts] * self.parts
 
         # Extract volumes
-        volumes = [period['volume'] for period in volume_profile]
+        volumes = [period["volume"] for period in volume_profile]
 
         # Calculate weights proportional to volume
         total_volume = sum(volumes)
@@ -192,7 +216,9 @@ class VWAPExecutor(BaseExecutor):
 
         return normalized_weights
 
-    def _split_by_volume_weights(self, total_amount: Decimal, weights: List[float]) -> List[Decimal]:
+    def _split_by_volume_weights(
+        self, total_amount: Decimal, weights: List[float]
+    ) -> List[Decimal]:
         """
         Split order amount based on volume weights.
 
@@ -218,7 +244,9 @@ class VWAPExecutor(BaseExecutor):
 
         return amounts
 
-    async def _wait_for_volume_period(self, volume_profile: List[Dict[str, Any]], period_index: int) -> None:
+    async def _wait_for_volume_period(
+        self, volume_profile: List[Dict[str, Any]], period_index: int
+    ) -> None:
         """
         Wait for the next high-volume period if needed.
 
@@ -232,13 +260,13 @@ class VWAPExecutor(BaseExecutor):
         current_period = volume_profile[period_index]
 
         # If current period is high volume, no need to wait
-        if current_period.get('is_high_volume', False):
+        if current_period.get("is_high_volume", False):
             return
 
         # Find next high volume period
         next_high_volume = None
         for i in range(period_index + 1, len(volume_profile)):
-            if volume_profile[i].get('is_high_volume', False):
+            if volume_profile[i].get("is_high_volume", False):
                 next_high_volume = volume_profile[i]
                 break
 
@@ -301,18 +329,18 @@ class VWAPExecutor(BaseExecutor):
         order_type = signal.order_type.value if signal.order_type else "market"
 
         params = {
-            'symbol': signal.symbol,
-            'type': order_type,
-            'side': side,
-            'amount': float(signal.amount)
+            "symbol": signal.symbol,
+            "type": order_type,
+            "side": side,
+            "amount": float(signal.amount),
         }
 
         if signal.price and order_type == "limit":
-            params['price'] = float(signal.price)
+            params["price"] = float(signal.price)
 
         # Add VWAP metadata
         if signal.metadata:
-            params['metadata'] = signal.metadata
+            params["metadata"] = signal.metadata
 
         # Place the order
         response = await self.exchange_api.create_order(**params)
@@ -329,18 +357,20 @@ class VWAPExecutor(BaseExecutor):
             Parsed Order object
         """
         return Order(
-            id=str(response.get('id', '')),
-            symbol=response.get('symbol', ''),
-            type=OrderType(response.get('type', 'market')),
-            side=response.get('side', ''),
-            amount=Decimal(str(response.get('amount', 0))),
-            price=Decimal(str(response.get('price', 0))) if response.get('price') else None,
-            status=OrderStatus(response.get('status', 'open')),
-            timestamp=response.get('timestamp', 0),
-            filled=Decimal(str(response.get('filled', 0))),
-            remaining=Decimal(str(response.get('remaining', 0))),
-            cost=Decimal(str(response.get('cost', 0))),
-            fee=response.get('fee')
+            id=str(response.get("id", "")),
+            symbol=response.get("symbol", ""),
+            type=OrderType(response.get("type", "market")),
+            side=response.get("side", ""),
+            amount=Decimal(str(response.get("amount", 0))),
+            price=Decimal(str(response.get("price", 0)))
+            if response.get("price")
+            else None,
+            status=OrderStatus(response.get("status", "open")),
+            timestamp=response.get("timestamp", 0),
+            filled=Decimal(str(response.get("filled", 0))),
+            remaining=Decimal(str(response.get("remaining", 0))),
+            cost=Decimal(str(response.get("cost", 0))),
+            fee=response.get("fee"),
         )
 
     def _create_mock_order(self, signal: TradingSignal) -> Order:
@@ -377,7 +407,7 @@ class VWAPExecutor(BaseExecutor):
             filled=signal.amount,
             remaining=Decimal(0),
             cost=signal.amount * (signal.price or Decimal(1)),
-            fee={'cost': Decimal(0), 'currency': 'USD'}
+            fee={"cost": Decimal(0), "currency": "USD"},
         )
 
     async def cancel_order(self, order_id: str) -> bool:
@@ -417,7 +447,7 @@ class VWAPExecutor(BaseExecutor):
             "high_volume_periods": [9, 10, 11, 14, 15, 16],  # Example hours
             "average_volume": 75.0,
             "peak_volume": 120.0,
-            "volume_distribution": "normal"
+            "volume_distribution": "normal",
         }
 
     async def _wait_delay(self, delay_seconds: float) -> None:

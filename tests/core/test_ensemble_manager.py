@@ -2,18 +2,19 @@
 Unit tests for EnsembleManager functionality.
 """
 
-import pytest
-import pandas as pd
-import numpy as np
 from decimal import Decimal
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
+
+import pandas as pd
+import pytest
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
 from core.ensemble_manager import (
-    EnsembleManager,
-    VotingMode,
     EnsembleDecision,
-    StrategySignal
+    EnsembleManager,
+    StrategySignal,
+    VotingMode,
 )
-from core.contracts import TradingSignal, SignalType, SignalStrength
 
 
 class MockStrategy:
@@ -32,14 +33,16 @@ class MockStrategy:
 def sample_market_data():
     """Sample market data for testing."""
     return {
-        "ohlcv": pd.DataFrame({
-            "timestamp": [1234567890],
-            "open": [50000],
-            "high": [51000],
-            "low": [49000],
-            "close": [50500],
-            "volume": [100]
-        })
+        "ohlcv": pd.DataFrame(
+            {
+                "timestamp": [1234567890],
+                "open": [50000],
+                "high": [51000],
+                "low": [49000],
+                "close": [50500],
+                "volume": [100],
+            }
+        )
     }
 
 
@@ -59,22 +62,22 @@ def sample_signals():
             timestamp=1234567890,
             stop_loss=Decimal("49000"),
             take_profit=Decimal("52000"),
-            metadata={"confidence": 0.8}
+            metadata={"confidence": 0.8},
         ),
-            TradingSignal(
-                strategy_id="strategy2",
-                symbol="BTC/USDT",
-                signal_type=SignalType.ENTRY_LONG,
-                signal_strength=SignalStrength.MODERATE,
-                order_type="market",
-                amount=Decimal("1.0"),
-                price=Decimal("50000"),
-                current_price=Decimal("50000"),
-                timestamp=1234567890,
-                stop_loss=Decimal("49000"),
-                take_profit=Decimal("52000"),
-                metadata={"confidence": 0.7}
-            ),
+        TradingSignal(
+            strategy_id="strategy2",
+            symbol="BTC/USDT",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.MODERATE,
+            order_type="market",
+            amount=Decimal("1.0"),
+            price=Decimal("50000"),
+            current_price=Decimal("50000"),
+            timestamp=1234567890,
+            stop_loss=Decimal("49000"),
+            take_profit=Decimal("52000"),
+            metadata={"confidence": 0.7},
+        ),
         TradingSignal(
             strategy_id="strategy3",
             symbol="BTC/USDT",
@@ -87,8 +90,8 @@ def sample_signals():
             timestamp=1234567890,
             stop_loss=Decimal("51000"),
             take_profit=Decimal("48000"),
-            metadata={"confidence": 0.6}
-        )
+            metadata={"confidence": 0.6},
+        ),
     ]
 
 
@@ -102,12 +105,9 @@ def ensemble_manager():
         "strategies": [
             {"id": "strategy1", "weight": 0.4},
             {"id": "strategy2", "weight": 0.3},
-            {"id": "strategy3", "weight": 0.3}
+            {"id": "strategy3", "weight": 0.3},
         ],
-        "thresholds": {
-            "confidence": 0.6,
-            "vote_ratio": 0.66
-        }
+        "thresholds": {"confidence": 0.6, "vote_ratio": 0.66},
     }
     return EnsembleManager(config)
 
@@ -155,7 +155,9 @@ class TestEnsembleManager:
         confidence = ensemble_manager._extract_confidence(signal, {})
         assert confidence == 0.8
 
-    def test_extract_confidence_from_market_data(self, ensemble_manager, sample_signals):
+    def test_extract_confidence_from_market_data(
+        self, ensemble_manager, sample_signals
+    ):
         """Test confidence extraction from market data."""
         signal = sample_signals[0]
         market_data = {"ml_prediction": {"confidence": 0.9}}
@@ -171,7 +173,7 @@ class TestEnsembleManager:
             signal_type=SignalType.ENTRY_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type="market",
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
         )
 
         confidence = ensemble_manager._extract_confidence(signal, {})
@@ -207,7 +209,7 @@ class TestEnsembleManager:
             signal_type=SignalType.ENTRY_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type="market",
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
         )
         sell_signal = TradingSignal(
             strategy_id="test",
@@ -215,7 +217,7 @@ class TestEnsembleManager:
             signal_type=SignalType.ENTRY_SHORT,
             signal_strength=SignalStrength.STRONG,
             order_type="market",
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
         )
 
         strategy_signals = [
@@ -238,7 +240,7 @@ class TestEnsembleManager:
             signal_type=SignalType.ENTRY_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type="market",
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
         )
         sell_signal = TradingSignal(
             strategy_id="test",
@@ -246,12 +248,12 @@ class TestEnsembleManager:
             signal_type=SignalType.ENTRY_SHORT,
             signal_strength=SignalStrength.STRONG,
             order_type="market",
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
         )
 
         # High weight on sell, low on buy
         strategy_signals = [
-            StrategySignal("s1", buy_signal, 0.8, 0.2),   # Low weight BUY
+            StrategySignal("s1", buy_signal, 0.8, 0.2),  # Low weight BUY
             StrategySignal("s2", sell_signal, 0.6, 0.8),  # High weight SELL
         ]
 
@@ -271,7 +273,7 @@ class TestEnsembleManager:
             signal_type=SignalType.ENTRY_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type="market",
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
         )
 
         strategy_signals = [
@@ -296,7 +298,7 @@ class TestEnsembleManager:
             signal_type=SignalType.ENTRY_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type="market",
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
         )
 
         strategy_signals = [
@@ -333,22 +335,17 @@ class TestEnsembleManager:
         ensemble_manager.dynamic_weights = True
 
         performance_metrics = {
-            "strategy1": {
-                "sharpe_ratio": 2.0,
-                "win_rate": 0.8,
-                "profit_factor": 1.5
-            },
-            "strategy2": {
-                "sharpe_ratio": 0.5,
-                "win_rate": 0.4,
-                "profit_factor": 0.8
-            }
+            "strategy1": {"sharpe_ratio": 2.0, "win_rate": 0.8, "profit_factor": 1.5},
+            "strategy2": {"sharpe_ratio": 0.5, "win_rate": 0.4, "profit_factor": 0.8},
         }
 
         ensemble_manager.update_weights(performance_metrics)
 
         # Strategy1 should have higher weight than strategy2
-        assert ensemble_manager.strategy_weights["strategy1"] > ensemble_manager.strategy_weights["strategy2"]
+        assert (
+            ensemble_manager.strategy_weights["strategy1"]
+            > ensemble_manager.strategy_weights["strategy2"]
+        )
 
     def test_update_weights_dynamic_disabled(self, ensemble_manager):
         """Test weight updates when dynamic weights are disabled."""
@@ -367,11 +364,7 @@ class TestEnsembleManager:
 
     def test_calculate_weight_from_metrics(self, ensemble_manager):
         """Test weight calculation from performance metrics."""
-        metrics = {
-            "sharpe_ratio": 2.0,
-            "win_rate": 0.8,
-            "profit_factor": 1.5
-        }
+        metrics = {"sharpe_ratio": 2.0, "win_rate": 0.8, "profit_factor": 1.5}
 
         weight = ensemble_manager._calculate_weight_from_metrics(metrics)
 
@@ -383,8 +376,8 @@ class TestEnsembleManager:
         """Test minimum weight enforcement."""
         metrics = {
             "sharpe_ratio": -5.0,  # Very bad
-            "win_rate": 0.1,       # Very bad
-            "profit_factor": 0.1   # Very bad
+            "win_rate": 0.1,  # Very bad
+            "profit_factor": 0.1,  # Very bad
         }
 
         weight = ensemble_manager._calculate_weight_from_metrics(metrics)
@@ -421,7 +414,7 @@ class TestEnsembleManager:
         assert "strategy1" in weights
         assert weights["strategy1"] == 0.4
 
-    @patch('core.ensemble_manager.trade_logger')
+    @patch("core.ensemble_manager.trade_logger")
     def test_log_ensemble_decision(self, mock_logger, ensemble_manager, sample_signals):
         """Test ensemble decision logging."""
         from core.ensemble_manager import EnsembleResult
@@ -434,7 +427,7 @@ class TestEnsembleManager:
             total_weight=2.0,
             confidence_score=0.8,
             voting_mode=VotingMode.WEIGHTED_VOTE,
-            strategy_weights={"s1": 0.6, "s2": 0.4}
+            strategy_weights={"s1": 0.6, "s2": 0.4},
         )
 
         ensemble_manager._log_ensemble_decision(result)
@@ -446,9 +439,7 @@ class TestEnsembleManager:
         """Test ensemble decision with unknown voting mode."""
         ensemble_manager.voting_mode = "unknown_mode"
 
-        strategy_signals = [
-            StrategySignal("s1", None, 0.8, 1.0)
-        ]
+        strategy_signals = [StrategySignal("s1", None, 0.8, 1.0)]
 
         result = ensemble_manager._make_ensemble_decision(strategy_signals)
 
@@ -465,7 +456,7 @@ class TestEnsembleManager:
             signal_type=SignalType.ENTRY_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type="market",
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
         )
         sell_signal = TradingSignal(
             strategy_id="test",
@@ -473,12 +464,12 @@ class TestEnsembleManager:
             signal_type=SignalType.ENTRY_SHORT,
             signal_strength=SignalStrength.STRONG,
             order_type="market",
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
         )
 
         # Create perfect tie
         strategy_signals = [
-            StrategySignal("s1", buy_signal, 0.8, 1.0),   # BUY
+            StrategySignal("s1", buy_signal, 0.8, 1.0),  # BUY
             StrategySignal("s2", sell_signal, 0.8, 1.0),  # SELL
         ]
 
@@ -497,12 +488,12 @@ class TestEnsembleManager:
             signal_type=SignalType.ENTRY_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type="market",
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
         )
 
         strategy_signals = [
-            StrategySignal("s1", buy_signal, 0.8, 0.0),   # Zero weight
-            StrategySignal("s2", buy_signal, 0.6, 0.0),   # Zero weight
+            StrategySignal("s1", buy_signal, 0.8, 0.0),  # Zero weight
+            StrategySignal("s2", buy_signal, 0.6, 0.0),  # Zero weight
         ]
 
         result = ensemble_manager._weighted_vote(strategy_signals)
@@ -522,11 +513,11 @@ class TestEnsembleManager:
             signal_type=SignalType.EXIT_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type="market",
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
         )
 
         strategy_signals = [
-            StrategySignal("s1", exit_signal, 0.8, 1.0),   # EXIT (not entry)
+            StrategySignal("s1", exit_signal, 0.8, 1.0),  # EXIT (not entry)
         ]
 
         result = ensemble_manager._confidence_average(strategy_signals)
@@ -557,7 +548,7 @@ class TestEnsembleManager:
             signal_strength=SignalStrength.STRONG,
             order_type="market",
             amount=Decimal("1.0"),
-            metadata={"confidence": "invalid"}  # Invalid confidence
+            metadata={"confidence": "invalid"},  # Invalid confidence
         )
 
         confidence = ensemble_manager._extract_confidence(signal, {})
@@ -574,8 +565,11 @@ class TestEnsembleManager:
         # Should overwrite with new strategy
         assert ensemble_manager.strategies["test_strategy"] is mock_strategy2
 
-    def test_get_ensemble_signal_with_strategy_errors(self, ensemble_manager, sample_market_data):
+    def test_get_ensemble_signal_with_strategy_errors(
+        self, ensemble_manager, sample_market_data
+    ):
         """Test ensemble signal generation when strategies raise errors."""
+
         # Register a strategy that will raise an error
         class FailingStrategy:
             def generate_signals(self, market_data):
@@ -597,19 +591,15 @@ class TestEnsembleManager:
 
         # Test with extreme values
         metrics = {
-            "sharpe_ratio": 10.0,    # Very good
-            "win_rate": 1.0,         # Perfect
-            "profit_factor": 5.0     # Excellent
+            "sharpe_ratio": 10.0,  # Very good
+            "win_rate": 1.0,  # Perfect
+            "profit_factor": 5.0,  # Excellent
         }
         weight = ensemble_manager._calculate_weight_from_metrics(metrics)
         assert weight > 0
 
         # Test with negative values
-        metrics = {
-            "sharpe_ratio": -2.0,
-            "win_rate": 0.0,
-            "profit_factor": 0.0
-        }
+        metrics = {"sharpe_ratio": -2.0, "win_rate": 0.0, "profit_factor": 0.0}
         weight = ensemble_manager._calculate_weight_from_metrics(metrics)
         assert weight >= 0.1  # Should be clamped to minimum
 
@@ -632,7 +622,7 @@ class TestEnsembleManager:
             total_weight=2.0,
             confidence_score=0.8,
             voting_mode=VotingMode.WEIGHTED_VOTE,
-            strategy_weights={"s1": 0.6, "s2": 0.4}
+            strategy_weights={"s1": 0.6, "s2": 0.4},
         )
 
         assert result.decision == EnsembleDecision.BUY
@@ -650,7 +640,7 @@ class TestEnsembleManager:
             signal_type=SignalType.ENTRY_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type="market",
-            amount=Decimal("1.0")
+            amount=Decimal("1.0"),
         )
 
         strategy_signal = StrategySignal(
@@ -658,7 +648,7 @@ class TestEnsembleManager:
             signal=signal,
             confidence=0.8,
             weight=0.5,
-            metadata={"test": "data"}
+            metadata={"test": "data"},
         )
 
         assert strategy_signal.strategy_id == "s1"
@@ -672,7 +662,6 @@ class TestEnsembleIntegration:
 
     def test_ensemble_with_multiple_strategies(self):
         """Test ensemble manager with multiple mock strategies."""
-        from strategies.base_strategy import StrategyConfig
 
         # Create ensemble manager
         config = {
@@ -682,12 +671,9 @@ class TestEnsembleIntegration:
             "strategies": [
                 {"id": "rsi_strategy", "weight": 0.5},
                 {"id": "ema_strategy", "weight": 0.3},
-                {"id": "ml_strategy", "weight": 0.2}
+                {"id": "ml_strategy", "weight": 0.2},
             ],
-            "thresholds": {
-                "confidence": 0.6,
-                "vote_ratio": 0.5
-            }
+            "thresholds": {"confidence": 0.6, "vote_ratio": 0.5},
         }
         ensemble_manager = EnsembleManager(config)
 
@@ -703,7 +689,7 @@ class TestEnsembleIntegration:
                         signal_strength=SignalStrength.STRONG,
                         order_type="market",
                         amount=Decimal("1.0"),
-                        metadata={"confidence": 0.8, "rsi_value": 25}
+                        metadata={"confidence": 0.8, "rsi_value": 25},
                     )
                 ]
 
@@ -718,7 +704,7 @@ class TestEnsembleIntegration:
                         signal_strength=SignalStrength.MODERATE,
                         order_type="market",
                         amount=Decimal("1.0"),
-                        metadata={"confidence": 0.7, "ema_signal": "bearish"}
+                        metadata={"confidence": 0.7, "ema_signal": "bearish"},
                     )
                 ]
 
@@ -733,7 +719,7 @@ class TestEnsembleIntegration:
                         signal_strength=SignalStrength.STRONG,
                         order_type="market",
                         amount=Decimal("1.0"),
-                        metadata={"confidence": 0.9, "ml_prediction": 0.85}
+                        metadata={"confidence": 0.9, "ml_prediction": 0.85},
                     )
                 ]
 
@@ -749,7 +735,9 @@ class TestEnsembleIntegration:
         # Should generate a signal since majority (2 out of 3) agree on direction
         assert ensemble_signal is not None
         assert ensemble_signal.strategy_id == "ensemble"
-        assert ensemble_signal.signal_type == SignalType.ENTRY_LONG  # Majority vote wins
+        assert (
+            ensemble_signal.signal_type == SignalType.ENTRY_LONG
+        )  # Majority vote wins
         assert "ensemble" in ensemble_signal.metadata
         assert ensemble_signal.metadata["voting_mode"] == "weighted_vote"
         # Only RSI and ML strategies contribute to the LONG signal
@@ -767,51 +755,57 @@ class TestEnsembleIntegration:
             "strategies": [
                 {"id": "strategy1", "weight": 1.0},
                 {"id": "strategy2", "weight": 1.0},
-                {"id": "strategy3", "weight": 1.0}
+                {"id": "strategy3", "weight": 1.0},
             ],
             "thresholds": {
                 "confidence": 0.6,
-                "vote_ratio": 0.8  # Require 80% consensus
-            }
+                "vote_ratio": 0.8,  # Require 80% consensus
+            },
         }
         ensemble_manager = EnsembleManager(config)
 
         # Create strategies with conflicting signals
         class MockStrategy1:
             def generate_signals(self, market_data):
-                return [TradingSignal(
-                    strategy_id="strategy1",
-                    symbol="BTC/USDT",
-                    signal_type=SignalType.ENTRY_LONG,
-                    signal_strength=SignalStrength.STRONG,
-                    order_type="market",
-                    amount=Decimal("1.0"),
-                    metadata={"confidence": 0.8}
-                )]
+                return [
+                    TradingSignal(
+                        strategy_id="strategy1",
+                        symbol="BTC/USDT",
+                        signal_type=SignalType.ENTRY_LONG,
+                        signal_strength=SignalStrength.STRONG,
+                        order_type="market",
+                        amount=Decimal("1.0"),
+                        metadata={"confidence": 0.8},
+                    )
+                ]
 
         class MockStrategy2:
             def generate_signals(self, market_data):
-                return [TradingSignal(
-                    strategy_id="strategy2",
-                    symbol="BTC/USDT",
-                    signal_type=SignalType.ENTRY_SHORT,
-                    signal_strength=SignalStrength.STRONG,
-                    order_type="market",
-                    amount=Decimal("1.0"),
-                    metadata={"confidence": 0.8}
-                )]
+                return [
+                    TradingSignal(
+                        strategy_id="strategy2",
+                        symbol="BTC/USDT",
+                        signal_type=SignalType.ENTRY_SHORT,
+                        signal_strength=SignalStrength.STRONG,
+                        order_type="market",
+                        amount=Decimal("1.0"),
+                        metadata={"confidence": 0.8},
+                    )
+                ]
 
         class MockStrategy3:
             def generate_signals(self, market_data):
-                return [TradingSignal(
-                    strategy_id="strategy3",
-                    symbol="BTC/USDT",
-                    signal_type=SignalType.EXIT_LONG,  # Exit signal
-                    signal_strength=SignalStrength.STRONG,
-                    order_type="market",
-                    amount=Decimal("1.0"),
-                    metadata={"confidence": 0.7}
-                )]
+                return [
+                    TradingSignal(
+                        strategy_id="strategy3",
+                        symbol="BTC/USDT",
+                        signal_type=SignalType.EXIT_LONG,  # Exit signal
+                        signal_strength=SignalStrength.STRONG,
+                        order_type="market",
+                        amount=Decimal("1.0"),
+                        metadata={"confidence": 0.7},
+                    )
+                ]
 
         # Register strategies
         ensemble_manager.register_strategy("strategy1", MockStrategy1())
@@ -840,7 +834,7 @@ class TestEnsembleIntegration:
             "enabled": True,
             "mode": "weighted_vote",
             "strategies": [{"id": "test_strategy", "weight": 1.0}],
-            "thresholds": {"confidence": 0.6, "vote_ratio": 0.5}
+            "thresholds": {"confidence": 0.6, "vote_ratio": 0.5},
         }
         ensemble_manager = EnsembleManager(config)
 
@@ -861,9 +855,9 @@ class TestEnsembleIntegration:
             "dynamic_weights": True,
             "strategies": [
                 {"id": "good_strategy", "weight": 0.5},
-                {"id": "bad_strategy", "weight": 0.5}
+                {"id": "bad_strategy", "weight": 0.5},
             ],
-            "thresholds": {"confidence": 0.6, "vote_ratio": 0.5}
+            "thresholds": {"confidence": 0.6, "vote_ratio": 0.5},
         }
         ensemble_manager = EnsembleManager(config)
 
@@ -872,19 +866,22 @@ class TestEnsembleIntegration:
             "good_strategy": {
                 "sharpe_ratio": 2.0,
                 "win_rate": 0.8,
-                "profit_factor": 1.8
+                "profit_factor": 1.8,
             },
             "bad_strategy": {
                 "sharpe_ratio": -1.0,
                 "win_rate": 0.3,
-                "profit_factor": 0.7
-            }
+                "profit_factor": 0.7,
+            },
         }
 
         # Update weights
         ensemble_manager.update_weights(performance_metrics)
 
         # Good strategy should have higher weight
-        assert ensemble_manager.strategy_weights["good_strategy"] > ensemble_manager.strategy_weights["bad_strategy"]
+        assert (
+            ensemble_manager.strategy_weights["good_strategy"]
+            > ensemble_manager.strategy_weights["bad_strategy"]
+        )
         assert ensemble_manager.strategy_weights["good_strategy"] > 0.5  # Increased
         assert ensemble_manager.strategy_weights["bad_strategy"] < 0.5  # Decreased

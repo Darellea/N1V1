@@ -41,12 +41,12 @@ MEMORY_EFFICIENT_THRESHOLD = 100
 # Gap Handling Configuration
 # Purpose: Default strategy for handling data gaps
 # Options: 'forward_fill', 'interpolate', 'reject'
-DEFAULT_GAP_HANDLING_STRATEGY = 'forward_fill'
+DEFAULT_GAP_HANDLING_STRATEGY = "forward_fill"
 
 # Cache Directory Configuration
 # Purpose: Base directory for cache files
-CACHE_BASE_DIR = 'data/cache'
+CACHE_BASE_DIR = "data/cache"
 
 # Historical Data Configuration
 # Purpose: Base directory for historical data files
-HISTORICAL_DATA_BASE_DIR = 'data/historical'
+HISTORICAL_DATA_BASE_DIR = "data/historical"

@@ -5,14 +5,12 @@ Handles backtest order execution and simulation.
 """
 
 import logging
-from decimal import Decimal
-from typing import Dict, Any, Union
 from datetime import datetime
-from utils.time import now_ms
+from decimal import Decimal
+from typing import Any, Dict, Union
 
 from core.types.order_types import Order, OrderStatus
 from utils.logger import get_trade_logger
-from utils.adapter import signal_to_dict
 
 logger = logging.getLogger(__name__)
 trade_logger = get_trade_logger()
@@ -42,9 +40,10 @@ class BacktestOrderExecutor:
             as an integer representing milliseconds since epoch (e.g., 1234567890000).
         """
         # Determine side
-        side = getattr(signal, 'side', None)
+        side = getattr(signal, "side", None)
         if side is None:
             from core.contracts import SignalType
+
             if signal.signal_type == SignalType.ENTRY_LONG:
                 side = "buy"
             elif signal.signal_type == SignalType.ENTRY_SHORT:
@@ -70,7 +69,8 @@ class BacktestOrderExecutor:
             filled=Decimal(signal.amount),
             remaining=Decimal(0),
             cost=Decimal(signal.amount) * Decimal(executed_price),
-            params=getattr(signal, "params", {}) or ({"stop_loss": getattr(signal, "stop_loss", None)}),
+            params=getattr(signal, "params", {})
+            or ({"stop_loss": getattr(signal, "stop_loss", None)}),
             fee={"cost": float(fee), "currency": self.config["base_currency"]},
             trailing_stop=(
                 Decimal(str(signal.trailing_stop.get("price")))
@@ -105,6 +105,7 @@ class BacktestOrderExecutor:
             # Fallback: try to convert using utils.time.to_ms
             try:
                 from utils.time import to_ms
+
                 result = to_ms(timestamp)
                 return result if result is not None else 0
             except Exception:

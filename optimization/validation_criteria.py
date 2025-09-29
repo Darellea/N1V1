@@ -12,8 +12,10 @@ Key Features:
 - Overall validation scoring
 """
 
+from typing import Any, Dict, List, Tuple
+
 import numpy as np
-from typing import Dict, List, Any, Tuple
+
 from .config import get_cross_asset_validation_config
 
 
@@ -46,34 +48,35 @@ class ValidationCriteria:
         if config is None:
             validation_config = get_cross_asset_validation_config()
             config = {
-                'min_sharpe_ratio': validation_config.validation_criteria.min_sharpe_ratio,
-                'max_drawdown_limit': validation_config.validation_criteria.max_drawdown_limit,
-                'min_win_rate': validation_config.validation_criteria.min_win_rate,
-                'min_profit_factor': validation_config.validation_criteria.min_profit_factor,
-                'consistency_threshold': validation_config.validation_criteria.consistency_threshold,
-                'required_pass_rate': validation_config.validation_criteria.required_pass_rate,
-                'min_calmar_ratio': validation_config.validation_criteria.min_calmar_ratio,
-                'max_volatility': validation_config.validation_criteria.max_volatility,
-                'min_sortino_ratio': validation_config.validation_criteria.min_sortino_ratio
+                "min_sharpe_ratio": validation_config.validation_criteria.min_sharpe_ratio,
+                "max_drawdown_limit": validation_config.validation_criteria.max_drawdown_limit,
+                "min_win_rate": validation_config.validation_criteria.min_win_rate,
+                "min_profit_factor": validation_config.validation_criteria.min_profit_factor,
+                "consistency_threshold": validation_config.validation_criteria.consistency_threshold,
+                "required_pass_rate": validation_config.validation_criteria.required_pass_rate,
+                "min_calmar_ratio": validation_config.validation_criteria.min_calmar_ratio,
+                "max_volatility": validation_config.validation_criteria.max_volatility,
+                "min_sortino_ratio": validation_config.validation_criteria.min_sortino_ratio,
             }
 
         # Core performance thresholds
-        self.min_sharpe_ratio = config.get('min_sharpe_ratio', 0.5)
-        self.max_drawdown_limit = config.get('max_drawdown_limit', 0.15)  # 15%
-        self.min_win_rate = config.get('min_win_rate', 0.45)
-        self.min_profit_factor = config.get('min_profit_factor', 1.2)
+        self.min_sharpe_ratio = config.get("min_sharpe_ratio", 0.5)
+        self.max_drawdown_limit = config.get("max_drawdown_limit", 0.15)  # 15%
+        self.min_win_rate = config.get("min_win_rate", 0.45)
+        self.min_profit_factor = config.get("min_profit_factor", 1.2)
 
         # Consistency and robustness thresholds
-        self.consistency_threshold = config.get('consistency_threshold', 0.7)
-        self.required_pass_rate = config.get('required_pass_rate', 0.6)  # 60%
+        self.consistency_threshold = config.get("consistency_threshold", 0.7)
+        self.required_pass_rate = config.get("required_pass_rate", 0.6)  # 60%
 
         # Advanced risk-adjusted metrics
-        self.min_calmar_ratio = config.get('min_calmar_ratio', 0.3)
-        self.max_volatility = config.get('max_volatility', 0.25)
-        self.min_sortino_ratio = config.get('min_sortino_ratio', 0.4)
+        self.min_calmar_ratio = config.get("min_calmar_ratio", 0.3)
+        self.max_volatility = config.get("max_volatility", 0.25)
+        self.min_sortino_ratio = config.get("min_sortino_ratio", 0.4)
 
-    def evaluate_asset(self, primary_metrics: Dict[str, Any],
-                      validation_metrics: Dict[str, Any]) -> Tuple[Dict[str, bool], bool]:
+    def evaluate_asset(
+        self, primary_metrics: Dict[str, Any], validation_metrics: Dict[str, Any]
+    ) -> Tuple[Dict[str, bool], bool]:
         """
         Evaluate if an asset passes validation criteria.
 
@@ -93,19 +96,25 @@ class ValidationCriteria:
         pass_criteria = {}
 
         # Core performance criteria
-        pass_criteria['sharpe_ratio'] = self._evaluate_sharpe_ratio(validation_metrics)
-        pass_criteria['max_drawdown'] = self._evaluate_max_drawdown(validation_metrics)
-        pass_criteria['win_rate'] = self._evaluate_win_rate(validation_metrics)
-        pass_criteria['profit_factor'] = self._evaluate_profit_factor(validation_metrics)
+        pass_criteria["sharpe_ratio"] = self._evaluate_sharpe_ratio(validation_metrics)
+        pass_criteria["max_drawdown"] = self._evaluate_max_drawdown(validation_metrics)
+        pass_criteria["win_rate"] = self._evaluate_win_rate(validation_metrics)
+        pass_criteria["profit_factor"] = self._evaluate_profit_factor(
+            validation_metrics
+        )
 
         # Consistency criterion
-        consistency_score = self._calculate_consistency_score(primary_metrics, validation_metrics)
-        pass_criteria['consistency'] = consistency_score >= self.consistency_threshold
+        consistency_score = self._calculate_consistency_score(
+            primary_metrics, validation_metrics
+        )
+        pass_criteria["consistency"] = consistency_score >= self.consistency_threshold
 
         # Advanced risk-adjusted criteria
-        pass_criteria['calmar_ratio'] = self._evaluate_calmar_ratio(validation_metrics)
-        pass_criteria['volatility'] = self._evaluate_volatility(validation_metrics)
-        pass_criteria['sortino_ratio'] = self._evaluate_sortino_ratio(validation_metrics)
+        pass_criteria["calmar_ratio"] = self._evaluate_calmar_ratio(validation_metrics)
+        pass_criteria["volatility"] = self._evaluate_volatility(validation_metrics)
+        pass_criteria["sortino_ratio"] = self._evaluate_sortino_ratio(
+            validation_metrics
+        )
 
         # Overall pass (all criteria must pass)
         overall_pass = all(pass_criteria.values())
@@ -142,41 +151,42 @@ class ValidationCriteria:
 
     def _evaluate_sharpe_ratio(self, metrics: Dict[str, Any]) -> bool:
         """Evaluate Sharpe ratio criterion."""
-        sharpe = metrics.get('sharpe_ratio', 0)
+        sharpe = metrics.get("sharpe_ratio", 0)
         return sharpe >= self.min_sharpe_ratio
 
     def _evaluate_max_drawdown(self, metrics: Dict[str, Any]) -> bool:
         """Evaluate maximum drawdown criterion."""
-        max_dd = metrics.get('max_drawdown', 1.0)
+        max_dd = metrics.get("max_drawdown", 1.0)
         return max_dd <= self.max_drawdown_limit
 
     def _evaluate_win_rate(self, metrics: Dict[str, Any]) -> bool:
         """Evaluate win rate criterion."""
-        win_rate = metrics.get('win_rate', 0)
+        win_rate = metrics.get("win_rate", 0)
         return win_rate >= self.min_win_rate
 
     def _evaluate_profit_factor(self, metrics: Dict[str, Any]) -> bool:
         """Evaluate profit factor criterion."""
-        profit_factor = metrics.get('profit_factor', 0)
+        profit_factor = metrics.get("profit_factor", 0)
         return profit_factor >= self.min_profit_factor
 
     def _evaluate_calmar_ratio(self, metrics: Dict[str, Any]) -> bool:
         """Evaluate Calmar ratio criterion."""
-        calmar = metrics.get('calmar_ratio', 0)
+        calmar = metrics.get("calmar_ratio", 0)
         return calmar >= self.min_calmar_ratio
 
     def _evaluate_volatility(self, metrics: Dict[str, Any]) -> bool:
         """Evaluate volatility criterion."""
-        volatility = metrics.get('volatility', 0)
+        volatility = metrics.get("volatility", 0)
         return volatility <= self.max_volatility
 
     def _evaluate_sortino_ratio(self, metrics: Dict[str, Any]) -> bool:
         """Evaluate Sortino ratio criterion."""
-        sortino = metrics.get('sortino_ratio', 0)
+        sortino = metrics.get("sortino_ratio", 0)
         return sortino >= self.min_sortino_ratio
 
-    def _calculate_consistency_score(self, primary: Dict[str, Any],
-                                   validation: Dict[str, Any]) -> float:
+    def _calculate_consistency_score(
+        self, primary: Dict[str, Any], validation: Dict[str, Any]
+    ) -> float:
         """
         Calculate consistency score between primary and validation metrics.
 
@@ -193,8 +203,12 @@ class ValidationCriteria:
             Consistency score between 0.0 (inconsistent) and 1.0 (perfectly consistent)
         """
         metrics_to_compare = [
-            'sharpe_ratio', 'total_return', 'win_rate', 'profit_factor',
-            'calmar_ratio', 'sortino_ratio'
+            "sharpe_ratio",
+            "total_return",
+            "win_rate",
+            "profit_factor",
+            "calmar_ratio",
+            "sortino_ratio",
         ]
 
         consistency_scores = []
@@ -231,21 +245,21 @@ class ValidationCriteria:
             Dictionary containing all criteria thresholds and descriptions
         """
         return {
-            'performance_thresholds': {
-                'min_sharpe_ratio': self.min_sharpe_ratio,
-                'max_drawdown_limit': self.max_drawdown_limit,
-                'min_win_rate': self.min_win_rate,
-                'min_profit_factor': self.min_profit_factor
+            "performance_thresholds": {
+                "min_sharpe_ratio": self.min_sharpe_ratio,
+                "max_drawdown_limit": self.max_drawdown_limit,
+                "min_win_rate": self.min_win_rate,
+                "min_profit_factor": self.min_profit_factor,
             },
-            'consistency_thresholds': {
-                'consistency_threshold': self.consistency_threshold,
-                'required_pass_rate': self.required_pass_rate
+            "consistency_thresholds": {
+                "consistency_threshold": self.consistency_threshold,
+                "required_pass_rate": self.required_pass_rate,
             },
-            'advanced_metrics': {
-                'min_calmar_ratio': self.min_calmar_ratio,
-                'max_volatility': self.max_volatility,
-                'min_sortino_ratio': self.min_sortino_ratio
-            }
+            "advanced_metrics": {
+                "min_calmar_ratio": self.min_calmar_ratio,
+                "max_volatility": self.max_volatility,
+                "min_sortino_ratio": self.min_sortino_ratio,
+            },
         }
 
     def calculate_robustness_score(self, asset_results: List[Any]) -> float:
@@ -272,7 +286,9 @@ class ValidationCriteria:
         # Consistency score (average consistency across all assets)
         consistency_scores = []
         for result in asset_results:
-            if hasattr(result, 'validation_metrics') and hasattr(result, 'primary_metrics'):
+            if hasattr(result, "validation_metrics") and hasattr(
+                result, "primary_metrics"
+            ):
                 consistency = self._calculate_consistency_score(
                     result.primary_metrics, result.validation_metrics
                 )
@@ -281,15 +297,18 @@ class ValidationCriteria:
         avg_consistency = np.mean(consistency_scores) if consistency_scores else 0.0
 
         # Performance stability (coefficient of variation of key metrics)
-        sharpe_ratios = [r.validation_metrics.get('sharpe_ratio', 0)
-                        for r in asset_results if hasattr(r, 'validation_metrics')]
-        sharpe_stability = 1.0 / (1.0 + np.std(sharpe_ratios)) if len(sharpe_ratios) > 1 else 1.0
+        sharpe_ratios = [
+            r.validation_metrics.get("sharpe_ratio", 0)
+            for r in asset_results
+            if hasattr(r, "validation_metrics")
+        ]
+        sharpe_stability = (
+            1.0 / (1.0 + np.std(sharpe_ratios)) if len(sharpe_ratios) > 1 else 1.0
+        )
 
         # Weighted robustness score
         robustness = (
-            0.4 * pass_rate_score +
-            0.3 * avg_consistency +
-            0.3 * sharpe_stability
+            0.4 * pass_rate_score + 0.3 * avg_consistency + 0.3 * sharpe_stability
         )
 
         return min(1.0, max(0.0, robustness))  # Clamp to [0, 1]

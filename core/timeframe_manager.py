@@ -15,18 +15,15 @@ Key Features:
 """
 
 import asyncio
-import logging
-from typing import Dict, List, Optional, Any, Tuple, Set
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-import pandas as pd
-import numpy as np
 from concurrent.futures import ThreadPoolExecutor
-import time
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+import pandas as pd
 
 from data.data_fetcher import DataFetcher
-from utils.time import now_ms, to_ms, to_iso
 from utils.logger import get_logger
+from utils.time import now_ms
 
 logger = get_logger(__name__)
 
@@ -34,6 +31,7 @@ logger = get_logger(__name__)
 @dataclass
 class TimeframeConfig:
     """Configuration for a specific timeframe."""
+
     name: str
     interval: str  # e.g., '15m', '1h', '4h'
     required_history: int  # Number of candles needed
@@ -44,6 +42,7 @@ class TimeframeConfig:
 @dataclass
 class SyncedData:
     """Container for synchronized multi-timeframe data."""
+
     symbol: str
     timestamp: int  # Aligned timestamp (ms)
     data: Dict[str, pd.DataFrame]  # timeframe -> DataFrame
@@ -102,7 +101,9 @@ class TimeframeManager:
     - Graceful handling of missing data
     """
 
-    def __init__(self, data_fetcher: DataFetcher, config: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, data_fetcher: DataFetcher, config: Optional[Dict[str, Any]] = None
+    ):
         """
         Initialize the TimeframeManager.
 
@@ -114,13 +115,19 @@ class TimeframeManager:
         self.config = config or self._get_default_config()
 
         # Core data structures
-        self.symbol_timeframes: Dict[str, List[str]] = {}  # symbol -> list of timeframes
+        self.symbol_timeframes: Dict[
+            str, List[str]
+        ] = {}  # symbol -> list of timeframes
         self.timeframe_configs: Dict[str, TimeframeConfig] = {}
         self.cache: Dict[str, SyncedData] = {}  # symbol -> SyncedData
-        self.cache_ttl: int = self.config.get('cache_ttl_seconds', 300)  # 5 minutes default
+        self.cache_ttl: int = self.config.get(
+            "cache_ttl_seconds", 300
+        )  # 5 minutes default
 
         # Performance and threading
-        self.executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="tf_manager")
+        self.executor = ThreadPoolExecutor(
+            max_workers=4, thread_name_prefix="tf_manager"
+        )
         self._running = True
         self._update_tasks: Dict[str, asyncio.Task] = {}
 
@@ -132,22 +139,22 @@ class TimeframeManager:
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration."""
         return {
-            'cache_ttl_seconds': 300,
-            'max_concurrent_fetches': 4,
-            'timestamp_alignment_tolerance_ms': 60000,  # 1 minute tolerance
-            'enable_resampling': True,
-            'missing_data_threshold': 0.8,  # 80% data completeness required
-            'update_interval_seconds': 60,
+            "cache_ttl_seconds": 300,
+            "max_concurrent_fetches": 4,
+            "timestamp_alignment_tolerance_ms": 60000,  # 1 minute tolerance
+            "enable_resampling": True,
+            "missing_data_threshold": 0.8,  # 80% data completeness required
+            "update_interval_seconds": 60,
         }
 
     def _initialize_timeframe_configs(self):
         """Initialize default timeframe configurations."""
         default_configs = {
-            '5m': TimeframeConfig('5m', '5m', 50, 30),
-            '15m': TimeframeConfig('15m', '15m', 100, 60),
-            '1h': TimeframeConfig('1h', '1h', 200, 300),
-            '4h': TimeframeConfig('4h', '4h', 300, 1200),
-            '1d': TimeframeConfig('1d', '1d', 100, 3600),
+            "5m": TimeframeConfig("5m", "5m", 50, 30),
+            "15m": TimeframeConfig("15m", "15m", 100, 60),
+            "1h": TimeframeConfig("1h", "1h", 200, 300),
+            "4h": TimeframeConfig("4h", "4h", 300, 1200),
+            "1d": TimeframeConfig("1d", "1d", 100, 3600),
         }
 
         for tf, config in default_configs.items():
@@ -193,7 +200,9 @@ class TimeframeManager:
                 if tf in self.timeframe_configs:
                     valid_timeframes.append(tf)
                 else:
-                    logger.warning(f"Unknown timeframe '{tf}' for symbol {symbol}, skipping")
+                    logger.warning(
+                        f"Unknown timeframe '{tf}' for symbol {symbol}, skipping"
+                    )
 
             if not valid_timeframes:
                 logger.error(f"No valid timeframes provided for symbol {symbol}")
@@ -262,14 +271,18 @@ class TimeframeManager:
             # Cache the result
             self.cache[symbol] = synced_data
 
-            logger.debug(f"Fetched multi-timeframe data for {symbol}: {list(tf_data.keys())}")
+            logger.debug(
+                f"Fetched multi-timeframe data for {symbol}: {list(tf_data.keys())}"
+            )
             return synced_data
 
         except Exception as e:
             logger.error(f"Failed to fetch multi-timeframe data for {symbol}: {e}")
             return None
 
-    async def _fetch_single_timeframe(self, symbol: str, timeframe: str) -> Optional[pd.DataFrame]:
+    async def _fetch_single_timeframe(
+        self, symbol: str, timeframe: str
+    ) -> Optional[pd.DataFrame]:
         """
         Fetch data for a single timeframe.
 
@@ -287,13 +300,13 @@ class TimeframeManager:
             # Call the async data fetcher method directly
             data = await self.data_fetcher.get_historical_data(symbol, timeframe, limit)
 
-            if data is None or (hasattr(data, 'empty') and data.empty):
+            if data is None or (hasattr(data, "empty") and data.empty):
                 logger.warning(f"No data received for {symbol} {timeframe}")
                 return None
 
             # Ensure proper datetime index
             if not isinstance(data.index, pd.DatetimeIndex):
-                data.index = pd.to_datetime(data.index, unit='ms')
+                data.index = pd.to_datetime(data.index, unit="ms")
 
             # Sort by timestamp
             data = data.sort_index()
@@ -304,7 +317,9 @@ class TimeframeManager:
             logger.error(f"Failed to fetch {timeframe} data for {symbol}: {e}")
             return None
 
-    async def _synchronize_data(self, symbol: str, tf_data: Dict[str, pd.DataFrame]) -> SyncedData:
+    async def _synchronize_data(
+        self, symbol: str, tf_data: Dict[str, pd.DataFrame]
+    ) -> SyncedData:
         """
         Synchronize timestamps across multiple timeframes.
 
@@ -336,16 +351,18 @@ class TimeframeManager:
             confidence = available_points / total_points if total_points > 0 else 0.0
 
             # Apply minimum confidence threshold
-            min_confidence = self.config.get('missing_data_threshold', 0.8)
+            min_confidence = self.config.get("missing_data_threshold", 0.8)
             if confidence < min_confidence:
-                logger.warning(f"Low confidence score for {symbol}: {confidence:.2f} < {min_confidence}")
+                logger.warning(
+                    f"Low confidence score for {symbol}: {confidence:.2f} < {min_confidence}"
+                )
 
             return SyncedData(
                 symbol=symbol,
                 timestamp=latest_timestamp,
                 data=aligned_data,
                 last_updated=now_ms(),
-                confidence_score=confidence
+                confidence_score=confidence,
             )
 
         except Exception as e:
@@ -356,7 +373,7 @@ class TimeframeManager:
                 timestamp=now_ms(),
                 data=tf_data,
                 last_updated=now_ms(),
-                confidence_score=0.0
+                confidence_score=0.0,
             )
 
     async def _find_common_timestamp(self, tf_data: Dict[str, pd.DataFrame]) -> int:
@@ -386,12 +403,14 @@ class TimeframeManager:
             common_timestamp = min(latest_timestamps)
 
             # Apply tolerance for slight timing differences
-            tolerance = self.config.get('timestamp_alignment_tolerance_ms', 60000)
+            tolerance = self.config.get("timestamp_alignment_tolerance_ms", 60000)
             current_time = now_ms()
 
             # Don't go too far back if data is very old
             if current_time - common_timestamp > tolerance:
-                logger.warning(f"Common timestamp too old: {common_timestamp}, using current time")
+                logger.warning(
+                    f"Common timestamp too old: {common_timestamp}, using current time"
+                )
                 return current_time
 
             return common_timestamp
@@ -400,8 +419,9 @@ class TimeframeManager:
             logger.error(f"Failed to find common timestamp: {e}")
             return now_ms()
 
-    async def _align_to_timestamp(self, df: pd.DataFrame, target_timestamp: int,
-                                timeframe: str) -> pd.DataFrame:
+    async def _align_to_timestamp(
+        self, df: pd.DataFrame, target_timestamp: int, timeframe: str
+    ) -> pd.DataFrame:
         """
         Align DataFrame to a specific timestamp.
 
@@ -418,14 +438,14 @@ class TimeframeManager:
                 return df
 
             # Convert target timestamp to pandas Timestamp
-            target_ts = pd.Timestamp(target_timestamp / 1000, unit='s')
+            target_ts = pd.Timestamp(target_timestamp / 1000, unit="s")
 
             # Find the closest timestamp in the data
-            closest_idx = df.index.get_indexer([target_ts], method='nearest')[0]
+            closest_idx = df.index.get_indexer([target_ts], method="nearest")[0]
 
             if closest_idx >= 0 and closest_idx < len(df):
                 # Get data up to and including the closest timestamp
-                aligned_df = df.iloc[:closest_idx + 1].copy()
+                aligned_df = df.iloc[: closest_idx + 1].copy()
             else:
                 # If no close timestamp, return the most recent data
                 aligned_df = df.tail(1).copy()
@@ -455,7 +475,9 @@ class TimeframeManager:
             time_diff = current_time - cached_data.last_updated
             ttl_ms = self.cache_ttl * 1000
 
-            logger.debug(f"Cache check for {symbol}: time_diff={time_diff}ms, ttl={ttl_ms}ms, cache_ttl={self.cache_ttl}")
+            logger.debug(
+                f"Cache check for {symbol}: time_diff={time_diff}ms, ttl={ttl_ms}ms, cache_ttl={self.cache_ttl}"
+            )
 
             if time_diff < ttl_ms:
                 logger.debug(f"Returning cached data for {symbol}")
@@ -467,7 +489,9 @@ class TimeframeManager:
 
         return None
 
-    async def update_cache(self, symbol: str, timeframe: str, new_data: pd.DataFrame) -> bool:
+    async def update_cache(
+        self, symbol: str, timeframe: str, new_data: pd.DataFrame
+    ) -> bool:
         """
         Update specific timeframe data in cache.
 
@@ -485,7 +509,9 @@ class TimeframeManager:
                 return False
 
             if timeframe not in self.symbol_timeframes[symbol]:
-                logger.error(f"Timeframe {timeframe} not registered for symbol {symbol}")
+                logger.error(
+                    f"Timeframe {timeframe} not registered for symbol {symbol}"
+                )
                 return False
 
             # Get existing synced data or create new
@@ -497,7 +523,7 @@ class TimeframeManager:
                     timestamp=now_ms(),
                     data={timeframe: new_data},
                     last_updated=now_ms(),
-                    confidence_score=1.0
+                    confidence_score=1.0,
                 )
             else:
                 # Update existing data
@@ -507,7 +533,9 @@ class TimeframeManager:
                 # Recalculate confidence score
                 total_points = sum(len(df) for df in synced_data.data.values())
                 expected_points = len(self.symbol_timeframes[symbol]) * len(new_data)
-                synced_data.confidence_score = total_points / expected_points if expected_points > 0 else 0.0
+                synced_data.confidence_score = (
+                    total_points / expected_points if expected_points > 0 else 0.0
+                )
 
             # Update cache
             self.cache[symbol] = synced_data
@@ -576,10 +604,10 @@ class TimeframeManager:
         total_size = sum(len(str(data)) for data in self.cache.values())
 
         return {
-            'cached_symbols': total_symbols,
-            'estimated_size_bytes': total_size,
-            'cache_ttl_seconds': self.cache_ttl,
-            'registered_symbols': len(self.symbol_timeframes),
+            "cached_symbols": total_symbols,
+            "estimated_size_bytes": total_size,
+            "cache_ttl_seconds": self.cache_ttl,
+            "registered_symbols": len(self.symbol_timeframes),
         }
 
     async def start_background_updates(self):
@@ -623,7 +651,7 @@ class TimeframeManager:
                 logger.error(f"Background update failed for {symbol}: {e}")
 
             # Wait before next check
-            await asyncio.sleep(self.config.get('update_interval_seconds', 60))
+            await asyncio.sleep(self.config.get("update_interval_seconds", 60))
 
     def stop_background_updates(self):
         """Stop all background update tasks."""

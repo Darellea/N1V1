@@ -6,22 +6,21 @@ and graceful degradation strategies used across core components.
 """
 
 import asyncio
-import logging
 import time
-from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
 from dataclasses import dataclass
 from enum import Enum
-import traceback
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar
 
 from ..logging_utils import get_structured_logger
 
 logger = get_structured_logger(__name__)
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class ErrorSeverity(Enum):
     """Error severity levels."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -30,6 +29,7 @@ class ErrorSeverity(Enum):
 
 class ErrorCategory(Enum):
     """Categories of errors for classification."""
+
     NETWORK = "network"
     CONFIGURATION = "configuration"
     DATA = "data"
@@ -42,6 +42,7 @@ class ErrorCategory(Enum):
 @dataclass
 class ErrorContext:
     """Context information for error handling."""
+
     component: str
     operation: str
     severity: ErrorSeverity
@@ -59,12 +60,14 @@ class ErrorContext:
 class RetryConfig:
     """Configuration for retry mechanisms."""
 
-    def __init__(self,
-                 max_attempts: int = 3,
-                 base_delay: float = 1.0,
-                 max_delay: float = 60.0,
-                 backoff_factor: float = 2.0,
-                 jitter: bool = True):
+    def __init__(
+        self,
+        max_attempts: int = 3,
+        base_delay: float = 1.0,
+        max_delay: float = 60.0,
+        backoff_factor: float = 2.0,
+        jitter: bool = True,
+    ):
         self.max_attempts = max_attempts
         self.base_delay = base_delay
         self.max_delay = max_delay
@@ -74,6 +77,7 @@ class RetryConfig:
 
 class CircuitBreakerState(Enum):
     """Circuit breaker states."""
+
     CLOSED = "closed"
     OPEN = "open"
     HALF_OPEN = "half_open"
@@ -82,10 +86,12 @@ class CircuitBreakerState(Enum):
 class CircuitBreaker:
     """Circuit breaker pattern implementation."""
 
-    def __init__(self,
-                 failure_threshold: int = 5,
-                 recovery_timeout: float = 60.0,
-                 expected_exception: Type[Exception] = Exception):
+    def __init__(
+        self,
+        failure_threshold: int = 5,
+        recovery_timeout: float = 60.0,
+        expected_exception: Type[Exception] = Exception,
+    ):
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.expected_exception = expected_exception
@@ -106,7 +112,7 @@ class CircuitBreaker:
             result = await func(*args, **kwargs)
             self._on_success()
             return result
-        except self.expected_exception as e:
+        except self.expected_exception:
             self._on_failure()
             raise
 
@@ -131,7 +137,9 @@ class CircuitBreaker:
 
         if self.failure_count >= self.failure_threshold:
             self.state = CircuitBreakerState.OPEN
-            logger.warning(f"Circuit breaker opened after {self.failure_count} failures")
+            logger.warning(
+                f"Circuit breaker opened after {self.failure_count} failures"
+            )
 
 
 class ErrorHandler:
@@ -141,10 +149,12 @@ class ErrorHandler:
         self.component_name = component_name
         self.logger = get_structured_logger(f"core.error_handler.{component_name}")
 
-    async def handle_error(self,
-                          error: Exception,
-                          context: ErrorContext,
-                          fallback_strategy: Optional[Callable] = None) -> Any:
+    async def handle_error(
+        self,
+        error: Exception,
+        context: ErrorContext,
+        fallback_strategy: Optional[Callable] = None,
+    ) -> Any:
         """
         Handle an error with appropriate logging and recovery.
 
@@ -162,17 +172,20 @@ class ErrorHandler:
         # Execute fallback strategy if provided
         if fallback_strategy:
             try:
-                self.logger.info("Executing fallback strategy", {
-                    "component": context.component,
-                    "operation": context.operation
-                })
+                self.logger.info(
+                    "Executing fallback strategy",
+                    {"component": context.component, "operation": context.operation},
+                )
                 return await fallback_strategy()
             except Exception as fallback_error:
-                self.logger.error("Fallback strategy failed", {
-                    "component": context.component,
-                    "operation": context.operation,
-                    "fallback_error": str(fallback_error)
-                })
+                self.logger.error(
+                    "Fallback strategy failed",
+                    {
+                        "component": context.component,
+                        "operation": context.operation,
+                        "fallback_error": str(fallback_error),
+                    },
+                )
 
         # Return appropriate default based on operation type
         return self._get_default_value(context.operation)
@@ -186,7 +199,7 @@ class ErrorHandler:
             "category": context.category.value,
             "retry_count": context.retry_count,
             "error_type": type(error).__name__,
-            "error_message": str(error)
+            "error_message": str(error),
         }
 
         if context.metadata:
@@ -210,15 +223,14 @@ class ErrorHandler:
             "send_notification": False,
             "execute_order": None,
             "get_balance": 0.0,
-            "get_equity": 0.0
+            "get_equity": 0.0,
         }
         return defaults.get(operation, None)
 
 
-async def retry_async(func: Callable[..., T],
-                      config: RetryConfig,
-                      *args,
-                      **kwargs) -> T:
+async def retry_async(
+    func: Callable[..., T], config: RetryConfig, *args, **kwargs
+) -> T:
     """
     Retry an async function with exponential backoff.
 
@@ -243,25 +255,30 @@ async def retry_async(func: Callable[..., T],
             last_exception = e
 
             if attempt < config.max_attempts - 1:
-                delay = min(config.base_delay * (config.backoff_factor ** attempt),
-                           config.max_delay)
+                delay = min(
+                    config.base_delay * (config.backoff_factor**attempt),
+                    config.max_delay,
+                )
 
                 if config.jitter:
                     delay = delay * (0.5 + 0.5 * time.time() % 1)  # Add jitter
 
-                logger.warning(f"Attempt {attempt + 1} failed, retrying in {delay:.2f}s", {
-                    "error": str(e),
-                    "attempt": attempt + 1,
-                    "max_attempts": config.max_attempts,
-                    "delay": delay
-                })
+                logger.warning(
+                    f"Attempt {attempt + 1} failed, retrying in {delay:.2f}s",
+                    {
+                        "error": str(e),
+                        "attempt": attempt + 1,
+                        "max_attempts": config.max_attempts,
+                        "delay": delay,
+                    },
+                )
 
                 await asyncio.sleep(delay)
             else:
-                logger.error(f"All {config.max_attempts} attempts failed", {
-                    "final_error": str(e),
-                    "total_attempts": config.max_attempts
-                })
+                logger.error(
+                    f"All {config.max_attempts} attempts failed",
+                    {"final_error": str(e), "total_attempts": config.max_attempts},
+                )
 
     raise last_exception
 
@@ -315,10 +332,10 @@ class GracefulDegradationManager:
     def mark_feature_degraded(self, feature_name: str, reason: str):
         """Mark a feature as degraded."""
         self.degraded_features[feature_name] = True
-        self.logger.warning(f"Feature marked as degraded: {feature_name}", {
-            "reason": reason,
-            "component": self.component_name
-        })
+        self.logger.warning(
+            f"Feature marked as degraded: {feature_name}",
+            {"reason": reason, "component": self.component_name},
+        )
 
     def is_feature_degraded(self, feature_name: str) -> bool:
         """Check if a feature is degraded."""
@@ -328,9 +345,9 @@ class GracefulDegradationManager:
         """Restore a degraded feature."""
         if feature_name in self.degraded_features:
             del self.degraded_features[feature_name]
-            self.logger.info(f"Feature restored: {feature_name}", {
-                "component": self.component_name
-            })
+            self.logger.info(
+                f"Feature restored: {feature_name}", {"component": self.component_name}
+            )
 
     def get_degraded_features(self) -> List[str]:
         """Get list of currently degraded features."""
@@ -340,16 +357,19 @@ class GracefulDegradationManager:
 # Custom exceptions
 class CircuitBreakerOpenException(Exception):
     """Exception raised when circuit breaker is open."""
+
     pass
 
 
 class MaxRetriesExceededException(Exception):
     """Exception raised when maximum retry attempts are exceeded."""
+
     pass
 
 
 class GracefulDegradationException(Exception):
     """Exception raised when a feature is unavailable due to graceful degradation."""
+
     pass
 
 
@@ -366,9 +386,9 @@ def get_error_handler(component_name: str) -> ErrorHandler:
     return _error_handlers[component_name]
 
 
-def get_circuit_breaker(name: str,
-                       failure_threshold: int = 5,
-                       recovery_timeout: float = 60.0) -> CircuitBreaker:
+def get_circuit_breaker(
+    name: str, failure_threshold: int = 5, recovery_timeout: float = 60.0
+) -> CircuitBreaker:
     """Get or create a circuit breaker."""
     if name not in _circuit_breakers:
         _circuit_breakers[name] = CircuitBreaker(failure_threshold, recovery_timeout)
@@ -378,5 +398,7 @@ def get_circuit_breaker(name: str,
 def get_degradation_manager(component_name: str) -> GracefulDegradationManager:
     """Get or create a graceful degradation manager for a component."""
     if component_name not in _degradation_managers:
-        _degradation_managers[component_name] = GracefulDegradationManager(component_name)
+        _degradation_managers[component_name] = GracefulDegradationManager(
+            component_name
+        )
     return _degradation_managers[component_name]

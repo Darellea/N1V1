@@ -6,25 +6,25 @@ with proper dependency injection, replacing direct instantiation throughout the 
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from .interfaces import (
-    ComponentFactoryInterface,
-    DataManagerInterface,
-    SignalProcessorInterface,
-    RiskManagerInterface,
-    OrderExecutorInterface,
-    PerformanceTrackerInterface,
-    StateManagerInterface,
-    CacheInterface,
-    MemoryManagerInterface
-)
+from .cache import RedisCache
 from .config_manager import get_config_manager
 from .data_manager import DataManager
-from .signal_processor import SignalProcessor
-from .performance_tracker import PerformanceTracker
-from .cache import RedisCache
+from .interfaces import (
+    CacheInterface,
+    ComponentFactoryInterface,
+    DataManagerInterface,
+    MemoryManagerInterface,
+    OrderExecutorInterface,
+    PerformanceTrackerInterface,
+    RiskManagerInterface,
+    SignalProcessorInterface,
+    StateManagerInterface,
+)
 from .memory_manager import MemoryManager
+from .performance_tracker import PerformanceTracker
+from .signal_processor import SignalProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +68,11 @@ class ComponentFactory(ComponentFactoryInterface):
             logger.error(f"Failed to create DataManager: {e}")
             raise
 
-    def create_signal_processor(self, config: Dict[str, Any],
-                              risk_manager: Optional[RiskManagerInterface] = None) -> SignalProcessorInterface:
+    def create_signal_processor(
+        self,
+        config: Dict[str, Any],
+        risk_manager: Optional[RiskManagerInterface] = None,
+    ) -> SignalProcessorInterface:
         """Create signal processor instance with injected dependencies."""
         cache_key = f"signal_processor_{hash(str(config))}_{id(risk_manager)}"
 
@@ -128,6 +131,7 @@ class ComponentFactory(ComponentFactoryInterface):
 
             # Get trading mode from config
             from .types import TradingMode
+
             mode_str = config.get("environment", {}).get("mode", "paper")
             mode = TradingMode[mode_str.upper()]
 
@@ -144,7 +148,9 @@ class ComponentFactory(ComponentFactoryInterface):
             logger.error(f"Failed to create OrderExecutor: {e}")
             raise
 
-    def create_performance_tracker(self, config: Dict[str, Any]) -> PerformanceTrackerInterface:
+    def create_performance_tracker(
+        self, config: Dict[str, Any]
+    ) -> PerformanceTrackerInterface:
         """Create performance tracker instance with injected dependencies."""
         cache_key = f"performance_tracker_{hash(str(config))}"
 
@@ -231,14 +237,14 @@ class ComponentFactory(ComponentFactoryInterface):
             # Create memory manager with configuration
             memory_manager = MemoryManager(
                 enable_monitoring=memory_config.enable_monitoring,
-                cleanup_interval=memory_config.cleanup_interval
+                cleanup_interval=memory_config.cleanup_interval,
             )
 
             # Configure memory thresholds
             memory_manager.set_memory_thresholds(
                 warning_mb=memory_config.warning_memory_mb,
                 critical_mb=memory_config.max_memory_mb,
-                cleanup_mb=memory_config.cleanup_memory_mb
+                cleanup_mb=memory_config.cleanup_memory_mb,
             )
 
             # Cache the instance
@@ -251,7 +257,9 @@ class ComponentFactory(ComponentFactoryInterface):
             logger.error(f"Failed to create MemoryManager: {e}")
             raise
 
-    def create_trading_coordinator(self, config: Dict[str, Any]) -> 'TradingCoordinator':
+    def create_trading_coordinator(
+        self, config: Dict[str, Any]
+    ) -> "TradingCoordinator":
         """Create trading coordinator with all dependencies injected."""
         from .trading_coordinator import TradingCoordinator
 
@@ -278,7 +286,7 @@ class ComponentFactory(ComponentFactoryInterface):
                 risk_manager=risk_manager,
                 order_executor=order_executor,
                 performance_tracker=performance_tracker,
-                state_manager=state_manager
+                state_manager=state_manager,
             )
 
             logger.info("Created TradingCoordinator with full dependency injection")
@@ -297,12 +305,13 @@ class ComponentFactory(ComponentFactoryInterface):
         """Get component cache statistics."""
         return {
             "cached_components": len(self._component_cache),
-            "component_types": list(self._component_cache.keys())
+            "component_types": list(self._component_cache.keys()),
         }
 
 
 # Global component factory instance
 _component_factory: Optional[ComponentFactory] = None
+
 
 def get_component_factory() -> ComponentFactory:
     """Get the global component factory instance."""
@@ -311,39 +320,49 @@ def get_component_factory() -> ComponentFactory:
         _component_factory = ComponentFactory()
     return _component_factory
 
+
 def create_data_manager(config: Dict[str, Any]) -> DataManagerInterface:
     """Create data manager (convenience function)."""
     return get_component_factory().create_data_manager(config)
 
-def create_signal_processor(config: Dict[str, Any],
-                          risk_manager: Optional[RiskManagerInterface] = None) -> SignalProcessorInterface:
+
+def create_signal_processor(
+    config: Dict[str, Any], risk_manager: Optional[RiskManagerInterface] = None
+) -> SignalProcessorInterface:
     """Create signal processor (convenience function)."""
     return get_component_factory().create_signal_processor(config, risk_manager)
+
 
 def create_risk_manager(config: Dict[str, Any]) -> RiskManagerInterface:
     """Create risk manager (convenience function)."""
     return get_component_factory().create_risk_manager(config)
 
+
 def create_order_executor(config: Dict[str, Any]) -> OrderExecutorInterface:
     """Create order executor (convenience function)."""
     return get_component_factory().create_order_executor(config)
+
 
 def create_performance_tracker(config: Dict[str, Any]) -> PerformanceTrackerInterface:
     """Create performance tracker (convenience function)."""
     return get_component_factory().create_performance_tracker(config)
 
+
 def create_state_manager(config: Dict[str, Any]) -> StateManagerInterface:
     """Create state manager (convenience function)."""
     return get_component_factory().create_state_manager(config)
+
 
 def create_cache(config: Dict[str, Any]) -> CacheInterface:
     """Create cache (convenience function)."""
     return get_component_factory().create_cache(config)
 
+
 def create_memory_manager(config: Dict[str, Any]) -> MemoryManagerInterface:
     """Create memory manager (convenience function)."""
     return get_component_factory().create_memory_manager(config)
 
-def create_trading_coordinator(config: Dict[str, Any]) -> 'TradingCoordinator':
+
+def create_trading_coordinator(config: Dict[str, Any]) -> "TradingCoordinator":
     """Create trading coordinator (convenience function)."""
     return get_component_factory().create_trading_coordinator(config)

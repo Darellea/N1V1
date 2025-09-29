@@ -7,29 +7,18 @@ market condition simulators, and comprehensive negative testing scenarios.
 
 import asyncio
 import logging
-import time
 import random
 import threading
-from typing import Dict, Any, List, Optional, Callable, Type, Union
+import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from unittest.mock import Mock, MagicMock, patch, AsyncMock
-import pytest
-import numpy as np
-import pandas as pd
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import aiohttp
-import requests
-from aiohttp import web
-import socket
-import ssl
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Type
 
-from utils.constants import (
-    TIMEFRAMES, ORDER_TYPES, ORDER_SIDES, DEFAULT_TRADING_CONFIG,
-    DEFAULT_RISK_CONFIG, VALID_ENVIRONMENTS
-)
-from utils.error_handler import ErrorHandler, TradingError, NetworkError, DataError
-from tests.integration_test_framework import MockExchange, MarketConditionSimulator
+import aiohttp
+import numpy as np
+
+from tests.integration_test_framework import MarketConditionSimulator, MockExchange
+from utils.error_handler import DataError, NetworkError, TradingError
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +26,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ChaosEvent:
     """Represents a chaos engineering event."""
+
     event_type: str
     target_component: str
     severity: str
@@ -63,9 +53,13 @@ class ChaosMonkey:
     def add_chaos_event(self, event: ChaosEvent):
         """Add a chaos event to the repertoire."""
         self.active_events.append(event)
-        logger.info(f"Added chaos event: {event.event_type} targeting {event.target_component}")
+        logger.info(
+            f"Added chaos event: {event.event_type} targeting {event.target_component}"
+        )
 
-    def create_network_chaos(self, target_component: str, severity: str = "medium") -> ChaosEvent:
+    def create_network_chaos(
+        self, target_component: str, severity: str = "medium"
+    ) -> ChaosEvent:
         """Create network-related chaos events."""
         events = {
             "latency_spike": ChaosEvent(
@@ -74,7 +68,7 @@ class ChaosMonkey:
                 severity=severity,
                 duration=random.uniform(10, 60),
                 probability=0.3,
-                parameters={"latency_ms": random.randint(1000, 5000)}
+                parameters={"latency_ms": random.randint(1000, 5000)},
             ),
             "connection_drop": ChaosEvent(
                 event_type="network_disconnect",
@@ -82,7 +76,7 @@ class ChaosMonkey:
                 severity=severity,
                 duration=random.uniform(5, 30),
                 probability=0.2,
-                parameters={"drop_rate": random.uniform(0.1, 0.5)}
+                parameters={"drop_rate": random.uniform(0.1, 0.5)},
             ),
             "packet_loss": ChaosEvent(
                 event_type="packet_loss",
@@ -90,12 +84,14 @@ class ChaosMonkey:
                 severity=severity,
                 duration=random.uniform(15, 45),
                 probability=0.25,
-                parameters={"loss_rate": random.uniform(0.05, 0.3)}
-            )
+                parameters={"loss_rate": random.uniform(0.05, 0.3)},
+            ),
         }
         return random.choice(list(events.values()))
 
-    def create_resource_chaos(self, target_component: str, severity: str = "medium") -> ChaosEvent:
+    def create_resource_chaos(
+        self, target_component: str, severity: str = "medium"
+    ) -> ChaosEvent:
         """Create resource-related chaos events."""
         events = {
             "cpu_spike": ChaosEvent(
@@ -104,7 +100,7 @@ class ChaosMonkey:
                 severity=severity,
                 duration=random.uniform(20, 120),
                 probability=0.2,
-                parameters={"cpu_usage": random.uniform(80, 95)}
+                parameters={"cpu_usage": random.uniform(80, 95)},
             ),
             "memory_pressure": ChaosEvent(
                 event_type="memory_exhaustion",
@@ -112,7 +108,7 @@ class ChaosMonkey:
                 severity=severity,
                 duration=random.uniform(30, 90),
                 probability=0.15,
-                parameters={"memory_pressure": random.uniform(85, 98)}
+                parameters={"memory_pressure": random.uniform(85, 98)},
             ),
             "disk_full": ChaosEvent(
                 event_type="disk_space",
@@ -120,12 +116,14 @@ class ChaosMonkey:
                 severity=severity,
                 duration=random.uniform(60, 300),
                 probability=0.1,
-                parameters={"disk_usage": random.uniform(90, 99)}
-            )
+                parameters={"disk_usage": random.uniform(90, 99)},
+            ),
         }
         return random.choice(list(events.values()))
 
-    def create_data_chaos(self, target_component: str, severity: str = "medium") -> ChaosEvent:
+    def create_data_chaos(
+        self, target_component: str, severity: str = "medium"
+    ) -> ChaosEvent:
         """Create data-related chaos events."""
         events = {
             "data_corruption": ChaosEvent(
@@ -134,7 +132,7 @@ class ChaosMonkey:
                 severity=severity,
                 duration=random.uniform(10, 60),
                 probability=0.1,
-                parameters={"corruption_rate": random.uniform(0.01, 0.1)}
+                parameters={"corruption_rate": random.uniform(0.01, 0.1)},
             ),
             "data_delay": ChaosEvent(
                 event_type="data_lag",
@@ -142,7 +140,7 @@ class ChaosMonkey:
                 severity=severity,
                 duration=random.uniform(15, 120),
                 probability=0.2,
-                parameters={"delay_seconds": random.uniform(1, 30)}
+                parameters={"delay_seconds": random.uniform(1, 30)},
             ),
             "invalid_data": ChaosEvent(
                 event_type="invalid_format",
@@ -150,8 +148,8 @@ class ChaosMonkey:
                 severity=severity,
                 duration=random.uniform(5, 45),
                 probability=0.15,
-                parameters={"invalid_rate": random.uniform(0.05, 0.25)}
-            )
+                parameters={"invalid_rate": random.uniform(0.05, 0.25)},
+            ),
         }
         return random.choice(list(events.values()))
 
@@ -161,7 +159,9 @@ class ChaosMonkey:
 
         for event in self.active_events:
             if event.should_trigger():
-                logger.warning(f"Injecting chaos: {event.event_type} on {event.target_component}")
+                logger.warning(
+                    f"Injecting chaos: {event.event_type} on {event.target_component}"
+                )
                 triggered_events.append(event)
 
                 # Apply the chaos event
@@ -188,41 +188,54 @@ class ChaosMonkey:
             await self._inject_data_delay(event, target_system)
 
         # Record the event
-        self.event_history.append({
-            "timestamp": time.time(),
-            "event": event.event_type,
-            "target": event.target_component,
-            "severity": event.severity,
-            "duration": event.duration,
-            "parameters": event.parameters
-        })
+        self.event_history.append(
+            {
+                "timestamp": time.time(),
+                "event": event.event_type,
+                "target": event.target_component,
+                "severity": event.severity,
+                "duration": event.duration,
+                "parameters": event.parameters,
+            }
+        )
 
     async def _inject_network_latency(self, event: ChaosEvent, target_system: Any):
         """Inject network latency."""
         # Monkey patch network calls to add delay
-        original_fetch = getattr(target_system, 'fetch_ticker', None)
+        original_fetch = getattr(target_system, "fetch_ticker", None)
         if original_fetch:
+
             async def delayed_fetch(*args, **kwargs):
                 await asyncio.sleep(event.parameters["latency_ms"] / 1000)
                 return await original_fetch(*args, **kwargs)
 
-            self.monkey_patches[f"{event.target_component}_fetch"] = (target_system, 'fetch_ticker', original_fetch)
-            setattr(target_system, 'fetch_ticker', delayed_fetch)
+            self.monkey_patches[f"{event.target_component}_fetch"] = (
+                target_system,
+                "fetch_ticker",
+                original_fetch,
+            )
+            target_system.fetch_ticker = delayed_fetch
 
     async def _inject_network_disconnect(self, event: ChaosEvent, target_system: Any):
         """Inject network disconnection."""
-        original_fetch = getattr(target_system, 'fetch_ticker', None)
+        original_fetch = getattr(target_system, "fetch_ticker", None)
         if original_fetch:
+
             async def failing_fetch(*args, **kwargs):
                 if random.random() < event.parameters["drop_rate"]:
                     raise NetworkError("Simulated network disconnection")
                 return await original_fetch(*args, **kwargs)
 
-            self.monkey_patches[f"{event.target_component}_disconnect"] = (target_system, 'fetch_ticker', original_fetch)
-            setattr(target_system, 'fetch_ticker', failing_fetch)
+            self.monkey_patches[f"{event.target_component}_disconnect"] = (
+                target_system,
+                "fetch_ticker",
+                original_fetch,
+            )
+            target_system.fetch_ticker = failing_fetch
 
     async def _inject_cpu_pressure(self, event: ChaosEvent, target_system: Any):
         """Inject CPU pressure."""
+
         # Simulate CPU-intensive operations
         def cpu_intensive_task():
             start_time = time.time()
@@ -247,8 +260,9 @@ class ChaosMonkey:
 
     async def _inject_data_corruption(self, event: ChaosEvent, target_system: Any):
         """Inject data corruption."""
-        original_fetch = getattr(target_system, 'fetch_ohlcv', None)
+        original_fetch = getattr(target_system, "fetch_ohlcv", None)
         if original_fetch:
+
             async def corrupt_fetch(*args, **kwargs):
                 data = await original_fetch(*args, **kwargs)
                 # Corrupt some data points
@@ -256,27 +270,36 @@ class ChaosMonkey:
                     if random.random() < event.parameters["corruption_rate"]:
                         # Corrupt OHLC values
                         for j in range(1, 5):  # OHLC columns
-                            data[i][j] *= (1 + random.uniform(-0.1, 0.1))
+                            data[i][j] *= 1 + random.uniform(-0.1, 0.1)
                 return data
 
-            self.monkey_patches[f"{event.target_component}_corrupt"] = (target_system, 'fetch_ohlcv', original_fetch)
-            setattr(target_system, 'fetch_ohlcv', corrupt_fetch)
+            self.monkey_patches[f"{event.target_component}_corrupt"] = (
+                target_system,
+                "fetch_ohlcv",
+                original_fetch,
+            )
+            target_system.fetch_ohlcv = corrupt_fetch
 
     async def _inject_data_delay(self, event: ChaosEvent, target_system: Any):
         """Inject data delay."""
-        original_fetch = getattr(target_system, 'fetch_ticker', None)
+        original_fetch = getattr(target_system, "fetch_ticker", None)
         if original_fetch:
+
             async def delayed_data_fetch(*args, **kwargs):
                 # Delay the data
                 await asyncio.sleep(event.parameters["delay_seconds"])
                 data = await original_fetch(*args, **kwargs)
                 # Make data stale by adjusting timestamp
-                if isinstance(data, dict) and 'timestamp' in data:
-                    data['timestamp'] -= int(event.parameters["delay_seconds"] * 1000)
+                if isinstance(data, dict) and "timestamp" in data:
+                    data["timestamp"] -= int(event.parameters["delay_seconds"] * 1000)
                 return data
 
-            self.monkey_patches[f"{event.target_component}_delay"] = (target_system, 'fetch_ticker', original_fetch)
-            setattr(target_system, 'fetch_ticker', delayed_data_fetch)
+            self.monkey_patches[f"{event.target_component}_delay"] = (
+                target_system,
+                "fetch_ticker",
+                original_fetch,
+            )
+            target_system.fetch_ticker = delayed_data_fetch
 
     async def _cleanup_chaos_event(self, event: ChaosEvent):
         """Clean up a chaos event after its duration."""
@@ -297,7 +320,7 @@ class ChaosMonkey:
             "event_types": list(set(e["event"] for e in self.event_history)),
             "severity_distribution": self._calculate_severity_distribution(),
             "target_distribution": self._calculate_target_distribution(),
-            "recent_events": self.event_history[-10:]  # Last 10 events
+            "recent_events": self.event_history[-10:],  # Last 10 events
         }
 
     def _calculate_severity_distribution(self) -> Dict[str, int]:
@@ -329,12 +352,13 @@ class FuzzTester:
             "numeric_extremes": self._fuzz_numeric_extremes,
             "structure_corruption": self._fuzz_structure_corruption,
             "encoding_issues": self._fuzz_encoding_issues,
-            "timing_attacks": self._fuzz_timing_attacks
+            "timing_attacks": self._fuzz_timing_attacks,
         }
         self.test_results: List[Dict[str, Any]] = []
 
-    def generate_fuzz_inputs(self, base_input: Any, strategy: str = "string_mutation",
-                           iterations: int = 100) -> List[Any]:
+    def generate_fuzz_inputs(
+        self, base_input: Any, strategy: str = "string_mutation", iterations: int = 100
+    ) -> List[Any]:
         """Generate fuzzed inputs based on strategy."""
         if strategy not in self.fuzz_strategies:
             raise ValueError(f"Unknown fuzz strategy: {strategy}")
@@ -350,11 +374,17 @@ class FuzzTester:
         mutations = [
             lambda s: s + "\x00" * random.randint(1, 100),  # Null bytes
             lambda s: s * random.randint(2, 10),  # Repetition
-            lambda s: "".join(random.choice([c.upper(), c.lower()]) for c in s),  # Case changes
-            lambda s: s.replace(random.choice(s) if s else "", chr(random.randint(0, 255))),  # Random replacement
-            lambda s: s[:random.randint(0, len(s))] + chr(random.randint(0, 255)) * random.randint(1, 10),  # Insertion
+            lambda s: "".join(
+                random.choice([c.upper(), c.lower()]) for c in s
+            ),  # Case changes
+            lambda s: s.replace(
+                random.choice(s) if s else "", chr(random.randint(0, 255))
+            ),  # Random replacement
+            lambda s: s[: random.randint(0, len(s))]
+            + chr(random.randint(0, 255)) * random.randint(1, 10),  # Insertion
             lambda s: "",  # Empty string
-            lambda s: chr(random.randint(0, 255)) * random.randint(1000, 10000),  # Very long string
+            lambda s: chr(random.randint(0, 255))
+            * random.randint(1000, 10000),  # Very long string
         ]
 
         return random.choice(mutations)(base_input)
@@ -365,15 +395,15 @@ class FuzzTester:
             return base_input
 
         extremes = [
-            float('inf'),
-            float('-inf'),
-            float('nan'),
+            float("inf"),
+            float("-inf"),
+            float("nan"),
             sys.maxsize,
             -sys.maxsize - 1,
             0,
             1e-10,  # Very small
-            1e10,   # Very large
-            random.randint(-2**63, 2**63),  # Random large number
+            1e10,  # Very large
+            random.randint(-(2**63), 2**63),  # Random large number
         ]
 
         return random.choice(extremes)
@@ -411,10 +441,15 @@ class FuzzTester:
             return base_input
 
         encodings = [
-            lambda s: s.encode('utf-8').decode('latin-1'),  # Wrong decoding
-            lambda s: s.encode('utf-8')[:-1],  # Truncated UTF-8
-            lambda s: bytes([random.randint(0, 255) for _ in range(len(s))]).decode('utf-8', errors='ignore'),  # Random bytes
-            lambda s: s + "".join(chr(random.randint(0xD800, 0xDFFF)) for _ in range(random.randint(1, 5))),  # Surrogate pairs
+            lambda s: s.encode("utf-8").decode("latin-1"),  # Wrong decoding
+            lambda s: s.encode("utf-8")[:-1],  # Truncated UTF-8
+            lambda s: bytes([random.randint(0, 255) for _ in range(len(s))]).decode(
+                "utf-8", errors="ignore"
+            ),  # Random bytes
+            lambda s: s
+            + "".join(
+                chr(random.randint(0xD800, 0xDFFF)) for _ in range(random.randint(1, 5))
+            ),  # Surrogate pairs
         ]
 
         return random.choice(encodings)(base_input)
@@ -427,8 +462,13 @@ class FuzzTester:
             return base_input + "x" * random.randint(1000, 10000)  # Very long input
         return base_input
 
-    async def fuzz_test_api_endpoint(self, endpoint_func: Callable, base_input: Any,
-                                   strategy: str = "string_mutation", iterations: int = 50) -> Dict[str, Any]:
+    async def fuzz_test_api_endpoint(
+        self,
+        endpoint_func: Callable,
+        base_input: Any,
+        strategy: str = "string_mutation",
+        iterations: int = 50,
+    ) -> Dict[str, Any]:
         """Fuzz test an API endpoint."""
         logger.info(f"Starting fuzz test with strategy: {strategy}")
 
@@ -439,7 +479,7 @@ class FuzzTester:
             "crashes": 0,
             "exceptions": [],
             "performance_impact": [],
-            "successful_tests": 0
+            "successful_tests": 0,
         }
 
         for i, fuzz_input in enumerate(fuzz_inputs):
@@ -452,22 +492,26 @@ class FuzzTester:
                 end_time = time.perf_counter()
                 execution_time = end_time - start_time
 
-                results["performance_impact"].append({
-                    "input_index": i,
-                    "execution_time": execution_time,
-                    "input_size": len(str(fuzz_input)) if fuzz_input else 0
-                })
+                results["performance_impact"].append(
+                    {
+                        "input_index": i,
+                        "execution_time": execution_time,
+                        "input_size": len(str(fuzz_input)) if fuzz_input else 0,
+                    }
+                )
 
                 results["successful_tests"] += 1
 
             except Exception as e:
                 results["crashes"] += 1
-                results["exceptions"].append({
-                    "input_index": i,
-                    "exception": str(e),
-                    "exception_type": type(e).__name__,
-                    "input_sample": str(fuzz_input)[:100]  # First 100 chars
-                })
+                results["exceptions"].append(
+                    {
+                        "input_index": i,
+                        "exception": str(e),
+                        "exception_type": type(e).__name__,
+                        "input_sample": str(fuzz_input)[:100],  # First 100 chars
+                    }
+                )
 
         self.test_results.append(results)
         return results
@@ -486,7 +530,7 @@ class FuzzTester:
             "crash_rate": total_crashes / total_tests if total_tests > 0 else 0,
             "strategies_tested": list(set(r["strategy"] for r in self.test_results)),
             "most_common_exceptions": self._analyze_exceptions(),
-            "performance_summary": self._analyze_performance()
+            "performance_summary": self._analyze_performance(),
         }
 
     def _analyze_exceptions(self) -> List[Dict[str, Any]]:
@@ -500,14 +544,18 @@ class FuzzTester:
         return sorted(
             [{"exception": k, "count": v} for k, v in exception_counts.items()],
             key=lambda x: x["count"],
-            reverse=True
-        )[:10]  # Top 10
+            reverse=True,
+        )[
+            :10
+        ]  # Top 10
 
     def _analyze_performance(self) -> Dict[str, Any]:
         """Analyze performance impact of fuzz inputs."""
         all_times = []
         for result in self.test_results:
-            all_times.extend([p["execution_time"] for p in result["performance_impact"]])
+            all_times.extend(
+                [p["execution_time"] for p in result["performance_impact"]]
+            )
 
         if not all_times:
             return {"message": "No performance data available"}
@@ -517,7 +565,9 @@ class FuzzTester:
             "max_execution_time": np.max(all_times),
             "min_execution_time": np.min(all_times),
             "std_execution_time": np.std(all_times),
-            "slowest_inputs": len([t for t in all_times if t > np.mean(all_times) + 2 * np.std(all_times)])
+            "slowest_inputs": len(
+                [t for t in all_times if t > np.mean(all_times) + 2 * np.std(all_times)]
+            ),
         }
 
 
@@ -530,16 +580,24 @@ class NegativeTestSuite:
         self.test_cases: List[Dict[str, Any]] = []
         self.results: List[Dict[str, Any]] = []
 
-    def add_test_case(self, name: str, setup_func: Callable, test_func: Callable,
-                     expected_exceptions: List[Type[Exception]], description: str = ""):
+    def add_test_case(
+        self,
+        name: str,
+        setup_func: Callable,
+        test_func: Callable,
+        expected_exceptions: List[Type[Exception]],
+        description: str = "",
+    ):
         """Add a negative test case."""
-        self.test_cases.append({
-            "name": name,
-            "setup": setup_func,
-            "test": test_func,
-            "expected_exceptions": expected_exceptions,
-            "description": description
-        })
+        self.test_cases.append(
+            {
+                "name": name,
+                "setup": setup_func,
+                "test": test_func,
+                "expected_exceptions": expected_exceptions,
+                "description": description,
+            }
+        )
 
     async def run_negative_tests(self) -> Dict[str, Any]:
         """Run all negative test cases."""
@@ -550,7 +608,7 @@ class NegativeTestSuite:
             "passed": 0,
             "failed": 0,
             "unexpected_errors": 0,
-            "test_details": []
+            "test_details": [],
         }
 
         for test_case in self.test_cases:
@@ -567,7 +625,9 @@ class NegativeTestSuite:
         self.results.append(results)
         return results
 
-    async def _run_single_negative_test(self, test_case: Dict[str, Any]) -> Dict[str, Any]:
+    async def _run_single_negative_test(
+        self, test_case: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Run a single negative test case."""
         result = {
             "test_name": test_case["name"],
@@ -576,7 +636,7 @@ class NegativeTestSuite:
             "exception_raised": None,
             "exception_type": None,
             "expected": test_case["expected_exceptions"],
-            "error_message": None
+            "error_message": None,
         }
 
         try:
@@ -596,11 +656,16 @@ class NegativeTestSuite:
             result["exception_type"] = type(e).__name__
 
             # Check if it's an expected exception
-            if any(isinstance(e, expected_type) for expected_type in test_case["expected_exceptions"]):
+            if any(
+                isinstance(e, expected_type)
+                for expected_type in test_case["expected_exceptions"]
+            ):
                 result["status"] = "passed"
             else:
                 result["status"] = "unexpected_error"
-                result["error_message"] = f"Unexpected exception: {type(e).__name__}: {e}"
+                result[
+                    "error_message"
+                ] = f"Unexpected exception: {type(e).__name__}: {e}"
 
         return result
 
@@ -613,7 +678,7 @@ class NegativeTestSuite:
             lambda: self._simulate_network_timeout(target_system),
             lambda: target_system.fetch_ticker("BTC/USDT"),
             [NetworkError, asyncio.TimeoutError, aiohttp.ClientError],
-            "Test behavior when network requests timeout"
+            "Test behavior when network requests timeout",
         )
 
         # Invalid data tests
@@ -622,7 +687,7 @@ class NegativeTestSuite:
             lambda: None,
             lambda: target_system.fetch_ticker("INVALID_SYMBOL_12345"),
             [TradingError, ValueError],
-            "Test behavior with invalid trading symbol"
+            "Test behavior with invalid trading symbol",
         )
 
         # Authentication failure tests
@@ -631,7 +696,7 @@ class NegativeTestSuite:
             lambda: self._simulate_invalid_credentials(target_system),
             lambda: target_system.fetch_balance(),
             [TradingError, PermissionError],
-            "Test behavior with invalid API credentials"
+            "Test behavior with invalid API credentials",
         )
 
         # Rate limit tests
@@ -640,7 +705,7 @@ class NegativeTestSuite:
             lambda: self._simulate_rate_limit(target_system),
             lambda: target_system.create_order("BTC/USDT", "market", "buy", 1.0),
             [TradingError, Exception],
-            "Test behavior when rate limits are exceeded"
+            "Test behavior when rate limits are exceeded",
         )
 
         # Insufficient balance tests
@@ -649,7 +714,7 @@ class NegativeTestSuite:
             lambda: self._simulate_insufficient_balance(target_system),
             lambda: target_system.create_order("BTC/USDT", "market", "buy", 1000.0),
             [TradingError, ValueError],
-            "Test behavior when account has insufficient balance"
+            "Test behavior when account has insufficient balance",
         )
 
         # Invalid order parameters
@@ -658,7 +723,7 @@ class NegativeTestSuite:
             lambda: None,
             lambda: target_system.create_order("BTC/USDT", "market", "buy", -1.0),
             [TradingError, ValueError],
-            "Test behavior with invalid order amount"
+            "Test behavior with invalid order amount",
         )
 
         # Market data corruption
@@ -667,7 +732,7 @@ class NegativeTestSuite:
             lambda: self._simulate_corrupted_data(target_system),
             lambda: target_system.fetch_ohlcv("BTC/USDT"),
             [DataError, TradingError, ValueError],
-            "Test behavior with corrupted market data"
+            "Test behavior with corrupted market data",
         )
 
     async def _simulate_network_timeout(self, target_system: Any):
@@ -677,7 +742,7 @@ class NegativeTestSuite:
 
     async def _simulate_invalid_credentials(self, target_system: Any):
         """Simulate invalid credentials."""
-        original_key = getattr(target_system, 'api_key', None)
+        original_key = getattr(target_system, "api_key", None)
         target_system.api_key = "invalid_key_12345"
         # Store original for cleanup if needed
 
@@ -688,8 +753,8 @@ class NegativeTestSuite:
 
     async def _simulate_insufficient_balance(self, target_system: Any):
         """Simulate insufficient account balance."""
-        if hasattr(target_system, 'balances'):
-            target_system.balances['USDT']['free'] = 0.01  # Very small amount
+        if hasattr(target_system, "balances"):
+            target_system.balances["USDT"]["free"] = 0.01  # Very small amount
 
     async def _simulate_corrupted_data(self, target_system: Any):
         """Simulate corrupted market data."""
@@ -708,9 +773,17 @@ class NegativeTestSuite:
             "passed": latest_result["passed"],
             "failed": latest_result["failed"],
             "unexpected_errors": latest_result["unexpected_errors"],
-            "success_rate": latest_result["passed"] / latest_result["total_tests"] if latest_result["total_tests"] > 0 else 0,
-            "failed_tests": [t for t in latest_result["test_details"] if t["status"] == "failed"],
-            "unexpected_errors_list": [t for t in latest_result["test_details"] if t["status"] == "unexpected_error"]
+            "success_rate": latest_result["passed"] / latest_result["total_tests"]
+            if latest_result["total_tests"] > 0
+            else 0,
+            "failed_tests": [
+                t for t in latest_result["test_details"] if t["status"] == "failed"
+            ],
+            "unexpected_errors_list": [
+                t
+                for t in latest_result["test_details"]
+                if t["status"] == "unexpected_error"
+            ],
         }
 
 
@@ -726,8 +799,9 @@ class EdgeCaseTestingFramework:
         self.negative_tester = NegativeTestSuite()
         self.market_simulator = MarketConditionSimulator()
 
-    async def run_comprehensive_edge_test(self, target_system: Any,
-                                        test_duration: int = 300) -> Dict[str, Any]:
+    async def run_comprehensive_edge_test(
+        self, target_system: Any, test_duration: int = 300
+    ) -> Dict[str, Any]:
         """Run comprehensive edge case testing."""
         logger.info("Starting comprehensive edge case testing")
 
@@ -738,7 +812,7 @@ class EdgeCaseTestingFramework:
             "fuzz_results": [],
             "negative_test_results": {},
             "system_health": [],
-            "start_time": start_time
+            "start_time": start_time,
         }
 
         # Setup chaos events
@@ -752,16 +826,24 @@ class EdgeCaseTestingFramework:
             self._run_chaos_testing(target_system, test_duration),
             self._run_fuzz_testing(target_system),
             self._run_negative_testing(),
-            self._monitor_system_health(test_duration)
+            self._monitor_system_health(test_duration),
         ]
 
         test_results = await asyncio.gather(*test_tasks, return_exceptions=True)
 
         # Process results
-        results["chaos_events"] = test_results[0] if not isinstance(test_results[0], Exception) else []
-        results["fuzz_results"] = test_results[1] if not isinstance(test_results[1], Exception) else []
-        results["negative_test_results"] = test_results[2] if not isinstance(test_results[2], Exception) else {}
-        results["system_health"] = test_results[3] if not isinstance(test_results[3], Exception) else []
+        results["chaos_events"] = (
+            test_results[0] if not isinstance(test_results[0], Exception) else []
+        )
+        results["fuzz_results"] = (
+            test_results[1] if not isinstance(test_results[1], Exception) else []
+        )
+        results["negative_test_results"] = (
+            test_results[2] if not isinstance(test_results[2], Exception) else {}
+        )
+        results["system_health"] = (
+            test_results[3] if not isinstance(test_results[3], Exception) else []
+        )
 
         results["end_time"] = time.time()
         results["actual_duration"] = results["end_time"] - start_time
@@ -785,7 +867,9 @@ class EdgeCaseTestingFramework:
             self.chaos_monkey.create_data_chaos("market_data", "low")
         )
 
-    async def _run_chaos_testing(self, target_system: Any, duration: int) -> List[Dict[str, Any]]:
+    async def _run_chaos_testing(
+        self, target_system: Any, duration: int
+    ) -> List[Dict[str, Any]]:
         """Run chaos testing."""
         events_triggered = []
 
@@ -802,19 +886,13 @@ class EdgeCaseTestingFramework:
 
         # Fuzz ticker endpoint
         result = await self.fuzz_tester.fuzz_test_api_endpoint(
-            target_system.fetch_ticker,
-            "BTC/USDT",
-            "string_mutation",
-            20
+            target_system.fetch_ticker, "BTC/USDT", "string_mutation", 20
         )
         fuzz_results.append(result)
 
         # Fuzz OHLCV endpoint
         result = await self.fuzz_tester.fuzz_test_api_endpoint(
-            target_system.fetch_ohlcv,
-            "BTC/USDT",
-            "structure_corruption",
-            15
+            target_system.fetch_ohlcv, "BTC/USDT", "structure_corruption", 15
         )
         fuzz_results.append(result)
 
@@ -830,13 +908,15 @@ class EdgeCaseTestingFramework:
 
         for _ in range(duration // 10):  # Check every 10 seconds
             # This would collect actual system metrics
-            health_metrics.append({
-                "timestamp": time.time(),
-                "cpu_usage": random.uniform(10, 90),
-                "memory_usage": random.uniform(20, 95),
-                "network_connections": random.randint(1, 100),
-                "active_threads": random.randint(5, 50)
-            })
+            health_metrics.append(
+                {
+                    "timestamp": time.time(),
+                    "cpu_usage": random.uniform(10, 90),
+                    "memory_usage": random.uniform(20, 95),
+                    "network_connections": random.randint(1, 100),
+                    "active_threads": random.randint(5, 50),
+                }
+            )
             await asyncio.sleep(10)
 
         return health_metrics
@@ -854,39 +934,43 @@ class EdgeCaseTestingFramework:
         report += f"- **Negative Tests:** {results['negative_test_results'].get('total_tests', 0)}\n\n"
 
         # Chaos Testing Results
-        if results['chaos_events']:
+        if results["chaos_events"]:
             report += "## Chaos Testing Results\n\n"
-            for event in results['chaos_events'][:10]:  # Show first 10
+            for event in results["chaos_events"][:10]:  # Show first 10
                 report += f"- **{event.event_type}** on {event.target_component} "
-                report += f"(Severity: {event.severity}, Duration: {event.duration:.1f}s)\n"
+                report += (
+                    f"(Severity: {event.severity}, Duration: {event.duration:.1f}s)\n"
+                )
             report += "\n"
 
         # Fuzz Testing Results
-        if results['fuzz_results']:
+        if results["fuzz_results"]:
             report += "## Fuzz Testing Results\n\n"
-            for result in results['fuzz_results']:
+            for result in results["fuzz_results"]:
                 report += f"### Strategy: {result['strategy']}\n\n"
                 report += f"- **Iterations:** {result['iterations']}\n"
                 report += f"- **Crashes:** {result['crashes']}\n"
                 report += f"- **Success Rate:** {(result['iterations'] - result['crashes']) / result['iterations'] * 100:.1f}%\n\n"
 
         # Negative Testing Results
-        neg_results = results['negative_test_results']
+        neg_results = results["negative_test_results"]
         if neg_results:
             report += "## Negative Testing Results\n\n"
             report += f"- **Total Tests:** {neg_results.get('total_tests', 0)}\n"
             report += f"- **Passed:** {neg_results.get('passed', 0)}\n"
             report += f"- **Failed:** {neg_results.get('failed', 0)}\n"
-            report += f"- **Unexpected Errors:** {neg_results.get('unexpected_errors', 0)}\n"
+            report += (
+                f"- **Unexpected Errors:** {neg_results.get('unexpected_errors', 0)}\n"
+            )
             report += f"- **Success Rate:** {neg_results.get('passed', 0) / max(1, neg_results.get('total_tests', 1)) * 100:.1f}%\n\n"
 
         # System Health
-        if results['system_health']:
+        if results["system_health"]:
             report += "## System Health During Testing\n\n"
-            avg_cpu = np.mean([h['cpu_usage'] for h in results['system_health']])
-            avg_memory = np.mean([h['memory_usage'] for h in results['system_health']])
-            max_cpu = np.max([h['cpu_usage'] for h in results['system_health']])
-            max_memory = np.max([h['memory_usage'] for h in results['system_health']])
+            avg_cpu = np.mean([h["cpu_usage"] for h in results["system_health"]])
+            avg_memory = np.mean([h["memory_usage"] for h in results["system_health"]])
+            max_cpu = np.max([h["cpu_usage"] for h in results["system_health"]])
+            max_memory = np.max([h["memory_usage"] for h in results["system_health"]])
 
             report += f"- **Average CPU Usage:** {avg_cpu:.1f}%\n"
             report += f"- **Average Memory Usage:** {avg_memory:.1f}%\n"
@@ -896,16 +980,16 @@ class EdgeCaseTestingFramework:
         # Recommendations
         report += "## Recommendations\n\n"
 
-        chaos_events = len(results['chaos_events'])
+        chaos_events = len(results["chaos_events"])
         if chaos_events > 5:
             report += "- **High Chaos Impact:** Consider improving system resilience\n"
 
-        total_fuzz_crashes = sum(r['crashes'] for r in results['fuzz_results'])
+        total_fuzz_crashes = sum(r["crashes"] for r in results["fuzz_results"])
         if total_fuzz_crashes > 0:
             report += f"- **Fuzz Testing Issues:** {total_fuzz_crashes} crashes detected, review input validation\n"
 
-        neg_passed = neg_results.get('passed', 0)
-        neg_total = neg_results.get('total_tests', 1)
+        neg_passed = neg_results.get("passed", 0)
+        neg_total = neg_results.get("total_tests", 1)
         if neg_passed / neg_total < 0.8:
             report += "- **Negative Testing:** Improve error handling for edge cases\n"
 
@@ -922,10 +1006,14 @@ async def run_edge_case_demo():
     mock_exchange = MockExchange()
 
     # Set up extreme market conditions
-    framework.market_simulator.set_market_condition("BTC/USDT", "flash_crash", "extreme", "bearish")
+    framework.market_simulator.set_market_condition(
+        "BTC/USDT", "flash_crash", "extreme", "bearish"
+    )
 
     # Run comprehensive edge testing
-    results = await framework.run_comprehensive_edge_test(mock_exchange, 60)  # 1 minute test
+    results = await framework.run_comprehensive_edge_test(
+        mock_exchange, 60
+    )  # 1 minute test
 
     # Generate report
     report = framework.generate_edge_test_report(results)

@@ -16,25 +16,18 @@ Key Features:
 """
 
 import asyncio
-import time
-import json
 import csv
-from typing import Dict, List, Optional, Any, Tuple, Union
+import json
+import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-import statistics
-import logging
-from collections import defaultdict, OrderedDict
-import pandas as pd
-import numpy as np
-from jinja2 import Template
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
+from typing import Any, Dict, List, Optional
 
-from core.performance_profiler import get_profiler, PerformanceProfiler
-from core.performance_monitor import get_performance_monitor, RealTimePerformanceMonitor
+from jinja2 import Template
+
+from core.performance_monitor import get_performance_monitor
+from core.performance_profiler import get_profiler
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -43,6 +36,7 @@ logger = get_logger(__name__)
 @dataclass
 class PerformanceReport:
     """Comprehensive performance report data structure."""
+
     report_id: str
     timestamp: float
     duration: float
@@ -57,6 +51,7 @@ class PerformanceReport:
 @dataclass
 class HotspotAnalysis:
     """Detailed analysis of performance hotspots."""
+
     function_name: str
     total_time: float
     avg_time: float
@@ -79,9 +74,9 @@ class PerformanceReportGenerator:
         self.config = config
 
         # Report configuration
-        self.max_hotspots = config.get('max_hotspots', 20)
-        self.trend_window = config.get('trend_window', 3600.0)  # 1 hour
-        self.comparison_window = config.get('comparison_window', 86400.0)  # 24 hours
+        self.max_hotspots = config.get("max_hotspots", 20)
+        self.trend_window = config.get("trend_window", 3600.0)  # 1 hour
+        self.comparison_window = config.get("comparison_window", 86400.0)  # 24 hours
 
         # Dependencies
         self.profiler = get_profiler()
@@ -96,9 +91,12 @@ class PerformanceReportGenerator:
 
         logger.info("PerformanceReportGenerator initialized")
 
-    async def generate_comprehensive_report(self, session_id: Optional[str] = None,
-                                          include_trends: bool = True,
-                                          include_comparisons: bool = True) -> PerformanceReport:
+    async def generate_comprehensive_report(
+        self,
+        session_id: Optional[str] = None,
+        include_trends: bool = True,
+        include_comparisons: bool = True,
+    ) -> PerformanceReport:
         """
         Generate a comprehensive performance report.
 
@@ -138,8 +136,8 @@ class PerformanceReportGenerator:
             metadata={
                 "session_id": session_id,
                 "generator_version": "1.0.0",
-                "framework_version": "N1V1"
-            }
+                "framework_version": "N1V1",
+            },
         )
 
         # Generate summary
@@ -169,7 +167,9 @@ class PerformanceReportGenerator:
         logger.info(f"Generated comprehensive performance report: {report_id}")
         return report
 
-    def _generate_summary(self, profiler_report: Dict, monitor_status: Dict) -> Dict[str, Any]:
+    def _generate_summary(
+        self, profiler_report: Dict, monitor_status: Dict
+    ) -> Dict[str, Any]:
         """Generate report summary."""
         summary = {
             "total_functions": 0,
@@ -178,16 +178,20 @@ class PerformanceReportGenerator:
             "performance_score": 50.0,
             "system_health": monitor_status.get("system_health", 50.0),
             "anomaly_count": monitor_status.get("recent_anomalies", 0),
-            "alert_count": monitor_status.get("active_alerts", 0)
+            "alert_count": monitor_status.get("active_alerts", 0),
         }
 
         if "summary" in profiler_report:
             prof_summary = profiler_report["summary"]
-            summary.update({
-                "total_functions": prof_summary.get("total_functions", 0),
-                "total_measurements": prof_summary.get("total_measurements", 0),
-                "time_range": prof_summary.get("time_range", {"start": None, "end": None})
-            })
+            summary.update(
+                {
+                    "total_functions": prof_summary.get("total_functions", 0),
+                    "total_measurements": prof_summary.get("total_measurements", 0),
+                    "time_range": prof_summary.get(
+                        "time_range", {"start": None, "end": None}
+                    ),
+                }
+            )
 
         # Calculate performance score
         if monitor_status.get("system_health"):
@@ -213,24 +217,28 @@ class PerformanceReportGenerator:
                 call_count=hotspot["call_count"],
                 percentage=0.0,  # Will be calculated
                 optimization_potential=self._assess_optimization_potential(hotspot),
-                severity=self._calculate_severity(hotspot)
+                severity=self._calculate_severity(hotspot),
             )
 
-            hotspots.append({
-                "function_name": analysis.function_name,
-                "total_time": analysis.total_time,
-                "avg_time": analysis.avg_time,
-                "call_count": analysis.call_count,
-                "optimization_potential": analysis.optimization_potential,
-                "severity": analysis.severity,
-                "recommendations": self._get_hotspot_recommendations(analysis)
-            })
+            hotspots.append(
+                {
+                    "function_name": analysis.function_name,
+                    "total_time": analysis.total_time,
+                    "avg_time": analysis.avg_time,
+                    "call_count": analysis.call_count,
+                    "optimization_potential": analysis.optimization_potential,
+                    "severity": analysis.severity,
+                    "recommendations": self._get_hotspot_recommendations(analysis),
+                }
+            )
 
         # Calculate percentages
         if hotspots:
             total_time = sum(h["total_time"] for h in hotspots)
             for hotspot in hotspots:
-                hotspot["percentage"] = (hotspot["total_time"] / total_time) * 100 if total_time > 0 else 0
+                hotspot["percentage"] = (
+                    (hotspot["total_time"] / total_time) * 100 if total_time > 0 else 0
+                )
 
         return hotspots
 
@@ -267,9 +275,13 @@ class PerformanceReportGenerator:
         if analysis.avg_time > 0.1:
             recommendations.append("Consider vectorization or NumPy operations")
         if analysis.call_count > 100:
-            recommendations.append("Review algorithm complexity - potential O(n²) or worse")
+            recommendations.append(
+                "Review algorithm complexity - potential O(n²) or worse"
+            )
         if "loop" in analysis.function_name.lower():
-            recommendations.append("Consider replacing Python loops with NumPy operations")
+            recommendations.append(
+                "Consider replacing Python loops with NumPy operations"
+            )
         if analysis.severity == "high":
             recommendations.append("High priority: Implement caching or precomputation")
 
@@ -281,7 +293,7 @@ class PerformanceReportGenerator:
             "overall_trend": "stable",
             "improving_metrics": [],
             "degrading_metrics": [],
-            "trend_analysis": {}
+            "trend_analysis": {},
         }
 
         if not self.monitor:
@@ -293,7 +305,7 @@ class PerformanceReportGenerator:
                 "slope": baseline.trend_slope,
                 "direction": "improving" if baseline.trend_slope < 0 else "degrading",
                 "magnitude": abs(baseline.trend_slope),
-                "is_significant": abs(baseline.trend_slope) > 0.01
+                "is_significant": abs(baseline.trend_slope) > 0.01,
             }
 
             trends["trend_analysis"][metric_name] = trend_info
@@ -320,7 +332,7 @@ class PerformanceReportGenerator:
         comparisons = {
             "baseline_comparison": {},
             "historical_comparison": {},
-            "benchmark_comparison": {}
+            "benchmark_comparison": {},
         }
 
         if len(self.report_history) < 2:
@@ -334,13 +346,13 @@ class PerformanceReportGenerator:
             comparisons["historical_comparison"] = {
                 "duration_change": current.duration - previous.duration,
                 "function_count_change": (
-                    current.summary.get("total_functions", 0) -
-                    previous.summary.get("total_functions", 0)
+                    current.summary.get("total_functions", 0)
+                    - previous.summary.get("total_functions", 0)
                 ),
                 "performance_score_change": (
-                    current.summary.get("performance_score", 50.0) -
-                    previous.summary.get("performance_score", 50.0)
-                )
+                    current.summary.get("performance_score", 50.0)
+                    - previous.summary.get("performance_score", 50.0)
+                ),
             }
 
             # Add percentage changes with safe division
@@ -352,13 +364,17 @@ class PerformanceReportGenerator:
             prev_functions = previous.summary.get("total_functions", 0)
             if prev_functions > 0:
                 comparisons["historical_comparison"]["function_count_change_pct"] = (
-                    (current.summary.get("total_functions", 0) - prev_functions) / prev_functions * 100
+                    (current.summary.get("total_functions", 0) - prev_functions)
+                    / prev_functions
+                    * 100
                 )
 
             prev_score = previous.summary.get("performance_score", 50.0)
             if prev_score != 0:
                 comparisons["historical_comparison"]["performance_score_change_pct"] = (
-                    (current.summary.get("performance_score", 50.0) - prev_score) / prev_score * 100
+                    (current.summary.get("performance_score", 50.0) - prev_score)
+                    / prev_score
+                    * 100
                 )
 
         return comparisons
@@ -368,7 +384,9 @@ class PerformanceReportGenerator:
         recommendations = []
 
         # Based on hotspots
-        high_severity_hotspots = [h for h in report.hotspots if h.get("severity") == "high"]
+        high_severity_hotspots = [
+            h for h in report.hotspots if h.get("severity") == "high"
+        ]
         if high_severity_hotspots:
             recommendations.append(
                 f"Focus on optimizing {len(high_severity_hotspots)} high-severity hotspots"
@@ -376,22 +394,32 @@ class PerformanceReportGenerator:
 
         # Based on trends
         if report.trends.get("overall_trend") == "degrading":
-            recommendations.append("Performance is degrading - investigate recent changes")
+            recommendations.append(
+                "Performance is degrading - investigate recent changes"
+            )
 
         # Based on system health
         health_score = report.summary.get("system_health", 50.0)
         if health_score < 70:
-            recommendations.append("System health is below optimal - review resource usage")
+            recommendations.append(
+                "System health is below optimal - review resource usage"
+            )
 
         # Based on anomalies
         anomaly_count = report.summary.get("anomaly_count", 0)
         if anomaly_count > 5:
-            recommendations.append("High anomaly rate detected - investigate performance instability")
+            recommendations.append(
+                "High anomaly rate detected - investigate performance instability"
+            )
 
         return recommendations
 
-    def export_report(self, report: PerformanceReport, format: str = "json",
-                     output_path: Optional[str] = None) -> str:
+    def export_report(
+        self,
+        report: PerformanceReport,
+        format: str = "json",
+        output_path: Optional[str] = None,
+    ) -> str:
         """
         Export performance report in various formats.
 
@@ -404,7 +432,9 @@ class PerformanceReportGenerator:
             Path to exported file
         """
         if output_path is None:
-            timestamp = datetime.fromtimestamp(report.timestamp).strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.fromtimestamp(report.timestamp).strftime(
+                "%Y%m%d_%H%M%S"
+            )
             output_path = f"reports/performance_report_{timestamp}.{format}"
 
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
@@ -432,35 +462,53 @@ class PerformanceReportGenerator:
             "trends": report.trends,
             "comparisons": report.comparisons,
             "recommendations": report.recommendations,
-            "metadata": report.metadata
+            "metadata": report.metadata,
         }
 
-        with open(output_path, 'w') as f:
+        with open(output_path, "w") as f:
             json.dump(data, f, indent=2, default=str)
 
     def _export_csv(self, report: PerformanceReport, output_path: str) -> None:
         """Export report as CSV."""
-        with open(output_path, 'w', newline='') as f:
+        with open(output_path, "w", newline="") as f:
             writer = csv.writer(f)
 
             # Summary section
             writer.writerow(["Section", "Metric", "Value"])
-            writer.writerow(["Summary", "Total Functions", report.summary.get("total_functions", 0)])
-            writer.writerow(["Summary", "Total Measurements", report.summary.get("total_measurements", 0)])
-            writer.writerow(["Summary", "Performance Score", report.summary.get("performance_score", 0)])
+            writer.writerow(
+                ["Summary", "Total Functions", report.summary.get("total_functions", 0)]
+            )
+            writer.writerow(
+                [
+                    "Summary",
+                    "Total Measurements",
+                    report.summary.get("total_measurements", 0),
+                ]
+            )
+            writer.writerow(
+                [
+                    "Summary",
+                    "Performance Score",
+                    report.summary.get("performance_score", 0),
+                ]
+            )
             writer.writerow([])
 
             # Hotspots section
             writer.writerow(["Hotspots"])
-            writer.writerow(["Function", "Total Time", "Avg Time", "Call Count", "Severity"])
+            writer.writerow(
+                ["Function", "Total Time", "Avg Time", "Call Count", "Severity"]
+            )
             for hotspot in report.hotspots:
-                writer.writerow([
-                    hotspot["function_name"],
-                    hotspot["total_time"],
-                    hotspot["avg_time"],
-                    hotspot["call_count"],
-                    hotspot["severity"]
-                ])
+                writer.writerow(
+                    [
+                        hotspot["function_name"],
+                        hotspot["total_time"],
+                        hotspot["avg_time"],
+                        hotspot["call_count"],
+                        hotspot["severity"],
+                    ]
+                )
             writer.writerow([])
 
             # Recommendations section
@@ -472,16 +520,18 @@ class PerformanceReportGenerator:
         """Export report as HTML."""
         template_vars = {
             "report": report,
-            "timestamp": datetime.fromtimestamp(report.timestamp).strftime("%Y-%m-%d %H:%M:%S"),
+            "timestamp": datetime.fromtimestamp(report.timestamp).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            ),
             "summary": report.summary,
             "hotspots": report.hotspots,
             "trends": report.trends,
-            "recommendations": report.recommendations
+            "recommendations": report.recommendations,
         }
 
         html_content = self.html_template.render(**template_vars)
 
-        with open(output_path, 'w') as f:
+        with open(output_path, "w") as f:
             f.write(html_content)
 
     def _load_html_template(self) -> Template:
@@ -572,13 +622,15 @@ class PerformanceReportGenerator:
         # Remove from history
         old_count = 0
         self.report_history = [
-            report for report in self.report_history
+            report
+            for report in self.report_history
             if report.timestamp >= cutoff_time or (old_count := old_count + 1)
         ]
 
         # Remove from reports dict
         to_remove = [
-            report_id for report_id, report in self.reports.items()
+            report_id
+            for report_id, report in self.reports.items()
             if report.timestamp < cutoff_time
         ]
 
@@ -601,6 +653,8 @@ def get_performance_report_generator() -> PerformanceReportGenerator:
     return _report_generator
 
 
-def create_performance_report_generator(config: Optional[Dict[str, Any]] = None) -> PerformanceReportGenerator:
+def create_performance_report_generator(
+    config: Optional[Dict[str, Any]] = None
+) -> PerformanceReportGenerator:
     """Create a new performance report generator instance."""
     return PerformanceReportGenerator(config or {})

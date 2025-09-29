@@ -2,6 +2,7 @@ import asyncio
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
+
 import pytest
 
 from core.signal_router import JournalWriter
@@ -56,7 +57,7 @@ async def test_journal_writer_append_without_loop():
         test_entry = {"action": "test_no_loop", "data": "fallback"}
 
         # Simulate no event loop by patching get_event_loop to raise RuntimeError
-        with patch('asyncio.get_event_loop', side_effect=RuntimeError("No event loop")):
+        with patch("asyncio.get_event_loop", side_effect=RuntimeError("No event loop")):
             writer.append(test_entry)
 
         # Should have written synchronously
@@ -81,7 +82,7 @@ async def test_journal_writer_worker_loop():
         test_entries = [
             {"action": "store", "id": "1"},
             {"action": "cancel", "id": "2"},
-            None  # Sentinel to stop
+            None,  # Sentinel to stop
         ]
 
         for entry in test_entries:

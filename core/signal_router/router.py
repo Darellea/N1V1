@@ -4,39 +4,35 @@ Signal Router Implementation
 Contains the main SignalRouter and JournalWriter classes.
 """
 
-import logging
 import asyncio
 import json
+import logging
 import random
-import time
-from typing import List, Dict, Optional, Callable, Any, TYPE_CHECKING
+import sys  # For dynamic access to patched ml_predict
 from decimal import Decimal
 from pathlib import Path
-import pandas as pd
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+
 import numpy as np
+import pandas as pd
 
-from utils.time import now_ms
-from core.contracts import TradingSignal, SignalType, SignalStrength
-from utils.logger import get_trade_logger
-from core.types import OrderType  # Backward-compatible export: tests expect OrderType here
-from utils.adapter import signal_to_dict
-from utils.config_loader import get_config
-
-# Import new modular components
-from .signal_validators import SignalValidator
-from .retry_hooks import RetryManager, ErrorHandler
-from .route_policies import RoutePolicy, MLRoutePolicy
-from .event_bus import EventBus, SignalRouter as ModularSignalRouter
+from core.contracts import SignalStrength, SignalType, TradingSignal
 
 # Legacy imports for backward compatibility
 from core.ensemble_manager import EnsembleManager
-from predictive_models import PredictiveModelManager
-from ml.model_loader import load_model
 from ml.ml_filter import create_ml_filter, load_ml_filter
-import sys  # For dynamic access to patched ml_predict
+from ml.model_loader import load_model
+from predictive_models import PredictiveModelManager
+
+# Backward-compatible export: tests expect OrderType here
+from utils.adapter import signal_to_dict
+from utils.config_loader import get_config
+from utils.logger import get_trade_logger
+from utils.time import now_ms
+
+# Import new modular components
 
 if TYPE_CHECKING:
-    from risk.risk_manager import RiskManager
     from core.task_manager import TaskManager
 
 logger = logging.getLogger(__name__)
@@ -76,7 +72,9 @@ class JournalWriter:
                 if not self._task or self._task.done():
                     # Create the worker task using task_manager if available
                     if self.task_manager:
-                        self._task = self.task_manager.create_task(self._worker(), name="JournalWriter")
+                        self._task = self.task_manager.create_task(
+                            self._worker(), name="JournalWriter"
+                        )
                     else:
                         self._task = loop.create_task(self._worker())
         except RuntimeError:
@@ -130,7 +128,9 @@ class JournalWriter:
                 with open(self.path, "a", encoding="utf-8") as f:
                     f.write(json.dumps(entry, default=str) + "\n")
             except Exception:
-                logger.exception("JournalWriter failed to write entry (no-loop fallback)")
+                logger.exception(
+                    "JournalWriter failed to write entry (no-loop fallback)"
+                )
 
     async def stop(self) -> None:
         """
@@ -220,7 +220,9 @@ class SignalRouter:
             self.ml_filter = None
             self.ml_model = None
             self.ml_fallback_to_raw = bool(ml_cfg.get("fallback_to_raw_signals", True))
-            self.ml_confidence_threshold = float(ml_cfg.get("confidence_threshold", 0.6))
+            self.ml_confidence_threshold = float(
+                ml_cfg.get("confidence_threshold", 0.6)
+            )
 
             if self.ml_enabled:
                 ml_path = ml_cfg.get("model_path")
@@ -229,14 +231,22 @@ class SignalRouter:
                 if ml_path and Path(ml_path).exists():
                     try:
                         self.ml_filter = load_ml_filter(ml_path)
-                        self.ml_model = load_model(ml_path)  # Load the raw model for ml_predict
-                        logger.info(f"ML filter and model loaded: {model_type} from {ml_path}")
+                        self.ml_model = load_model(
+                            ml_path
+                        )  # Load the raw model for ml_predict
+                        logger.info(
+                            f"ML filter and model loaded: {model_type} from {ml_path}"
+                        )
                     except Exception as e:
-                        logger.warning(f"Failed to load ML filter/model from {ml_path}: {e}")
+                        logger.warning(
+                            f"Failed to load ML filter/model from {ml_path}: {e}"
+                        )
                         # Try to create a new filter if loading fails
                         try:
                             self.ml_filter = create_ml_filter(model_type, ml_cfg)
-                            self.ml_model = self.ml_filter  # Use filter as model if no separate model
+                            self.ml_model = (
+                                self.ml_filter
+                            )  # Use filter as model if no separate model
                             logger.info(f"Created new ML filter: {model_type}")
                         except Exception as e2:
                             logger.warning(f"Failed to create ML filter: {e2}")
@@ -261,12 +271,16 @@ class SignalRouter:
         # Optional append-only signal journal for recovery (best-effort).
         try:
             journal_cfg = get_config("journal", {})
-            self.journal_path = Path(journal_cfg.get("path", "logs/signal_journal.jsonl"))
+            self.journal_path = Path(
+                journal_cfg.get("path", "logs/signal_journal.jsonl")
+            )
             self.journal_path.parent.mkdir(parents=True, exist_ok=True)
             self._journal_enabled = bool(journal_cfg.get("enabled", False))
             # Journal writer (async background writer, best-effort). It will lazily
             # start background worker when the first entry is appended.
-            self._journal_writer = JournalWriter(self.journal_path, task_manager=self.task_manager)
+            self._journal_writer = JournalWriter(
+                self.journal_path, task_manager=self.task_manager
+            )
             # Replay journal only when explicitly enabled.
             if self._journal_enabled:
                 try:
@@ -301,7 +315,12 @@ class SignalRouter:
             candidate = None
 
         # Fallback to signal.metadata if candidate is None
-        if candidate is None and hasattr(signal, 'metadata') and signal.metadata and isinstance(signal.metadata, dict):
+        if (
+            candidate is None
+            and hasattr(signal, "metadata")
+            and signal.metadata
+            and isinstance(signal.metadata, dict)
+        ):
             candidate = signal.metadata.get("features")
             if candidate is None:
                 candidate = signal.metadata.get("feature_row")
@@ -334,7 +353,7 @@ class SignalRouter:
                     return df.iloc[[-1]]
                 elif all(isinstance(x, (int, float, Decimal)) for x in candidate):
                     # Assume list of scalars, use 'value' column
-                    return pd.DataFrame({'value': candidate}).iloc[[-1]]
+                    return pd.DataFrame({"value": candidate}).iloc[[-1]]
                 else:
                     return None
             else:
@@ -345,12 +364,14 @@ class SignalRouter:
                     if df.empty or df.shape[1] == 0:
                         return None
                     # Check if all columns contain only object types (indicating invalid data)
-                    if all(df.dtypes == 'object'):
+                    if all(df.dtypes == "object"):
                         # Check if the data is actually unusable (like object())
                         try:
                             # Try to access the first value to see if it's meaningful
                             first_val = df.iloc[0, 0]
-                            if str(first_val).startswith('<') and str(first_val).endswith('>'):
+                            if str(first_val).startswith("<") and str(
+                                first_val
+                            ).endswith(">"):
                                 return None
                         except (IndexError, KeyError, TypeError):
                             return None
@@ -360,7 +381,9 @@ class SignalRouter:
         except (AttributeError, TypeError, ValueError):
             return None
 
-    def _extract_market_data_for_prediction(self, market_data, signal) -> Optional[pd.DataFrame]:
+    def _extract_market_data_for_prediction(
+        self, market_data, signal
+    ) -> Optional[pd.DataFrame]:
         """
         Extract market data DataFrame for predictive models from market_data or signal metadata.
         Returns a DataFrame with OHLCV columns or None if extraction fails.
@@ -379,7 +402,12 @@ class SignalRouter:
             candidate = None
 
         # Fallback to signal.metadata if candidate is None
-        if candidate is None and hasattr(signal, 'metadata') and signal.metadata and isinstance(signal.metadata, dict):
+        if (
+            candidate is None
+            and hasattr(signal, "metadata")
+            and signal.metadata
+            and isinstance(signal.metadata, dict)
+        ):
             candidate = signal.metadata.get("ohlcv")
             if candidate is None:
                 candidate = signal.metadata.get("data")
@@ -394,7 +422,7 @@ class SignalRouter:
                 if candidate.empty:
                     return None
                 # Ensure required columns exist
-                required_cols = ['open', 'high', 'low', 'close']
+                required_cols = ["open", "high", "low", "close"]
                 if not all(col in candidate.columns for col in required_cols):
                     return None
                 return candidate
@@ -402,7 +430,9 @@ class SignalRouter:
                 # Try to convert dict to DataFrame
                 try:
                     df = pd.DataFrame([candidate])
-                    if not all(col in df.columns for col in ['open', 'high', 'low', 'close']):
+                    if not all(
+                        col in df.columns for col in ["open", "high", "low", "close"]
+                    ):
                         return None
                     return df
                 except Exception:
@@ -412,7 +442,9 @@ class SignalRouter:
                     return None
                 try:
                     df = pd.DataFrame(candidate)
-                    if not all(col in df.columns for col in ['open', 'high', 'low', 'close']):
+                    if not all(
+                        col in df.columns for col in ["open", "high", "low", "close"]
+                    ):
                         return None
                     return df
                 except Exception:
@@ -434,7 +466,9 @@ class SignalRouter:
         trade_logger.log_rejected_signal(signal_to_dict(signal), reason)
         return None
 
-    async def process_signal(self, signal: TradingSignal, market_data: Dict = None) -> Optional[TradingSignal]:
+    async def process_signal(
+        self, signal: TradingSignal, market_data: Dict = None
+    ) -> Optional[TradingSignal]:
         """
         Process and validate a trading signal.
 
@@ -453,16 +487,17 @@ class SignalRouter:
         try:
             if not self._validate_timestamp(signal):
                 return self._reject_signal(signal, "corrupted_timestamp")
-        except Exception as e:
+        except Exception:
             logger.exception("Error validating timestamp")
             return self._reject_signal(signal, "corrupted_timestamp")
 
         # 2. Check ensemble manager first (if enabled and signal is from individual strategy)
-        if (self.ensemble_manager.enabled and
-            signal.strategy_id != "ensemble" and
-            hasattr(signal, 'metadata') and
-            not signal.metadata.get('ensemble', False)):
-
+        if (
+            self.ensemble_manager.enabled
+            and signal.strategy_id != "ensemble"
+            and hasattr(signal, "metadata")
+            and not signal.metadata.get("ensemble", False)
+        ):
             try:
                 ensemble_signal = self.ensemble_manager.get_ensemble_signal(market_data)
                 if ensemble_signal:
@@ -472,22 +507,24 @@ class SignalRouter:
                     # For non-majority modes, if no consensus, don't process individual signal
                     return self._reject_signal(signal, "no_ensemble_consensus")
             except Exception as e:
-                logger.warning(f"Ensemble processing failed: {e}, proceeding with individual signal")
+                logger.warning(
+                    f"Ensemble processing failed: {e}, proceeding with individual signal"
+                )
 
         # 3. Validate basic signal properties
         try:
             if not self._validate_signal(signal):
                 return self._reject_signal(signal, ERROR_VALIDATION)
-        except Exception as e:
+        except Exception:
             logger.exception("Unexpected error during signal validation")
             return self._reject_signal(signal, ERROR_VALIDATION)
 
         # 4. Validate order with execution validator
         try:
-            if hasattr(self, 'validator') and self.validator:
+            if hasattr(self, "validator") and self.validator:
                 if not self.validator.validate_order(signal):
                     return self._reject_signal(signal, "validator_rejection")
-        except Exception as e:
+        except Exception:
             logger.exception("Error during order validation")
             return self._reject_signal(signal, "validator_error")
 
@@ -519,7 +556,9 @@ class SignalRouter:
                     if not approved:
                         return self._reject_signal(signal, "risk_check")
                 except Exception as e:
-                    await self._record_router_error(e, context={"symbol": getattr(signal, "symbol", None)})
+                    await self._record_router_error(
+                        e, context={"symbol": getattr(signal, "symbol", None)}
+                    )
                     logger.exception("Risk manager evaluation failed after retries")
                     return self._reject_signal(signal, ERROR_RISK)
 
@@ -534,22 +573,35 @@ class SignalRouter:
                             )
                             return self._reject_signal(signal, "ml_filter_rejection")
 
-                    if (self.ml_enabled and self.ml_model and
-                        signal.signal_type in {SignalType.ENTRY_LONG, SignalType.ENTRY_SHORT}):
-
+                    if (
+                        self.ml_enabled
+                        and self.ml_model
+                        and signal.signal_type
+                        in {SignalType.ENTRY_LONG, SignalType.ENTRY_SHORT}
+                    ):
                         features_df = self._extract_features_for_ml(market_data, signal)
                         if features_df is None or features_df.empty:
-                            logger.info("ML confirmation skipped: no feature row available")
+                            logger.info(
+                                "ML confirmation skipped: no feature row available"
+                            )
                             if not self.ml_fallback_to_raw:
-                                logger.warning("ML required but no features available, rejecting signal")
+                                logger.warning(
+                                    "ML required but no features available, rejecting signal"
+                                )
                                 return self._reject_signal(signal, "ml_no_features")
                         else:
                             # Call ML prediction
-                            logger.debug(f"Calling ML prediction with features shape: {features_df.shape}")
-                            ml_result = sys.modules['core.signal_router'].ml_predict(self.ml_model, features_df)
+                            logger.debug(
+                                f"Calling ML prediction with features shape: {features_df.shape}"
+                            )
+                            ml_result = sys.modules["core.signal_router"].ml_predict(
+                                self.ml_model, features_df
+                            )
 
                             if ml_result is None or ml_result.empty:
-                                logger.warning("ML prediction returned None or empty result")
+                                logger.warning(
+                                    "ML prediction returned None or empty result"
+                                )
                                 if not self.ml_fallback_to_raw:
                                     return self._reject_signal(signal, "ml_error")
                             else:
@@ -562,61 +614,106 @@ class SignalRouter:
                                     return self._reject_signal(signal, "ml_rejection")
                                 # Extract prediction and confidence
                                 prediction_row = ml_result.iloc[0]
-                                ml_prediction = prediction_row.get('prediction', 0)
-                                ml_confidence = prediction_row.get('confidence', 0.0)
+                                ml_prediction = prediction_row.get("prediction", 0)
+                                ml_confidence = prediction_row.get("confidence", 0.0)
 
                                 # Convert prediction to signal direction
-                                desired_direction = 1 if signal.signal_type == SignalType.ENTRY_LONG else -1
+                                desired_direction = (
+                                    1
+                                    if signal.signal_type == SignalType.ENTRY_LONG
+                                    else -1
+                                )
                                 ml_direction = 1 if ml_prediction > 0 else -1
 
-                                logger.info(f"ML prediction: direction={ml_direction}, confidence={ml_confidence:.3f}")
+                                logger.info(
+                                    f"ML prediction: direction={ml_direction}, confidence={ml_confidence:.3f}"
+                                )
 
                                 # Apply ML decision rules
-                                confidence_threshold = getattr(self, 'ml_confidence_threshold', 0.6)
+                                confidence_threshold = getattr(
+                                    self, "ml_confidence_threshold", 0.6
+                                )
 
                                 if ml_confidence >= confidence_threshold:
                                     # High confidence ML prediction - apply decision rules
                                     if signal.signal_strength == SignalStrength.WEAK:
                                         # Weak signals require ML confirmation
                                         if ml_direction == desired_direction:
-                                            logger.info("Weak signal approved by ML (same direction, high confidence)")
-                                            trade_logger.trade("ML confirmation", {
-                                                "signal": "BUY" if desired_direction == 1 else "SELL",
-                                                "confidence": ml_confidence,
-                                                "approved": True,
-                                                "reason": "weak_signal_confirmed"
-                                            })
+                                            logger.info(
+                                                "Weak signal approved by ML (same direction, high confidence)"
+                                            )
+                                            trade_logger.trade(
+                                                "ML confirmation",
+                                                {
+                                                    "signal": "BUY"
+                                                    if desired_direction == 1
+                                                    else "SELL",
+                                                    "confidence": ml_confidence,
+                                                    "approved": True,
+                                                    "reason": "weak_signal_confirmed",
+                                                },
+                                            )
                                         else:
-                                            logger.info("Weak signal rejected by ML (opposite direction)")
-                                            return self._reject_signal(signal, "ml_opposite_direction")
+                                            logger.info(
+                                                "Weak signal rejected by ML (opposite direction)"
+                                            )
+                                            return self._reject_signal(
+                                                signal, "ml_opposite_direction"
+                                            )
                                     else:
                                         # Strong signals bypass ML rejection but still log the result
                                         if ml_direction != desired_direction:
                                             # Reduce signal strength due to ML disagreement
-                                            if signal.signal_strength == SignalStrength.STRONG:
-                                                signal.signal_strength = SignalStrength.MODERATE
-                                                logger.info("Signal strength reduced due to ML disagreement")
-                                            elif signal.signal_strength == SignalStrength.MODERATE:
-                                                signal.signal_strength = SignalStrength.WEAK
-                                                logger.info("Signal strength reduced due to ML disagreement")
+                                            if (
+                                                signal.signal_strength
+                                                == SignalStrength.STRONG
+                                            ):
+                                                signal.signal_strength = (
+                                                    SignalStrength.MODERATE
+                                                )
+                                                logger.info(
+                                                    "Signal strength reduced due to ML disagreement"
+                                                )
+                                            elif (
+                                                signal.signal_strength
+                                                == SignalStrength.MODERATE
+                                            ):
+                                                signal.signal_strength = (
+                                                    SignalStrength.WEAK
+                                                )
+                                                logger.info(
+                                                    "Signal strength reduced due to ML disagreement"
+                                                )
 
-                                        trade_logger.trade("ML confirmation", {
-                                            "signal": "BUY" if desired_direction == 1 else "SELL",
-                                            "confidence": ml_confidence,
-                                            "approved": True,
-                                            "reason": "strong_signal_bypass"
-                                        })
+                                        trade_logger.trade(
+                                            "ML confirmation",
+                                            {
+                                                "signal": "BUY"
+                                                if desired_direction == 1
+                                                else "SELL",
+                                                "confidence": ml_confidence,
+                                                "approved": True,
+                                                "reason": "strong_signal_bypass",
+                                            },
+                                        )
                                 else:
                                     # Low confidence - ignore ML result and proceed with original signal
-                                    logger.info(f"ML confidence too low ({ml_confidence:.3f} < {confidence_threshold}), ignoring ML result")
-                                    trade_logger.trade("ML confirmation", {
-                                        "signal": "BUY" if desired_direction == 1 else "SELL",
-                                        "confidence": ml_confidence,
-                                        "approved": True,
-                                        "reason": "low_confidence_ignored"
-                                    })
+                                    logger.info(
+                                        f"ML confidence too low ({ml_confidence:.3f} < {confidence_threshold}), ignoring ML result"
+                                    )
+                                    trade_logger.trade(
+                                        "ML confirmation",
+                                        {
+                                            "signal": "BUY"
+                                            if desired_direction == 1
+                                            else "SELL",
+                                            "confidence": ml_confidence,
+                                            "approved": True,
+                                            "reason": "low_confidence_ignored",
+                                        },
+                                    )
 
-                except Exception as e:
+                except Exception:
                     logger.exception("ML confirmation step failed")
                     if not self.ml_fallback_to_raw:
                         logger.warning("ML required but failed, rejecting signal")
@@ -626,38 +723,59 @@ class SignalRouter:
 
                 # Predictive models filtering (optional)
                 try:
-                    if (self.predictive_manager.enabled and
-                        signal.signal_type in {SignalType.ENTRY_LONG, SignalType.ENTRY_SHORT}):
-
+                    if self.predictive_manager.enabled and signal.signal_type in {
+                        SignalType.ENTRY_LONG,
+                        SignalType.ENTRY_SHORT,
+                    }:
                         # Extract market data for predictions
-                        market_df = self._extract_market_data_for_prediction(market_data, signal)
+                        market_df = self._extract_market_data_for_prediction(
+                            market_data, signal
+                        )
                         if market_df is not None and not market_df.empty:
                             # Generate predictions
                             predictions = self.predictive_manager.predict(market_df)
 
                             # Check if signal should be allowed based on predictions
-                            signal_type_str = "BUY" if signal.signal_type == SignalType.ENTRY_LONG else "SELL"
-                            if not self.predictive_manager.should_allow_signal(signal_type_str, predictions):
-                                logger.info(f"Signal rejected by predictive models: {predictions.price_direction}, {predictions.volatility}, surge={predictions.volume_surge}")
+                            signal_type_str = (
+                                "BUY"
+                                if signal.signal_type == SignalType.ENTRY_LONG
+                                else "SELL"
+                            )
+                            if not self.predictive_manager.should_allow_signal(
+                                signal_type_str, predictions
+                            ):
+                                logger.info(
+                                    f"Signal rejected by predictive models: {predictions.price_direction}, {predictions.volatility}, surge={predictions.volume_surge}"
+                                )
                                 return self._reject_signal(signal, "predictive_filter")
                             else:
-                                logger.debug(f"Signal approved by predictive models (confidence: {predictions.confidence:.3f})")
-                                trade_logger.trade("Predictive models", {
-                                    "signal": signal_type_str,
-                                    "price_direction": predictions.price_direction,
-                                    "volatility": predictions.volatility,
-                                    "volume_surge": predictions.volume_surge,
-                                    "confidence": predictions.confidence,
-                                    "approved": True
-                                })
+                                logger.debug(
+                                    f"Signal approved by predictive models (confidence: {predictions.confidence:.3f})"
+                                )
+                                trade_logger.trade(
+                                    "Predictive models",
+                                    {
+                                        "signal": signal_type_str,
+                                        "price_direction": predictions.price_direction,
+                                        "volatility": predictions.volatility,
+                                        "volume_surge": predictions.volume_surge,
+                                        "confidence": predictions.confidence,
+                                        "approved": True,
+                                    },
+                                )
 
                                 # Store predictions in signal metadata for later use
-                                if not hasattr(signal, 'metadata') or signal.metadata is None:
+                                if (
+                                    not hasattr(signal, "metadata")
+                                    or signal.metadata is None
+                                ):
                                     signal.metadata = {}
-                                signal.metadata['predictions'] = predictions.to_dict()
+                                signal.metadata["predictions"] = predictions.to_dict()
                         else:
-                            logger.debug("Predictive models skipped: no market data available")
-                except Exception as e:
+                            logger.debug(
+                                "Predictive models skipped: no market data available"
+                            )
+                except Exception:
                     logger.exception("Predictive models filtering failed")
                     # Don't reject signal on predictive model failure - continue with processing
 
@@ -667,10 +785,10 @@ class SignalRouter:
                     logger.info(f"Signal approved: {signal}")
                     trade_logger.log_signal(signal_to_dict(signal))
                     return signal
-                except Exception as e:
+                except Exception:
                     logger.exception("Failed to store approved signal")
                     return self._reject_signal(signal, "store_failed")
-        except Exception as e:
+        except Exception:
             logger.exception("Error processing signal under symbol lock")
             return self._reject_signal(signal, "processing_error")
 
@@ -690,7 +808,9 @@ class SignalRouter:
 
             # First check if the original timestamp was corrupted
             # The TradingSignal.__post_init__ stores the original timestamp
-            original_timestamp = getattr(signal, '_original_timestamp', signal.timestamp)
+            original_timestamp = getattr(
+                signal, "_original_timestamp", signal.timestamp
+            )
             if original_timestamp is None:
                 return False
 
@@ -703,7 +823,11 @@ class SignalRouter:
                     if original_timestamp.tzinfo is None:
                         # Naive datetime - assume UTC
                         import calendar
-                        ts = calendar.timegm(original_timestamp.timetuple()) + original_timestamp.microsecond / 1e6
+
+                        ts = (
+                            calendar.timegm(original_timestamp.timetuple())
+                            + original_timestamp.microsecond / 1e6
+                        )
                     else:
                         # Aware datetime - use standard conversion
                         ts = original_timestamp.timestamp()
@@ -728,12 +852,16 @@ class SignalRouter:
             elif isinstance(original_timestamp, str):
                 # Original was a string - try to parse it
                 try:
-                    parsed = datetime.datetime.fromisoformat(original_timestamp.replace('Z', '+00:00'))
+                    parsed = datetime.datetime.fromisoformat(
+                        original_timestamp.replace("Z", "+00:00")
+                    )
                     # Check if parsed timestamp is reasonable
                     if parsed.timestamp() <= 0:
                         return False
                     current_time = time.time()
-                    if parsed.timestamp() > current_time + 31536000:  # 1 year in seconds
+                    if (
+                        parsed.timestamp() > current_time + 31536000
+                    ):  # 1 year in seconds
                         return False
                     return True
                 except (ValueError, TypeError):
@@ -755,7 +883,11 @@ class SignalRouter:
             return False
 
         # OrderType is flexible; require price for LIMIT orders if represented as string 'limit'
-        if signal.order_type and getattr(signal.order_type, "value", None) == "limit" and not signal.price:
+        if (
+            signal.order_type
+            and getattr(signal.order_type, "value", None) == "limit"
+            and not signal.price
+        ):
             return False
 
         # For entry signals, ensure stop loss if risk manager requires it
@@ -785,7 +917,11 @@ class SignalRouter:
             return []
 
         # Get all active signals for the same symbol
-        symbol_signals = [sig for sig in self.active_signals.values() if sig.symbol == new_signal.symbol]
+        symbol_signals = [
+            sig
+            for sig in self.active_signals.values()
+            if sig.symbol == new_signal.symbol
+        ]
 
         if not symbol_signals:
             return []
@@ -794,7 +930,9 @@ class SignalRouter:
 
         # Vectorized conflict checking for opposite signals
         new_signal_type = new_signal.signal_type.value
-        active_signal_types = np.array([sig.signal_type.value for sig in symbol_signals])
+        active_signal_types = np.array(
+            [sig.signal_type.value for sig in symbol_signals]
+        )
 
         # Check for opposite signals using vectorized operations
         is_entry_long = new_signal_type == SignalType.ENTRY_LONG.value
@@ -819,13 +957,18 @@ class SignalRouter:
         conflicts.extend([symbol_signals[i] for i in np.where(opposite_mask)[0]])
 
         # Check for same-type signals when strength_based or newer_first is enabled
-        if self.conflict_resolution_rules["strength_based"] or self.conflict_resolution_rules["newer_first"]:
+        if (
+            self.conflict_resolution_rules["strength_based"]
+            or self.conflict_resolution_rules["newer_first"]
+        ):
             same_type_mask = active_signal_types == new_signal_type
             conflicts.extend([symbol_signals[i] for i in np.where(same_type_mask)[0]])
 
         return conflicts
 
-    def _is_opposite_signal(self, signal1: TradingSignal, signal2: TradingSignal) -> bool:
+    def _is_opposite_signal(
+        self, signal1: TradingSignal, signal2: TradingSignal
+    ) -> bool:
         """Check if two signals are in opposite directions."""
         entry_types = {SignalType.ENTRY_LONG, SignalType.ENTRY_SHORT}
         exit_types = {SignalType.EXIT_LONG, SignalType.EXIT_SHORT}
@@ -854,7 +997,9 @@ class SignalRouter:
 
         return False
 
-    async def _resolve_conflicts(self, new_signal: TradingSignal, conflicting_signals: List[TradingSignal]) -> Optional[TradingSignal]:
+    async def _resolve_conflicts(
+        self, new_signal: TradingSignal, conflicting_signals: List[TradingSignal]
+    ) -> Optional[TradingSignal]:
         """
         Resolve conflicting signals based on configured rules.
 
@@ -891,7 +1036,9 @@ class SignalRouter:
                     new_signal.signal_strength.value
                     <= strongest_conflict.signal_strength.value
                 ):
-                    logger.info("New signal rejected due to stronger conflicting signal")
+                    logger.info(
+                        "New signal rejected due to stronger conflicting signal"
+                    )
                     return self._reject_signal(new_signal, "stronger_conflict")
                 else:
                     # New signal is stronger - cancel conflicting signals
@@ -902,10 +1049,14 @@ class SignalRouter:
             if self.conflict_resolution_rules["newer_first"]:
                 newest_conflict = max(conflicting_signals, key=lambda x: x.timestamp)
                 if new_signal.timestamp <= newest_conflict.timestamp:
-                    logger.info(f"Resolved conflict: kept newer signal from strategy {newest_conflict.strategy_id}, rejected old from strategy {new_signal.strategy_id}")
+                    logger.info(
+                        f"Resolved conflict: kept newer signal from strategy {newest_conflict.strategy_id}, rejected old from strategy {new_signal.strategy_id}"
+                    )
                     return self._reject_signal(new_signal, "newer_conflict")
                 else:
-                    logger.info(f"Resolved conflict: kept newer signal from strategy {new_signal.strategy_id}, rejected old from strategy {newest_conflict.strategy_id}")
+                    logger.info(
+                        f"Resolved conflict: kept newer signal from strategy {new_signal.strategy_id}, rejected old from strategy {newest_conflict.strategy_id}"
+                    )
                     for signal in conflicting_signals:
                         await self._cancel_signal(signal)
                     return new_signal
@@ -923,8 +1074,15 @@ class SignalRouter:
         self.signal_history.append(signal)
         # Append to journal (JSONL) for recovery (best-effort)
         try:
-            if getattr(self, "_journal_enabled", False) and getattr(self, "_journal_writer", None):
-                entry = {"action": "store", "id": signal_id, "timestamp": now_ms(), "signal": signal_to_dict(signal)}
+            if getattr(self, "_journal_enabled", False) and getattr(
+                self, "_journal_writer", None
+            ):
+                entry = {
+                    "action": "store",
+                    "id": signal_id,
+                    "timestamp": now_ms(),
+                    "signal": signal_to_dict(signal),
+                }
                 try:
                     self._journal_writer.append(entry)
                 except Exception:
@@ -942,8 +1100,14 @@ class SignalRouter:
                     logger.info(f"Cancelled signal: {signal}")
                     # Append cancel to journal (best-effort)
                     try:
-                        if getattr(self, "_journal_enabled", False) and getattr(self, "_journal_writer", None):
-                            entry = {"action": "cancel", "id": signal_id, "timestamp": now_ms()}
+                        if getattr(self, "_journal_enabled", False) and getattr(
+                            self, "_journal_writer", None
+                        ):
+                            entry = {
+                                "action": "cancel",
+                                "id": signal_id,
+                                "timestamp": now_ms(),
+                            }
                             try:
                                 self._journal_writer.append(entry)
                             except Exception:
@@ -1024,33 +1188,49 @@ class SignalRouter:
                                                 return None
 
                                         stype = _to_signal_type(sig.get("signal_type"))
-                                        sstrength = _to_signal_strength(sig.get("signal_strength"))
+                                        sstrength = _to_signal_strength(
+                                            sig.get("signal_strength")
+                                        )
                                         amount = _to_decimal(sig.get("amount"))
                                         price = _to_decimal(sig.get("price"))
-                                        current_price = _to_decimal(sig.get("current_price"))
+                                        current_price = _to_decimal(
+                                            sig.get("current_price")
+                                        )
                                         stop_loss = _to_decimal(sig.get("stop_loss"))
-                                        take_profit = _to_decimal(sig.get("take_profit"))
+                                        take_profit = _to_decimal(
+                                            sig.get("take_profit")
+                                        )
                                         timestamp = sig.get("timestamp") or 0
                                         metadata = sig.get("metadata")
-                                        strategy_id = sig.get("strategy_id") or sig.get("strategy")
+                                        strategy_id = sig.get("strategy_id") or sig.get(
+                                            "strategy"
+                                        )
                                         symbol = sig.get("symbol")
                                         order_type = sig.get("order_type")
 
                                         # Ensure required fields exist; fall back to sensible defaults
-                                        if strategy_id is None or symbol is None or amount is None:
+                                        if (
+                                            strategy_id is None
+                                            or symbol is None
+                                            or amount is None
+                                        ):
                                             # Not enough info to build TradingSignal; keep raw dict
                                             restored = sig
                                         else:
                                             restored = TradingSignal(
                                                 strategy_id=str(strategy_id),
                                                 symbol=str(symbol),
-                                                signal_type=stype or SignalType.ENTRY_LONG,
-                                                signal_strength=sstrength or SignalStrength.WEAK,
+                                                signal_type=stype
+                                                or SignalType.ENTRY_LONG,
+                                                signal_strength=sstrength
+                                                or SignalStrength.WEAK,
                                                 order_type=order_type,
                                                 amount=amount,
                                                 price=price,
                                                 current_price=current_price,
-                                                timestamp=int(timestamp) if timestamp else 0,
+                                                timestamp=int(timestamp)
+                                                if timestamp
+                                                else 0,
                                                 stop_loss=stop_loss,
                                                 take_profit=take_profit,
                                                 trailing_stop=sig.get("trailing_stop"),
@@ -1099,34 +1279,59 @@ class SignalRouter:
                 return await call_fn()
             except Exception as e:
                 if attempt > retries:
-                    logger.error(f"Retry exhausted for async call after {attempt-1} retries: {str(e)}")
+                    logger.error(
+                        f"Retry exhausted for async call after {attempt-1} retries: {str(e)}"
+                    )
                     raise
                 # compute backoff + jitter
                 backoff = min(max_backoff, base_backoff * (2 ** (attempt - 1)))
                 jitter = backoff * 0.1
                 sleep_for = backoff + random.uniform(-jitter, jitter)
-                logger.warning(f"Async call failed (attempt {attempt}/{retries}), retrying in {sleep_for:.2f}s: {str(e)}")
-                trade_logger.trade("SignalRouter retry", {"attempt": attempt, "error": str(e), "backoff": sleep_for})
+                logger.warning(
+                    f"Async call failed (attempt {attempt}/{retries}), retrying in {sleep_for:.2f}s: {str(e)}"
+                )
+                trade_logger.trade(
+                    "SignalRouter retry",
+                    {"attempt": attempt, "error": str(e), "backoff": sleep_for},
+                )
                 await asyncio.sleep(max(0.0, sleep_for))
                 continue
 
-    async def _record_router_error(self, exc: Exception, context: Optional[Dict[str, Any]] = None) -> None:
+    async def _record_router_error(
+        self, exc: Exception, context: Optional[Dict[str, Any]] = None
+    ) -> None:
         """
         Record a router-level critical error and enter blocking state if threshold exceeded.
         """
         try:
             async with self._lock:
                 self.critical_errors += 1
-                trade_logger.trade("Router critical error", {"count": self.critical_errors, "error": str(exc), "context": context})
-                logger.error(f"Router critical error #{self.critical_errors}: {str(exc)}")
+                trade_logger.trade(
+                    "Router critical error",
+                    {
+                        "count": self.critical_errors,
+                        "error": str(exc),
+                        "context": context,
+                    },
+                )
+                logger.error(
+                    f"Router critical error #{self.critical_errors}: {str(exc)}"
+                )
                 if self.critical_errors >= self.safe_mode_threshold:
                     self.block_signals = True
-                    trade_logger.trade("SignalRouter entering blocking state", {"reason": "threshold_exceeded", "count": self.critical_errors})
-                    logger.critical("SignalRouter blocking new signals due to repeated errors")
+                    trade_logger.trade(
+                        "SignalRouter entering blocking state",
+                        {"reason": "threshold_exceeded", "count": self.critical_errors},
+                    )
+                    logger.critical(
+                        "SignalRouter blocking new signals due to repeated errors"
+                    )
         except Exception:
             logger.exception("Failed to record router error")
 
-    async def update_signal_status(self, signal: TradingSignal, status: str, reason: str = "") -> None:
+    async def update_signal_status(
+        self, signal: TradingSignal, status: str, reason: str = ""
+    ) -> None:
         """
         Update the status of a signal (e.g., when order is executed).
 

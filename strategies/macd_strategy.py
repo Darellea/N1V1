@@ -5,12 +5,12 @@ A trend-following momentum strategy that uses MACD crossovers and signal line
 crossovers to identify trend changes and momentum shifts.
 """
 
-import numpy as np
-import pandas as pd
-from typing import List, Dict
+from typing import Dict, List
 
-from strategies.base_strategy import BaseStrategy, StrategyConfig
-from core.contracts import TradingSignal, SignalType, SignalStrength
+import pandas as pd
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
+from strategies.base_strategy import BaseStrategy
 
 
 class MACDStrategy(BaseStrategy):
@@ -33,7 +33,9 @@ class MACDStrategy(BaseStrategy):
             "histogram_threshold": 0.0,  # Minimum histogram value for signals
         }
         # Handle both StrategyConfig objects and dict configs
-        config_params = config.params if hasattr(config, 'params') else config.get('params', {})
+        config_params = (
+            config.params if hasattr(config, "params") else config.get("params", {})
+        )
         self.params: Dict[str, float] = {**self.default_params, **(config_params or {})}
 
         # Signal tracking
@@ -47,14 +49,24 @@ class MACDStrategy(BaseStrategy):
 
             def calculate_macd(group):
                 # Calculate EMAs
-                fast_ema = group["close"].ewm(span=self.params["fast_period"], adjust=False).mean()
-                slow_ema = group["close"].ewm(span=self.params["slow_period"], adjust=False).mean()
+                fast_ema = (
+                    group["close"]
+                    .ewm(span=self.params["fast_period"], adjust=False)
+                    .mean()
+                )
+                slow_ema = (
+                    group["close"]
+                    .ewm(span=self.params["slow_period"], adjust=False)
+                    .mean()
+                )
 
                 # Calculate MACD line
                 macd_line = fast_ema - slow_ema
 
                 # Calculate signal line
-                signal_line = macd_line.ewm(span=self.params["signal_period"], adjust=False).mean()
+                signal_line = macd_line.ewm(
+                    span=self.params["signal_period"], adjust=False
+                ).mean()
 
                 # Calculate histogram
                 histogram = macd_line - signal_line
@@ -69,10 +81,16 @@ class MACDStrategy(BaseStrategy):
             data = grouped.apply(calculate_macd).reset_index(level=0, drop=True)
         else:
             # Single symbol data
-            fast_ema = data["close"].ewm(span=self.params["fast_period"], adjust=False).mean()
-            slow_ema = data["close"].ewm(span=self.params["slow_period"], adjust=False).mean()
+            fast_ema = (
+                data["close"].ewm(span=self.params["fast_period"], adjust=False).mean()
+            )
+            slow_ema = (
+                data["close"].ewm(span=self.params["slow_period"], adjust=False).mean()
+            )
             macd_line = fast_ema - slow_ema
-            signal_line = macd_line.ewm(span=self.params["signal_period"], adjust=False).mean()
+            signal_line = macd_line.ewm(
+                span=self.params["signal_period"], adjust=False
+            ).mean()
             histogram = macd_line - signal_line
 
             data = data.copy()
@@ -90,7 +108,7 @@ class MACDStrategy(BaseStrategy):
             for symbol, df in data.items():
                 if df is not None and not df.empty:
                     signals.extend(await self._generate_signals_for_symbol(symbol, df))
-        elif hasattr(data, 'groupby') and not data.empty and "symbol" in data.columns:
+        elif hasattr(data, "groupby") and not data.empty and "symbol" in data.columns:
             grouped = data.groupby("symbol")
             for symbol, group in grouped:
                 signals.extend(await self._generate_signals_for_symbol(symbol, group))
@@ -100,13 +118,17 @@ class MACDStrategy(BaseStrategy):
                 if not df.empty and "symbol" in df.columns:
                     grouped = df.groupby("symbol")
                     for symbol, group in grouped:
-                        signals.extend(await self._generate_signals_for_symbol(symbol, group))
+                        signals.extend(
+                            await self._generate_signals_for_symbol(symbol, group)
+                        )
             except Exception:
                 pass
 
         return signals
 
-    async def _generate_signals_for_symbol(self, symbol: str, data) -> List[TradingSignal]:
+    async def _generate_signals_for_symbol(
+        self, symbol: str, data
+    ) -> List[TradingSignal]:
         """Generate signals for a specific symbol's data."""
         signals = []
 
@@ -123,27 +145,32 @@ class MACDStrategy(BaseStrategy):
 
             # Check for MACD bullish crossover (MACD crosses above signal line)
             macd_crossover_bullish = (
-                prev_row["macd"] <= prev_row["macd_signal"] and
-                last_row["macd"] > last_row["macd_signal"]
+                prev_row["macd"] <= prev_row["macd_signal"]
+                and last_row["macd"] > last_row["macd_signal"]
             )
 
             # Check for MACD bearish crossover (MACD crosses below signal line)
             macd_crossover_bearish = (
-                prev_row["macd"] >= prev_row["macd_signal"] and
-                last_row["macd"] < last_row["macd_signal"]
+                prev_row["macd"] >= prev_row["macd_signal"]
+                and last_row["macd"] < last_row["macd_signal"]
             )
 
             # Additional filter: histogram should be significant
             histogram_threshold = self.params["histogram_threshold"]
 
-            if macd_crossover_bullish and abs(last_row["macd_histogram"]) > histogram_threshold:
+            if (
+                macd_crossover_bullish
+                and abs(last_row["macd_histogram"]) > histogram_threshold
+            ):
                 self.signal_counts["long"] += 1
                 self.signal_counts["total"] += 1
                 # Note: last_signal_time is now updated deterministically in _log_signals
 
                 # Extract deterministic timestamp from the data that triggered the signal
                 signal_timestamp = None
-                if not data_with_macd.empty and isinstance(data_with_macd.index, pd.DatetimeIndex):
+                if not data_with_macd.empty and isinstance(
+                    data_with_macd.index, pd.DatetimeIndex
+                ):
                     signal_timestamp = data_with_macd.index[-1].to_pydatetime()
 
                 signals.append(
@@ -155,25 +182,31 @@ class MACDStrategy(BaseStrategy):
                         amount=self.params["position_size"],
                         current_price=current_price,
                         stop_loss=current_price * (1 - self.params["stop_loss_pct"]),
-                        take_profit=current_price * (1 + self.params["take_profit_pct"]),
+                        take_profit=current_price
+                        * (1 + self.params["take_profit_pct"]),
                         metadata={
                             "macd": last_row["macd"],
                             "macd_signal": last_row["macd_signal"],
                             "macd_histogram": last_row["macd_histogram"],
-                            "crossover_type": "bullish"
+                            "crossover_type": "bullish",
                         },
                         timestamp=signal_timestamp,
                     )
                 )
 
-            elif macd_crossover_bearish and abs(last_row["macd_histogram"]) > histogram_threshold:
+            elif (
+                macd_crossover_bearish
+                and abs(last_row["macd_histogram"]) > histogram_threshold
+            ):
                 self.signal_counts["short"] += 1
                 self.signal_counts["total"] += 1
                 # Note: last_signal_time is now updated deterministically in _log_signals
 
                 # Extract deterministic timestamp from the data that triggered the signal
                 signal_timestamp = None
-                if not data_with_macd.empty and isinstance(data_with_macd.index, pd.DatetimeIndex):
+                if not data_with_macd.empty and isinstance(
+                    data_with_macd.index, pd.DatetimeIndex
+                ):
                     signal_timestamp = data_with_macd.index[-1].to_pydatetime()
 
                 signals.append(
@@ -185,12 +218,13 @@ class MACDStrategy(BaseStrategy):
                         amount=self.params["position_size"],
                         current_price=current_price,
                         stop_loss=current_price * (1 + self.params["stop_loss_pct"]),
-                        take_profit=current_price * (1 - self.params["take_profit_pct"]),
+                        take_profit=current_price
+                        * (1 - self.params["take_profit_pct"]),
                         metadata={
                             "macd": last_row["macd"],
                             "macd_signal": last_row["macd_signal"],
                             "macd_histogram": last_row["macd_histogram"],
-                            "crossover_type": "bearish"
+                            "crossover_type": "bearish",
                         },
                         timestamp=signal_timestamp,
                     )
@@ -198,6 +232,7 @@ class MACDStrategy(BaseStrategy):
 
         except Exception as e:
             import logging
+
             logger = logging.getLogger(__name__)
             logger.error(f"Error generating signals for {symbol}: {str(e)}")
 

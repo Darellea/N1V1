@@ -5,15 +5,15 @@ Handles explicit resource cleanup, object pooling, memory usage monitoring,
 and automatic cleanup triggers for optimal memory usage.
 """
 
-import asyncio
-import logging
 import gc
-import psutil
+import logging
 import threading
 import time
-from typing import Dict, Any, Optional, List, Set
-from weakref import WeakSet, ref
 import tracemalloc
+from typing import Any, Dict, List, Optional
+from weakref import WeakSet, ref
+
+import psutil
 
 from .interfaces import MemoryManagerInterface
 
@@ -35,11 +35,20 @@ class MemoryManager(MemoryManagerInterface):
         """
         # Import configuration from centralized system
         from .config_manager import get_config_manager
+
         config_manager = get_config_manager()
         memory_config = config_manager.get_memory_config()
 
-        self.enable_monitoring = enable_monitoring if enable_monitoring is not None else memory_config.enable_monitoring
-        self.cleanup_interval = cleanup_interval if cleanup_interval != 300.0 else memory_config.cleanup_interval
+        self.enable_monitoring = (
+            enable_monitoring
+            if enable_monitoring is not None
+            else memory_config.enable_monitoring
+        )
+        self.cleanup_interval = (
+            cleanup_interval
+            if cleanup_interval != 300.0
+            else memory_config.cleanup_interval
+        )
 
         # Thread synchronization locks
         self._pools_lock = threading.RLock()  # For object pools operations
@@ -88,9 +97,7 @@ class MemoryManager(MemoryManagerInterface):
         tracemalloc.start()
 
         self._monitoring_thread = threading.Thread(
-            target=self._memory_monitoring_loop,
-            daemon=True,
-            name="MemoryMonitor"
+            target=self._memory_monitoring_loop, daemon=True, name="MemoryMonitor"
         )
         self._monitoring_thread.start()
         logger.info("Memory monitoring started")
@@ -114,7 +121,7 @@ class MemoryManager(MemoryManagerInterface):
 
             # Take memory snapshot
             snapshot = tracemalloc.take_snapshot()
-            top_stats = snapshot.statistics('lineno')
+            top_stats = snapshot.statistics("lineno")
 
             memory_info = {
                 "timestamp": time.time(),
@@ -123,11 +130,13 @@ class MemoryManager(MemoryManagerInterface):
                     {
                         "size_mb": stat.size / 1024 / 1024,
                         "count": stat.count,
-                        "file": stat.traceback[0].filename if stat.traceback else "unknown",
-                        "line": stat.traceback[0].lineno if stat.traceback else 0
+                        "file": stat.traceback[0].filename
+                        if stat.traceback
+                        else "unknown",
+                        "line": stat.traceback[0].lineno if stat.traceback else 0,
                     }
                     for stat in top_stats[:10]  # Top 10 allocations
-                ]
+                ],
             }
 
             # Thread-safe access to memory snapshots
@@ -153,8 +162,14 @@ class MemoryManager(MemoryManagerInterface):
         except Exception as e:
             logger.exception(f"Error checking memory usage: {e}")
 
-    def get_object_from_pool(self, pool_name: str, factory_func: callable,
-                           max_pool_size: int = 50, *args, **kwargs) -> Any:
+    def get_object_from_pool(
+        self,
+        pool_name: str,
+        factory_func: callable,
+        max_pool_size: int = 50,
+        *args,
+        **kwargs,
+    ) -> Any:
         """Get an object from the pool or create a new one.
 
         Args:
@@ -176,7 +191,7 @@ class MemoryManager(MemoryManagerInterface):
 
             # Try to find an available object
             for obj in pool:
-                if hasattr(obj, '_in_use') and not obj._in_use:
+                if hasattr(obj, "_in_use") and not obj._in_use:
                     obj._in_use = True
                     logger.debug(f"Reused object from pool {pool_name}")
                     return obj
@@ -196,7 +211,9 @@ class MemoryManager(MemoryManagerInterface):
                     logger.debug(f"Created new object for pool {pool_name}")
                     return obj
                 except Exception as e:
-                    logger.exception(f"Failed to create object for pool {pool_name}: {e}")
+                    logger.exception(
+                        f"Failed to create object for pool {pool_name}: {e}"
+                    )
                     return None
 
             # Pool is full, create temporary object
@@ -207,7 +224,9 @@ class MemoryManager(MemoryManagerInterface):
                 obj._temporary = True
                 return obj
             except Exception as e:
-                logger.exception(f"Failed to create temporary object for pool {pool_name}: {e}")
+                logger.exception(
+                    f"Failed to create temporary object for pool {pool_name}: {e}"
+                )
                 return None
 
     def return_object_to_pool(self, obj: Any):
@@ -216,9 +235,9 @@ class MemoryManager(MemoryManagerInterface):
         Args:
             obj: Object to return to pool
         """
-        if not hasattr(obj, '_pool_name'):
+        if not hasattr(obj, "_pool_name"):
             # Not a pooled object, just mark as not in use
-            if hasattr(obj, '_in_use'):
+            if hasattr(obj, "_in_use"):
                 obj._in_use = False
             return
 
@@ -248,26 +267,35 @@ class MemoryManager(MemoryManagerInterface):
             if force:
                 # Force cleanup all objects
                 cleanup_count = 0
-                for obj in pool[:]:  # Copy the list to avoid modification during iteration
-                    if hasattr(obj, '_in_use') and not obj._in_use:
+                for obj in pool[
+                    :
+                ]:  # Copy the list to avoid modification during iteration
+                    if hasattr(obj, "_in_use") and not obj._in_use:
                         pool.remove(obj)
                         cleanup_count += 1
 
-                logger.info(f"Force cleaned up {cleanup_count} objects from pool {pool_name}")
+                logger.info(
+                    f"Force cleaned up {cleanup_count} objects from pool {pool_name}"
+                )
             else:
                 # Clean up old unused objects (older than 1 hour)
                 old_objects = []
                 for obj in pool:
-                    if (hasattr(obj, '_in_use') and not obj._in_use and
-                        hasattr(obj, '_last_used') and
-                        current_time - obj._last_used > 3600):  # 1 hour
+                    if (
+                        hasattr(obj, "_in_use")
+                        and not obj._in_use
+                        and hasattr(obj, "_last_used")
+                        and current_time - obj._last_used > 3600
+                    ):  # 1 hour
                         old_objects.append(obj)
 
                 for obj in old_objects:
                     pool.remove(obj)
 
                 if old_objects:
-                    logger.info(f"Cleaned up {len(old_objects)} old objects from pool {pool_name}")
+                    logger.info(
+                        f"Cleaned up {len(old_objects)} old objects from pool {pool_name}"
+                    )
 
             self._pool_cleanup_times[pool_name] = current_time
 
@@ -361,10 +389,11 @@ class MemoryManager(MemoryManagerInterface):
         Args:
             cache_instance: Cache instance with perform_maintenance method
         """
+
         async def cache_maintenance_callback():
             """Async callback to perform cache maintenance."""
             try:
-                if hasattr(cache_instance, 'perform_maintenance'):
+                if hasattr(cache_instance, "perform_maintenance"):
                     result = await cache_instance.perform_maintenance()
                     if result.get("maintenance_performed", False):
                         logger.info(f"Cache maintenance completed: {result}")
@@ -385,7 +414,9 @@ class MemoryManager(MemoryManagerInterface):
             name: Name for the object
         """
         with self._tracking_lock:
-            self._object_refs[name] = ref(obj, lambda ref: self._on_object_deleted(name))
+            self._object_refs[name] = ref(
+                obj, lambda ref: self._on_object_deleted(name)
+            )
             self._tracked_objects.add(obj)
 
     def _on_object_deleted(self, name: str):
@@ -408,7 +439,7 @@ class MemoryManager(MemoryManagerInterface):
                 "pool_stats": {
                     pool_name: {
                         "size": len(objects),
-                        "max_size": self._pool_sizes.get(pool_name, 0)
+                        "max_size": self._pool_sizes.get(pool_name, 0),
                     }
                     for pool_name, objects in self._object_pools.items()
                 },
@@ -416,7 +447,7 @@ class MemoryManager(MemoryManagerInterface):
                 "cleanup_count": self._cleanup_count,
                 "memory_warnings": self._memory_warnings,
                 "memory_criticals": self._memory_criticals,
-                "thresholds": self._memory_thresholds.copy()
+                "thresholds": self._memory_thresholds.copy(),
             }
         except Exception as e:
             logger.exception(f"Error getting memory stats: {e}")
@@ -426,8 +457,12 @@ class MemoryManager(MemoryManagerInterface):
         """Get recent memory snapshots."""
         return self._memory_snapshots[-limit:] if self._memory_snapshots else []
 
-    def set_memory_thresholds(self, warning_mb: float = None,
-                            critical_mb: float = None, cleanup_mb: float = None):
+    def set_memory_thresholds(
+        self,
+        warning_mb: float = None,
+        critical_mb: float = None,
+        cleanup_mb: float = None,
+    ):
         """Set memory usage thresholds.
 
         Args:
@@ -465,6 +500,7 @@ class MemoryManager(MemoryManagerInterface):
 
 # Global memory manager instance
 _memory_manager = None
+
 
 def get_memory_manager() -> MemoryManager:
     """Get the global memory manager instance."""

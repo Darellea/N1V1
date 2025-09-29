@@ -5,12 +5,12 @@ A volume-based strategy that uses On-Balance Volume to identify accumulation/dis
 patterns and generate signals when volume confirms price movements.
 """
 
-import numpy as np
-import pandas as pd
-from typing import List, Dict
+from typing import Dict, List
 
-from strategies.base_strategy import BaseStrategy, StrategyConfig
-from core.contracts import TradingSignal, SignalType, SignalStrength
+import pandas as pd
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
+from strategies.base_strategy import BaseStrategy
 
 
 class OBVStrategy(BaseStrategy):
@@ -35,7 +35,9 @@ class OBVStrategy(BaseStrategy):
             "trend_period": 20,  # Period for trend calculation
         }
         # Handle both StrategyConfig objects and dict configs
-        config_params = config.params if hasattr(config, 'params') else config.get('params', {})
+        config_params = (
+            config.params if hasattr(config, "params") else config.get("params", {})
+        )
         self.params: Dict[str, float] = {**self.default_params, **(config_params or {})}
 
         # Signal tracking
@@ -57,12 +59,12 @@ class OBVStrategy(BaseStrategy):
                 obv.iloc[0] = group["volume"].iloc[0]
 
                 for i in range(1, len(group)):
-                    if group["close"].iloc[i] > group["close"].iloc[i-1]:
-                        obv.iloc[i] = obv.iloc[i-1] + group["volume"].iloc[i]
-                    elif group["close"].iloc[i] < group["close"].iloc[i-1]:
-                        obv.iloc[i] = obv.iloc[i-1] - group["volume"].iloc[i]
+                    if group["close"].iloc[i] > group["close"].iloc[i - 1]:
+                        obv.iloc[i] = obv.iloc[i - 1] + group["volume"].iloc[i]
+                    elif group["close"].iloc[i] < group["close"].iloc[i - 1]:
+                        obv.iloc[i] = obv.iloc[i - 1] - group["volume"].iloc[i]
                     else:
-                        obv.iloc[i] = obv.iloc[i-1]
+                        obv.iloc[i] = obv.iloc[i - 1]
 
                 group["obv"] = obv
 
@@ -73,15 +75,21 @@ class OBVStrategy(BaseStrategy):
                 group["obv_momentum"] = group["obv"].diff()
 
                 # Calculate volume SMA for confirmation
-                group["volume_sma"] = group["volume"].rolling(window=volume_sma_period).mean()
+                group["volume_sma"] = (
+                    group["volume"].rolling(window=volume_sma_period).mean()
+                )
 
                 # Calculate trend direction if enabled
                 if self.params["trend_filter"]:
-                    group["price_trend"] = group["close"].rolling(window=trend_period).mean()
+                    group["price_trend"] = (
+                        group["close"].rolling(window=trend_period).mean()
+                    )
 
                 return group
 
-            data = grouped.apply(calculate_obv_indicators).reset_index(level=0, drop=True)
+            data = grouped.apply(calculate_obv_indicators).reset_index(
+                level=0, drop=True
+            )
         else:
             # Single symbol data
             data = data.copy()
@@ -91,12 +99,12 @@ class OBVStrategy(BaseStrategy):
             obv.iloc[0] = data["volume"].iloc[0]
 
             for i in range(1, len(data)):
-                if data["close"].iloc[i] > data["close"].iloc[i-1]:
-                    obv.iloc[i] = obv.iloc[i-1] + data["volume"].iloc[i]
-                elif data["close"].iloc[i] < data["close"].iloc[i-1]:
-                    obv.iloc[i] = obv.iloc[i-1] - data["volume"].iloc[i]
+                if data["close"].iloc[i] > data["close"].iloc[i - 1]:
+                    obv.iloc[i] = obv.iloc[i - 1] + data["volume"].iloc[i]
+                elif data["close"].iloc[i] < data["close"].iloc[i - 1]:
+                    obv.iloc[i] = obv.iloc[i - 1] - data["volume"].iloc[i]
                 else:
-                    obv.iloc[i] = obv.iloc[i-1]
+                    obv.iloc[i] = obv.iloc[i - 1]
 
             data["obv"] = obv
 
@@ -123,7 +131,7 @@ class OBVStrategy(BaseStrategy):
             for symbol, df in data.items():
                 if df is not None and not df.empty:
                     signals.extend(await self._generate_signals_for_symbol(symbol, df))
-        elif hasattr(data, 'groupby') and not data.empty and "symbol" in data.columns:
+        elif hasattr(data, "groupby") and not data.empty and "symbol" in data.columns:
             grouped = data.groupby("symbol")
             for symbol, group in grouped:
                 signals.extend(await self._generate_signals_for_symbol(symbol, group))
@@ -133,13 +141,17 @@ class OBVStrategy(BaseStrategy):
                 if not df.empty and "symbol" in df.columns:
                     grouped = df.groupby("symbol")
                     for symbol, group in grouped:
-                        signals.extend(await self._generate_signals_for_symbol(symbol, group))
+                        signals.extend(
+                            await self._generate_signals_for_symbol(symbol, group)
+                        )
             except Exception:
                 pass
 
         return signals
 
-    async def _generate_signals_for_symbol(self, symbol: str, data) -> List[TradingSignal]:
+    async def _generate_signals_for_symbol(
+        self, symbol: str, data
+    ) -> List[TradingSignal]:
         """Generate signals for a specific symbol's data."""
         signals = []
 
@@ -177,28 +189,26 @@ class OBVStrategy(BaseStrategy):
 
             # Check for OBV bullish signals
             obv_bullish_crossover = (
-                prev_row["obv"] <= prev_row["obv_signal"] and
-                last_row["obv"] > last_row["obv_signal"] and
-                not pd.isna(last_row["obv"]) and
-                not pd.isna(last_row["obv_signal"])
+                prev_row["obv"] <= prev_row["obv_signal"]
+                and last_row["obv"] > last_row["obv_signal"]
+                and not pd.isna(last_row["obv"])
+                and not pd.isna(last_row["obv_signal"])
             )
 
-            obv_momentum_positive = (
-                last_row["obv_momentum"] > 0 and
-                not pd.isna(last_row["obv_momentum"])
+            obv_momentum_positive = last_row["obv_momentum"] > 0 and not pd.isna(
+                last_row["obv_momentum"]
             )
 
             # Check for OBV bearish signals
             obv_bearish_crossover = (
-                prev_row["obv"] >= prev_row["obv_signal"] and
-                last_row["obv"] < last_row["obv_signal"] and
-                not pd.isna(last_row["obv"]) and
-                not pd.isna(last_row["obv_signal"])
+                prev_row["obv"] >= prev_row["obv_signal"]
+                and last_row["obv"] < last_row["obv_signal"]
+                and not pd.isna(last_row["obv"])
+                and not pd.isna(last_row["obv_signal"])
             )
 
-            obv_momentum_negative = (
-                last_row["obv_momentum"] < 0 and
-                not pd.isna(last_row["obv_momentum"])
+            obv_momentum_negative = last_row["obv_momentum"] < 0 and not pd.isna(
+                last_row["obv_momentum"]
             )
 
             # Check for confirmation over multiple bars
@@ -209,18 +219,20 @@ class OBVStrategy(BaseStrategy):
 
                 # Bullish confirmation: OBV above signal for most recent bars
                 bullish_confirmation = (
-                    (recent_obv > recent_signal).sum() >= confirmation_period * 0.7
-                )
+                    recent_obv > recent_signal
+                ).sum() >= confirmation_period * 0.7
 
                 # Bearish confirmation: OBV below signal for most recent bars
                 bearish_confirmation = (
-                    (recent_obv < recent_signal).sum() >= confirmation_period * 0.7
-                )
+                    recent_obv < recent_signal
+                ).sum() >= confirmation_period * 0.7
             else:
                 bullish_confirmation = obv_bullish_crossover
                 bearish_confirmation = obv_bearish_crossover
 
-            if (obv_bullish_crossover or obv_momentum_positive) and bullish_confirmation:
+            if (
+                obv_bullish_crossover or obv_momentum_positive
+            ) and bullish_confirmation:
                 # OBV shows accumulation/bullish divergence
                 self.signal_counts["long"] += 1
                 self.signal_counts["total"] += 1
@@ -228,7 +240,9 @@ class OBVStrategy(BaseStrategy):
 
                 # Extract deterministic timestamp from the data that triggered the signal
                 signal_timestamp = None
-                if not data_with_obv.empty and isinstance(data_with_obv.index, pd.DatetimeIndex):
+                if not data_with_obv.empty and isinstance(
+                    data_with_obv.index, pd.DatetimeIndex
+                ):
                     signal_timestamp = data_with_obv.index[-1].to_pydatetime()
 
                 signals.append(
@@ -240,7 +254,8 @@ class OBVStrategy(BaseStrategy):
                         amount=self.params["position_size"],
                         current_price=current_price,
                         stop_loss=current_price * (1 - self.params["stop_loss_pct"]),
-                        take_profit=current_price * (1 + self.params["take_profit_pct"]),
+                        take_profit=current_price
+                        * (1 + self.params["take_profit_pct"]),
                         metadata={
                             "signal_type": "obv_accumulation",
                             "obv": last_row["obv"],
@@ -248,13 +263,15 @@ class OBVStrategy(BaseStrategy):
                             "obv_momentum": last_row["obv_momentum"],
                             "volume_confirmed": volume_confirmed,
                             "crossover": obv_bullish_crossover,
-                            "confirmation_bars": confirmation_period
+                            "confirmation_bars": confirmation_period,
                         },
                         timestamp=signal_timestamp,
                     )
                 )
 
-            elif (obv_bearish_crossover or obv_momentum_negative) and bearish_confirmation:
+            elif (
+                obv_bearish_crossover or obv_momentum_negative
+            ) and bearish_confirmation:
                 # OBV shows distribution/bearish divergence
                 self.signal_counts["short"] += 1
                 self.signal_counts["total"] += 1
@@ -262,7 +279,9 @@ class OBVStrategy(BaseStrategy):
 
                 # Extract deterministic timestamp from the data that triggered the signal
                 signal_timestamp = None
-                if not data_with_obv.empty and isinstance(data_with_obv.index, pd.DatetimeIndex):
+                if not data_with_obv.empty and isinstance(
+                    data_with_obv.index, pd.DatetimeIndex
+                ):
                     signal_timestamp = data_with_obv.index[-1].to_pydatetime()
 
                 signals.append(
@@ -274,7 +293,8 @@ class OBVStrategy(BaseStrategy):
                         amount=self.params["position_size"],
                         current_price=current_price,
                         stop_loss=current_price * (1 + self.params["stop_loss_pct"]),
-                        take_profit=current_price * (1 - self.params["take_profit_pct"]),
+                        take_profit=current_price
+                        * (1 - self.params["take_profit_pct"]),
                         metadata={
                             "signal_type": "obv_distribution",
                             "obv": last_row["obv"],
@@ -282,7 +302,7 @@ class OBVStrategy(BaseStrategy):
                             "obv_momentum": last_row["obv_momentum"],
                             "volume_confirmed": volume_confirmed,
                             "crossover": obv_bearish_crossover,
-                            "confirmation_bars": confirmation_period
+                            "confirmation_bars": confirmation_period,
                         },
                         timestamp=signal_timestamp,
                     )
@@ -290,6 +310,7 @@ class OBVStrategy(BaseStrategy):
 
         except Exception as e:
             import logging
+
             logger = logging.getLogger(__name__)
             logger.error(f"Error generating signals for {symbol}: {str(e)}")
 

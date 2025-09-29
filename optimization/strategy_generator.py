@@ -30,27 +30,24 @@ Refactored Structure:
 """
 
 import asyncio
-import logging
-from typing import Dict, List, Any, Optional, Tuple, Union, Callable
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from enum import Enum
-import random
 import json
-import pickle
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import multiprocessing as mp
-from collections import defaultdict
+import random
 import warnings
+from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 # ML libraries with fallbacks
 try:
     import sklearn.gaussian_process as gp
     from sklearn.gaussian_process import GaussianProcessRegressor
+
     SKLEARN_AVAILABLE = True
 except ImportError:
     SKLEARN_AVAILABLE = False
@@ -59,21 +56,27 @@ except ImportError:
 try:
     import torch
     import torch.nn as nn
+
     PYTORCH_AVAILABLE = True
 except ImportError:
     PYTORCH_AVAILABLE = False
     warnings.warn("PyTorch not available, neural components disabled")
 
+from backtest.backtester import compute_backtest_metrics
+from strategies.base_strategy import BaseStrategy
+from strategies.bollinger_reversion_strategy import BollingerReversionStrategy
+from strategies.rsi_strategy import RSIStrategy
+from utils.logger import get_logger
+
 from .base_optimizer import BaseOptimizer
 from .genome import (
-    StrategyGenome, StrategyGene, StrategyComponent,
-    IndicatorType, SignalLogic, Species, GenomeList
+    IndicatorType,
+    SignalLogic,
+    Species,
+    StrategyComponent,
+    StrategyGene,
+    StrategyGenome,
 )
-from strategies.base_strategy import BaseStrategy
-from strategies.rsi_strategy import RSIStrategy
-from strategies.bollinger_reversion_strategy import BollingerReversionStrategy
-from backtest.backtester import compute_backtest_metrics
-from utils.logger import get_logger
 
 # SECURITY NOTE: This module previously used dynamic code generation (type() and exec())
 # which posed significant security risks including arbitrary code execution.
@@ -99,9 +102,13 @@ class StrategyGenerationError(Exception):
     generation failed, including the specific error type and context.
     """
 
-    def __init__(self, message: str, error_type: str = "unknown",
-                 genome_info: Optional[Dict[str, Any]] = None,
-                 cause: Optional[Exception] = None):
+    def __init__(
+        self,
+        message: str,
+        error_type: str = "unknown",
+        genome_info: Optional[Dict[str, Any]] = None,
+        cause: Optional[Exception] = None,
+    ):
         """
         Initialize the exception.
 
@@ -144,46 +151,51 @@ class StrategyFactory:
     # SECURITY: Classes are explicitly defined to prevent dynamic code execution
     # Only pre-approved strategy classes can be instantiated through this factory
     STRATEGY_REGISTRY = {
-        'rsi_momentum': {
-            'class': None,  # To be registered by calling register_strategy()
-            'description': 'RSI-based momentum strategy',
-            'parameters': {
-                'rsi_period': {'min': 2, 'max': 50, 'type': int},
-                'overbought': {'min': 60, 'max': 90, 'type': int},
-                'oversold': {'min': 10, 'max': 40, 'type': int},
-                'momentum_period': {'min': 5, 'max': 30, 'type': int}
-            }
+        "rsi_momentum": {
+            "class": None,  # To be registered by calling register_strategy()
+            "description": "RSI-based momentum strategy",
+            "parameters": {
+                "rsi_period": {"min": 2, "max": 50, "type": int},
+                "overbought": {"min": 60, "max": 90, "type": int},
+                "oversold": {"min": 10, "max": 40, "type": int},
+                "momentum_period": {"min": 5, "max": 30, "type": int},
+            },
         },
-        'macd_crossover': {
-            'class': None,  # To be registered by calling register_strategy()
-            'description': 'MACD crossover strategy',
-            'parameters': {
-                'fast_period': {'min': 5, 'max': 20, 'type': int},
-                'slow_period': {'min': 20, 'max': 50, 'type': int},
-                'signal_period': {'min': 5, 'max': 15, 'type': int}
-            }
+        "macd_crossover": {
+            "class": None,  # To be registered by calling register_strategy()
+            "description": "MACD crossover strategy",
+            "parameters": {
+                "fast_period": {"min": 5, "max": 20, "type": int},
+                "slow_period": {"min": 20, "max": 50, "type": int},
+                "signal_period": {"min": 5, "max": 15, "type": int},
+            },
         },
-        'bollinger_reversion': {
-            'class': None,  # To be registered by calling register_strategy()
-            'description': 'Bollinger Bands mean reversion strategy',
-            'parameters': {
-                'period': {'min': 10, 'max': 50, 'type': int},
-                'std_dev': {'min': 1.5, 'max': 3.0, 'type': float}
-            }
+        "bollinger_reversion": {
+            "class": None,  # To be registered by calling register_strategy()
+            "description": "Bollinger Bands mean reversion strategy",
+            "parameters": {
+                "period": {"min": 10, "max": 50, "type": int},
+                "std_dev": {"min": 1.5, "max": 3.0, "type": float},
+            },
         },
-        'volume_price': {
-            'class': None,  # To be registered by calling register_strategy()
-            'description': 'Volume-weighted price action strategy',
-            'parameters': {
-                'volume_threshold': {'min': 0.5, 'max': 3.0, 'type': float},
-                'price_lookback': {'min': 3, 'max': 20, 'type': int}
-            }
-        }
+        "volume_price": {
+            "class": None,  # To be registered by calling register_strategy()
+            "description": "Volume-weighted price action strategy",
+            "parameters": {
+                "volume_threshold": {"min": 0.5, "max": 3.0, "type": float},
+                "price_lookback": {"min": 3, "max": 20, "type": int},
+            },
+        },
     }
 
     @classmethod
-    def register_strategy(cls, strategy_type: str, strategy_class: type,
-                         description: str, parameters: Dict[str, Any]) -> None:
+    def register_strategy(
+        cls,
+        strategy_type: str,
+        strategy_class: type,
+        description: str,
+        parameters: Dict[str, Any],
+    ) -> None:
         """
         Register a new strategy type with the factory.
 
@@ -194,12 +206,14 @@ class StrategyFactory:
             parameters: Parameter constraints
         """
         if strategy_type in cls.STRATEGY_REGISTRY:
-            logger.warning(f"Strategy type '{strategy_type}' already registered, overwriting")
+            logger.warning(
+                f"Strategy type '{strategy_type}' already registered, overwriting"
+            )
 
         cls.STRATEGY_REGISTRY[strategy_type] = {
-            'class': strategy_class,
-            'description': description,
-            'parameters': parameters
+            "class": strategy_class,
+            "description": description,
+            "parameters": parameters,
         }
 
         logger.info(f"Registered strategy type: {strategy_type}")
@@ -228,11 +242,13 @@ class StrategyFactory:
                 continue  # Skip disabled genes
 
             # Validate component type
-            if gene.component_type not in [StrategyComponent.INDICATOR,
-                                         StrategyComponent.SIGNAL_LOGIC,
-                                         StrategyComponent.RISK_MANAGEMENT,
-                                         StrategyComponent.TIMEFRAME,
-                                         StrategyComponent.FILTER]:
+            if gene.component_type not in [
+                StrategyComponent.INDICATOR,
+                StrategyComponent.SIGNAL_LOGIC,
+                StrategyComponent.RISK_MANAGEMENT,
+                StrategyComponent.TIMEFRAME,
+                StrategyComponent.FILTER,
+            ]:
                 errors.append(f"Gene {i}: Invalid component type {gene.component_type}")
 
             # Validate parameters based on component type
@@ -249,7 +265,9 @@ class StrategyFactory:
         # Get parameter constraints based on component type
         if gene.component_type == StrategyComponent.INDICATOR and gene.indicator_type:
             constraints = cls._get_indicator_constraints(gene.indicator_type)
-        elif gene.component_type == StrategyComponent.SIGNAL_LOGIC and gene.signal_logic:
+        elif (
+            gene.component_type == StrategyComponent.SIGNAL_LOGIC and gene.signal_logic
+        ):
             constraints = cls._get_signal_constraints(gene.signal_logic)
         else:
             # For other component types, use generic validation
@@ -260,7 +278,9 @@ class StrategyFactory:
             if param_name in constraints:
                 constraint = constraints[param_name]
                 if not cls._validate_parameter(param_value, constraint):
-                    errors.append(f"Parameter {param_name}={param_value} violates constraint {constraint}")
+                    errors.append(
+                        f"Parameter {param_name}={param_value} violates constraint {constraint}"
+                    )
             else:
                 errors.append(f"Unknown parameter {param_name}")
 
@@ -271,18 +291,21 @@ class StrategyFactory:
         """Validate a single parameter against its constraint."""
         try:
             # Type check
-            expected_type = constraint['type']
+            expected_type = constraint["type"]
             if not isinstance(value, expected_type):
                 return False
 
             # Range check
-            if 'min' in constraint and value < constraint['min']:
+            if "min" in constraint and value < constraint["min"]:
                 return False
-            if 'max' in constraint and value > constraint['max']:
+            if "max" in constraint and value > constraint["max"]:
                 return False
 
             # Enum check
-            if 'allowed_values' in constraint and value not in constraint['allowed_values']:
+            if (
+                "allowed_values" in constraint
+                and value not in constraint["allowed_values"]
+            ):
                 return False
 
             return True
@@ -290,42 +313,40 @@ class StrategyFactory:
             return False
 
     @classmethod
-    def _get_indicator_constraints(cls, indicator_type: IndicatorType) -> Dict[str, Any]:
+    def _get_indicator_constraints(
+        cls, indicator_type: IndicatorType
+    ) -> Dict[str, Any]:
         """Get parameter constraints for an indicator type."""
         constraints = {
             IndicatorType.RSI: {
-                'period': {'min': 2, 'max': 50, 'type': int},
-                'overbought': {'min': 50, 'max': 95, 'type': int},
-                'oversold': {'min': 5, 'max': 50, 'type': int}
+                "period": {"min": 2, "max": 50, "type": int},
+                "overbought": {"min": 50, "max": 95, "type": int},
+                "oversold": {"min": 5, "max": 50, "type": int},
             },
             IndicatorType.MACD: {
-                'fast_period': {'min': 5, 'max': 20, 'type': int},
-                'slow_period': {'min': 20, 'max': 50, 'type': int},
-                'signal_period': {'min': 5, 'max': 15, 'type': int}
+                "fast_period": {"min": 5, "max": 20, "type": int},
+                "slow_period": {"min": 20, "max": 50, "type": int},
+                "signal_period": {"min": 5, "max": 15, "type": int},
             },
             IndicatorType.BOLLINGER_BANDS: {
-                'period': {'min': 10, 'max': 50, 'type': int},
-                'std_dev': {'min': 1.0, 'max': 3.0, 'type': float}
+                "period": {"min": 10, "max": 50, "type": int},
+                "std_dev": {"min": 1.0, "max": 3.0, "type": float},
             },
             IndicatorType.STOCHASTIC: {
-                'k_period': {'min': 5, 'max': 30, 'type': int},
-                'd_period': {'min': 3, 'max': 10, 'type': int},
-                'overbought': {'min': 70, 'max': 95, 'type': int},
-                'oversold': {'min': 5, 'max': 30, 'type': int}
+                "k_period": {"min": 5, "max": 30, "type": int},
+                "d_period": {"min": 3, "max": 10, "type": int},
+                "overbought": {"min": 70, "max": 95, "type": int},
+                "oversold": {"min": 5, "max": 30, "type": int},
             },
             IndicatorType.MOVING_AVERAGE: {
-                'period': {'min': 5, 'max': 100, 'type': int},
-                'type': {'allowed_values': ['sma', 'ema', 'wma'], 'type': str}
+                "period": {"min": 5, "max": 100, "type": int},
+                "type": {"allowed_values": ["sma", "ema", "wma"], "type": str},
             },
-            IndicatorType.ATR: {
-                'period': {'min': 5, 'max': 30, 'type': int}
-            },
-            IndicatorType.VOLUME: {
-                'period': {'min': 5, 'max': 50, 'type': int}
-            },
+            IndicatorType.ATR: {"period": {"min": 5, "max": 30, "type": int}},
+            IndicatorType.VOLUME: {"period": {"min": 5, "max": 50, "type": int}},
             IndicatorType.PRICE_ACTION: {
-                'lookback': {'min': 3, 'max': 20, 'type': int}
-            }
+                "lookback": {"min": 3, "max": 20, "type": int}
+            },
         }
         return constraints.get(indicator_type, {})
 
@@ -334,51 +355,61 @@ class StrategyFactory:
         """Get parameter constraints for signal logic."""
         constraints = {
             SignalLogic.CROSSOVER: {
-                'fast_period': {'min': 5, 'max': 20, 'type': int},
-                'slow_period': {'min': 20, 'max': 50, 'type': int}
+                "fast_period": {"min": 5, "max": 20, "type": int},
+                "slow_period": {"min": 20, "max": 50, "type": int},
             },
             SignalLogic.THRESHOLD: {
-                'threshold': {'min': 0.1, 'max': 0.9, 'type': float},
-                'direction': {'allowed_values': ['above', 'below'], 'type': str}
+                "threshold": {"min": 0.1, "max": 0.9, "type": float},
+                "direction": {"allowed_values": ["above", "below"], "type": str},
             },
             SignalLogic.PATTERN: {
-                'pattern_type': {'allowed_values': ['double_bottom', 'double_top', 'head_shoulders'], 'type': str},
-                'tolerance': {'min': 0.01, 'max': 0.1, 'type': float}
+                "pattern_type": {
+                    "allowed_values": ["double_bottom", "double_top", "head_shoulders"],
+                    "type": str,
+                },
+                "tolerance": {"min": 0.01, "max": 0.1, "type": float},
             },
             SignalLogic.DIVERGENCE: {
-                'lookback': {'min': 5, 'max': 20, 'type': int},
-                'threshold': {'min': 0.05, 'max': 0.5, 'type': float}
+                "lookback": {"min": 5, "max": 20, "type": int},
+                "threshold": {"min": 0.05, "max": 0.5, "type": float},
             },
             SignalLogic.MOMENTUM: {
-                'period': {'min': 5, 'max': 30, 'type': int},
-                'threshold': {'min': 0.01, 'max': 0.1, 'type': float}
+                "period": {"min": 5, "max": 30, "type": int},
+                "threshold": {"min": 0.01, "max": 0.1, "type": float},
             },
             SignalLogic.MEAN_REVERSION: {
-                'mean_period': {'min': 10, 'max': 50, 'type': int},
-                'std_threshold': {'min': 1.0, 'max': 3.0, 'type': float}
-            }
+                "mean_period": {"min": 10, "max": 50, "type": int},
+                "std_threshold": {"min": 1.0, "max": 3.0, "type": float},
+            },
         }
         return constraints.get(signal_logic, {})
 
     @classmethod
-    def _get_generic_constraints(cls, component_type: StrategyComponent) -> Dict[str, Any]:
+    def _get_generic_constraints(
+        cls, component_type: StrategyComponent
+    ) -> Dict[str, Any]:
         """Get generic parameter constraints for component types."""
         constraints = {
             StrategyComponent.RISK_MANAGEMENT: {
-                'stop_loss': {'min': 0.005, 'max': 0.1, 'type': float},
-                'take_profit': {'min': 0.01, 'max': 0.2, 'type': float}
+                "stop_loss": {"min": 0.005, "max": 0.1, "type": float},
+                "take_profit": {"min": 0.01, "max": 0.2, "type": float},
             },
             StrategyComponent.TIMEFRAME: {
-                'timeframe': {'allowed_values': ['1m', '5m', '15m', '30m', '1h', '4h', '1d'], 'type': str}
+                "timeframe": {
+                    "allowed_values": ["1m", "5m", "15m", "30m", "1h", "4h", "1d"],
+                    "type": str,
+                }
             },
             StrategyComponent.FILTER: {
-                'volume_threshold': {'min': 0.1, 'max': 5.0, 'type': float}
-            }
+                "volume_threshold": {"min": 0.1, "max": 5.0, "type": float}
+            },
         }
         return constraints.get(component_type, {})
 
     @classmethod
-    def create_strategy_from_genome(cls, genome: StrategyGenome) -> Optional[BaseStrategy]:
+    def create_strategy_from_genome(
+        cls, genome: StrategyGenome
+    ) -> Optional[BaseStrategy]:
         """
         Create a strategy instance from a validated genome.
 
@@ -403,7 +434,7 @@ class StrategyFactory:
 
             # Get strategy class
             strategy_info = cls.STRATEGY_REGISTRY[strategy_type]
-            strategy_class = strategy_info['class']
+            strategy_class = strategy_info["class"]
 
             if strategy_class is None:
                 logger.error(f"Strategy class not registered for type: {strategy_type}")
@@ -414,19 +445,21 @@ class StrategyFactory:
 
             # Create strategy configuration
             strategy_config = {
-                'name': f'secure_generated_{strategy_type}_{id(genome)}',
-                'symbols': ['BTC/USDT'],  # Default, can be overridden
-                'timeframe': '1h',
-                'required_history': 100,
-                'params': strategy_params,
-                'genome_id': id(genome),  # For tracking
-                'strategy_type': strategy_type  # For audit trail
+                "name": f"secure_generated_{strategy_type}_{id(genome)}",
+                "symbols": ["BTC/USDT"],  # Default, can be overridden
+                "timeframe": "1h",
+                "required_history": 100,
+                "params": strategy_params,
+                "genome_id": id(genome),  # For tracking
+                "strategy_type": strategy_type,  # For audit trail
             }
 
             # Create and return strategy instance
             strategy_instance = strategy_class(strategy_config)
 
-            logger.info(f"Successfully created strategy of type '{strategy_type}' from genome")
+            logger.info(
+                f"Successfully created strategy of type '{strategy_type}' from genome"
+            )
             return strategy_instance
 
         except Exception as e:
@@ -446,30 +479,34 @@ class StrategyFactory:
         for gene in genome.genes:
             if gene.enabled:
                 component_type = gene.component_type.value
-                component_counts[component_type] = component_counts.get(component_type, 0) + 1
+                component_counts[component_type] = (
+                    component_counts.get(component_type, 0) + 1
+                )
 
         # Simple inference based on dominant components
-        if component_counts.get('indicator', 0) > 0:
+        if component_counts.get("indicator", 0) > 0:
             # Look for specific indicator types
             for gene in genome.genes:
                 if gene.enabled and gene.component_type == StrategyComponent.INDICATOR:
                     if gene.indicator_type == IndicatorType.RSI:
-                        return 'rsi_momentum'
+                        return "rsi_momentum"
                     elif gene.indicator_type == IndicatorType.MACD:
-                        return 'macd_crossover'
+                        return "macd_crossover"
                     elif gene.indicator_type == IndicatorType.BOLLINGER_BANDS:
-                        return 'bollinger_reversion'
+                        return "bollinger_reversion"
                     elif gene.indicator_type == IndicatorType.VOLUME:
-                        return 'volume_price'
+                        return "volume_price"
 
         # Default fallback
-        return 'rsi_momentum'  # Safe default
+        return "rsi_momentum"  # Safe default
 
     @classmethod
-    def _extract_strategy_parameters(cls, genome: StrategyGenome, strategy_type: str) -> Dict[str, Any]:
+    def _extract_strategy_parameters(
+        cls, genome: StrategyGenome, strategy_type: str
+    ) -> Dict[str, Any]:
         """Extract validated parameters for the strategy."""
         strategy_info = cls.STRATEGY_REGISTRY[strategy_type]
-        allowed_params = strategy_info['parameters']
+        allowed_params = strategy_info["parameters"]
 
         extracted_params = {}
 
@@ -488,23 +525,30 @@ class StrategyFactory:
         # Set defaults for missing parameters
         for param_name, constraint in allowed_params.items():
             if param_name not in extracted_params:
-                if 'default' in constraint:
-                    extracted_params[param_name] = constraint['default']
+                if "default" in constraint:
+                    extracted_params[param_name] = constraint["default"]
                 else:
                     # Use midpoint of range for numeric types
-                    if 'min' in constraint and 'max' in constraint:
-                        if constraint['type'] == int:
-                            extracted_params[param_name] = (constraint['min'] + constraint['max']) // 2
-                        elif constraint['type'] == float:
-                            extracted_params[param_name] = (constraint['min'] + constraint['max']) / 2.0
+                    if "min" in constraint and "max" in constraint:
+                        if constraint["type"] == int:
+                            extracted_params[param_name] = (
+                                constraint["min"] + constraint["max"]
+                            ) // 2
+                        elif constraint["type"] == float:
+                            extracted_params[param_name] = (
+                                constraint["min"] + constraint["max"]
+                            ) / 2.0
 
         return extracted_params
 
     @classmethod
     def get_available_strategies(cls) -> Dict[str, str]:
         """Get list of available strategy types and their descriptions."""
-        return {name: info['description'] for name, info in cls.STRATEGY_REGISTRY.items()
-                if info['class'] is not None}
+        return {
+            name: info["description"]
+            for name, info in cls.STRATEGY_REGISTRY.items()
+            if info["class"] is not None
+        }
 
     @classmethod
     def get_strategy_info(cls, strategy_type: str) -> Optional[Dict[str, Any]]:
@@ -514,11 +558,8 @@ class StrategyFactory:
 
         info = cls.STRATEGY_REGISTRY[strategy_type].copy()
         # Remove the class object from the returned info for security
-        info.pop('class', None)
+        info.pop("class", None)
         return info
-
-
-
 
 
 class BayesianOptimizer:
@@ -531,7 +572,9 @@ class BayesianOptimizer:
         self.is_trained = False
 
         if not SKLEARN_AVAILABLE:
-            logger.warning("Bayesian optimization disabled - scikit-learn not available")
+            logger.warning(
+                "Bayesian optimization disabled - scikit-learn not available"
+            )
 
     def add_observation(self, genome: StrategyGenome, fitness: float) -> None:
         """Add an observation to the training data."""
@@ -540,13 +583,13 @@ class BayesianOptimizer:
 
         # Convert genome to feature vector
         features = self._genome_to_features(genome)
-        self.observations.append({
-            'features': features,
-            'fitness': fitness,
-            'genome': genome
-        })
+        self.observations.append(
+            {"features": features, "fitness": fitness, "genome": genome}
+        )
 
-    def suggest_next_genome(self, population: List[StrategyGenome]) -> Optional[StrategyGenome]:
+    def suggest_next_genome(
+        self, population: List[StrategyGenome]
+    ) -> Optional[StrategyGenome]:
         """Suggest next genome to evaluate using acquisition function."""
         if not SKLEARN_AVAILABLE or len(self.observations) < 5:
             return None
@@ -566,7 +609,7 @@ class BayesianOptimizer:
 
             # Evaluate acquisition function
             best_candidate = None
-            best_acquisition = float('-inf')
+            best_acquisition = float("-inf")
 
             for candidate in candidates:
                 features = self._genome_to_features(candidate)
@@ -586,8 +629,8 @@ class BayesianOptimizer:
         if len(self.observations) < 2:
             return
 
-        X = np.array([obs['features'] for obs in self.observations])
-        y = np.array([obs['fitness'] for obs in self.observations])
+        X = np.array([obs["features"] for obs in self.observations])
+        y = np.array([obs["fitness"] for obs in self.observations])
 
         # Standardize features
         X_scaled = (X - np.mean(X, axis=0)) / (np.std(X, axis=0) + 1e-6)
@@ -595,9 +638,7 @@ class BayesianOptimizer:
         # Train GP model
         kernel = gp.kernels.ConstantKernel(1.0) * gp.kernels.RBF(1.0)
         self.gp_model = GaussianProcessRegressor(
-            kernel=kernel,
-            alpha=1e-6,
-            normalize_y=True
+            kernel=kernel, alpha=1e-6, normalize_y=True
         )
         self.gp_model.fit(X_scaled, y)
         self.is_trained = True
@@ -607,14 +648,15 @@ class BayesianOptimizer:
         if not self.is_trained or self.gp_model is None:
             return 0.0
 
-        features_scaled = (features - np.mean([obs['features'] for obs in self.observations], axis=0)) / \
-                         (np.std([obs['features'] for obs in self.observations], axis=0) + 1e-6)
+        features_scaled = (
+            features - np.mean([obs["features"] for obs in self.observations], axis=0)
+        ) / (np.std([obs["features"] for obs in self.observations], axis=0) + 1e-6)
 
         # Predict mean and std
         y_pred, y_std = self.gp_model.predict([features_scaled], return_std=True)
 
         # Current best fitness
-        best_fitness = max(obs['fitness'] for obs in self.observations)
+        best_fitness = max(obs["fitness"] for obs in self.observations)
 
         # Expected improvement
         improvement = y_pred[0] - best_fitness
@@ -631,7 +673,7 @@ class BayesianOptimizer:
 
     def _normal_pdf(self, x: float) -> float:
         """Probability density function of standard normal."""
-        return np.exp(-x**2 / 2) / np.sqrt(2 * np.pi)
+        return np.exp(-(x**2) / 2) / np.sqrt(2 * np.pi)
 
     def _genome_to_features(self, genome: StrategyGenome) -> np.ndarray:
         """Convert genome to feature vector for GP model."""
@@ -651,18 +693,22 @@ class BayesianOptimizer:
             avg_weight = total_weight / len(genome.genes)
             features.append(avg_weight)
 
-            enabled_ratio = sum(1 for g in genome.genes if g.enabled) / len(genome.genes)
+            enabled_ratio = sum(1 for g in genome.genes if g.enabled) / len(
+                genome.genes
+            )
             features.append(enabled_ratio)
         else:
             features.extend([1.0, 1.0])
 
         # Fitness and age
-        features.append(genome.fitness if genome.fitness != float('-inf') else -1000)
+        features.append(genome.fitness if genome.fitness != float("-inf") else -1000)
         features.append(genome.age)
 
         return np.array(features)
 
-    def _generate_candidate(self, population: List[StrategyGenome]) -> Optional[StrategyGenome]:
+    def _generate_candidate(
+        self, population: List[StrategyGenome]
+    ) -> Optional[StrategyGenome]:
         """Generate a candidate genome for evaluation."""
         if not population:
             return None
@@ -687,21 +733,24 @@ class DistributedEvaluator:
 
     def __init__(self, config: Dict[str, Any]):
         self.config = config
-        self.max_workers = config.get('max_workers', mp.cpu_count())
+        self.max_workers = config.get("max_workers", mp.cpu_count())
         self.executor = None
         self.evaluation_cache: Dict[str, float] = {}
 
     async def initialize(self) -> None:
         """Initialize the distributed evaluator."""
-        if self.config.get('use_processes', False):
+        if self.config.get("use_processes", False):
             self.executor = ProcessPoolExecutor(max_workers=self.max_workers)
         else:
             self.executor = ThreadPoolExecutor(max_workers=self.max_workers)
 
-        logger.info(f"Initialized distributed evaluator with {self.max_workers} workers")
+        logger.info(
+            f"Initialized distributed evaluator with {self.max_workers} workers"
+        )
 
-    async def evaluate_population(self, population: List[StrategyGenome],
-                                data: pd.DataFrame) -> List[Tuple[StrategyGenome, float]]:
+    async def evaluate_population(
+        self, population: List[StrategyGenome], data: pd.DataFrame
+    ) -> List[Tuple[StrategyGenome, float]]:
         """Evaluate fitness of a population in parallel."""
         if not population:
             return []
@@ -728,8 +777,8 @@ class DistributedEvaluator:
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
                     logger.error(f"Evaluation failed for genome {i}: {result}")
-                    population[i].fitness = float('-inf')
-                    evaluated_results.append((population[i], float('-inf')))
+                    population[i].fitness = float("-inf")
+                    evaluated_results.append((population[i], float("-inf")))
                 else:
                     genome, fitness = result
                     genome.fitness = fitness
@@ -748,7 +797,9 @@ class DistributedEvaluator:
 
         return evaluated_results
 
-    async def _evaluate_genome_async(self, genome: StrategyGenome, data: pd.DataFrame) -> Tuple[StrategyGenome, float]:
+    async def _evaluate_genome_async(
+        self, genome: StrategyGenome, data: pd.DataFrame
+    ) -> Tuple[StrategyGenome, float]:
         """Evaluate a single genome asynchronously."""
         loop = asyncio.get_event_loop()
         fitness = await loop.run_in_executor(
@@ -756,20 +807,22 @@ class DistributedEvaluator:
         )
         return genome, fitness
 
-    def _evaluate_genome_fitness_sync(self, genome: StrategyGenome, data: pd.DataFrame) -> float:
+    def _evaluate_genome_fitness_sync(
+        self, genome: StrategyGenome, data: pd.DataFrame
+    ) -> float:
         """Synchronous fitness evaluation for executor."""
         try:
             # Convert genome to strategy
             strategy = self._genome_to_strategy(genome)
 
             if strategy is None:
-                return float('-inf')
+                return float("-inf")
 
             # Run backtest
             equity_progression = self._run_backtest(strategy, data)
 
             if not equity_progression:
-                return float('-inf')
+                return float("-inf")
 
             # Calculate fitness
             metrics = compute_backtest_metrics(equity_progression)
@@ -779,22 +832,24 @@ class DistributedEvaluator:
 
         except Exception as e:
             logger.error(f"Genome evaluation failed: {e}")
-            return float('-inf')
+            return float("-inf")
 
-    async def _evaluate_genome_fitness(self, genome: StrategyGenome, data: pd.DataFrame) -> float:
+    async def _evaluate_genome_fitness(
+        self, genome: StrategyGenome, data: pd.DataFrame
+    ) -> float:
         """Evaluate fitness of a single genome."""
         try:
             # Convert genome to strategy
             strategy = self._genome_to_strategy(genome)
 
             if strategy is None:
-                return float('-inf')
+                return float("-inf")
 
             # Run backtest
             equity_progression = self._run_backtest(strategy, data)
 
             if not equity_progression:
-                return float('-inf')
+                return float("-inf")
 
             # Calculate fitness
             metrics = compute_backtest_metrics(equity_progression)
@@ -804,7 +859,7 @@ class DistributedEvaluator:
 
         except Exception as e:
             logger.error(f"Genome evaluation failed: {e}")
-            return float('-inf')
+            return float("-inf")
 
     def _genome_to_strategy(self, genome: StrategyGenome) -> Optional[BaseStrategy]:
         """Convert genome to executable strategy."""
@@ -831,22 +886,26 @@ class DistributedEvaluator:
                     for i in range(20, len(data)):
                         if random.random() < 0.1:  # 10% chance of signal
                             signal_type = "BUY" if random.random() < 0.5 else "SELL"
-                            signals.append({
-                                'timestamp': data.index[i],
-                                'signal_type': signal_type,
-                                'symbol': self.config.get('symbols', ['BTC/USDT'])[0],
-                                'price': data.iloc[i]['close'],
-                                'metadata': {'genome_id': id(genome)}
-                            })
+                            signals.append(
+                                {
+                                    "timestamp": data.index[i],
+                                    "signal_type": signal_type,
+                                    "symbol": self.config.get("symbols", ["BTC/USDT"])[
+                                        0
+                                    ],
+                                    "price": data.iloc[i]["close"],
+                                    "metadata": {"genome_id": id(genome)},
+                                }
+                            )
 
                     return signals
 
             strategy_config = {
-                'name': f'generated_{id(genome)}',
-                'symbols': ['BTC/USDT'],
-                'timeframe': '1h',
-                'required_history': 100,
-                'params': {}
+                "name": f"generated_{id(genome)}",
+                "symbols": ["BTC/USDT"],
+                "timeframe": "1h",
+                "required_history": 100,
+                "params": {},
             }
 
             return GeneratedStrategy(strategy_config)
@@ -855,7 +914,9 @@ class DistributedEvaluator:
             logger.error(f"Failed to convert genome to strategy: {e}")
             return None
 
-    def _run_backtest(self, strategy: BaseStrategy, data: pd.DataFrame) -> List[Dict[str, Any]]:
+    def _run_backtest(
+        self, strategy: BaseStrategy, data: pd.DataFrame
+    ) -> List[Dict[str, Any]]:
         """Run simplified backtest for strategy evaluation."""
         try:
             # Generate signals
@@ -876,13 +937,16 @@ class DistributedEvaluator:
                 current_equity += pnl
                 trade_count += 1
 
-                equity_progression.append({
-                    'trade_id': trade_count,
-                    'timestamp': signal['timestamp'],
-                    'equity': current_equity,
-                    'pnl': pnl,
-                    'cumulative_return': (current_equity - initial_equity) / initial_equity
-                })
+                equity_progression.append(
+                    {
+                        "trade_id": trade_count,
+                        "timestamp": signal["timestamp"],
+                        "equity": current_equity,
+                        "pnl": pnl,
+                        "cumulative_return": (current_equity - initial_equity)
+                        / initial_equity,
+                    }
+                )
 
             return equity_progression
 
@@ -893,25 +957,25 @@ class DistributedEvaluator:
     def _calculate_fitness_score(self, metrics: Dict[str, Any]) -> float:
         """Calculate composite fitness score."""
         if not metrics:
-            return float('-inf')
+            return float("-inf")
 
         # Multi-objective fitness
         score = 0.0
 
         # Sharpe ratio (primary metric)
-        sharpe = metrics.get('sharpe_ratio', 0)
+        sharpe = metrics.get("sharpe_ratio", 0)
         score += sharpe * 1.0
 
         # Total return
-        total_return = metrics.get('total_return', 0)
+        total_return = metrics.get("total_return", 0)
         score += total_return * 0.5
 
         # Win rate
-        win_rate = metrics.get('win_rate', 0)
+        win_rate = metrics.get("win_rate", 0)
         score += win_rate * 0.3
 
         # Penalize drawdown
-        max_drawdown = metrics.get('max_drawdown', 0)
+        max_drawdown = metrics.get("max_drawdown", 0)
         score -= max_drawdown * 0.2
 
         # Complexity penalty (simplified)
@@ -929,22 +993,28 @@ class DistributedEvaluator:
     def get_worker_status(self) -> Dict[str, Any]:
         """Get status of workers in the distributed evaluator."""
         status = {
-            'max_workers': self.max_workers,
-            'active_workers': 0,
-            'executor_type': 'ProcessPoolExecutor' if self.config.get('use_processes', False) else 'ThreadPoolExecutor',
-            'cache_size': len(self.evaluation_cache),
-            'is_initialized': self.executor is not None
+            "max_workers": self.max_workers,
+            "active_workers": 0,
+            "executor_type": "ProcessPoolExecutor"
+            if self.config.get("use_processes", False)
+            else "ThreadPoolExecutor",
+            "cache_size": len(self.evaluation_cache),
+            "is_initialized": self.executor is not None,
         }
 
         if self.executor:
             # Try to get active thread/process count
             try:
-                if hasattr(self.executor, '_threads'):
-                    status['active_workers'] = len([t for t in self.executor._threads if t.is_alive()])
-                elif hasattr(self.executor, '_processes'):
-                    status['active_workers'] = len([p for p in self.executor._processes.values() if p.is_alive()])
+                if hasattr(self.executor, "_threads"):
+                    status["active_workers"] = len(
+                        [t for t in self.executor._threads if t.is_alive()]
+                    )
+                elif hasattr(self.executor, "_processes"):
+                    status["active_workers"] = len(
+                        [p for p in self.executor._processes.values() if p.is_alive()]
+                    )
             except Exception:
-                status['active_workers'] = 0
+                status["active_workers"] = 0
 
         return status
 
@@ -986,16 +1056,16 @@ class StrategyGenerator(BaseOptimizer):
         super().__init__(config)
 
         # Core configuration
-        self.population_size = config.get('population_size', 50)
-        self.generations = config.get('generations', 20)
-        self.mutation_rate = config.get('mutation_rate', 0.1)
-        self.crossover_rate = config.get('crossover_rate', 0.7)
-        self.speciation_threshold = config.get('speciation_threshold', 0.3)
-        self.elitism_rate = config.get('elitism_rate', 0.1)
+        self.population_size = config.get("population_size", 50)
+        self.generations = config.get("generations", 20)
+        self.mutation_rate = config.get("mutation_rate", 0.1)
+        self.crossover_rate = config.get("crossover_rate", 0.7)
+        self.speciation_threshold = config.get("speciation_threshold", 0.3)
+        self.elitism_rate = config.get("elitism_rate", 0.1)
 
         # Advanced features
-        self.bayesian_enabled = config.get('bayesian_enabled', True)
-        self.distributed_enabled = config.get('distributed_enabled', True)
+        self.bayesian_enabled = config.get("bayesian_enabled", True)
+        self.distributed_enabled = config.get("distributed_enabled", True)
 
         # Population and species
         self.population: List[StrategyGenome] = []
@@ -1004,8 +1074,12 @@ class StrategyGenerator(BaseOptimizer):
         self.current_generation: int = 0
 
         # Optimization components
-        self.bayesian_optimizer = BayesianOptimizer(config) if self.bayesian_enabled else None
-        self.distributed_evaluator = DistributedEvaluator(config) if self.distributed_enabled else None
+        self.bayesian_optimizer = (
+            BayesianOptimizer(config) if self.bayesian_enabled else None
+        )
+        self.distributed_evaluator = (
+            DistributedEvaluator(config) if self.distributed_enabled else None
+        )
 
         # Statistics
         self.generation_stats: List[Dict[str, Any]] = []
@@ -1045,7 +1119,9 @@ class StrategyGenerator(BaseOptimizer):
         finally:
             loop.close()
 
-    async def _optimize_async(self, strategy_class, data: pd.DataFrame) -> Dict[str, Any]:
+    async def _optimize_async(
+        self, strategy_class, data: pd.DataFrame
+    ) -> Dict[str, Any]:
         """Async implementation of optimization."""
         start_time = datetime.now()
 
@@ -1070,7 +1146,9 @@ class StrategyGenerator(BaseOptimizer):
 
             # Bayesian optimization (if enabled)
             if self.bayesian_optimizer and generation > 2:
-                bayesian_candidate = self.bayesian_optimizer.suggest_next_genome(self.population)
+                bayesian_candidate = self.bayesian_optimizer.suggest_next_genome(
+                    self.population
+                )
                 if bayesian_candidate:
                     self.population.append(bayesian_candidate)
 
@@ -1086,23 +1164,27 @@ class StrategyGenerator(BaseOptimizer):
             # Update Bayesian optimizer with observations
             if self.bayesian_optimizer:
                 for genome in self.population:
-                    if genome.fitness != float('-inf'):
+                    if genome.fitness != float("-inf"):
                         self.bayesian_optimizer.add_observation(genome, genome.fitness)
 
         # Finalize optimization
         optimization_time = (datetime.now() - start_time).total_seconds()
-        self.config['optimization_time'] = optimization_time
+        self.config["optimization_time"] = optimization_time
 
         logger.info(".2f")
-        logger.info(f"Best fitness: {self.best_genome.fitness:.4f}" if self.best_genome else "No best genome found")
+        logger.info(
+            f"Best fitness: {self.best_genome.fitness:.4f}"
+            if self.best_genome
+            else "No best genome found"
+        )
 
         # Return best strategy
         if self.best_genome:
             return {
-                'genome': self.best_genome.to_dict(),
-                'fitness': self.best_genome.fitness,
-                'generation': self.best_genome.generation,
-                'species_id': self.best_genome.species_id
+                "genome": self.best_genome.to_dict(),
+                "fitness": self.best_genome.fitness,
+                "generation": self.best_genome.generation,
+                "species_id": self.best_genome.species_id,
             }
 
         return {}
@@ -1117,7 +1199,9 @@ class StrategyGenerator(BaseOptimizer):
             genome.age = 0
             self.population.append(genome)
 
-        logger.info(f"Initialized population with {len(self.population)} diverse genomes")
+        logger.info(
+            f"Initialized population with {len(self.population)} diverse genomes"
+        )
 
     def _create_random_genome(self) -> StrategyGenome:
         """Create a random genome."""
@@ -1133,16 +1217,21 @@ class StrategyGenerator(BaseOptimizer):
 
             if component_type == StrategyComponent.INDICATOR:
                 gene.indicator_type = random.choice(list(IndicatorType))
-                gene.parameters = genome._get_default_indicator_params(gene.indicator_type)
+                gene.parameters = genome._get_default_indicator_params(
+                    gene.indicator_type
+                )
             elif component_type == StrategyComponent.SIGNAL_LOGIC:
                 gene.signal_logic = random.choice(list(SignalLogic))
                 gene.parameters = genome._get_default_signal_params(gene.signal_logic)
             elif component_type == StrategyComponent.RISK_MANAGEMENT:
-                gene.parameters = {'stop_loss': random.uniform(0.01, 0.05), 'take_profit': random.uniform(0.02, 0.1)}
+                gene.parameters = {
+                    "stop_loss": random.uniform(0.01, 0.05),
+                    "take_profit": random.uniform(0.02, 0.1),
+                }
             elif component_type == StrategyComponent.TIMEFRAME:
-                gene.parameters = {'timeframe': random.choice(['15m', '1h', '4h'])}
+                gene.parameters = {"timeframe": random.choice(["15m", "1h", "4h"])}
             elif component_type == StrategyComponent.FILTER:
-                gene.parameters = {'volume_threshold': random.uniform(0.5, 2.0)}
+                gene.parameters = {"volume_threshold": random.uniform(0.5, 2.0)}
 
             genome.genes.append(gene)
 
@@ -1152,30 +1241,34 @@ class StrategyGenerator(BaseOptimizer):
         """Evaluate fitness of the current population."""
         if self.distributed_evaluator:
             # Distributed evaluation
-            results = await self.distributed_evaluator.evaluate_population(self.population, data)
+            results = await self.distributed_evaluator.evaluate_population(
+                self.population, data
+            )
             for genome, fitness in results:
                 genome.fitness = fitness
         else:
             # Sequential evaluation
             for genome in self.population:
-                if genome.fitness == float('-inf'):
+                if genome.fitness == float("-inf"):
                     fitness = await self._evaluate_genome_fitness(genome, data)
                     genome.fitness = fitness
 
-    async def _evaluate_genome_fitness(self, genome: StrategyGenome, data: pd.DataFrame) -> float:
+    async def _evaluate_genome_fitness(
+        self, genome: StrategyGenome, data: pd.DataFrame
+    ) -> float:
         """Evaluate fitness of a single genome."""
         try:
             # Convert genome to strategy
             strategy = self._genome_to_strategy(genome)
 
             if strategy is None:
-                return float('-inf')
+                return float("-inf")
 
             # Run backtest
             equity_progression = self._run_backtest(strategy, data)
 
             if not equity_progression:
-                return float('-inf')
+                return float("-inf")
 
             # Calculate fitness
             metrics = compute_backtest_metrics(equity_progression)
@@ -1185,7 +1278,7 @@ class StrategyGenerator(BaseOptimizer):
 
         except Exception as e:
             logger.error(f"Genome evaluation failed: {e}")
-            return float('-inf')
+            return float("-inf")
 
     def _genome_to_strategy(self, genome: StrategyGenome) -> Optional[BaseStrategy]:
         """
@@ -1211,14 +1304,14 @@ class StrategyGenerator(BaseOptimizer):
                 raise StrategyGenerationError(
                     "Genome cannot be None",
                     error_type="invalid_input",
-                    genome_info={"genome_provided": False}
+                    genome_info={"genome_provided": False},
                 )
 
             if not genome.genes:
                 raise StrategyGenerationError(
                     "Genome has no genes - cannot create strategy",
                     error_type="empty_genome",
-                    genome_info={"gene_count": 0, "generation": genome.generation}
+                    genome_info={"gene_count": 0, "generation": genome.generation},
                 )
 
             # Log genome information for debugging
@@ -1226,7 +1319,7 @@ class StrategyGenerator(BaseOptimizer):
                 "gene_count": len(genome.genes),
                 "generation": genome.generation,
                 "fitness": genome.fitness,
-                "enabled_genes": sum(1 for g in genome.genes if g.enabled)
+                "enabled_genes": sum(1 for g in genome.genes if g.enabled),
             }
             logger.debug(f"Attempting to convert genome to strategy: {genome_info}")
 
@@ -1242,24 +1335,26 @@ class StrategyGenerator(BaseOptimizer):
                         f"Genome validation failed: {validation_errors}",
                         error_type="validation_failed",
                         genome_info=genome_info,
-                        cause=ValueError(f"Validation errors: {validation_errors}")
+                        cause=ValueError(f"Validation errors: {validation_errors}"),
                     )
                 else:
                     raise StrategyGenerationError(
                         "StrategyFactory returned None despite valid genome",
                         error_type="factory_error",
-                        genome_info=genome_info
+                        genome_info=genome_info,
                     )
 
             # Validate the created strategy
-            if not hasattr(strategy, 'generate_signals'):
+            if not hasattr(strategy, "generate_signals"):
                 raise StrategyGenerationError(
                     "Created strategy missing required generate_signals method",
                     error_type="invalid_strategy",
-                    genome_info=genome_info
+                    genome_info=genome_info,
                 )
 
-            logger.debug(f"Successfully created strategy from genome using factory pattern")
+            logger.debug(
+                "Successfully created strategy from genome using factory pattern"
+            )
             return strategy
 
         except StrategyGenerationError:
@@ -1268,12 +1363,14 @@ class StrategyGenerator(BaseOptimizer):
 
         except ValueError as e:
             logger.error(f"Value error in genome conversion: {str(e)}")
-            logger.error(f"Genome info: {genome_info if 'genome_info' in locals() else 'N/A'}")
+            logger.error(
+                f"Genome info: {genome_info if 'genome_info' in locals() else 'N/A'}"
+            )
             raise StrategyGenerationError(
                 f"Invalid genome data: {str(e)}",
                 error_type="value_error",
-                genome_info=genome_info if 'genome_info' in locals() else {},
-                cause=e
+                genome_info=genome_info if "genome_info" in locals() else {},
+                cause=e,
             ) from e
 
         except ImportError as e:
@@ -1281,8 +1378,8 @@ class StrategyGenerator(BaseOptimizer):
             raise StrategyGenerationError(
                 f"Required module not available: {str(e)}",
                 error_type="import_error",
-                genome_info=genome_info if 'genome_info' in locals() else {},
-                cause=e
+                genome_info=genome_info if "genome_info" in locals() else {},
+                cause=e,
             ) from e
 
         except RuntimeError as e:
@@ -1290,23 +1387,26 @@ class StrategyGenerator(BaseOptimizer):
             raise StrategyGenerationError(
                 f"Strategy creation failed: {str(e)}",
                 error_type="runtime_error",
-                genome_info=genome_info if 'genome_info' in locals() else {},
-                cause=e
+                genome_info=genome_info if "genome_info" in locals() else {},
+                cause=e,
             ) from e
 
         except Exception as e:
             logger.error(f"Unexpected error in genome conversion: {str(e)}")
             logger.error(f"Error type: {type(e).__name__}")
             import traceback
+
             logger.error(f"Stack trace: {traceback.format_exc()}")
             raise StrategyGenerationError(
                 f"Unexpected error during genome conversion: {str(e)}",
                 error_type="unexpected_error",
-                genome_info=genome_info if 'genome_info' in locals() else {},
-                cause=e
+                genome_info=genome_info if "genome_info" in locals() else {},
+                cause=e,
             ) from e
 
-    def _run_backtest(self, strategy: BaseStrategy, data: pd.DataFrame) -> List[Dict[str, Any]]:
+    def _run_backtest(
+        self, strategy: BaseStrategy, data: pd.DataFrame
+    ) -> List[Dict[str, Any]]:
         """Run simplified backtest."""
         try:
             signals = strategy.generate_signals(data)
@@ -1324,13 +1424,16 @@ class StrategyGenerator(BaseOptimizer):
                 current_equity += pnl
                 trade_count += 1
 
-                equity_progression.append({
-                    'trade_id': trade_count,
-                    'timestamp': signal['timestamp'],
-                    'equity': current_equity,
-                    'pnl': pnl,
-                    'cumulative_return': (current_equity - initial_equity) / initial_equity
-                })
+                equity_progression.append(
+                    {
+                        "trade_id": trade_count,
+                        "timestamp": signal["timestamp"],
+                        "equity": current_equity,
+                        "pnl": pnl,
+                        "cumulative_return": (current_equity - initial_equity)
+                        / initial_equity,
+                    }
+                )
 
             return equity_progression
 
@@ -1341,15 +1444,15 @@ class StrategyGenerator(BaseOptimizer):
     def _calculate_fitness_score(self, metrics: Dict[str, Any]) -> float:
         """Calculate composite fitness score."""
         if not metrics:
-            return float('-inf')
+            return float("-inf")
 
         score = 0.0
 
         # Multi-objective scoring
-        score += metrics.get('sharpe_ratio', 0) * 1.0
-        score += metrics.get('total_return', 0) * 0.5
-        score += metrics.get('win_rate', 0) * 0.3
-        score -= metrics.get('max_drawdown', 0) * 0.2
+        score += metrics.get("sharpe_ratio", 0) * 1.0
+        score += metrics.get("total_return", 0) * 0.5
+        score += metrics.get("win_rate", 0) * 0.3
+        score -= metrics.get("max_drawdown", 0) * 0.2
 
         return score
 
@@ -1374,14 +1477,14 @@ class StrategyGenerator(BaseOptimizer):
         for species_id, members in species_dict.items():
             if len(members) > 1:
                 species = Species(
-                    species_id=species_id,
-                    representative=members[0],
-                    members=members
+                    species_id=species_id, representative=members[0], members=members
                 )
                 species.update_representative()
                 self.species.append(species)
 
-        logger.debug(f"Formed {len(self.species)} species from {len(self.population)} genomes")
+        logger.debug(
+            f"Formed {len(self.species)} species from {len(self.population)} genomes"
+        )
 
     async def _create_next_generation(self) -> None:
         """Create the next generation through selection, crossover, and mutation."""
@@ -1392,7 +1495,9 @@ class StrategyGenerator(BaseOptimizer):
 
         # Elitism
         elite_count = max(1, int(len(self.population) * self.elitism_rate))
-        sorted_population = sorted(self.population, key=lambda g: g.fitness, reverse=True)
+        sorted_population = sorted(
+            self.population, key=lambda g: g.fitness, reverse=True
+        )
         new_population.extend(sorted_population[:elite_count])
 
         # Fill rest through reproduction
@@ -1418,7 +1523,7 @@ class StrategyGenerator(BaseOptimizer):
             new_population.extend([child1, child2])
 
         # Trim to population size
-        self.population = new_population[:self.population_size]
+        self.population = new_population[: self.population_size]
 
     def _tournament_selection(self) -> StrategyGenome:
         """Tournament selection for parent selection."""
@@ -1440,7 +1545,9 @@ class StrategyGenerator(BaseOptimizer):
         if not self.population:
             return
 
-        fitness_values = [g.fitness for g in self.population if g.fitness != float('-inf')]
+        fitness_values = [
+            g.fitness for g in self.population if g.fitness != float("-inf")
+        ]
 
         if fitness_values:
             best_fitness = max(fitness_values)
@@ -1456,14 +1563,16 @@ class StrategyGenerator(BaseOptimizer):
             )
 
             # Store generation data
-            self.generation_stats.append({
-                'generation': generation,
-                'best_fitness': best_fitness,
-                'avg_fitness': avg_fitness,
-                'std_fitness': std_fitness,
-                'population_size': len(self.population),
-                'species_count': len(self.species)
-            })
+            self.generation_stats.append(
+                {
+                    "generation": generation,
+                    "best_fitness": best_fitness,
+                    "avg_fitness": avg_fitness,
+                    "std_fitness": std_fitness,
+                    "population_size": len(self.population),
+                    "species_count": len(self.species),
+                }
+            )
 
     def get_generation_stats(self) -> List[Dict[str, Any]]:
         """Get generation statistics."""
@@ -1473,30 +1582,32 @@ class StrategyGenerator(BaseOptimizer):
         """Get information about current species."""
         species_info = []
         for species in self.species:
-            species_info.append({
-                'species_id': species.species_id,
-                'member_count': len(species.members),
-                'best_fitness': species.representative.fitness,
-                'diversity_score': species.calculate_diversity_score(),
-                'stagnation_counter': species.stagnation_counter
-            })
+            species_info.append(
+                {
+                    "species_id": species.species_id,
+                    "member_count": len(species.members),
+                    "best_fitness": species.representative.fitness,
+                    "diversity_score": species.calculate_diversity_score(),
+                    "stagnation_counter": species.stagnation_counter,
+                }
+            )
         return species_info
 
     def save_population(self) -> None:
         """Save current population to disk using model_path."""
-        model_path = self.config.get('model_path', 'models/strategy_generator')
+        model_path = self.config.get("model_path", "models/strategy_generator")
         path = f"{model_path}/population.json"
 
         population_data = {
-            'timestamp': datetime.now().isoformat(),
-            'population': [genome.to_dict() for genome in self.population],
-            'best_genome': self.best_genome.to_dict() if self.best_genome else None,
-            'generation_stats': self.generation_stats,
-            'config': self.config
+            "timestamp": datetime.now().isoformat(),
+            "population": [genome.to_dict() for genome in self.population],
+            "best_genome": self.best_genome.to_dict() if self.best_genome else None,
+            "generation_stats": self.generation_stats,
+            "config": self.config,
         }
 
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             json.dump(population_data, f, indent=2, default=str)
 
         logger.info(f"Population saved to {path}")
@@ -1504,25 +1615,29 @@ class StrategyGenerator(BaseOptimizer):
     def load_population(self, path: Optional[str] = None) -> None:
         """Load population from disk."""
         if path is None:
-            model_path = self.config.get('model_path', 'models/strategy_generator')
+            model_path = self.config.get("model_path", "models/strategy_generator")
             path = f"{model_path}/population.json"
 
         if not Path(path).exists():
             logger.warning(f"Population file not found: {path}")
             return
 
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             data = json.load(f)
 
-        self.population = [StrategyGenome.from_dict(g) for g in data.get('population', [])]
-        if data.get('best_genome'):
-            self.best_genome = StrategyGenome.from_dict(data['best_genome'])
+        self.population = [
+            StrategyGenome.from_dict(g) for g in data.get("population", [])
+        ]
+        if data.get("best_genome"):
+            self.best_genome = StrategyGenome.from_dict(data["best_genome"])
 
-        self.generation_stats = data.get('generation_stats', [])
+        self.generation_stats = data.get("generation_stats", [])
 
         logger.info(f"Population loaded from {path}")
 
-    async def generate_strategy(self, genome: StrategyGenome, name: str) -> Optional[BaseStrategy]:
+    async def generate_strategy(
+        self, genome: StrategyGenome, name: str
+    ) -> Optional[BaseStrategy]:
         """
         Generate a strategy instance from a genome using secure factory pattern.
 
@@ -1546,10 +1661,12 @@ class StrategyGenerator(BaseOptimizer):
                 return None
 
             # Update strategy name if provided
-            if hasattr(strategy, 'config') and strategy.config:
-                strategy.config['name'] = name
+            if hasattr(strategy, "config") and strategy.config:
+                strategy.config["name"] = name
 
-            logger.info(f"Successfully generated strategy '{name}' from genome using secure factory")
+            logger.info(
+                f"Successfully generated strategy '{name}' from genome using secure factory"
+            )
             return strategy
 
         except Exception as e:
@@ -1563,14 +1680,16 @@ class StrategyGenerator(BaseOptimizer):
 
         # Evaluate current population
         # For now, use dummy data - in practice this would be passed in
-        dummy_data = pd.DataFrame({
-            'timestamp': pd.date_range('2023-01-01', periods=100, freq='1h'),
-            'open': np.random.uniform(100, 110, 100),
-            'high': np.random.uniform(105, 115, 100),
-            'low': np.random.uniform(95, 105, 100),
-            'close': np.random.uniform(100, 110, 100),
-            'volume': np.random.uniform(1000, 10000, 100)
-        })
+        dummy_data = pd.DataFrame(
+            {
+                "timestamp": pd.date_range("2023-01-01", periods=100, freq="1h"),
+                "open": np.random.uniform(100, 110, 100),
+                "high": np.random.uniform(105, 115, 100),
+                "low": np.random.uniform(95, 105, 100),
+                "close": np.random.uniform(100, 110, 100),
+                "volume": np.random.uniform(1000, 10000, 100),
+            }
+        )
 
         await self._evaluate_population(dummy_data)
         await self._create_next_generation()
@@ -1578,7 +1697,9 @@ class StrategyGenerator(BaseOptimizer):
         self.current_generation += 1
 
     @staticmethod
-    async def calculate_fitness(genome: StrategyGenome, market_data: pd.DataFrame) -> float:
+    async def calculate_fitness(
+        genome: StrategyGenome, market_data: pd.DataFrame
+    ) -> float:
         """Calculate fitness for a genome using direct evaluation."""
         try:
             # Simple fitness based on genome complexity and market data
@@ -1586,15 +1707,17 @@ class StrategyGenerator(BaseOptimizer):
 
             # Add some market-based variation
             if not market_data.empty:
-                volatility = market_data['close'].pct_change().std()
+                volatility = market_data["close"].pct_change().std()
                 base_fitness += volatility * 10  # Reward strategies in volatile markets
 
             return base_fitness
         except Exception:
-            return float('-inf')
+            return float("-inf")
 
     @staticmethod
-    async def calculate_fitness_with_backtest(genome: StrategyGenome, market_data: pd.DataFrame, backtester) -> float:
+    async def calculate_fitness_with_backtest(
+        genome: StrategyGenome, market_data: pd.DataFrame, backtester
+    ) -> float:
         """Calculate fitness using backtesting."""
         try:
             # Run actual backtest
@@ -1602,30 +1725,30 @@ class StrategyGenerator(BaseOptimizer):
 
             return StrategyGenerator.calculate_multi_objective_fitness(results)
         except Exception:
-            return float('-inf')
+            return float("-inf")
 
     @staticmethod
     def calculate_multi_objective_fitness(results: Dict[str, Any]) -> float:
         """Calculate multi-objective fitness from backtest results."""
         if not results:
-            return float('-inf')
+            return float("-inf")
 
         score = 0.0
 
         # Sharpe ratio (primary metric)
-        sharpe = results.get('sharpe_ratio', 0)
+        sharpe = results.get("sharpe_ratio", 0)
         score += sharpe * 1.0
 
         # Total return
-        total_return = results.get('total_return', 0)
+        total_return = results.get("total_return", 0)
         score += total_return * 0.5
 
         # Win rate
-        win_rate = results.get('win_rate', 0)
+        win_rate = results.get("win_rate", 0)
         score += win_rate * 0.3
 
         # Penalize drawdown
-        max_drawdown = results.get('max_drawdown', 0)
+        max_drawdown = results.get("max_drawdown", 0)
         score -= max_drawdown * 0.2
 
         return score
@@ -1634,11 +1757,11 @@ class StrategyGenerator(BaseOptimizer):
     def calculate_risk_adjusted_fitness(results: Dict[str, Any]) -> float:
         """Calculate risk-adjusted fitness."""
         if not results:
-            return float('-inf')
+            return float("-inf")
 
-        sharpe = results.get('sharpe_ratio', 0)
-        total_return = results.get('total_return', 0)
-        max_drawdown = results.get('max_drawdown', 0)
+        sharpe = results.get("sharpe_ratio", 0)
+        total_return = results.get("total_return", 0)
+        max_drawdown = results.get("max_drawdown", 0)
 
         # Risk-adjusted return
         if max_drawdown > 0:
@@ -1649,7 +1772,9 @@ class StrategyGenerator(BaseOptimizer):
         # Combine with Sharpe
         return sharpe * 0.7 + risk_adjusted_return * 0.3
 
-    async def evaluate_population_fitness_parallel(self, population: List[StrategyGenome], fitness_func) -> List[float]:
+    async def evaluate_population_fitness_parallel(
+        self, population: List[StrategyGenome], fitness_func
+    ) -> List[float]:
         """Evaluate population fitness in parallel."""
         if not population:
             return []
@@ -1666,7 +1791,7 @@ class StrategyGenerator(BaseOptimizer):
         fitness_scores = []
         for result in results:
             if isinstance(result, Exception):
-                fitness_scores.append(float('-inf'))
+                fitness_scores.append(float("-inf"))
             else:
                 fitness_scores.append(result)
 
@@ -1682,21 +1807,27 @@ class StrategyGenerator(BaseOptimizer):
     def get_strategy_generator_summary(self) -> Dict[str, Any]:
         """Get comprehensive summary of the strategy generation process."""
         return {
-            'optimizer_type': 'Hybrid AI Strategy Generator',
-            'population_size': len(self.population),
-            'generations_completed': len(self.generation_stats),
-            'best_fitness': self.best_genome.fitness if self.best_genome else None,
-            'species_count': len(self.species),
-            'bayesian_enabled': self.bayesian_enabled,
-            'distributed_enabled': self.distributed_enabled,
-            'total_evaluations': sum(len(p) for p in [self.population]) if self.population else 0,
-            'generation_stats': self.generation_stats[-5:] if self.generation_stats else [],  # Last 5 generations
-            'species_info': self.get_species_info()
+            "optimizer_type": "Hybrid AI Strategy Generator",
+            "population_size": len(self.population),
+            "generations_completed": len(self.generation_stats),
+            "best_fitness": self.best_genome.fitness if self.best_genome else None,
+            "species_count": len(self.species),
+            "bayesian_enabled": self.bayesian_enabled,
+            "distributed_enabled": self.distributed_enabled,
+            "total_evaluations": sum(len(p) for p in [self.population])
+            if self.population
+            else 0,
+            "generation_stats": self.generation_stats[-5:]
+            if self.generation_stats
+            else [],  # Last 5 generations
+            "species_info": self.get_species_info(),
         }
 
 
 # Convenience functions
-async def create_strategy_generator(config: Optional[Dict[str, Any]] = None) -> StrategyGenerator:
+async def create_strategy_generator(
+    config: Optional[Dict[str, Any]] = None
+) -> StrategyGenerator:
     """
     Create and initialize a strategy generator instance.
 
@@ -1707,16 +1838,16 @@ async def create_strategy_generator(config: Optional[Dict[str, Any]] = None) -> 
         Initialized StrategyGenerator instance
     """
     default_config = {
-        'population_size': 50,
-        'generations': 20,
-        'mutation_rate': 0.1,
-        'crossover_rate': 0.7,
-        'elitism_rate': 0.1,
-        'speciation_threshold': 0.3,
-        'bayesian_enabled': True,
-        'distributed_enabled': True,
-        'max_workers': mp.cpu_count(),
-        'use_processes': False
+        "population_size": 50,
+        "generations": 20,
+        "mutation_rate": 0.1,
+        "crossover_rate": 0.7,
+        "elitism_rate": 0.1,
+        "speciation_threshold": 0.3,
+        "bayesian_enabled": True,
+        "distributed_enabled": True,
+        "max_workers": mp.cpu_count(),
+        "use_processes": False,
     }
 
     merged_config = {**default_config, **(config or {})}
@@ -1726,7 +1857,9 @@ async def create_strategy_generator(config: Optional[Dict[str, Any]] = None) -> 
     return generator
 
 
-def get_strategy_generator(config: Optional[Dict[str, Any]] = None) -> StrategyGenerator:
+def get_strategy_generator(
+    config: Optional[Dict[str, Any]] = None
+) -> StrategyGenerator:
     """
     Get a strategy generator instance (synchronous wrapper).
 
@@ -1739,16 +1872,16 @@ def get_strategy_generator(config: Optional[Dict[str, Any]] = None) -> StrategyG
     # Note: This returns an uninitialized instance
     # For async initialization, use create_strategy_generator
     default_config = {
-        'population_size': 50,
-        'generations': 20,
-        'mutation_rate': 0.1,
-        'crossover_rate': 0.7,
-        'elitism_rate': 0.1,
-        'speciation_threshold': 0.3,
-        'bayesian_enabled': True,
-        'distributed_enabled': True,
-        'max_workers': mp.cpu_count(),
-        'use_processes': False
+        "population_size": 50,
+        "generations": 20,
+        "mutation_rate": 0.1,
+        "crossover_rate": 0.7,
+        "elitism_rate": 0.1,
+        "speciation_threshold": 0.3,
+        "bayesian_enabled": True,
+        "distributed_enabled": True,
+        "max_workers": mp.cpu_count(),
+        "use_processes": False,
     }
 
     merged_config = {**default_config, **(config or {})}
@@ -1762,18 +1895,20 @@ def _register_strategy_generator():
         from .optimizer_factory import OptimizerFactory
 
         # Add strategy generator to registry
-        OptimizerFactory.OPTIMIZER_REGISTRY.update({
-            'strategy_generator': StrategyGenerator,
-            'ai_strategy': StrategyGenerator,
-            'hybrid_ai': StrategyGenerator
-        })
+        OptimizerFactory.OPTIMIZER_REGISTRY.update(
+            {
+                "strategy_generator": StrategyGenerator,
+                "ai_strategy": StrategyGenerator,
+                "hybrid_ai": StrategyGenerator,
+            }
+        )
 
         # Update available optimizers
         OptimizerFactory._get_available_optimizers = lambda: {
             **OptimizerFactory.get_available_optimizers(),
-            'strategy_generator': 'Hybrid AI Strategy Generator - Evolutionary strategy discovery',
-            'ai_strategy': 'Hybrid AI Strategy Generator - Evolutionary strategy discovery',
-            'hybrid_ai': 'Hybrid AI Strategy Generator - Evolutionary strategy discovery'
+            "strategy_generator": "Hybrid AI Strategy Generator - Evolutionary strategy discovery",
+            "ai_strategy": "Hybrid AI Strategy Generator - Evolutionary strategy discovery",
+            "hybrid_ai": "Hybrid AI Strategy Generator - Evolutionary strategy discovery",
         }
 
     except ImportError:
@@ -1781,8 +1916,10 @@ def _register_strategy_generator():
 
 
 # Initialize strategy registry with actual classes
-StrategyFactory.STRATEGY_REGISTRY['rsi_momentum']['class'] = RSIStrategy
-StrategyFactory.STRATEGY_REGISTRY['bollinger_reversion']['class'] = BollingerReversionStrategy
+StrategyFactory.STRATEGY_REGISTRY["rsi_momentum"]["class"] = RSIStrategy
+StrategyFactory.STRATEGY_REGISTRY["bollinger_reversion"][
+    "class"
+] = BollingerReversionStrategy
 
 # Register on import
 _register_strategy_generator()

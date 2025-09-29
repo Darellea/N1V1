@@ -14,24 +14,31 @@ Key Features:
 - Comprehensive logging and reporting
 """
 
-import numpy as np
-import pandas as pd
-from typing import Dict, List, Any, Optional, Tuple, Callable, Union, Iterator, Generator
-from abc import ABC, abstractmethod
-import logging
 import json
+import logging
 import os
-from datetime import datetime, timedelta
-from pathlib import Path
-from dataclasses import dataclass, asdict
-from collections import defaultdict
-import asyncio
 import threading
 import time
+from collections import defaultdict
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 
-from .base_optimizer import BaseOptimizer, OptimizationResult, ParameterBounds
+import numpy as np
+import pandas as pd
+
 from backtest.backtester import compute_backtest_metrics
-from utils.config_loader import get_config
+
+from .base_optimizer import BaseOptimizer
 
 
 @dataclass
@@ -53,17 +60,21 @@ class WalkForwardWindow:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
-            'window_index': self.window_index,
-            'train_start': self.train_start.isoformat(),
-            'train_end': self.train_end.isoformat(),
-            'test_start': self.test_start.isoformat(),
-            'test_end': self.test_end.isoformat(),
-            'optimized_params': self.optimized_params,
-            'train_metrics': self.train_metrics,
-            'test_metrics': self.test_metrics,
-            'optimization_time': self.optimization_time,
-            'train_data_shape': self.train_data.shape if hasattr(self.train_data, 'shape') else None,
-            'test_data_shape': self.test_data.shape if hasattr(self.test_data, 'shape') else None
+            "window_index": self.window_index,
+            "train_start": self.train_start.isoformat(),
+            "train_end": self.train_end.isoformat(),
+            "test_start": self.test_start.isoformat(),
+            "test_end": self.test_end.isoformat(),
+            "optimized_params": self.optimized_params,
+            "train_metrics": self.train_metrics,
+            "test_metrics": self.test_metrics,
+            "optimization_time": self.optimization_time,
+            "train_data_shape": self.train_data.shape
+            if hasattr(self.train_data, "shape")
+            else None,
+            "test_data_shape": self.test_data.shape
+            if hasattr(self.test_data, "shape")
+            else None,
         }
 
 
@@ -83,14 +94,14 @@ class WalkForwardResult:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
-            'strategy_name': self.strategy_name,
-            'total_windows': self.total_windows,
-            'windows': [w.to_dict() for w in self.windows],
-            'aggregate_metrics': self.aggregate_metrics,
-            'performance_distribution': self.performance_distribution,
-            'optimization_summary': self.optimization_summary,
-            'timestamp': self.timestamp.isoformat(),
-            'total_time': self.total_time
+            "strategy_name": self.strategy_name,
+            "total_windows": self.total_windows,
+            "windows": [w.to_dict() for w in self.windows],
+            "aggregate_metrics": self.aggregate_metrics,
+            "performance_distribution": self.performance_distribution,
+            "optimization_summary": self.optimization_summary,
+            "timestamp": self.timestamp.isoformat(),
+            "total_time": self.total_time,
         }
 
 
@@ -143,11 +154,11 @@ class MemoryEfficientDataIterator:
         """Get information about chunk processing."""
         total_chunks = (self.total_rows + self.chunk_size - 1) // self.chunk_size
         return {
-            'total_rows': self.total_rows,
-            'chunk_size': self.chunk_size,
-            'overlap': self.overlap,
-            'estimated_chunks': total_chunks,
-            'memory_efficient': True
+            "total_rows": self.total_rows,
+            "chunk_size": self.chunk_size,
+            "overlap": self.overlap,
+            "estimated_chunks": total_chunks,
+            "memory_efficient": True,
         }
 
 
@@ -174,22 +185,20 @@ class WalkForwardDataSplitter:
 
         # Parse window sizes
         self.train_window_size = self._parse_window_size(
-            config.get('train_window_size', 100)
+            config.get("train_window_size", 100)
         )
         self.test_window_size = self._parse_window_size(
-            config.get('test_window_size', 20)
+            config.get("test_window_size", 20)
         )
-        self.step_size = self._parse_window_size(
-            config.get('step_size', 20)
-        )
+        self.step_size = self._parse_window_size(config.get("step_size", 20))
 
-        self.min_samples = config.get('min_samples', 50)
-        self.overlap_allowed = config.get('overlap_allowed', False)
+        self.min_samples = config.get("min_samples", 50)
+        self.overlap_allowed = config.get("overlap_allowed", False)
 
         # Memory efficiency settings
-        self.memory_efficient = config.get('memory_efficient', True)
-        self.chunk_size = config.get('chunk_size', 50000)  # Process in 50k row chunks
-        self.max_memory_usage = config.get('max_memory_usage', 1000)  # 1GB limit
+        self.memory_efficient = config.get("memory_efficient", True)
+        self.chunk_size = config.get("chunk_size", 50000)  # Process in 50k row chunks
+        self.max_memory_usage = config.get("max_memory_usage", 1000)  # 1GB limit
 
     def _parse_window_size(self, size: Union[int, str]) -> Union[int, timedelta]:
         """Parse window size specification."""
@@ -212,7 +221,9 @@ class WalkForwardDataSplitter:
             List of WalkForwardWindow objects
         """
         if data.empty or len(data) < self.min_samples:
-            self.logger.warning(f"Insufficient data: {len(data)} samples, minimum {self.min_samples}")
+            self.logger.warning(
+                f"Insufficient data: {len(data)} samples, minimum {self.min_samples}"
+            )
             return []
 
         # Ensure data is sorted by time
@@ -223,7 +234,9 @@ class WalkForwardDataSplitter:
         window_index = 0
 
         # Calculate total possible windows
-        if isinstance(self.train_window_size, int) and isinstance(self.test_window_size, int):
+        if isinstance(self.train_window_size, int) and isinstance(
+            self.test_window_size, int
+        ):
             # Period-based windows
             total_samples = len(data)
             train_size = self.train_window_size
@@ -260,13 +273,20 @@ class WalkForwardDataSplitter:
                     train_end = current_train_start + self.train_window_size
                 else:
                     # Find index-based train end
-                    train_end_idx = min(len(data) - 1, data.index.get_loc(current_train_start) + self.train_window_size)
+                    train_end_idx = min(
+                        len(data) - 1,
+                        data.index.get_loc(current_train_start)
+                        + self.train_window_size,
+                    )
                     train_end = data.index[train_end_idx]
 
                 if isinstance(self.test_window_size, timedelta):
                     test_end = train_end + self.test_window_size
                 else:
-                    test_end_idx = min(len(data) - 1, data.index.get_loc(train_end) + self.test_window_size)
+                    test_end_idx = min(
+                        len(data) - 1,
+                        data.index.get_loc(train_end) + self.test_window_size,
+                    )
                     test_end = data.index[test_end_idx]
 
                 # Check if we have enough data
@@ -274,7 +294,9 @@ class WalkForwardDataSplitter:
                     break
 
                 # Extract data for this window
-                train_mask = (data.index >= current_train_start) & (data.index < train_end)
+                train_mask = (data.index >= current_train_start) & (
+                    data.index < train_end
+                )
                 test_mask = (data.index >= train_end) & (data.index < test_end)
 
                 train_data = data[train_mask]
@@ -282,8 +304,13 @@ class WalkForwardDataSplitter:
 
                 if len(train_data) >= self.min_samples and len(test_data) > 0:
                     window = self._create_window_from_times(
-                        window_index, train_data, test_data,
-                        current_train_start, train_end, train_end, test_end
+                        window_index,
+                        train_data,
+                        test_data,
+                        current_train_start,
+                        train_end,
+                        train_end,
+                        test_end,
                     )
                     windows.append(window)
                     window_index += 1
@@ -292,7 +319,9 @@ class WalkForwardDataSplitter:
                 if isinstance(self.step_size, timedelta):
                     current_train_start += self.step_size
                 else:
-                    step_idx = data.index.get_loc(current_train_start) + (self.step_size or self.test_window_size)
+                    step_idx = data.index.get_loc(current_train_start) + (
+                        self.step_size or self.test_window_size
+                    )
                     if step_idx >= len(data):
                         break
                     current_train_start = data.index[step_idx]
@@ -300,9 +329,9 @@ class WalkForwardDataSplitter:
         self.logger.info(f"Created {len(windows)} walk-forward windows")
         return windows
 
-    def _create_window_from_indices(self, window_index: int,
-                                   train_data: pd.DataFrame,
-                                   test_data: pd.DataFrame) -> WalkForwardWindow:
+    def _create_window_from_indices(
+        self, window_index: int, train_data: pd.DataFrame, test_data: pd.DataFrame
+    ) -> WalkForwardWindow:
         """Create window from index-based data slices."""
         return WalkForwardWindow(
             window_index=window_index,
@@ -315,14 +344,19 @@ class WalkForwardDataSplitter:
             optimized_params={},
             train_metrics={},
             test_metrics={},
-            optimization_time=0.0
+            optimization_time=0.0,
         )
 
-    def _create_window_from_times(self, window_index: int,
-                                 train_data: pd.DataFrame,
-                                 test_data: pd.DataFrame,
-                                 train_start: datetime, train_end: datetime,
-                                 test_start: datetime, test_end: datetime) -> WalkForwardWindow:
+    def _create_window_from_times(
+        self,
+        window_index: int,
+        train_data: pd.DataFrame,
+        test_data: pd.DataFrame,
+        train_start: datetime,
+        train_end: datetime,
+        test_start: datetime,
+        test_end: datetime,
+    ) -> WalkForwardWindow:
         """Create window from time-based data slices."""
         return WalkForwardWindow(
             window_index=window_index,
@@ -335,7 +369,7 @@ class WalkForwardDataSplitter:
             optimized_params={},
             train_metrics={},
             test_metrics={},
-            optimization_time=0.0
+            optimization_time=0.0,
         )
 
 
@@ -371,18 +405,18 @@ class WalkForwardOptimizer(BaseOptimizer):
         super().__init__(config)
 
         # Walk-forward specific configuration
-        self.base_optimizer_config = config.get('base_optimizer', {})
-        self.data_splitter_config = config.get('data_splitter', {})
-        self.output_dir = config.get('output_dir', 'results/walk_forward')
-        self.save_intermediate = config.get('save_intermediate', True)
-        self.parallel_execution = config.get('parallel_execution', False)
+        self.base_optimizer_config = config.get("base_optimizer", {})
+        self.data_splitter_config = config.get("data_splitter", {})
+        self.output_dir = config.get("output_dir", "results/walk_forward")
+        self.save_intermediate = config.get("save_intermediate", True)
+        self.parallel_execution = config.get("parallel_execution", False)
 
         # Extract attributes expected by tests
-        self.train_window_days = config.get('train_window_days', 90)
-        self.test_window_days = config.get('test_window_days', 30)
-        self.min_observations = config.get('min_observations', 1000)
-        self.rolling = config.get('rolling', True)
-        self.improvement_threshold = config.get('improvement_threshold', 0.05)
+        self.train_window_days = config.get("train_window_days", 90)
+        self.test_window_days = config.get("test_window_days", 30)
+        self.min_observations = config.get("min_observations", 1000)
+        self.rolling = config.get("rolling", True)
+        self.improvement_threshold = config.get("improvement_threshold", 0.05)
 
         # Initialize components
         self.data_splitter = WalkForwardDataSplitter(self.data_splitter_config)
@@ -400,7 +434,9 @@ class WalkForwardOptimizer(BaseOptimizer):
 
         self.logger.info("Walk-Forward Optimizer initialized")
 
-    def _generate_windows(self, data: pd.DataFrame) -> List[Tuple[pd.DataFrame, pd.DataFrame]]:
+    def _generate_windows(
+        self, data: pd.DataFrame
+    ) -> List[Tuple[pd.DataFrame, pd.DataFrame]]:
         """
         Generate rolling or expanding train/test splits based on configuration.
 
@@ -422,7 +458,9 @@ class WalkForwardOptimizer(BaseOptimizer):
             test_size = self.test_window_days
             step_size = test_size  # Non-overlapping by default
 
-            for start_idx in range(0, n_samples - train_size - test_size + 1, step_size):
+            for start_idx in range(
+                0, n_samples - train_size - test_size + 1, step_size
+            ):
                 train_end = start_idx + train_size
                 test_end = train_end + test_size
 
@@ -432,7 +470,9 @@ class WalkForwardOptimizer(BaseOptimizer):
                 windows.append((train_data, test_data))
         else:
             # Expanding windows
-            for test_end in range(self.min_observations, n_samples + 1, self.test_window_days):
+            for test_end in range(
+                self.min_observations, n_samples + 1, self.test_window_days
+            ):
                 train_end = test_end - self.test_window_days
                 train_start = max(0, train_end - self.train_window_days)
 
@@ -455,11 +495,11 @@ class WalkForwardOptimizer(BaseOptimizer):
 
         # Default parameter ranges for common strategy parameters
         param_ranges = {
-            'rsi_period': [5, 10, 14, 21, 28],
-            'overbought': [65, 70, 75, 80],
-            'oversold': [20, 25, 30, 35],
-            'ema_period': [9, 12, 20, 26, 50],
-            'sma_period': [10, 20, 50, 100, 200]
+            "rsi_period": [5, 10, 14, 21, 28],
+            "overbought": [65, 70, 75, 80],
+            "oversold": [20, 25, 30, 35],
+            "ema_period": [9, 12, 20, 26, 50],
+            "sma_period": [10, 20, 50, 100, 200],
         }
 
         # Generate all combinations
@@ -473,8 +513,13 @@ class WalkForwardOptimizer(BaseOptimizer):
 
         return combinations
 
-    def cross_pair_validation(self, strategy, data_dict: Dict[str, pd.DataFrame],
-                             train_pair: str, validation_pairs: List[str]) -> Dict[str, Any]:
+    def cross_pair_validation(
+        self,
+        strategy,
+        data_dict: Dict[str, pd.DataFrame],
+        train_pair: str,
+        validation_pairs: List[str],
+    ) -> Dict[str, Any]:
         """
         Perform cross-pair validation by training on one pair and validating on others.
 
@@ -500,10 +545,10 @@ class WalkForwardOptimizer(BaseOptimizer):
             return {}
 
         results = {
-            'train_pair': train_pair,
-            'validation_pairs': validation_pairs,
-            'best_params': best_params,
-            'results': {}
+            "train_pair": train_pair,
+            "validation_pairs": validation_pairs,
+            "best_params": best_params,
+            "results": {},
         }
 
         # Validate on each validation pair
@@ -518,11 +563,11 @@ class WalkForwardOptimizer(BaseOptimizer):
             try:
                 # Create strategy instance
                 strategy_config = {
-                    'name': f'cpv_{pair}_{datetime.now().strftime("%Y%m%d_%H%M%S")}',
-                    'symbols': [pair],
-                    'timeframe': '1h',
-                    'required_history': 100,
-                    'params': best_params
+                    "name": f'cpv_{pair}_{datetime.now().strftime("%Y%m%d_%H%M%S")}',
+                    "symbols": [pair],
+                    "timeframe": "1h",
+                    "required_history": 100,
+                    "params": best_params,
                 }
 
                 strategy_instance = strategy(strategy_config)
@@ -532,29 +577,29 @@ class WalkForwardOptimizer(BaseOptimizer):
                 if equity_progression:
                     metrics = compute_backtest_metrics(equity_progression)
                 else:
-                    metrics = {'error': 'No equity progression'}
+                    metrics = {"error": "No equity progression"}
 
-                results['results'][pair] = {
-                    'sharpe_ratio': metrics.get('sharpe_ratio', 0),
-                    'max_drawdown': metrics.get('max_drawdown', 0),
-                    'profit_factor': metrics.get('profit_factor', 1.0),
-                    'total_return': metrics.get('total_return', 0),
-                    'win_rate': metrics.get('win_rate', 0),
-                    'total_trades': metrics.get('total_trades', 0),
-                    'expectancy': metrics.get('expectancy', 0)
+                results["results"][pair] = {
+                    "sharpe_ratio": metrics.get("sharpe_ratio", 0),
+                    "max_drawdown": metrics.get("max_drawdown", 0),
+                    "profit_factor": metrics.get("profit_factor", 1.0),
+                    "total_return": metrics.get("total_return", 0),
+                    "win_rate": metrics.get("win_rate", 0),
+                    "total_trades": metrics.get("total_trades", 0),
+                    "expectancy": metrics.get("expectancy", 0),
                 }
 
             except Exception as e:
                 self.logger.error(f"Error validating on pair {pair}: {e}")
-                results['results'][pair] = {
-                    'error': str(e),
-                    'sharpe_ratio': 0,
-                    'max_drawdown': 0,
-                    'profit_factor': 1.0,
-                    'total_return': 0,
-                    'win_rate': 0,
-                    'total_trades': 0,
-                    'expectancy': 0
+                results["results"][pair] = {
+                    "error": str(e),
+                    "sharpe_ratio": 0,
+                    "max_drawdown": 0,
+                    "profit_factor": 1.0,
+                    "total_return": 0,
+                    "win_rate": 0,
+                    "total_trades": 0,
+                    "expectancy": 0,
                 }
 
         return results
@@ -567,27 +612,27 @@ class WalkForwardOptimizer(BaseOptimizer):
             results: Cross-validation results dictionary
         """
         # Ensure results directory exists
-        os.makedirs('results', exist_ok=True)
+        os.makedirs("results", exist_ok=True)
 
         # Save JSON results
-        json_path = 'results/cross_pair_validation.json'
-        with open(json_path, 'w') as f:
+        json_path = "results/cross_pair_validation.json"
+        with open(json_path, "w") as f:
             json.dump(results, f, indent=2, default=str)
 
         # Save CSV summary
-        csv_path = 'results/cross_pair_validation.csv'
+        csv_path = "results/cross_pair_validation.csv"
         rows = []
 
-        for pair, metrics in results.get('results', {}).items():
+        for pair, metrics in results.get("results", {}).items():
             row = {
-                'pair': pair,
-                'sharpe_ratio': metrics.get('sharpe_ratio', 0),
-                'max_drawdown': metrics.get('max_drawdown', 0),
-                'profit_factor': metrics.get('profit_factor', 1.0),
-                'total_return': metrics.get('total_return', 0),
-                'win_rate': metrics.get('win_rate', 0),
-                'total_trades': metrics.get('total_trades', 0),
-                'expectancy': metrics.get('expectancy', 0)
+                "pair": pair,
+                "sharpe_ratio": metrics.get("sharpe_ratio", 0),
+                "max_drawdown": metrics.get("max_drawdown", 0),
+                "profit_factor": metrics.get("profit_factor", 1.0),
+                "total_return": metrics.get("total_return", 0),
+                "win_rate": metrics.get("win_rate", 0),
+                "total_trades": metrics.get("total_trades", 0),
+                "expectancy": metrics.get("expectancy", 0),
             }
             rows.append(row)
 
@@ -595,7 +640,9 @@ class WalkForwardOptimizer(BaseOptimizer):
             df = pd.DataFrame(rows)
             df.to_csv(csv_path, index=False)
 
-        self.logger.info(f"Cross-validation results saved to {json_path} and {csv_path}")
+        self.logger.info(
+            f"Cross-validation results saved to {json_path} and {csv_path}"
+        )
 
     def optimize(self, strategy_class, data: pd.DataFrame) -> Dict[str, Any]:
         """
@@ -657,7 +704,9 @@ class WalkForwardOptimizer(BaseOptimizer):
 
         return best_params
 
-    def _optimize_memory_efficient(self, strategy_class, data: pd.DataFrame) -> Dict[str, Any]:
+    def _optimize_memory_efficient(
+        self, strategy_class, data: pd.DataFrame
+    ) -> Dict[str, Any]:
         """
         Run walk-forward optimization using memory-efficient data processing.
 
@@ -673,13 +722,15 @@ class WalkForwardOptimizer(BaseOptimizer):
             Best parameter set based on walk-forward analysis
         """
         start_time = time.time()
-        self.logger.info(f"Processing data in chunks of {self.data_splitter.chunk_size} rows")
+        self.logger.info(
+            f"Processing data in chunks of {self.data_splitter.chunk_size} rows"
+        )
 
         # Initialize data iterator for memory-efficient processing
         data_iterator = MemoryEfficientDataIterator(
             data,
             chunk_size=self.data_splitter.chunk_size,
-            overlap=self.data_splitter.min_samples // 2  # Small overlap for continuity
+            overlap=self.data_splitter.min_samples // 2,  # Small overlap for continuity
         )
 
         chunk_info = data_iterator.get_chunk_info()
@@ -690,7 +741,9 @@ class WalkForwardOptimizer(BaseOptimizer):
         chunk_index = 0
 
         for chunk in data_iterator:
-            self.logger.info(f"Processing chunk {chunk_index + 1}/{chunk_info['estimated_chunks']}")
+            self.logger.info(
+                f"Processing chunk {chunk_index + 1}/{chunk_info['estimated_chunks']}"
+            )
             self.logger.info(f"Chunk shape: {chunk.shape}")
 
             # Split chunk into windows
@@ -702,7 +755,9 @@ class WalkForwardOptimizer(BaseOptimizer):
                     window.window_index = len(all_windows)
                     all_windows.append(window)
 
-                self.logger.info(f"Created {len(chunk_windows)} windows from chunk {chunk_index + 1}")
+                self.logger.info(
+                    f"Created {len(chunk_windows)} windows from chunk {chunk_index + 1}"
+                )
 
                 # Process windows from this chunk
                 if self.parallel_execution:
@@ -714,7 +769,7 @@ class WalkForwardOptimizer(BaseOptimizer):
 
             # Check memory usage (simplified check)
             # In production, you might want to use psutil for more accurate monitoring
-            if hasattr(self.data_splitter, 'max_memory_usage'):
+            if hasattr(self.data_splitter, "max_memory_usage"):
                 # Add memory monitoring logic here if needed
                 pass
 
@@ -734,7 +789,9 @@ class WalkForwardOptimizer(BaseOptimizer):
         total_time = time.time() - start_time
         self._save_results(total_time)
 
-        self.logger.info(f"Memory-efficient Walk-Forward Optimization completed in {total_time:.2f}s")
+        self.logger.info(
+            f"Memory-efficient Walk-Forward Optimization completed in {total_time:.2f}s"
+        )
         self.logger.info(f"Best parameters: {best_params}")
 
         return best_params
@@ -767,7 +824,9 @@ class WalkForwardOptimizer(BaseOptimizer):
                 except Exception as e:
                     self.logger.error(f"Window processing failed: {e}")
 
-    def _process_single_window(self, strategy_class, window: WalkForwardWindow, index: int) -> None:
+    def _process_single_window(
+        self, strategy_class, window: WalkForwardWindow, index: int
+    ) -> None:
         """Process a single walk-forward window."""
         try:
             window_start_time = time.time()
@@ -807,8 +866,8 @@ class WalkForwardOptimizer(BaseOptimizer):
             self.logger.error(f"Error processing window {index+1}: {e}")
             # Set default values for failed window
             window.optimized_params = {}
-            window.train_metrics = {'error': str(e)}
-            window.test_metrics = {'error': str(e)}
+            window.train_metrics = {"error": str(e)}
+            window.test_metrics = {"error": str(e)}
             window.optimization_time = time.time() - window_start_time
 
     def _create_optimizer(self):
@@ -819,27 +878,29 @@ class WalkForwardOptimizer(BaseOptimizer):
         except ImportError:
             # Fallback for testing or if genetic optimizer is not available
             from .base_optimizer import BaseOptimizer
+
             return BaseOptimizer(self.base_optimizer_config)
 
         # Use genetic optimizer as default, but could be configurable
         optimizer_config = self.base_optimizer_config.copy()
-        optimizer_config.update({
-            'parameter_bounds': list(self.parameter_bounds.values())
-        })
+        optimizer_config.update(
+            {"parameter_bounds": list(self.parameter_bounds.values())}
+        )
 
         return GeneticOptimizer(optimizer_config)
 
-    def _evaluate_strategy(self, strategy_class, params: Dict[str, Any],
-                          data: pd.DataFrame) -> Dict[str, Any]:
+    def _evaluate_strategy(
+        self, strategy_class, params: Dict[str, Any], data: pd.DataFrame
+    ) -> Dict[str, Any]:
         """Evaluate strategy with given parameters on data."""
         try:
             # Create strategy instance
             strategy_config = {
-                'name': f'wf_evaluation_{datetime.now().strftime("%Y%m%d_%H%M%S")}',
-                'symbols': ['BTC/USDT'],
-                'timeframe': '1h',
-                'required_history': 100,
-                'params': params
+                "name": f'wf_evaluation_{datetime.now().strftime("%Y%m%d_%H%M%S")}',
+                "symbols": ["BTC/USDT"],
+                "timeframe": "1h",
+                "required_history": 100,
+                "params": params,
             }
 
             strategy_instance = strategy_class(strategy_config)
@@ -851,14 +912,14 @@ class WalkForwardOptimizer(BaseOptimizer):
             equity_progression = self._run_backtest(strategy_instance, data)
             if equity_progression:
                 metrics = compute_backtest_metrics(equity_progression)
-                metrics['fitness'] = fitness
+                metrics["fitness"] = fitness
                 return metrics
             else:
-                return {'fitness': fitness, 'error': 'No equity progression'}
+                return {"fitness": fitness, "error": "No equity progression"}
 
         except Exception as e:
             self.logger.error(f"Strategy evaluation failed: {e}")
-            return {'error': str(e), 'fitness': float('-inf')}
+            return {"error": str(e), "fitness": float("-inf")}
 
     def _calculate_aggregate_metrics(self) -> None:
         """Calculate aggregate metrics across all windows."""
@@ -874,30 +935,38 @@ class WalkForwardOptimizer(BaseOptimizer):
 
         for window in self.windows:
             metrics = window.test_metrics
-            if 'error' not in metrics:
-                test_sharpe_ratios.append(metrics.get('sharpe_ratio', 0))
-                test_returns.append(metrics.get('total_return', 0))
-                test_win_rates.append(metrics.get('win_rate', 0))
-                test_max_drawdowns.append(metrics.get('max_drawdown', 0))
-                test_sortino_ratios.append(metrics.get('sortino_ratio', 0))
+            if "error" not in metrics:
+                test_sharpe_ratios.append(metrics.get("sharpe_ratio", 0))
+                test_returns.append(metrics.get("total_return", 0))
+                test_win_rates.append(metrics.get("win_rate", 0))
+                test_max_drawdowns.append(metrics.get("max_drawdown", 0))
+                test_sortino_ratios.append(metrics.get("sortino_ratio", 0))
 
         # Calculate aggregate statistics
         self.aggregate_metrics = {
-            'total_windows': len(self.windows),
-            'successful_windows': len(test_sharpe_ratios),
-            'avg_test_sharpe': np.mean(test_sharpe_ratios) if test_sharpe_ratios else 0,
-            'std_test_sharpe': np.std(test_sharpe_ratios) if test_sharpe_ratios else 0,
-            'avg_test_return': np.mean(test_returns) if test_returns else 0,
-            'avg_test_win_rate': np.mean(test_win_rates) if test_win_rates else 0,
-            'avg_test_max_drawdown': np.mean(test_max_drawdowns) if test_max_drawdowns else 0,
-            'avg_test_sortino': np.mean(test_sortino_ratios) if test_sortino_ratios else 0,
-            'sharpe_ratio_stability': self._calculate_stability(test_sharpe_ratios),
-            'return_consistency': self._calculate_consistency(test_returns)
+            "total_windows": len(self.windows),
+            "successful_windows": len(test_sharpe_ratios),
+            "avg_test_sharpe": np.mean(test_sharpe_ratios) if test_sharpe_ratios else 0,
+            "std_test_sharpe": np.std(test_sharpe_ratios) if test_sharpe_ratios else 0,
+            "avg_test_return": np.mean(test_returns) if test_returns else 0,
+            "avg_test_win_rate": np.mean(test_win_rates) if test_win_rates else 0,
+            "avg_test_max_drawdown": np.mean(test_max_drawdowns)
+            if test_max_drawdowns
+            else 0,
+            "avg_test_sortino": np.mean(test_sortino_ratios)
+            if test_sortino_ratios
+            else 0,
+            "sharpe_ratio_stability": self._calculate_stability(test_sharpe_ratios),
+            "return_consistency": self._calculate_consistency(test_returns),
         }
 
         self.logger.info("Aggregate metrics calculated:")
-        self.logger.info(f"  Average Test Sharpe: {self.aggregate_metrics['avg_test_sharpe']:.3f}")
-        self.logger.info(f"  Sharpe Stability: {self.aggregate_metrics['sharpe_ratio_stability']:.3f}")
+        self.logger.info(
+            f"  Average Test Sharpe: {self.aggregate_metrics['avg_test_sharpe']:.3f}"
+        )
+        self.logger.info(
+            f"  Sharpe Stability: {self.aggregate_metrics['sharpe_ratio_stability']:.3f}"
+        )
 
     def _calculate_performance_distribution(self) -> None:
         """Calculate performance distribution statistics."""
@@ -905,9 +974,9 @@ class WalkForwardOptimizer(BaseOptimizer):
             return
 
         test_sharpes = [
-            w.test_metrics.get('sharpe_ratio', 0)
+            w.test_metrics.get("sharpe_ratio", 0)
             for w in self.windows
-            if 'error' not in w.test_metrics
+            if "error" not in w.test_metrics
         ]
 
         if not test_sharpes:
@@ -915,28 +984,34 @@ class WalkForwardOptimizer(BaseOptimizer):
 
         # Calculate distribution statistics
         self.performance_distribution = {
-            'sharpe_percentiles': {
-                '10th': np.percentile(test_sharpes, 10),
-                '25th': np.percentile(test_sharpes, 25),
-                '50th': np.percentile(test_sharpes, 50),
-                '75th': np.percentile(test_sharpes, 75),
-                '90th': np.percentile(test_sharpes, 90)
+            "sharpe_percentiles": {
+                "10th": np.percentile(test_sharpes, 10),
+                "25th": np.percentile(test_sharpes, 25),
+                "50th": np.percentile(test_sharpes, 50),
+                "75th": np.percentile(test_sharpes, 75),
+                "90th": np.percentile(test_sharpes, 90),
             },
-            'sharpe_quartiles': [
+            "sharpe_quartiles": [
                 np.percentile(test_sharpes, 25),
                 np.percentile(test_sharpes, 50),
-                np.percentile(test_sharpes, 75)
+                np.percentile(test_sharpes, 75),
             ],
-            'sharpe_iqr': np.subtract(*np.percentile(test_sharpes, [75, 25])),
-            'positive_sharpe_ratio': np.mean([s > 0 for s in test_sharpes]),
-            'sharpe_confidence_interval': self._calculate_confidence_interval(test_sharpes)
+            "sharpe_iqr": np.subtract(*np.percentile(test_sharpes, [75, 25])),
+            "positive_sharpe_ratio": np.mean([s > 0 for s in test_sharpes]),
+            "sharpe_confidence_interval": self._calculate_confidence_interval(
+                test_sharpes
+            ),
         }
 
     def _calculate_stability(self, values: List[float]) -> float:
         """Calculate stability metric (lower is more stable)."""
         if len(values) < 2:
             return 0.0
-        return np.std(values) / abs(np.mean(values)) if np.mean(values) != 0 else float('inf')
+        return (
+            np.std(values) / abs(np.mean(values))
+            if np.mean(values) != 0
+            else float("inf")
+        )
 
     def _calculate_consistency(self, values: List[float]) -> float:
         """Calculate consistency metric (higher is more consistent)."""
@@ -947,8 +1022,9 @@ class WalkForwardOptimizer(BaseOptimizer):
         positive_count = sum(1 for v in values if v > 0)
         return positive_count / len(values)
 
-    def _calculate_confidence_interval(self, values: List[float],
-                                     confidence: float = 0.95) -> Tuple[float, float]:
+    def _calculate_confidence_interval(
+        self, values: List[float], confidence: float = 0.95
+    ) -> Tuple[float, float]:
         """Calculate confidence interval for values."""
         if len(values) < 2:
             return (np.mean(values), np.mean(values))
@@ -969,16 +1045,18 @@ class WalkForwardOptimizer(BaseOptimizer):
         param_performance = defaultdict(list)
 
         for window in self.windows:
-            if window.optimized_params and 'error' not in window.test_metrics:
+            if window.optimized_params and "error" not in window.test_metrics:
                 params_key = json.dumps(window.optimized_params, sort_keys=True)
-                test_sharpe = window.test_metrics.get('sharpe_ratio', 0)
-                param_performance[params_key].append((window.optimized_params, test_sharpe))
+                test_sharpe = window.test_metrics.get("sharpe_ratio", 0)
+                param_performance[params_key].append(
+                    (window.optimized_params, test_sharpe)
+                )
 
         if not param_performance:
             return {}
 
         # Find parameter set with highest average test Sharpe
-        best_avg_sharpe = float('-inf')
+        best_avg_sharpe = float("-inf")
         best_params = {}
 
         for params_key, performances in param_performance.items():
@@ -994,39 +1072,39 @@ class WalkForwardOptimizer(BaseOptimizer):
         filename = f"window_{window.window_index:03d}_results.json"
         filepath = os.path.join(self.output_dir, filename)
 
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             json.dump(window.to_dict(), f, indent=2, default=str)
 
     def _save_results(self, total_time: float) -> None:
         """Save complete walk-forward results."""
         result = WalkForwardResult(
-            strategy_name=self.config.get('strategy_name', 'unknown'),
+            strategy_name=self.config.get("strategy_name", "unknown"),
             total_windows=len(self.windows),
             windows=self.windows,
             aggregate_metrics=self.aggregate_metrics,
             performance_distribution=self.performance_distribution,
             optimization_summary=self.get_optimization_summary(),
             timestamp=datetime.now(),
-            total_time=total_time
+            total_time=total_time,
         )
 
         # Save detailed results
-        detailed_path = os.path.join(self.output_dir, 'walk_forward_results.json')
-        with open(detailed_path, 'w') as f:
+        detailed_path = os.path.join(self.output_dir, "walk_forward_results.json")
+        with open(detailed_path, "w") as f:
             json.dump(result.to_dict(), f, indent=2, default=str)
 
         # Save summary report
-        summary_path = os.path.join(self.output_dir, 'walk_forward_summary.json')
+        summary_path = os.path.join(self.output_dir, "walk_forward_summary.json")
         summary = {
-            'strategy_name': result.strategy_name,
-            'total_windows': result.total_windows,
-            'aggregate_metrics': result.aggregate_metrics,
-            'performance_distribution': result.performance_distribution,
-            'timestamp': result.timestamp.isoformat(),
-            'total_time': result.total_time
+            "strategy_name": result.strategy_name,
+            "total_windows": result.total_windows,
+            "aggregate_metrics": result.aggregate_metrics,
+            "performance_distribution": result.performance_distribution,
+            "timestamp": result.timestamp.isoformat(),
+            "total_time": result.total_time,
         }
 
-        with open(summary_path, 'w') as f:
+        with open(summary_path, "w") as f:
             json.dump(summary, f, indent=2, default=str)
 
         # Save CSV summary for easy analysis
@@ -1039,30 +1117,30 @@ class WalkForwardOptimizer(BaseOptimizer):
         if not self.windows:
             return
 
-        csv_path = os.path.join(self.output_dir, 'walk_forward_windows.csv')
+        csv_path = os.path.join(self.output_dir, "walk_forward_windows.csv")
 
         rows = []
         for window in self.windows:
             row = {
-                'window_index': window.window_index,
-                'train_start': window.train_start.isoformat(),
-                'train_end': window.train_end.isoformat(),
-                'test_start': window.test_start.isoformat(),
-                'test_end': window.test_end.isoformat(),
-                'optimization_time': window.optimization_time,
-                'train_sharpe': window.train_metrics.get('sharpe_ratio', 0),
-                'test_sharpe': window.test_metrics.get('sharpe_ratio', 0),
-                'train_return': window.train_metrics.get('total_return', 0),
-                'test_return': window.test_metrics.get('total_return', 0),
-                'train_win_rate': window.train_metrics.get('win_rate', 0),
-                'test_win_rate': window.test_metrics.get('win_rate', 0),
-                'train_max_drawdown': window.train_metrics.get('max_drawdown', 0),
-                'test_max_drawdown': window.test_metrics.get('max_drawdown', 0)
+                "window_index": window.window_index,
+                "train_start": window.train_start.isoformat(),
+                "train_end": window.train_end.isoformat(),
+                "test_start": window.test_start.isoformat(),
+                "test_end": window.test_end.isoformat(),
+                "optimization_time": window.optimization_time,
+                "train_sharpe": window.train_metrics.get("sharpe_ratio", 0),
+                "test_sharpe": window.test_metrics.get("sharpe_ratio", 0),
+                "train_return": window.train_metrics.get("total_return", 0),
+                "test_return": window.test_metrics.get("total_return", 0),
+                "train_win_rate": window.train_metrics.get("win_rate", 0),
+                "test_win_rate": window.test_metrics.get("win_rate", 0),
+                "train_max_drawdown": window.train_metrics.get("max_drawdown", 0),
+                "test_max_drawdown": window.test_metrics.get("max_drawdown", 0),
             }
 
             # Add optimized parameters
             for param_name, param_value in window.optimized_params.items():
-                row[f'param_{param_name}'] = param_value
+                row[f"param_{param_name}"] = param_value
 
             rows.append(row)
 
@@ -1072,12 +1150,12 @@ class WalkForwardOptimizer(BaseOptimizer):
     def get_walk_forward_summary(self) -> Dict[str, Any]:
         """Get comprehensive walk-forward analysis summary."""
         return {
-            'total_windows': len(self.windows),
-            'aggregate_metrics': self.aggregate_metrics,
-            'performance_distribution': self.performance_distribution,
-            'optimization_summary': self.get_optimization_summary(),
-            'stability_metrics': self._calculate_stability_metrics(),
-            'robustness_score': self._calculate_robustness_score()
+            "total_windows": len(self.windows),
+            "aggregate_metrics": self.aggregate_metrics,
+            "performance_distribution": self.performance_distribution,
+            "optimization_summary": self.get_optimization_summary(),
+            "stability_metrics": self._calculate_stability_metrics(),
+            "robustness_score": self._calculate_robustness_score(),
         }
 
     def _calculate_stability_metrics(self) -> Dict[str, Any]:
@@ -1086,20 +1164,25 @@ class WalkForwardOptimizer(BaseOptimizer):
             return {}
 
         test_sharpes = [
-            w.test_metrics.get('sharpe_ratio', 0)
+            w.test_metrics.get("sharpe_ratio", 0)
             for w in self.windows
-            if 'error' not in w.test_metrics
+            if "error" not in w.test_metrics
         ]
 
         if len(test_sharpes) < 2:
             return {}
 
         return {
-            'sharpe_volatility': np.std(test_sharpes),
-            'sharpe_mean': np.mean(test_sharpes),
-            'sharpe_coefficient_of_variation': np.std(test_sharpes) / abs(np.mean(test_sharpes)) if np.mean(test_sharpes) != 0 else float('inf'),
-            'sharpe_autocorrelation': self._calculate_autocorrelation(test_sharpes),
-            'performance_persistence': self._calculate_performance_persistence(test_sharpes)
+            "sharpe_volatility": np.std(test_sharpes),
+            "sharpe_mean": np.mean(test_sharpes),
+            "sharpe_coefficient_of_variation": np.std(test_sharpes)
+            / abs(np.mean(test_sharpes))
+            if np.mean(test_sharpes) != 0
+            else float("inf"),
+            "sharpe_autocorrelation": self._calculate_autocorrelation(test_sharpes),
+            "performance_persistence": self._calculate_performance_persistence(
+                test_sharpes
+            ),
         }
 
     def _calculate_autocorrelation(self, values: List[float], lag: int = 1) -> float:
@@ -1119,7 +1202,7 @@ class WalkForwardOptimizer(BaseOptimizer):
 
         sign_changes = 0
         for i in range(1, len(values)):
-            if (values[i] > 0) != (values[i-1] > 0):
+            if (values[i] > 0) != (values[i - 1] > 0):
                 sign_changes += 1
 
         return 1.0 - (sign_changes / (len(values) - 1))
@@ -1130,25 +1213,29 @@ class WalkForwardOptimizer(BaseOptimizer):
             return 0.0
 
         # Combine multiple factors into robustness score
-        avg_sharpe = self.aggregate_metrics.get('avg_test_sharpe', 0)
-        sharpe_stability = self.aggregate_metrics.get('sharpe_ratio_stability', float('inf'))
-        consistency = self.aggregate_metrics.get('return_consistency', 0)
+        avg_sharpe = self.aggregate_metrics.get("avg_test_sharpe", 0)
+        sharpe_stability = self.aggregate_metrics.get(
+            "sharpe_ratio_stability", float("inf")
+        )
+        consistency = self.aggregate_metrics.get("return_consistency", 0)
 
         # Normalize and combine
         sharpe_score = max(0, min(1, (avg_sharpe + 2) / 4))  # Scale -2 to +2 to 0-1
-        stability_score = max(0, min(1, 1 - sharpe_stability))  # Lower stability metric is better
+        stability_score = max(
+            0, min(1, 1 - sharpe_stability)
+        )  # Lower stability metric is better
         consistency_score = consistency
 
         # Weighted average
         robustness = (
-            0.4 * sharpe_score +
-            0.4 * stability_score +
-            0.2 * consistency_score
+            0.4 * sharpe_score + 0.4 * stability_score + 0.2 * consistency_score
         )
 
         return robustness
 
-    def schedule_retraining(self, interval_days: int = 7, callback: Optional[Callable] = None) -> None:
+    def schedule_retraining(
+        self, interval_days: int = 7, callback: Optional[Callable] = None
+    ) -> None:
         """Schedule periodic retraining."""
         self.scheduler.schedule_retraining(interval_days, callback)
 
@@ -1174,7 +1261,9 @@ class WalkForwardScheduler:
         self.interval_days = 0
         self.callback: Optional[Callable] = None
 
-    def schedule_retraining(self, interval_days: int, callback: Optional[Callable] = None) -> None:
+    def schedule_retraining(
+        self, interval_days: int, callback: Optional[Callable] = None
+    ) -> None:
         """
         Schedule periodic retraining.
 
@@ -1191,7 +1280,9 @@ class WalkForwardScheduler:
         # Schedule first run
         self._schedule_next_run()
 
-        self.logger.info(f"Scheduled walk-forward retraining every {interval_days} days")
+        self.logger.info(
+            f"Scheduled walk-forward retraining every {interval_days} days"
+        )
 
     def cancel_retraining(self) -> None:
         """Cancel scheduled retraining."""
@@ -1245,7 +1336,9 @@ class WalkForwardScheduler:
 
 
 # Convenience functions for easy integration
-def create_walk_forward_optimizer(config: Optional[Dict[str, Any]] = None) -> WalkForwardOptimizer:
+def create_walk_forward_optimizer(
+    config: Optional[Dict[str, Any]] = None
+) -> WalkForwardOptimizer:
     """
     Create a walk-forward optimizer with default configuration.
 
@@ -1256,31 +1349,37 @@ def create_walk_forward_optimizer(config: Optional[Dict[str, Any]] = None) -> Wa
         Configured WalkForwardOptimizer instance
     """
     default_config = {
-        'base_optimizer': {
-            'population_size': 20,
-            'generations': 10,
-            'mutation_rate': 0.1,
-            'crossover_rate': 0.7
+        "base_optimizer": {
+            "population_size": 20,
+            "generations": 10,
+            "mutation_rate": 0.1,
+            "crossover_rate": 0.7,
         },
-        'data_splitter': {
-            'train_window_size': 100,
-            'test_window_size': 20,
-            'step_size': 20,
-            'min_samples': 50,
-            'overlap_allowed': False
+        "data_splitter": {
+            "train_window_size": 100,
+            "test_window_size": 20,
+            "step_size": 20,
+            "min_samples": 50,
+            "overlap_allowed": False,
         },
-        'output_dir': 'results/walk_forward',
-        'save_intermediate': True,
-        'parallel_execution': False,
-        'fitness_metric': 'sharpe_ratio'
+        "output_dir": "results/walk_forward",
+        "save_intermediate": True,
+        "parallel_execution": False,
+        "fitness_metric": "sharpe_ratio",
     }
 
     if config:
         # Deep merge configurations
-        def merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+        def merge_dicts(
+            base: Dict[str, Any], override: Dict[str, Any]
+        ) -> Dict[str, Any]:
             result = base.copy()
             for key, value in override.items():
-                if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                if (
+                    key in result
+                    and isinstance(result[key], dict)
+                    and isinstance(value, dict)
+                ):
                     result[key] = merge_dicts(result[key], value)
                 else:
                     result[key] = value
@@ -1291,8 +1390,9 @@ def create_walk_forward_optimizer(config: Optional[Dict[str, Any]] = None) -> Wa
     return WalkForwardOptimizer(default_config)
 
 
-def run_walk_forward_analysis(strategy_class, data: pd.DataFrame,
-                             config: Optional[Dict[str, Any]] = None) -> WalkForwardResult:
+def run_walk_forward_analysis(
+    strategy_class, data: pd.DataFrame, config: Optional[Dict[str, Any]] = None
+) -> WalkForwardResult:
     """
     Run complete walk-forward analysis.
 
@@ -1318,7 +1418,7 @@ def run_walk_forward_analysis(strategy_class, data: pd.DataFrame,
         performance_distribution=optimizer.performance_distribution,
         optimization_summary=optimizer.get_walk_forward_summary(),
         timestamp=datetime.now(),
-        total_time=sum(w.optimization_time for w in optimizer.windows)
+        total_time=sum(w.optimization_time for w in optimizer.windows),
     )
 
     return result

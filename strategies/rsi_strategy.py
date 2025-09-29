@@ -15,15 +15,17 @@ TAKE_PROFIT_PCT = 0.1  # 10%
 VOLUME_PERIOD = 10  # Period for volume averaging in signal confirmation
 VOLUME_THRESHOLD = 1.5  # Volume must be 1.5x volume_period average
 
-import numpy as np
-import pandas as pd
-from typing import List, Dict, Any, Union, Optional
 import logging
 import traceback
+from typing import Any, Dict, List, Optional, Union
 
-from strategies.base_strategy import BaseStrategy, StrategyConfig, SignalGenerationMixin
-from strategies.indicators_cache import calculate_indicators_for_multi_symbol, calculate_rsi_vectorized
-from core.contracts import TradingSignal, SignalType, SignalStrength
+import pandas as pd
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
+from strategies.base_strategy import BaseStrategy, SignalGenerationMixin, StrategyConfig
+from strategies.indicators_cache import (
+    calculate_indicators_for_multi_symbol,
+)
 
 
 class RSIStrategy(BaseStrategy, SignalGenerationMixin):
@@ -64,26 +66,28 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
             return data
 
         # Input validation: Check for required columns
-        required_columns = ['close']  # RSI primarily needs close prices
+        required_columns = ["close"]  # RSI primarily needs close prices
         if self.params.get("volume_filter", False):
-            required_columns.append('volume')
+            required_columns.append("volume")
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
-            raise ValueError(f"Missing required columns in market data: {missing_columns}. "
-                           f"Expected columns: {required_columns}")
+            raise ValueError(
+                f"Missing required columns in market data: {missing_columns}. "
+                f"Expected columns: {required_columns}"
+            )
 
         # Use vectorized calculation for all symbols at once
         # This eliminates the need for groupby operations and provides much better performance
-        indicators_config = {
-            'rsi': {'period': int(self.params["rsi_period"])}
-        }
+        indicators_config = {"rsi": {"period": int(self.params["rsi_period"])}}
 
         # Calculate indicators using the shared vectorized function
         result_df = calculate_indicators_for_multi_symbol(data, indicators_config)
 
         return result_df
 
-    async def generate_signals(self, data: pd.DataFrame, multi_tf_data: Optional[Dict[str, Any]] = None) -> List[TradingSignal]:
+    async def generate_signals(
+        self, data: pd.DataFrame, multi_tf_data: Optional[Dict[str, Any]] = None
+    ) -> List[TradingSignal]:
         """
         Generate signals based on RSI values using vectorized operations.
 
@@ -106,7 +110,9 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
 
             # Process each symbol's data
             for symbol in data_with_indicators["symbol"].unique():
-                symbol_signals = await self._process_symbol_for_signals(symbol, data_with_indicators, last_rows)
+                symbol_signals = await self._process_symbol_for_signals(
+                    symbol, data_with_indicators, last_rows
+                )
                 signals.extend(symbol_signals)
 
         except Exception as e:
@@ -120,7 +126,9 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
             return await self.calculate_indicators(data)
         return data
 
-    async def _process_symbol_for_signals(self, symbol: str, data: pd.DataFrame, last_rows: pd.DataFrame) -> List[TradingSignal]:
+    async def _process_symbol_for_signals(
+        self, symbol: str, data: pd.DataFrame, last_rows: pd.DataFrame
+    ) -> List[TradingSignal]:
         """Process a single symbol to generate signals."""
         signals: List[TradingSignal] = []
 
@@ -136,8 +144,10 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
 
             # Validate RSI value
             if pd.isna(rsi_value):
-                self.logger.warning(f"NaN detected in RSI indicator for symbol {symbol}. "
-                                  f"Skipping signal generation.")
+                self.logger.warning(
+                    f"NaN detected in RSI indicator for symbol {symbol}. "
+                    f"Skipping signal generation."
+                )
                 return signals
 
             # Check volume confirmation
@@ -145,7 +155,9 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
                 return signals
 
             # Generate signals based on RSI levels
-            rsi_signals = self._generate_signals_from_rsi_levels(symbol, current_price, rsi_value, data)
+            rsi_signals = self._generate_signals_from_rsi_levels(
+                symbol, current_price, rsi_value, data
+            )
             signals.extend(rsi_signals)
 
         except Exception as e:
@@ -153,7 +165,9 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
 
         return signals
 
-    def _check_volume_confirmation_for_symbol(self, symbol: str, data: pd.DataFrame, row: pd.Series) -> bool:
+    def _check_volume_confirmation_for_symbol(
+        self, symbol: str, data: pd.DataFrame, row: pd.Series
+    ) -> bool:
         """Check if volume confirms the signal for a symbol."""
         if not self.params.get("volume_filter", False):
             return True  # Volume filter not enabled
@@ -178,7 +192,9 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
             self.logger.warning(f"Volume confirmation failed for {symbol}: {str(e)}")
             return True  # Default to allowing signal on error
 
-    def _generate_signals_from_rsi_levels(self, symbol: str, current_price: float, rsi_value: float, data: pd.DataFrame) -> List[TradingSignal]:
+    def _generate_signals_from_rsi_levels(
+        self, symbol: str, current_price: float, rsi_value: float, data: pd.DataFrame
+    ) -> List[TradingSignal]:
         """Generate signals based on RSI overbought/oversold levels."""
         signals: List[TradingSignal] = []
 
@@ -190,7 +206,7 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
                     signal_type=SignalType.ENTRY_SHORT,
                     current_price=current_price,
                     rsi_value=rsi_value,
-                    data=data
+                    data=data,
                 )
             )
 
@@ -202,13 +218,20 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
                     signal_type=SignalType.ENTRY_LONG,
                     current_price=current_price,
                     rsi_value=rsi_value,
-                    data=data
+                    data=data,
                 )
             )
 
         return signals
 
-    def _create_rsi_signal(self, symbol: str, signal_type: SignalType, current_price: float, rsi_value: float, data: pd.DataFrame) -> TradingSignal:
+    def _create_rsi_signal(
+        self,
+        symbol: str,
+        signal_type: SignalType,
+        current_price: float,
+        rsi_value: float,
+        data: pd.DataFrame,
+    ) -> TradingSignal:
         """Create a trading signal for RSI-based entry with deterministic timestamp."""
         is_long = signal_type == SignalType.ENTRY_LONG
 
@@ -225,8 +248,18 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
             order_type="market",
             amount=self._calculate_dynamic_position_size(symbol),
             current_price=current_price,
-            stop_loss=current_price * (1 - self.params["stop_loss_pct"] if is_long else 1 + self.params["stop_loss_pct"]),
-            take_profit=current_price * (1 + self.params["take_profit_pct"] if is_long else 1 - self.params["take_profit_pct"]),
+            stop_loss=current_price
+            * (
+                1 - self.params["stop_loss_pct"]
+                if is_long
+                else 1 + self.params["stop_loss_pct"]
+            ),
+            take_profit=current_price
+            * (
+                1 + self.params["take_profit_pct"]
+                if is_long
+                else 1 - self.params["take_profit_pct"]
+            ),
             metadata={"rsi_value": rsi_value},
             timestamp=signal_timestamp,
         )
@@ -240,7 +273,9 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
         # - Account balance and risk management
         return self.params["position_size"]
 
-    async def _generate_signals_for_symbol(self, symbol: str, data) -> List[TradingSignal]:
+    async def _generate_signals_for_symbol(
+        self, symbol: str, data
+    ) -> List[TradingSignal]:
         """Generate signals for a specific symbol's data."""
         signals = []
 
@@ -261,14 +296,20 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
             # Check for NaN in RSI indicator
             if pd.isna(last_row["rsi"]):
                 logger = logging.getLogger(__name__)
-                logger.warning(f"NaN detected in RSI indicator for symbol {symbol}. Skipping signal generation. "
-                              f"This may indicate data quality issues or insufficient data for RSI calculation.")
+                logger.warning(
+                    f"NaN detected in RSI indicator for symbol {symbol}. Skipping signal generation. "
+                    f"This may indicate data quality issues or insufficient data for RSI calculation."
+                )
                 return signals
 
             # Generate signals if RSI is valid
             # Volume confirmation filter
             volume_confirmed = True
-            if self.params.get("volume_filter", False) and "volume" in last_row.index and not pd.isna(last_row["volume"]):
+            if (
+                self.params.get("volume_filter", False)
+                and "volume" in last_row.index
+                and not pd.isna(last_row["volume"])
+            ):
                 try:
                     # Calculate average volume over the specified period
                     volume_period = int(self.params.get("volume_period", 10))
@@ -276,14 +317,18 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
                         avg_volume = data_with_rsi["volume"].tail(volume_period).mean()
                         current_volume = last_row["volume"]
                         volume_threshold = self.params.get("volume_threshold", 1.5)
-                        volume_confirmed = current_volume >= (avg_volume * volume_threshold)
+                        volume_confirmed = current_volume >= (
+                            avg_volume * volume_threshold
+                        )
                     else:
                         # Not enough data for volume check, proceed
                         volume_confirmed = True
                 except (ValueError, TypeError, KeyError) as e:
                     logger = logging.getLogger(__name__)
-                    logger.warning(f"Volume confirmation failed for {symbol} due to data issue: {str(e)}. "
-                                  f"Proceeding with signal generation.")
+                    logger.warning(
+                        f"Volume confirmation failed for {symbol} due to data issue: {str(e)}. "
+                        f"Proceeding with signal generation."
+                    )
                     volume_confirmed = True  # Default to allowing signal
 
             if not volume_confirmed:
@@ -298,11 +343,15 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
                 # Note: last_signal_time is now updated deterministically in _log_signals
 
                 logger = logging.getLogger(__name__)
-                logger.info(f"RSI SHORT signal for {symbol}: RSI={last_row['rsi']:.2f}, total signals: {self.signal_counts['total']}")
+                logger.info(
+                    f"RSI SHORT signal for {symbol}: RSI={last_row['rsi']:.2f}, total signals: {self.signal_counts['total']}"
+                )
 
                 # Extract deterministic timestamp from the data that triggered the signal
                 signal_timestamp = None
-                if not data_with_rsi.empty and isinstance(data_with_rsi.index, pd.DatetimeIndex):
+                if not data_with_rsi.empty and isinstance(
+                    data_with_rsi.index, pd.DatetimeIndex
+                ):
                     signal_timestamp = data_with_rsi.index[-1].to_pydatetime()
 
                 signals.append(
@@ -314,7 +363,8 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
                         amount=self._calculate_dynamic_position_size(symbol),
                         current_price=current_price,
                         stop_loss=current_price * (1 + self.params["stop_loss_pct"]),
-                        take_profit=current_price * (1 - self.params["take_profit_pct"]),
+                        take_profit=current_price
+                        * (1 - self.params["take_profit_pct"]),
                         metadata={"rsi_value": last_row["rsi"]},
                         timestamp=signal_timestamp,
                     )
@@ -327,11 +377,15 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
                 # Note: last_signal_time is now updated deterministically in _log_signals
 
                 logger = logging.getLogger(__name__)
-                logger.info(f"RSI LONG signal for {symbol}: RSI={last_row['rsi']:.2f}, total signals: {self.signal_counts['total']}")
+                logger.info(
+                    f"RSI LONG signal for {symbol}: RSI={last_row['rsi']:.2f}, total signals: {self.signal_counts['total']}"
+                )
 
                 # Extract deterministic timestamp from the data that triggered the signal
                 signal_timestamp = None
-                if not data_with_rsi.empty and isinstance(data_with_rsi.index, pd.DatetimeIndex):
+                if not data_with_rsi.empty and isinstance(
+                    data_with_rsi.index, pd.DatetimeIndex
+                ):
                     signal_timestamp = data_with_rsi.index[-1].to_pydatetime()
 
                 signals.append(
@@ -343,7 +397,8 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
                         amount=self._calculate_dynamic_position_size(symbol),
                         current_price=current_price,
                         stop_loss=current_price * (1 - self.params["stop_loss_pct"]),
-                        take_profit=current_price * (1 + self.params["take_profit_pct"]),
+                        take_profit=current_price
+                        * (1 + self.params["take_profit_pct"]),
                         metadata={"rsi_value": last_row["rsi"]},
                         timestamp=signal_timestamp,
                     )
@@ -351,11 +406,15 @@ class RSIStrategy(BaseStrategy, SignalGenerationMixin):
 
         except (ValueError, TypeError, KeyError, IndexError, ZeroDivisionError) as e:
             logger = logging.getLogger(__name__)
-            logger.error(f"Data processing error generating signals for {symbol}: {str(e)}. "
-                        f"Stack trace: {traceback.format_exc()}")
+            logger.error(
+                f"Data processing error generating signals for {symbol}: {str(e)}. "
+                f"Stack trace: {traceback.format_exc()}"
+            )
         except Exception as e:
             logger = logging.getLogger(__name__)
-            logger.error(f"Unexpected error generating signals for {symbol}: {str(e)}. "
-                        f"Stack trace: {traceback.format_exc()}")
+            logger.error(
+                f"Unexpected error generating signals for {symbol}: {str(e)}. "
+                f"Stack trace: {traceback.format_exc()}"
+            )
 
         return signals

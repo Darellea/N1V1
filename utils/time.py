@@ -6,8 +6,7 @@ Provides functions for working with epoch milliseconds and converting between fo
 """
 
 from datetime import datetime
-from typing import Any, Optional, Union
-import time
+from typing import Any, Optional
 
 
 def now_ms() -> int:
@@ -59,7 +58,7 @@ def to_ms(ts: Any) -> Optional[int]:
     if isinstance(ts, str):
         # Try ISO format parsing first
         try:
-            dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
             return int(dt.timestamp() * 1000)
         except (ValueError, TypeError):
             pass
@@ -89,7 +88,7 @@ def to_iso(ts_ms: int) -> str:
         # Convert ms to seconds for datetime
         timestamp_seconds = ts_ms / 1000.0
         dt = datetime.utcfromtimestamp(timestamp_seconds)
-        return dt.isoformat() + 'Z'
+        return dt.isoformat() + "Z"
     except (ValueError, TypeError, OSError):
         # Fallback to current time if conversion fails
-        return datetime.utcnow().isoformat() + 'Z'
+        return datetime.utcnow().isoformat() + "Z"

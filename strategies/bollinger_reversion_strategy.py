@@ -16,15 +16,15 @@ VOLUME_THRESHOLD = 1.1  # Volume must be 1.1x average
 MAX_HOLDING_PERIOD = 10  # Maximum bars to hold position
 """
 
-import numpy as np
-import pandas as pd
-from typing import List, Dict
 import logging
 import traceback
+from typing import Dict, List
 
-from strategies.base_strategy import BaseStrategy, StrategyConfig
+import pandas as pd
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
+from strategies.base_strategy import BaseStrategy
 from strategies.indicators_cache import calculate_indicators_for_multi_symbol
-from core.contracts import TradingSignal, SignalType, SignalStrength
 
 
 class BollingerReversionStrategy(BaseStrategy):
@@ -49,7 +49,9 @@ class BollingerReversionStrategy(BaseStrategy):
             "max_holding_period": 10,  # Maximum bars to hold position
         }
         # Handle both StrategyConfig objects and dict configs
-        config_params = config.params if hasattr(config, 'params') else config.get('params', {})
+        config_params = (
+            config.params if hasattr(config, "params") else config.get("params", {})
+        )
         self.params: Dict[str, float] = {**self.default_params, **(config_params or {})}
 
         # Signal tracking
@@ -72,20 +74,22 @@ class BollingerReversionStrategy(BaseStrategy):
             return data
 
         # Input validation: Check for required columns
-        required_columns = ['close']  # Bollinger Bands primarily needs close prices
+        required_columns = ["close"]  # Bollinger Bands primarily needs close prices
         if self.params.get("volume_filter", False):
-            required_columns.append('volume')
+            required_columns.append("volume")
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
-            raise ValueError(f"Missing required columns in market data: {missing_columns}. "
-                           f"Expected columns: {required_columns}")
+            raise ValueError(
+                f"Missing required columns in market data: {missing_columns}. "
+                f"Expected columns: {required_columns}"
+            )
 
         # Use vectorized calculation for all symbols at once
         # This eliminates the need for groupby operations and provides much better performance
         indicators_config = {
-            'bb': {
-                'period': int(self.params["period"]),
-                'std_dev': self.params["std_dev"]
+            "bb": {
+                "period": int(self.params["period"]),
+                "std_dev": self.params["std_dev"],
             }
         }
 
@@ -110,7 +114,7 @@ class BollingerReversionStrategy(BaseStrategy):
 
         try:
             # Ensure indicators are calculated
-            if not all(col in data.columns for col in ['bb_position', 'bb_width']):
+            if not all(col in data.columns for col in ["bb_position", "bb_width"]):
                 data = await self.calculate_indicators(data)
 
             # Get the last row for each symbol using vectorized operations
@@ -126,26 +130,38 @@ class BollingerReversionStrategy(BaseStrategy):
                 # Check for NaN in Bollinger Bands position
                 if pd.isna(bb_position):
                     logger = logging.getLogger(__name__)
-                    logger.warning(f"NaN detected in Bollinger Bands position for symbol {symbol} during vectorized processing. "
-                                  f"Skipping signal generation. This may indicate data quality issues or insufficient data for BB calculation.")
+                    logger.warning(
+                        f"NaN detected in Bollinger Bands position for symbol {symbol} during vectorized processing. "
+                        f"Skipping signal generation. This may indicate data quality issues or insufficient data for BB calculation."
+                    )
                     continue
 
                 # Volume confirmation (vectorized where possible)
                 volume_confirmed = True
-                if self.params["volume_filter"] and "volume" in row.index and not pd.isna(row["volume"]):
+                if (
+                    self.params["volume_filter"]
+                    and "volume" in row.index
+                    and not pd.isna(row["volume"])
+                ):
                     try:
                         # Get symbol-specific data for volume calculation
                         symbol_data = data[data["symbol"] == symbol]
                         volume_period = int(self.params["period"])
 
                         if len(symbol_data) >= volume_period:
-                            avg_volume = symbol_data["volume"].tail(volume_period).mean()
+                            avg_volume = (
+                                symbol_data["volume"].tail(volume_period).mean()
+                            )
                             current_volume = row["volume"]
-                            volume_confirmed = current_volume >= (avg_volume * self.params["volume_threshold"])
+                            volume_confirmed = current_volume >= (
+                                avg_volume * self.params["volume_threshold"]
+                            )
                     except (ValueError, TypeError, KeyError) as e:
                         logger = logging.getLogger(__name__)
-                        logger.warning(f"Volume confirmation failed for {symbol} due to data issue: {str(e)}. "
-                                      f"Proceeding with signal generation.")
+                        logger.warning(
+                            f"Volume confirmation failed for {symbol} due to data issue: {str(e)}. "
+                            f"Proceeding with signal generation."
+                        )
                         volume_confirmed = True
 
                 if not volume_confirmed:
@@ -182,15 +198,17 @@ class BollingerReversionStrategy(BaseStrategy):
                             order_type="market",
                             amount=self.params["position_size"],
                             current_price=current_price,
-                            stop_loss=current_price * (1 - self.params["stop_loss_pct"]),
-                            take_profit=current_price * (1 + self.params["take_profit_pct"]),
+                            stop_loss=current_price
+                            * (1 - self.params["stop_loss_pct"]),
+                            take_profit=current_price
+                            * (1 + self.params["take_profit_pct"]),
                             metadata={
                                 "reversion_type": "oversold",
                                 "bb_position": bb_position,
                                 "bb_middle": row.get("bb_middle", None),
                                 "bb_upper": row.get("bb_upper", None),
                                 "bb_lower": row.get("bb_lower", None),
-                                "bb_width": bb_width
+                                "bb_width": bb_width,
                             },
                             timestamp=signal_timestamp,
                         )
@@ -215,15 +233,17 @@ class BollingerReversionStrategy(BaseStrategy):
                             order_type="market",
                             amount=self.params["position_size"],
                             current_price=current_price,
-                            stop_loss=current_price * (1 + self.params["stop_loss_pct"]),
-                            take_profit=current_price * (1 - self.params["take_profit_pct"]),
+                            stop_loss=current_price
+                            * (1 + self.params["stop_loss_pct"]),
+                            take_profit=current_price
+                            * (1 - self.params["take_profit_pct"]),
                             metadata={
                                 "reversion_type": "overbought",
                                 "bb_position": bb_position,
                                 "bb_middle": row.get("bb_middle", None),
                                 "bb_upper": row.get("bb_upper", None),
                                 "bb_lower": row.get("bb_lower", None),
-                                "bb_width": bb_width
+                                "bb_width": bb_width,
                             },
                             timestamp=signal_timestamp,
                         )
@@ -231,16 +251,22 @@ class BollingerReversionStrategy(BaseStrategy):
 
         except (ValueError, TypeError, KeyError, IndexError, ZeroDivisionError) as e:
             logger = logging.getLogger(__name__)
-            logger.error(f"Data processing error in vectorized signal generation: {str(e)}. "
-                        f"Stack trace: {traceback.format_exc()}")
+            logger.error(
+                f"Data processing error in vectorized signal generation: {str(e)}. "
+                f"Stack trace: {traceback.format_exc()}"
+            )
         except Exception as e:
             logger = logging.getLogger(__name__)
-            logger.error(f"Unexpected error in vectorized signal generation: {str(e)}. "
-                        f"Stack trace: {traceback.format_exc()}")
+            logger.error(
+                f"Unexpected error in vectorized signal generation: {str(e)}. "
+                f"Stack trace: {traceback.format_exc()}"
+            )
 
         return signals
 
-    async def _generate_signals_for_symbol(self, symbol: str, data) -> List[TradingSignal]:
+    async def _generate_signals_for_symbol(
+        self, symbol: str, data
+    ) -> List[TradingSignal]:
         """Generate signals for a specific symbol's data."""
         signals = []
 
@@ -263,11 +289,15 @@ class BollingerReversionStrategy(BaseStrategy):
                     if len(data_with_bb) >= volume_period:
                         avg_volume = data_with_bb["volume"].tail(volume_period).mean()
                         current_volume = last_row["volume"]
-                        volume_confirmed = current_volume >= (avg_volume * self.params["volume_threshold"])
+                        volume_confirmed = current_volume >= (
+                            avg_volume * self.params["volume_threshold"]
+                        )
                 except (ValueError, TypeError, KeyError) as e:
                     logger = logging.getLogger(__name__)
-                    logger.warning(f"Volume confirmation failed for {symbol} due to data issue: {str(e)}. "
-                                  f"Proceeding with signal generation.")
+                    logger.warning(
+                        f"Volume confirmation failed for {symbol} due to data issue: {str(e)}. "
+                        f"Proceeding with signal generation."
+                    )
                     volume_confirmed = True
 
             if not volume_confirmed:
@@ -276,8 +306,10 @@ class BollingerReversionStrategy(BaseStrategy):
             # Check for NaN in Bollinger Bands position
             if pd.isna(last_row["bb_position"]):
                 logger = logging.getLogger(__name__)
-                logger.warning(f"NaN detected in Bollinger Bands position for symbol {symbol}. Skipping signal generation. "
-                              f"This may indicate data quality issues or insufficient data for BB calculation.")
+                logger.warning(
+                    f"NaN detected in Bollinger Bands position for symbol {symbol}. Skipping signal generation. "
+                    f"This may indicate data quality issues or insufficient data for BB calculation."
+                )
                 return signals
 
             # Check for oversold condition (price near lower band)
@@ -300,7 +332,9 @@ class BollingerReversionStrategy(BaseStrategy):
 
                 # Extract deterministic timestamp from the data that triggered the signal
                 signal_timestamp = None
-                if not data_with_bb.empty and isinstance(data_with_bb.index, pd.DatetimeIndex):
+                if not data_with_bb.empty and isinstance(
+                    data_with_bb.index, pd.DatetimeIndex
+                ):
                     signal_timestamp = data_with_bb.index[-1].to_pydatetime()
 
                 signals.append(
@@ -312,14 +346,15 @@ class BollingerReversionStrategy(BaseStrategy):
                         amount=self.params["position_size"],
                         current_price=current_price,
                         stop_loss=current_price * (1 - self.params["stop_loss_pct"]),
-                        take_profit=current_price * (1 + self.params["take_profit_pct"]),
+                        take_profit=current_price
+                        * (1 + self.params["take_profit_pct"]),
                         metadata={
                             "reversion_type": "oversold",
                             "bb_position": last_row["bb_position"],
                             "bb_middle": last_row["bb_middle"],
                             "bb_upper": last_row["bb_upper"],
                             "bb_lower": last_row["bb_lower"],
-                            "bb_width": last_row["bb_width"]
+                            "bb_width": last_row["bb_width"],
                         },
                         timestamp=signal_timestamp,
                     )
@@ -333,7 +368,9 @@ class BollingerReversionStrategy(BaseStrategy):
 
                 # Extract deterministic timestamp from the data that triggered the signal
                 signal_timestamp = None
-                if not data_with_bb.empty and isinstance(data_with_bb.index, pd.DatetimeIndex):
+                if not data_with_bb.empty and isinstance(
+                    data_with_bb.index, pd.DatetimeIndex
+                ):
                     signal_timestamp = data_with_bb.index[-1].to_pydatetime()
 
                 signals.append(
@@ -345,14 +382,15 @@ class BollingerReversionStrategy(BaseStrategy):
                         amount=self.params["position_size"],
                         current_price=current_price,
                         stop_loss=current_price * (1 + self.params["stop_loss_pct"]),
-                        take_profit=current_price * (1 - self.params["take_profit_pct"]),
+                        take_profit=current_price
+                        * (1 - self.params["take_profit_pct"]),
                         metadata={
                             "reversion_type": "overbought",
                             "bb_position": last_row["bb_position"],
                             "bb_middle": last_row["bb_middle"],
                             "bb_upper": last_row["bb_upper"],
                             "bb_lower": last_row["bb_lower"],
-                            "bb_width": last_row["bb_width"]
+                            "bb_width": last_row["bb_width"],
                         },
                         timestamp=signal_timestamp,
                     )
@@ -360,11 +398,15 @@ class BollingerReversionStrategy(BaseStrategy):
 
         except (ValueError, TypeError, KeyError, IndexError, ZeroDivisionError) as e:
             logger = logging.getLogger(__name__)
-            logger.error(f"Data processing error generating signals for {symbol}: {str(e)}. "
-                        f"Stack trace: {traceback.format_exc()}")
+            logger.error(
+                f"Data processing error generating signals for {symbol}: {str(e)}. "
+                f"Stack trace: {traceback.format_exc()}"
+            )
         except Exception as e:
             logger = logging.getLogger(__name__)
-            logger.error(f"Unexpected error generating signals for {symbol}: {str(e)}. "
-                        f"Stack trace: {traceback.format_exc()}")
+            logger.error(
+                f"Unexpected error generating signals for {symbol}: {str(e)}. "
+                f"Stack trace: {traceback.format_exc()}"
+            )
 
         return signals

@@ -31,12 +31,20 @@ class PortfolioManager:
             initial_balance: Initial balance amount, or None for default
         """
         try:
-            self.paper_balance = Decimal(initial_balance) if initial_balance is not None else Decimal("0")
+            self.paper_balance = (
+                Decimal(initial_balance)
+                if initial_balance is not None
+                else Decimal("0")
+            )
         except Exception:
             self.paper_balance = Decimal("0")
 
-    def initialize_portfolio(self, pairs: List[str], portfolio_mode: bool, 
-                           allocation: Optional[Dict[str, float]] = None) -> None:
+    def initialize_portfolio(
+        self,
+        pairs: List[str],
+        portfolio_mode: bool,
+        allocation: Optional[Dict[str, float]] = None,
+    ) -> None:
         """
         Initialize per-pair portfolio state.
 
@@ -54,7 +62,11 @@ class PortfolioManager:
                 return
 
             # Determine initial capital per pair. Use allocation if provided, else equal split.
-            total = Decimal(str(self.paper_balance)) if self.paper_balance is not None else Decimal("0")
+            total = (
+                Decimal(str(self.paper_balance))
+                if self.paper_balance is not None
+                else Decimal("0")
+            )
             if self.pair_allocation:
                 for symbol in self.pairs:
                     frac = Decimal(str(self.pair_allocation.get(symbol, 0)))

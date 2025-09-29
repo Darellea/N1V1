@@ -6,12 +6,12 @@ key support/resistance levels and generates signals on pullbacks to VWAP with
 volume confirmation.
 """
 
-import numpy as np
-import pandas as pd
-from typing import List, Dict
+from typing import Dict, List
 
-from strategies.base_strategy import BaseStrategy, StrategyConfig
-from core.contracts import TradingSignal, SignalType, SignalStrength
+import pandas as pd
+
+from core.contracts import SignalStrength, SignalType, TradingSignal
+from strategies.base_strategy import BaseStrategy
 
 
 class VWAPPullbackStrategy(BaseStrategy):
@@ -37,7 +37,9 @@ class VWAPPullbackStrategy(BaseStrategy):
             "min_volume_period": 10,  # Minimum period for volume analysis
         }
         # Handle both StrategyConfig objects and dict configs
-        config_params = config.params if hasattr(config, 'params') else config.get('params', {})
+        config_params = (
+            config.params if hasattr(config, "params") else config.get("params", {})
+        )
         self.params: Dict[str, float] = {**self.default_params, **(config_params or {})}
 
         # Signal tracking
@@ -55,22 +57,25 @@ class VWAPPullbackStrategy(BaseStrategy):
 
             def calculate_vwap_indicators(group):
                 # Calculate VWAP (Volume Weighted Average Price)
-                group["vwap"] = (
-                    (group["close"] * group["volume"]).cumsum() /
-                    group["volume"].cumsum()
-                )
+                group["vwap"] = (group["close"] * group["volume"]).cumsum() / group[
+                    "volume"
+                ].cumsum()
 
                 # Calculate VWAP deviation
-                group["vwap_deviation"] = (
-                    (group["close"] - group["vwap"]) / group["vwap"]
-                )
+                group["vwap_deviation"] = (group["close"] - group["vwap"]) / group[
+                    "vwap"
+                ]
 
                 # Calculate volume moving average for confirmation
-                group["volume_ma"] = group["volume"].rolling(window=min_volume_period).mean()
+                group["volume_ma"] = (
+                    group["volume"].rolling(window=min_volume_period).mean()
+                )
 
                 # Calculate trend direction if enabled
                 if self.params["trend_filter"]:
-                    group["price_trend"] = group["close"].rolling(window=trend_period).mean()
+                    group["price_trend"] = (
+                        group["close"].rolling(window=trend_period).mean()
+                    )
                     group["trend_slope"] = group["price_trend"].diff()
 
                 # Calculate VWAP slope (trend of VWAP itself)
@@ -78,21 +83,20 @@ class VWAPPullbackStrategy(BaseStrategy):
 
                 return group
 
-            data = grouped.apply(calculate_vwap_indicators).reset_index(level=0, drop=True)
+            data = grouped.apply(calculate_vwap_indicators).reset_index(
+                level=0, drop=True
+            )
         else:
             # Single symbol data
             data = data.copy()
 
             # Calculate VWAP
-            data["vwap"] = (
-                (data["close"] * data["volume"]).cumsum() /
-                data["volume"].cumsum()
-            )
+            data["vwap"] = (data["close"] * data["volume"]).cumsum() / data[
+                "volume"
+            ].cumsum()
 
             # Calculate VWAP deviation
-            data["vwap_deviation"] = (
-                (data["close"] - data["vwap"]) / data["vwap"]
-            )
+            data["vwap_deviation"] = (data["close"] - data["vwap"]) / data["vwap"]
 
             # Calculate volume moving average
             data["volume_ma"] = data["volume"].rolling(window=min_volume_period).mean()
@@ -115,7 +119,7 @@ class VWAPPullbackStrategy(BaseStrategy):
             for symbol, df in data.items():
                 if df is not None and not df.empty:
                     signals.extend(await self._generate_signals_for_symbol(symbol, df))
-        elif hasattr(data, 'groupby') and not data.empty and "symbol" in data.columns:
+        elif hasattr(data, "groupby") and not data.empty and "symbol" in data.columns:
             grouped = data.groupby("symbol")
             for symbol, group in grouped:
                 signals.extend(await self._generate_signals_for_symbol(symbol, group))
@@ -125,13 +129,17 @@ class VWAPPullbackStrategy(BaseStrategy):
                 if not df.empty and "symbol" in df.columns:
                     grouped = df.groupby("symbol")
                     for symbol, group in grouped:
-                        signals.extend(await self._generate_signals_for_symbol(symbol, group))
+                        signals.extend(
+                            await self._generate_signals_for_symbol(symbol, group)
+                        )
             except Exception:
                 pass
 
         return signals
 
-    async def _generate_signals_for_symbol(self, symbol: str, data) -> List[TradingSignal]:
+    async def _generate_signals_for_symbol(
+        self, symbol: str, data
+    ) -> List[TradingSignal]:
         """Generate signals for a specific symbol's data."""
         signals = []
 
@@ -168,9 +176,9 @@ class VWAPPullbackStrategy(BaseStrategy):
                     if not pd.isna(trend_slope) and not pd.isna(vwap_slope):
                         # Allow signals if both price and VWAP are moving in same direction
                         trend_confirmed = (
-                            (trend_slope > 0 and vwap_slope > 0) or
-                            (trend_slope < 0 and vwap_slope < 0) or
-                            abs(trend_slope) < 0.001  # Neutral trend allowed
+                            (trend_slope > 0 and vwap_slope > 0)
+                            or (trend_slope < 0 and vwap_slope < 0)
+                            or abs(trend_slope) < 0.001  # Neutral trend allowed
                         )
                     else:
                         trend_confirmed = True
@@ -184,9 +192,8 @@ class VWAPPullbackStrategy(BaseStrategy):
             pullback_threshold = self.params["pullback_threshold"]
             vwap_deviation = abs(last_row["vwap_deviation"])
 
-            near_vwap = (
-                vwap_deviation <= pullback_threshold and
-                not pd.isna(last_row["vwap_deviation"])
+            near_vwap = vwap_deviation <= pullback_threshold and not pd.isna(
+                last_row["vwap_deviation"]
             )
 
             if not near_vwap:
@@ -214,15 +221,13 @@ class VWAPPullbackStrategy(BaseStrategy):
             prev_price_above_vwap = prev_row["close"] > prev_row["vwap"]
 
             # Bullish signal: price pulls back to VWAP and shows upward momentum
-            bullish_signal = (
-                price_above_vwap and
-                (last_row["close"] > prev_row["close"] or prev_price_above_vwap)
+            bullish_signal = price_above_vwap and (
+                last_row["close"] > prev_row["close"] or prev_price_above_vwap
             )
 
             # Bearish signal: price pulls back to VWAP and shows downward momentum
-            bearish_signal = (
-                not price_above_vwap and
-                (last_row["close"] < prev_row["close"] or not prev_price_above_vwap)
+            bearish_signal = not price_above_vwap and (
+                last_row["close"] < prev_row["close"] or not prev_price_above_vwap
             )
 
             if bullish_signal:
@@ -240,7 +245,8 @@ class VWAPPullbackStrategy(BaseStrategy):
                         amount=self.params["position_size"],
                         current_price=current_price,
                         stop_loss=current_price * (1 - self.params["stop_loss_pct"]),
-                        take_profit=current_price * (1 + self.params["take_profit_pct"]),
+                        take_profit=current_price
+                        * (1 + self.params["take_profit_pct"]),
                         metadata={
                             "signal_type": "vwap_pullback_long",
                             "vwap": last_row["vwap"],
@@ -249,7 +255,7 @@ class VWAPPullbackStrategy(BaseStrategy):
                             "volume_confirmed": volume_confirmed,
                             "trend_confirmed": trend_confirmed,
                             "confirmation_bars": confirmation_bars,
-                            "price_above_vwap": price_above_vwap
+                            "price_above_vwap": price_above_vwap,
                         },
                     )
                 )
@@ -269,7 +275,8 @@ class VWAPPullbackStrategy(BaseStrategy):
                         amount=self.params["position_size"],
                         current_price=current_price,
                         stop_loss=current_price * (1 + self.params["stop_loss_pct"]),
-                        take_profit=current_price * (1 - self.params["take_profit_pct"]),
+                        take_profit=current_price
+                        * (1 - self.params["take_profit_pct"]),
                         metadata={
                             "signal_type": "vwap_pullback_short",
                             "vwap": last_row["vwap"],
@@ -278,13 +285,14 @@ class VWAPPullbackStrategy(BaseStrategy):
                             "volume_confirmed": volume_confirmed,
                             "trend_confirmed": trend_confirmed,
                             "confirmation_bars": confirmation_bars,
-                            "price_above_vwap": price_above_vwap
+                            "price_above_vwap": price_above_vwap,
                         },
                     )
                 )
 
         except Exception as e:
             import logging
+
             logger = logging.getLogger(__name__)
             logger.error(f"Error generating signals for {symbol}: {str(e)}")
 

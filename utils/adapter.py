@@ -5,12 +5,12 @@ Small adapter utilities to normalize inputs (e.g. TradingSignal dataclass/object
 into plain dictionaries for loggers, order manager, and notifier code paths.
 """
 
-from typing import Any, Dict
 import dataclasses
 import enum
 import logging
 import time
 from datetime import datetime
+from typing import Any, Dict
 
 
 def _normalize_timestamp(timestamp: Any) -> int:
@@ -46,7 +46,9 @@ def _normalize_timestamp(timestamp: Any) -> int:
             return int(timestamp.timestamp() * 1000)
         except (OSError, ValueError, OverflowError) as e:
             # Handle edge cases like pre-1970 timestamps or invalid dates
-            logging.warning(f"Failed to convert datetime {timestamp} to timestamp: {e}. Using fallback.")
+            logging.warning(
+                f"Failed to convert datetime {timestamp} to timestamp: {e}. Using fallback."
+            )
             # Fallback: calculate manually for pre-1970 dates
             if timestamp.tzinfo is None:
                 timestamp = timestamp.replace(tzinfo=timezone.utc)
@@ -60,7 +62,7 @@ def _normalize_timestamp(timestamp: Any) -> int:
     elif isinstance(timestamp, str):
         try:
             # Try to parse as ISO format
-            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
             # Ensure timezone info
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
@@ -92,6 +94,7 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
 
     Returns an empty dict for None input.
     """
+
     def _convert_value(v):
         if isinstance(v, enum.Enum):
             # Prefer .value if defined
@@ -121,16 +124,21 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
             result = _convert_value(result)
 
             # Special handling for TradingSignal dataclass - map quantity to amount
-            if hasattr(signal, '__class__') and signal.__class__.__name__ == 'TradingSignal':
-                if 'quantity' in result and result.get('quantity') is not None:
-                    result['amount'] = result.pop('quantity')
+            if (
+                hasattr(signal, "__class__")
+                and signal.__class__.__name__ == "TradingSignal"
+            ):
+                if "quantity" in result and result.get("quantity") is not None:
+                    result["amount"] = result.pop("quantity")
 
             # Normalize timestamp to milliseconds
-            if 'timestamp' in result:
-                original = result['timestamp']
+            if "timestamp" in result:
+                original = result["timestamp"]
                 try:
-                    result['timestamp'] = _normalize_timestamp(original)
-                    logging.debug(f"Normalized timestamp in dataclass from {type(original).__name__} ({original}) to int ({result['timestamp']})")
+                    result["timestamp"] = _normalize_timestamp(original)
+                    logging.debug(
+                        f"Normalized timestamp in dataclass from {type(original).__name__} ({original}) to int ({result['timestamp']})"
+                    )
                 except ValueError as e:
                     logging.error(f"Failed to normalize timestamp in dataclass: {e}")
                     raise  # Re-raise to fail fast for invalid timestamps
@@ -147,6 +155,7 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
             result = to_dict()
             # Check if result is a Mock (for testing)
             from unittest.mock import Mock
+
             if isinstance(result, Mock):
                 # Skip to_dict for Mocks, fall back to attribute probing
                 pass
@@ -190,17 +199,24 @@ def signal_to_dict(signal: Any) -> Dict[str, Any]:
         val = _convert_value(val)
 
         # Normalize timestamp to milliseconds
-        if a == 'timestamp':
+        if a == "timestamp":
             try:
                 # Check if it's a Mock object (for testing)
                 from unittest.mock import Mock
+
                 if isinstance(val, Mock):
-                    val = int(time.time() * 1000)  # Use current time for Mock timestamps
+                    val = int(
+                        time.time() * 1000
+                    )  # Use current time for Mock timestamps
                 else:
                     val = _normalize_timestamp(val)
-                logging.debug(f"Normalized timestamp in attribute probe from {type(val).__name__} to int ({val})")
+                logging.debug(
+                    f"Normalized timestamp in attribute probe from {type(val).__name__} to int ({val})"
+                )
             except ValueError as e:
-                logging.warning(f"Failed to normalize timestamp in attribute probe: {e}")
+                logging.warning(
+                    f"Failed to normalize timestamp in attribute probe: {e}"
+                )
                 val = None  # Set to None for invalid timestamps
 
         out[a] = val

@@ -5,12 +5,12 @@ This module provides caching functionality for technical indicators to avoid
 redundant calculations across multiple strategies and improve performance.
 """
 
-import pandas as pd
-import numpy as np
-from typing import Dict, Optional, Any, Tuple
-from functools import lru_cache
 import hashlib
 import logging
+from typing import Any, Dict, Optional, Tuple
+
+import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class IndicatorsCache:
             data_sample = data
 
         # Include key columns that affect indicator calculation
-        key_columns = ['close', 'high', 'low', 'volume']
+        key_columns = ["close", "high", "low", "volume"]
         available_columns = [col for col in key_columns if col in data_sample.columns]
 
         if available_columns:
@@ -71,7 +71,9 @@ class IndicatorsCache:
 
         return f"{indicator_name}_{data_hash}_{params_hash}"
 
-    def get(self, data: pd.DataFrame, indicator_name: str, **params) -> Optional[pd.Series]:
+    def get(
+        self, data: pd.DataFrame, indicator_name: str, **params
+    ) -> Optional[pd.Series]:
         """
         Retrieve cached indicator result if available.
 
@@ -95,7 +97,9 @@ class IndicatorsCache:
         logger.debug(f"Cache miss for {indicator_name}")
         return None
 
-    def put(self, data: pd.DataFrame, indicator_name: str, result: pd.Series, **params) -> None:
+    def put(
+        self, data: pd.DataFrame, indicator_name: str, result: pd.Series, **params
+    ) -> None:
         """
         Store indicator result in cache.
 
@@ -125,9 +129,9 @@ class IndicatorsCache:
     def get_stats(self) -> Dict[str, int]:
         """Get cache statistics."""
         return {
-            'cache_size': len(self.cache),
-            'max_cache_size': self.max_cache_size,
-            'cache_hit_ratio': 0.0  # Could be implemented with hit/miss counters
+            "cache_size": len(self.cache),
+            "max_cache_size": self.max_cache_size,
+            "cache_hit_ratio": 0.0,  # Could be implemented with hit/miss counters
         }
 
 
@@ -145,6 +149,7 @@ def cached_indicator(indicator_func):
     Returns:
         Wrapped function with caching
     """
+
     def wrapper(data: pd.DataFrame, **params):
         # Try to get from cache first
         cached_result = indicators_cache.get(data, indicator_func.__name__, **params)
@@ -161,8 +166,11 @@ def cached_indicator(indicator_func):
 
 # Vectorized indicator calculation functions with caching
 
+
 @cached_indicator
-def calculate_rsi_vectorized(data: pd.DataFrame, period: int = 14, column: str = 'close') -> pd.Series:
+def calculate_rsi_vectorized(
+    data: pd.DataFrame, period: int = 14, column: str = "close"
+) -> pd.Series:
     """
     Calculate RSI using vectorized operations for better performance.
 
@@ -194,8 +202,9 @@ def calculate_rsi_vectorized(data: pd.DataFrame, period: int = 14, column: str =
 
 
 @cached_indicator
-def calculate_bollinger_bands_vectorized(data: pd.DataFrame, period: int = 20,
-                                       std_dev: float = 2.0, column: str = 'close') -> Tuple[pd.Series, pd.Series, pd.Series]:
+def calculate_bollinger_bands_vectorized(
+    data: pd.DataFrame, period: int = 20, std_dev: float = 2.0, column: str = "close"
+) -> Tuple[pd.Series, pd.Series, pd.Series]:
     """
     Calculate Bollinger Bands using vectorized operations.
 
@@ -235,7 +244,7 @@ def calculate_atr_vectorized(data: pd.DataFrame, period: int = 14) -> pd.Series:
     Returns:
         Series with ATR values
     """
-    required_cols = ['high', 'low', 'close']
+    required_cols = ["high", "low", "close"]
     for col in required_cols:
         if col not in data.columns:
             raise ValueError(f"Column '{col}' not found in data")
@@ -243,9 +252,9 @@ def calculate_atr_vectorized(data: pd.DataFrame, period: int = 14) -> pd.Series:
     if len(data) < period:
         return pd.Series([np.nan] * len(data), index=data.index)
 
-    high_low = data['high'] - data['low']
-    high_close = (data['high'] - data['close'].shift(1)).abs()
-    low_close = (data['low'] - data['close'].shift(1)).abs()
+    high_low = data["high"] - data["low"]
+    high_close = (data["high"] - data["close"].shift(1)).abs()
+    low_close = (data["low"] - data["close"].shift(1)).abs()
 
     true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     atr = true_range.rolling(window=period).mean()
@@ -253,7 +262,9 @@ def calculate_atr_vectorized(data: pd.DataFrame, period: int = 14) -> pd.Series:
     return atr
 
 
-def calculate_indicators_for_multi_symbol(data: pd.DataFrame, indicators_config: Dict[str, Dict]) -> pd.DataFrame:
+def calculate_indicators_for_multi_symbol(
+    data: pd.DataFrame, indicators_config: Dict[str, Dict]
+) -> pd.DataFrame:
     """
     Calculate multiple indicators for multi-symbol data using vectorized operations.
 
@@ -285,89 +296,107 @@ def calculate_indicators_for_multi_symbol(data: pd.DataFrame, indicators_config:
     # Process each indicator
     for indicator_name, params in indicators_config.items():
         try:
-            if indicator_name == 'rsi':
-                period = params.get('period', 14)
+            if indicator_name == "rsi":
+                period = params.get("period", 14)
                 rsi = calculate_rsi_vectorized(result_df, period=period)
-                result_df['rsi'] = rsi
+                result_df["rsi"] = rsi
 
-            elif indicator_name == 'bb':
-                period = params.get('period', 20)
-                std_dev = params.get('std_dev', 2.0)
+            elif indicator_name == "bb":
+                period = params.get("period", 20)
+                std_dev = params.get("std_dev", 2.0)
                 upper, middle, lower = calculate_bollinger_bands_vectorized(
                     result_df, period=period, std_dev=std_dev
                 )
-                result_df['bb_upper'] = upper
-                result_df['bb_middle'] = middle
-                result_df['bb_lower'] = lower
+                result_df["bb_upper"] = upper
+                result_df["bb_middle"] = middle
+                result_df["bb_lower"] = lower
 
                 # Calculate position within bands (vectorized)
-                band_range = result_df['bb_upper'] - result_df['bb_lower']
-                result_df['bb_position'] = np.where(
+                band_range = result_df["bb_upper"] - result_df["bb_lower"]
+                result_df["bb_position"] = np.where(
                     band_range == 0,
                     np.nan,
-                    (result_df['close'] - result_df['bb_lower']) / band_range
+                    (result_df["close"] - result_df["bb_lower"]) / band_range,
                 )
 
                 # Calculate band width
-                result_df['bb_width'] = band_range / result_df['bb_middle']
+                result_df["bb_width"] = band_range / result_df["bb_middle"]
 
-            elif indicator_name == 'atr':
-                period = params.get('period', 14)
-                result_df['atr'] = calculate_atr_vectorized(result_df, period=period)
+            elif indicator_name == "atr":
+                period = params.get("period", 14)
+                result_df["atr"] = calculate_atr_vectorized(result_df, period=period)
 
-            elif indicator_name == 'ema':
-                period = params.get('period', 20)
-                result_df['ema'] = result_df['close'].ewm(span=period, adjust=False).mean()
+            elif indicator_name == "ema":
+                period = params.get("period", 20)
+                result_df["ema"] = (
+                    result_df["close"].ewm(span=period, adjust=False).mean()
+                )
 
-            elif indicator_name == 'sma':
-                period = params.get('period', 20)
-                result_df['sma'] = result_df['close'].rolling(window=period).mean()
+            elif indicator_name == "sma":
+                period = params.get("period", 20)
+                result_df["sma"] = result_df["close"].rolling(window=period).mean()
 
-            elif indicator_name == 'keltner':
-                sma_period = params.get('sma_period', 20)
-                atr_period = params.get('atr_period', 14)
-                atr_multiplier = params.get('atr_multiplier', 2.0)
+            elif indicator_name == "keltner":
+                sma_period = params.get("sma_period", 20)
+                atr_period = params.get("atr_period", 14)
+                atr_multiplier = params.get("atr_multiplier", 2.0)
 
                 # Calculate SMA for middle line
-                result_df['keltner_middle'] = result_df['close'].rolling(window=sma_period).mean()
+                result_df["keltner_middle"] = (
+                    result_df["close"].rolling(window=sma_period).mean()
+                )
 
                 # Calculate ATR for bands
-                high_low = result_df['high'] - result_df['low']
-                high_close = (result_df['high'] - result_df['close'].shift(1)).abs()
-                low_close = (result_df['low'] - result_df['close'].shift(1)).abs()
-                true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+                high_low = result_df["high"] - result_df["low"]
+                high_close = (result_df["high"] - result_df["close"].shift(1)).abs()
+                low_close = (result_df["low"] - result_df["close"].shift(1)).abs()
+                true_range = pd.concat([high_low, high_close, low_close], axis=1).max(
+                    axis=1
+                )
                 atr = true_range.rolling(window=atr_period).mean()
 
                 # Calculate Keltner Channel bands
-                result_df['keltner_upper'] = result_df['keltner_middle'] + (atr * atr_multiplier)
-                result_df['keltner_lower'] = result_df['keltner_middle'] - (atr * atr_multiplier)
+                result_df["keltner_upper"] = result_df["keltner_middle"] + (
+                    atr * atr_multiplier
+                )
+                result_df["keltner_lower"] = result_df["keltner_middle"] - (
+                    atr * atr_multiplier
+                )
 
                 # Calculate position within channel
-                band_range = result_df['keltner_upper'] - result_df['keltner_lower']
-                result_df['keltner_position'] = np.where(
+                band_range = result_df["keltner_upper"] - result_df["keltner_lower"]
+                result_df["keltner_position"] = np.where(
                     band_range == 0,
                     np.nan,
-                    (result_df['close'] - result_df['keltner_lower']) / band_range
+                    (result_df["close"] - result_df["keltner_lower"]) / band_range,
                 )
 
                 # Calculate channel width
-                result_df['keltner_width'] = band_range / result_df['keltner_middle']
+                result_df["keltner_width"] = band_range / result_df["keltner_middle"]
 
-            elif indicator_name == 'donchian':
-                period = params.get('period', 20)
+            elif indicator_name == "donchian":
+                period = params.get("period", 20)
 
                 # Calculate Donchian Channel using rolling operations
-                result_df['donchian_high'] = result_df['high'].rolling(window=period).max()
-                result_df['donchian_low'] = result_df['low'].rolling(window=period).min()
-                result_df['donchian_mid'] = (result_df['donchian_high'] + result_df['donchian_low']) / 2
+                result_df["donchian_high"] = (
+                    result_df["high"].rolling(window=period).max()
+                )
+                result_df["donchian_low"] = (
+                    result_df["low"].rolling(window=period).min()
+                )
+                result_df["donchian_mid"] = (
+                    result_df["donchian_high"] + result_df["donchian_low"]
+                ) / 2
 
                 # Calculate channel width
-                result_df['donchian_width'] = result_df['donchian_high'] - result_df['donchian_low']
+                result_df["donchian_width"] = (
+                    result_df["donchian_high"] - result_df["donchian_low"]
+                )
                 # Avoid division by zero
-                result_df['donchian_width_pct'] = np.where(
-                    result_df['donchian_mid'] == 0,
+                result_df["donchian_width_pct"] = np.where(
+                    result_df["donchian_mid"] == 0,
                     np.nan,
-                    result_df['donchian_width'] / result_df['donchian_mid']
+                    result_df["donchian_width"] / result_df["donchian_mid"],
                 )
 
             logger.debug(f"Calculated {indicator_name} for multi-symbol data")

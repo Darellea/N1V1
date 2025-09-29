@@ -5,8 +5,8 @@ Pre-trade validation for execution safety and compliance.
 """
 
 import logging
-from typing import Dict, Any, Optional
 from decimal import Decimal
+from typing import Any, Dict, Optional
 
 from core.contracts import TradingSignal
 from utils.logger import get_trade_logger
@@ -30,36 +30,38 @@ class ExecutionValidator:
         self.config = config or self._get_default_config()
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
-        self.enabled = self.config.get('enabled', True)
-        self.check_balance = self.config.get('check_balance', True)
-        self.check_slippage = self.config.get('check_slippage', True)
-        self.max_slippage_pct = Decimal(str(self.config.get('max_slippage_pct', 0.02)))
+        self.enabled = self.config.get("enabled", True)
+        self.check_balance = self.config.get("check_balance", True)
+        self.check_slippage = self.config.get("check_slippage", True)
+        self.max_slippage_pct = Decimal(str(self.config.get("max_slippage_pct", 0.02)))
 
         # Test mode bypass
-        self.test_mode = self.config.get('test_mode', False)
+        self.test_mode = self.config.get("test_mode", False)
 
         # Exchange constraints
-        self.min_order_size = Decimal(str(self.config.get('min_order_size', 0.000001)))
-        self.max_order_size = Decimal(str(self.config.get('max_order_size', 1000000)))
-        self.tick_size = Decimal(str(self.config.get('tick_size', 0.00000001)))
-        self.lot_size = Decimal(str(self.config.get('lot_size', 0.00000001)))
+        self.min_order_size = Decimal(str(self.config.get("min_order_size", 0.000001)))
+        self.max_order_size = Decimal(str(self.config.get("max_order_size", 1000000)))
+        self.tick_size = Decimal(str(self.config.get("tick_size", 0.00000001)))
+        self.lot_size = Decimal(str(self.config.get("lot_size", 0.00000001)))
 
         self.logger.info("ExecutionValidator initialized")
 
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration."""
         return {
-            'enabled': True,
-            'check_balance': True,
-            'check_slippage': True,
-            'max_slippage_pct': 0.02,  # 2%
-            'min_order_size': 0.000001,
-            'max_order_size': 1000000,
-            'tick_size': 0.00000001,
-            'lot_size': 0.00000001
+            "enabled": True,
+            "check_balance": True,
+            "check_slippage": True,
+            "max_slippage_pct": 0.02,  # 2%
+            "min_order_size": 0.000001,
+            "max_order_size": 1000000,
+            "tick_size": 0.00000001,
+            "lot_size": 0.00000001,
         }
 
-    async def validate_signal(self, signal: TradingSignal, context: Dict[str, Any]) -> bool:
+    async def validate_signal(
+        self, signal: TradingSignal, context: Dict[str, Any]
+    ) -> bool:
         """
         Validate a trading signal for execution.
 
@@ -105,11 +107,14 @@ class ExecutionValidator:
 
         except Exception as e:
             self.logger.error(f"Error during signal validation: {e}")
-            trade_logger.performance("Validation Error", {
-                'symbol': signal.symbol,
-                'error': str(e),
-                'signal_amount': float(signal.amount)
-            })
+            trade_logger.performance(
+                "Validation Error",
+                {
+                    "symbol": signal.symbol,
+                    "error": str(e),
+                    "signal_amount": float(signal.amount),
+                },
+            )
             return False
 
     def _validate_basic_signal(self, signal: TradingSignal) -> bool:
@@ -128,15 +133,21 @@ class ExecutionValidator:
             return False
 
         if not signal.amount or signal.amount <= 0:
-            self._log_validation_error(signal, "invalid_amount", f"Invalid amount: {signal.amount}")
+            self._log_validation_error(
+                signal, "invalid_amount", f"Invalid amount: {signal.amount}"
+            )
             return False
 
         if not signal.signal_type:
-            self._log_validation_error(signal, "missing_signal_type", "Signal type is required")
+            self._log_validation_error(
+                signal, "missing_signal_type", "Signal type is required"
+            )
             return False
 
         if not signal.order_type:
-            self._log_validation_error(signal, "missing_order_type", "Order type is required")
+            self._log_validation_error(
+                signal, "missing_order_type", "Order type is required"
+            )
             return False
 
         return True
@@ -155,31 +166,42 @@ class ExecutionValidator:
 
         # Check minimum order size
         if amount < self.min_order_size:
-            self._log_validation_error(signal, "order_too_small",
-                                     f"Order size {amount} below minimum {self.min_order_size}")
+            self._log_validation_error(
+                signal,
+                "order_too_small",
+                f"Order size {amount} below minimum {self.min_order_size}",
+            )
             return False
 
         # Check maximum order size
         if amount > self.max_order_size:
-            self._log_validation_error(signal, "order_too_large",
-                                     f"Order size {amount} above maximum {self.max_order_size}")
+            self._log_validation_error(
+                signal,
+                "order_too_large",
+                f"Order size {amount} above maximum {self.max_order_size}",
+            )
             return False
 
         # Check lot size (must be multiple of lot size)
         # Use Decimal remainder calculation for precision
         # Handle the case where lot_size is 0 to avoid division by zero
-        if self.lot_size == Decimal('0'):
-            self._log_validation_error(signal, "invalid_lot_size_config", "Lot size cannot be zero")
+        if self.lot_size == Decimal("0"):
+            self._log_validation_error(
+                signal, "invalid_lot_size_config", "Lot size cannot be zero"
+            )
             return False
 
         remainder = amount % self.lot_size
         # Use tolerance for floating point precision issues with Decimal
         # Check if remainder is effectively zero (within tolerance)
         # This handles cases where floating point arithmetic might introduce tiny errors
-        tolerance = Decimal('1e-12')
+        tolerance = Decimal("1e-12")
         if abs(remainder) > tolerance:
-            self._log_validation_error(signal, "invalid_lot_size",
-                                     f"Order size {amount} not multiple of lot size {self.lot_size}")
+            self._log_validation_error(
+                signal,
+                "invalid_lot_size",
+                f"Order size {amount} not multiple of lot size {self.lot_size}",
+            )
             return False
 
         return True
@@ -196,31 +218,43 @@ class ExecutionValidator:
             True if price validation passes
         """
         # For limit orders, price is required
-        if signal.order_type and signal.order_type.value == 'limit':
+        if signal.order_type and signal.order_type.value == "limit":
             if not signal.price or signal.price <= 0:
-                self._log_validation_error(signal, "missing_limit_price", "Limit price required for limit orders")
+                self._log_validation_error(
+                    signal,
+                    "missing_limit_price",
+                    "Limit price required for limit orders",
+                )
                 return False
 
             # Check tick size
             if signal.price % self.tick_size != 0:
-                self._log_validation_error(signal, "invalid_tick_size",
-                                         f"Price {signal.price} not multiple of tick size {self.tick_size}")
+                self._log_validation_error(
+                    signal,
+                    "invalid_tick_size",
+                    f"Price {signal.price} not multiple of tick size {self.tick_size}",
+                )
                 return False
 
         # Check price against market price for reasonableness
-        market_price = context.get('market_price') or signal.current_price
+        market_price = context.get("market_price") or signal.current_price
         if market_price and signal.price:
             price_diff_pct = abs(signal.price - market_price) / market_price
-            max_reasonable_diff = Decimal('0.1')  # 10% max difference
+            max_reasonable_diff = Decimal("0.1")  # 10% max difference
 
             if price_diff_pct > max_reasonable_diff:
-                self._log_validation_error(signal, "price_too_far_from_market",
-                                         f"Price {signal.price} too far from market price {market_price}")
+                self._log_validation_error(
+                    signal,
+                    "price_too_far_from_market",
+                    f"Price {signal.price} too far from market price {market_price}",
+                )
                 return False
 
         return True
 
-    async def _validate_balance(self, signal: TradingSignal, context: Dict[str, Any]) -> bool:
+    async def _validate_balance(
+        self, signal: TradingSignal, context: Dict[str, Any]
+    ) -> bool:
         """
         Validate account balance for the order.
 
@@ -232,25 +266,32 @@ class ExecutionValidator:
             True if balance is sufficient
         """
         # Get current balance (would be fetched from exchange/portfolio manager)
-        balance = context.get('account_balance', Decimal('10000'))  # Default mock balance
+        balance = context.get(
+            "account_balance", Decimal("10000")
+        )  # Default mock balance
 
         # signal.amount is in quote currency
-        if signal.order_type and signal.order_type.value == 'market':
+        if signal.order_type and signal.order_type.value == "market":
             # For market orders, amount is quote currency, and no fees added at validation
             total_required = signal.amount
         else:
             # For limit orders, amount is quote currency, add fees
-            fee_rate = Decimal('0.001')
+            fee_rate = Decimal("0.001")
             total_required = signal.amount * (1 + fee_rate)
 
         if balance < total_required:
-            self._log_validation_error(signal, "insufficient_balance",
-                                     f"Required: {total_required:.2f}, Available: {balance:.2f}")
+            self._log_validation_error(
+                signal,
+                "insufficient_balance",
+                f"Required: {total_required:.2f}, Available: {balance:.2f}",
+            )
             return False
 
         return True
 
-    def _validate_slippage(self, signal: TradingSignal, context: Dict[str, Any]) -> bool:
+    def _validate_slippage(
+        self, signal: TradingSignal, context: Dict[str, Any]
+    ) -> bool:
         """
         Validate expected slippage.
 
@@ -261,16 +302,23 @@ class ExecutionValidator:
         Returns:
             True if slippage is within acceptable range
         """
-        expected_slippage = context.get('expected_slippage_pct', Decimal('0.001'))  # Default 0.1%
+        expected_slippage = context.get(
+            "expected_slippage_pct", Decimal("0.001")
+        )  # Default 0.1%
 
         if expected_slippage > self.max_slippage_pct:
-            self._log_validation_error(signal, "excessive_slippage",
-                                     f"Expected slippage {expected_slippage:.4f} exceeds maximum {self.max_slippage_pct:.4f}")
+            self._log_validation_error(
+                signal,
+                "excessive_slippage",
+                f"Expected slippage {expected_slippage:.4f} exceeds maximum {self.max_slippage_pct:.4f}",
+            )
             return False
 
         return True
 
-    def _validate_exchange_constraints(self, signal: TradingSignal, context: Optional[Dict[str, Any]] = None) -> bool:
+    def _validate_exchange_constraints(
+        self, signal: TradingSignal, context: Optional[Dict[str, Any]] = None
+    ) -> bool:
         """
         Validate exchange-specific constraints.
 
@@ -289,40 +337,51 @@ class ExecutionValidator:
         # For example: trading hours, maintenance windows, symbol availability, etc.
 
         # Check if symbol is tradable
-        tradable_symbols = self.config.get('tradable_symbols', [])
+        tradable_symbols = self.config.get("tradable_symbols", [])
         if tradable_symbols and signal.symbol not in tradable_symbols:
-            self._log_validation_error(signal, "symbol_not_tradable",
-                                     f"Symbol {signal.symbol} not in tradable symbols list")
+            self._log_validation_error(
+                signal,
+                "symbol_not_tradable",
+                f"Symbol {signal.symbol} not in tradable symbols list",
+            )
             return False
 
         # Check trading hours - get configurable trading hours from config
-        trading_hours = self.config.get('trading_hours', (9, 16))  # Default 9 AM to 4 PM
+        trading_hours = self.config.get(
+            "trading_hours", (9, 16)
+        )  # Default 9 AM to 4 PM
         start_hour, end_hour = trading_hours
 
         # Get current hour from context or signal timestamp
         current_hour = None
-        if context and 'current_hour' in context:
-            current_hour = context['current_hour']
+        if context and "current_hour" in context:
+            current_hour = context["current_hour"]
         elif signal.timestamp:
             # Handle both datetime objects and Unix timestamps
-            if hasattr(signal.timestamp, 'hour'):
+            if hasattr(signal.timestamp, "hour"):
                 current_hour = signal.timestamp.hour
             else:
                 # Assume it's a Unix timestamp (int/float)
                 import datetime
+
                 dt = datetime.datetime.fromtimestamp(float(signal.timestamp) / 1000)
                 current_hour = dt.hour
 
         # If we have a current hour, validate trading hours
         if current_hour is not None:
             if not (start_hour <= current_hour < end_hour):
-                self._log_validation_error(signal, "outside_trading_hours",
-                                         f"Current hour {current_hour} outside trading hours {start_hour}-{end_hour}")
+                self._log_validation_error(
+                    signal,
+                    "outside_trading_hours",
+                    f"Current hour {current_hour} outside trading hours {start_hour}-{end_hour}",
+                )
                 return False
 
         return True
 
-    def _log_validation_error(self, signal: TradingSignal, error_code: str, message: str) -> None:
+    def _log_validation_error(
+        self, signal: TradingSignal, error_code: str, message: str
+    ) -> None:
         """
         Log validation error.
 
@@ -331,15 +390,22 @@ class ExecutionValidator:
             error_code: Error code identifier
             message: Error message
         """
-        self.logger.warning(f"Validation failed for {signal.symbol}: {error_code} - {message}")
+        self.logger.warning(
+            f"Validation failed for {signal.symbol}: {error_code} - {message}"
+        )
 
-        trade_logger.performance("Validation Failed", {
-            'symbol': signal.symbol,
-            'error_code': error_code,
-            'error_message': message,
-            'signal_amount': float(signal.amount),
-            'signal_type': signal.signal_type.value if signal.signal_type else 'unknown'
-        })
+        trade_logger.performance(
+            "Validation Failed",
+            {
+                "symbol": signal.symbol,
+                "error_code": error_code,
+                "error_message": message,
+                "signal_amount": float(signal.amount),
+                "signal_type": signal.signal_type.value
+                if signal.signal_type
+                else "unknown",
+            },
+        )
 
     def validate_order(self, signal: TradingSignal) -> bool:
         """
@@ -387,14 +453,14 @@ class ExecutionValidator:
             Dictionary of validation rules
         """
         return {
-            'enabled': self.enabled,
-            'check_balance': self.check_balance,
-            'check_slippage': self.check_slippage,
-            'max_slippage_pct': float(self.max_slippage_pct),
-            'min_order_size': float(self.min_order_size),
-            'max_order_size': float(self.max_order_size),
-            'tick_size': float(self.tick_size),
-            'lot_size': float(self.lot_size)
+            "enabled": self.enabled,
+            "check_balance": self.check_balance,
+            "check_slippage": self.check_slippage,
+            "max_slippage_pct": float(self.max_slippage_pct),
+            "min_order_size": float(self.min_order_size),
+            "max_order_size": float(self.max_order_size),
+            "tick_size": float(self.tick_size),
+            "lot_size": float(self.lot_size),
         }
 
     def update_validation_rules(self, rules: Dict[str, Any]) -> None:
@@ -407,13 +473,19 @@ class ExecutionValidator:
         self.config.update(rules)
 
         # Update instance variables
-        self.enabled = rules.get('enabled', self.enabled)
-        self.check_balance = rules.get('check_balance', self.check_balance)
-        self.check_slippage = rules.get('check_slippage', self.check_slippage)
-        self.max_slippage_pct = Decimal(str(rules.get('max_slippage_pct', self.max_slippage_pct)))
-        self.min_order_size = Decimal(str(rules.get('min_order_size', self.min_order_size)))
-        self.max_order_size = Decimal(str(rules.get('max_order_size', self.max_order_size)))
-        self.tick_size = Decimal(str(rules.get('tick_size', self.tick_size)))
-        self.lot_size = Decimal(str(rules.get('lot_size', self.lot_size)))
+        self.enabled = rules.get("enabled", self.enabled)
+        self.check_balance = rules.get("check_balance", self.check_balance)
+        self.check_slippage = rules.get("check_slippage", self.check_slippage)
+        self.max_slippage_pct = Decimal(
+            str(rules.get("max_slippage_pct", self.max_slippage_pct))
+        )
+        self.min_order_size = Decimal(
+            str(rules.get("min_order_size", self.min_order_size))
+        )
+        self.max_order_size = Decimal(
+            str(rules.get("max_order_size", self.max_order_size))
+        )
+        self.tick_size = Decimal(str(rules.get("tick_size", self.tick_size)))
+        self.lot_size = Decimal(str(rules.get("lot_size", self.lot_size)))
 
         self.logger.info("Validation rules updated")

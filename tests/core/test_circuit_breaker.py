@@ -9,24 +9,20 @@ and edge cases as specified in the testing strategy.
 
 import asyncio
 import time
-import pytest
-import unittest.mock as mock
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import numpy as np
-import pandas as pd
-from typing import Dict, List, Any, Optional
-import tempfile
-import json
-import os
-from pathlib import Path
+import pytest
 
 from core.circuit_breaker import (
-    CircuitBreaker, CircuitBreakerState, CircuitBreakerConfig, get_circuit_breaker
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerState,
 )
 from core.order_manager import OrderManager
 from core.signal_router import SignalRouter
-from risk.risk_manager import RiskManager
 from risk.anomaly_detector import AnomalyDetector
+from risk.risk_manager import RiskManager
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -44,7 +40,7 @@ class TestCircuitBreakerCoreFunctionality:
             max_triggers_per_hour=3,
             monitoring_window_minutes=60,
             cooling_period_minutes=5,
-            recovery_period_minutes=10
+            recovery_period_minutes=10,
         )
         self.cb = CircuitBreaker(self.config)
 
@@ -96,9 +92,9 @@ class TestCircuitBreakerCoreFunctionality:
         """Test multi-factor trigger logic with weighted scoring."""
         # Test individual factors
         factors = {
-            'equity_drawdown': True,
-            'consecutive_losses': False,
-            'volatility_spike': False
+            "equity_drawdown": True,
+            "consecutive_losses": False,
+            "volatility_spike": False,
         }
 
         score = self.cb._calculate_trigger_score(factors)
@@ -107,9 +103,9 @@ class TestCircuitBreakerCoreFunctionality:
 
         # Test multiple factors
         factors = {
-            'equity_drawdown': True,
-            'consecutive_losses': True,
-            'volatility_spike': True
+            "equity_drawdown": True,
+            "consecutive_losses": True,
+            "volatility_spike": True,
         }
 
         score = self.cb._calculate_trigger_score(factors)
@@ -123,8 +119,12 @@ class TestCircuitBreakerCoreFunctionality:
         assert not self.cb._check_equity_drawdown(10000, 9001)  # Just under 10%
 
         # Test floating point precision
-        assert self.cb._check_equity_drawdown(10000, 8999.999)  # Very close to threshold
-        assert not self.cb._check_equity_drawdown(10000, 9000.001)  # Just over threshold
+        assert self.cb._check_equity_drawdown(
+            10000, 8999.999
+        )  # Very close to threshold
+        assert not self.cb._check_equity_drawdown(
+            10000, 9000.001
+        )  # Just over threshold
 
     @pytest.mark.asyncio
     async def test_trigger_response_time(self):
@@ -140,19 +140,25 @@ class TestCircuitBreakerCoreFunctionality:
         # Simulate trigger condition with timeout protection
         try:
             result = await asyncio.wait_for(
-                self.cb.check_and_trigger({
-                    'equity': 8500,  # 15% drawdown from 10000
-                    'consecutive_losses': 6,
-                    'volatility': 0.08
-                }),
-                timeout=5.0  # 5 second timeout for the entire operation
+                self.cb.check_and_trigger(
+                    {
+                        "equity": 8500,  # 15% drawdown from 10000
+                        "consecutive_losses": 6,
+                        "volatility": 0.08,
+                    }
+                ),
+                timeout=5.0,  # 5 second timeout for the entire operation
             )
         except asyncio.TimeoutError:
             pytest.fail("check_and_trigger timed out after 5 seconds")
 
         response_time = (time.time() - start_time) * 1000  # Convert to ms
-        assert response_time < 100, f"Response time {response_time}ms exceeds 100ms limit"
-        assert result is True, "check_and_trigger should return True for triggered conditions"
+        assert (
+            response_time < 100
+        ), f"Response time {response_time}ms exceeds 100ms limit"
+        assert (
+            result is True
+        ), "check_and_trigger should return True for triggered conditions"
         assert self.cb.state == CircuitBreakerState.TRIGGERED
 
         # Verify that mocked methods were called
@@ -169,7 +175,7 @@ class TestCircuitBreakerStateManagement:
             equity_drawdown_threshold=0.1,
             consecutive_losses_threshold=3,
             cooling_period_minutes=1,  # Short for testing
-            recovery_period_minutes=2
+            recovery_period_minutes=2,
         )
         self.cb = CircuitBreaker(self.config)
 
@@ -231,6 +237,7 @@ class TestCircuitBreakerStateManagement:
     @pytest.mark.asyncio
     async def test_concurrent_state_access(self):
         """Test state machine integrity under concurrent access."""
+
         async def trigger_operations(cb, operation_id):
             """Simulate concurrent operations."""
             for i in range(10):
@@ -241,9 +248,7 @@ class TestCircuitBreakerStateManagement:
                 await asyncio.sleep(0.001)  # Small delay
 
         # Run multiple concurrent operations
-        tasks = [
-            trigger_operations(self.cb, i) for i in range(5)
-        ]
+        tasks = [trigger_operations(self.cb, i) for i in range(5)]
 
         await asyncio.gather(*tasks)
 
@@ -275,7 +280,7 @@ class TestCircuitBreakerIntegration:
         self.cb.order_manager = self.order_manager
 
         # Trigger circuit breaker
-        await self.cb.check_and_trigger({'equity': 8000})  # 20% drawdown
+        await self.cb.check_and_trigger({"equity": 8000})  # 20% drawdown
 
         # Verify order cancellation was called
         self.order_manager.cancel_all_orders.assert_called_once()
@@ -289,7 +294,7 @@ class TestCircuitBreakerIntegration:
         self.cb.signal_router = self.signal_router
 
         # Trigger circuit breaker
-        await self.cb.check_and_trigger({'consecutive_losses': 10})
+        await self.cb.check_and_trigger({"consecutive_losses": 10})
 
         # Verify signal blocking was called
         self.signal_router.block_signals.assert_called_once()
@@ -307,7 +312,7 @@ class TestCircuitBreakerIntegration:
         self.cb.risk_manager = self.risk_manager
 
         # Trigger and move to cooling
-        await self.cb.check_and_trigger({'volatility': 0.1})
+        await self.cb.check_and_trigger({"volatility": 0.1})
         await self.cb._enter_cooling_period()
 
         # Verify portfolio freeze was called
@@ -326,7 +331,7 @@ class TestCircuitBreakerIntegration:
         self.cb.anomaly_detector = anomaly_detector
 
         # Check integration
-        market_data = {'prices': [100, 105, 95, 110, 90]}
+        market_data = {"prices": [100, 105, 95, 110, 90]}
         anomaly_detected = await self.cb._check_anomaly_integration(market_data)
 
         assert anomaly_detected
@@ -359,15 +364,15 @@ class TestCircuitBreakerPerformance:
 
             # Perform check with varying conditions
             conditions = {
-                'equity': 10000 + np.random.normal(0, 100),
-                'consecutive_losses': np.random.poisson(2),
-                'volatility': np.random.exponential(0.02)
+                "equity": 10000 + np.random.normal(0, 100),
+                "consecutive_losses": np.random.poisson(2),
+                "volatility": np.random.exponential(0.02),
             }
 
             try:
                 await asyncio.wait_for(
                     self.cb.check_and_trigger(conditions),
-                    timeout=1.0  # 1 second timeout per check
+                    timeout=1.0,  # 1 second timeout per check
                 )
             except asyncio.TimeoutError:
                 self.logger.warning(f"Check {i} timed out")
@@ -382,7 +387,9 @@ class TestCircuitBreakerPerformance:
             p95_time = np.percentile(check_times, 95)
 
             # Performance requirements
-            assert avg_time < 0.01, f"Average check time {avg_time:.4f}s exceeds 10ms limit"
+            assert (
+                avg_time < 0.01
+            ), f"Average check time {avg_time:.4f}s exceeds 10ms limit"
             assert max_time < 0.1, f"Max check time {max_time:.4f}s exceeds 100ms limit"
             assert p95_time < 0.05, f"P95 check time {p95_time:.4f}s exceeds 50ms limit"
         else:
@@ -391,8 +398,9 @@ class TestCircuitBreakerPerformance:
     @pytest.mark.asyncio
     async def test_memory_usage_during_monitoring(self):
         """Test memory usage during continuous monitoring."""
-        import psutil
         import os
+
+        import psutil
 
         process = psutil.Process(os.getpid())
         initial_memory = process.memory_info().rss
@@ -407,9 +415,9 @@ class TestCircuitBreakerPerformance:
         while time.time() - start_time < monitoring_duration:
             # Perform monitoring check
             conditions = {
-                'equity': 10000 + np.random.normal(0, 50),
-                'consecutive_losses': 0,
-                'volatility': 0.02
+                "equity": 10000 + np.random.normal(0, 50),
+                "consecutive_losses": 0,
+                "volatility": 0.02,
             }
 
             await self.cb.check_and_trigger(conditions)
@@ -423,27 +431,31 @@ class TestCircuitBreakerPerformance:
         max_memory = max(memory_samples)
 
         # Memory requirements (reasonable limits for monitoring)
-        assert memory_increase < 50 * 1024 * 1024, f"Memory increase {memory_increase/1024/1024:.1f}MB exceeds 50MB limit"
-        assert max_memory < initial_memory * 1.1, "Memory usage increased by more than 10%"
+        assert (
+            memory_increase < 50 * 1024 * 1024
+        ), f"Memory increase {memory_increase/1024/1024:.1f}MB exceeds 50MB limit"
+        assert (
+            max_memory < initial_memory * 1.1
+        ), "Memory usage increased by more than 10%"
 
     @pytest.mark.asyncio
     async def test_resource_exhaustion_behavior(self):
         """Test circuit breaker behavior during system resource exhaustion."""
         # Simulate memory pressure
-        with patch('psutil.virtual_memory') as mock_memory:
+        with patch("psutil.virtual_memory") as mock_memory:
             mock_memory.return_value = MagicMock()
             mock_memory.return_value.percent = 95  # High memory usage
 
             # Circuit breaker should still function
-            result = await self.cb.check_and_trigger({'equity': 9000})
+            result = await self.cb.check_and_trigger({"equity": 9000})
             assert isinstance(result, bool)  # Should not crash
 
         # Simulate CPU pressure
-        with patch('psutil.cpu_percent') as mock_cpu:
+        with patch("psutil.cpu_percent") as mock_cpu:
             mock_cpu.return_value = 95  # High CPU usage
 
             # Should still function
-            result = await self.cb.check_and_trigger({'consecutive_losses': 6})
+            result = await self.cb.check_and_trigger({"consecutive_losses": 6})
             assert isinstance(result, bool)
 
 
@@ -458,12 +470,12 @@ class TestCircuitBreakerEdgeCases:
     def test_market_data_gaps(self):
         """Test behavior during market data gaps and inconsistencies."""
         # Test with missing data
-        conditions = {'equity': None, 'consecutive_losses': 3}
+        conditions = {"equity": None, "consecutive_losses": 3}
         result = self.cb._evaluate_triggers(conditions)
         assert isinstance(result, dict)  # Should handle gracefully
 
         # Test with invalid data types
-        conditions = {'equity': 'invalid', 'consecutive_losses': [1, 2, 3]}
+        conditions = {"equity": "invalid", "consecutive_losses": [1, 2, 3]}
         result = self.cb._evaluate_triggers(conditions)
         assert isinstance(result, dict)  # Should handle gracefully
 
@@ -486,14 +498,14 @@ class TestCircuitBreakerEdgeCases:
         self.cb.trigger_history = ["corrupted_data"]
 
         # Should handle gracefully
-        result = await self.cb.check_and_trigger({'equity': 9000})
+        result = await self.cb.check_and_trigger({"equity": 9000})
         assert isinstance(result, bool)
 
         # Simulate corrupted event history
         self.cb.event_history = [{"invalid": "data"}]
 
         # Should still function
-        result = await self.cb.check_and_trigger({'consecutive_losses': 6})
+        result = await self.cb.check_and_trigger({"consecutive_losses": 6})
         assert isinstance(result, bool)
 
     @pytest.mark.asyncio
@@ -501,10 +513,12 @@ class TestCircuitBreakerEdgeCases:
         """Test graceful degradation when dependent services are unavailable."""
         # Setup mocks that raise exceptions
         self.cb.order_manager = MagicMock()
-        self.cb.order_manager.cancel_all_orders = AsyncMock(side_effect=Exception("Service unavailable"))
+        self.cb.order_manager.cancel_all_orders = AsyncMock(
+            side_effect=Exception("Service unavailable")
+        )
 
         # Trigger circuit breaker
-        result = await self.cb.check_and_trigger({'equity': 8000})
+        result = await self.cb.check_and_trigger({"equity": 8000})
 
         # Should not crash, should log error and continue
         assert self.cb.state == CircuitBreakerState.TRIGGERED
@@ -546,7 +560,9 @@ class TestCircuitBreakerConfiguration:
         cb = CircuitBreaker(CircuitBreakerConfig())
 
         # Update configuration
-        new_config = CircuitBreakerConfig(equity_drawdown_threshold=0.05)  # Tighter threshold
+        new_config = CircuitBreakerConfig(
+            equity_drawdown_threshold=0.05
+        )  # Tighter threshold
         cb.update_config(new_config)
 
         # Verify update
