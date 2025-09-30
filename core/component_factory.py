@@ -50,6 +50,10 @@ class ComponentFactory:
     _singletons: Dict[str, Any] = {}
     _overrides: Dict[str, Any] = {}
 
+    def __init__(self):
+        """Initialize the component factory."""
+        self._create_cache: Dict[str, Any] = {}
+
     @classmethod
     def register(
         cls,
@@ -138,6 +142,11 @@ class ComponentFactory:
         cls._overrides.clear()
         logger.debug("Reset component factory")
 
+    def clear_create_cache(self) -> None:
+        """Clear the create cache for this instance."""
+        self._create_cache.clear()
+        logger.debug("Cleared create cache")
+
     @classmethod
     def list_registered(cls) -> list[str]:
         """List all registered component names."""
@@ -157,6 +166,131 @@ class ComponentFactory:
             "active_overrides": len(cls._overrides),
             "component_names": list(cls._registry.keys()),
         }
+
+    def create_data_manager(self, config: Dict[str, Any]) -> DataManagerInterface:
+        """Create data manager instance with injected dependencies."""
+        key = f"data_manager_{hash(str(config))}"
+
+        if key in self._create_cache:
+            return self._create_cache[key]
+
+        try:
+            # Import configuration from centralized system
+            from .config_manager import get_config_manager
+            from .data_manager import DataManager
+
+            config_manager = get_config_manager()
+            dm_config = config_manager.get_data_manager_config()
+
+            # Create data manager with configuration
+            data_manager = DataManager(config)
+            data_manager.cache_enabled = dm_config.cache_enabled
+            data_manager.cache_ttl = dm_config.cache_ttl
+
+            # Cache the instance
+            self._create_cache[key] = data_manager
+
+            logger.info("Created DataManager with dependency injection")
+            return data_manager
+
+        except Exception as e:
+            logger.error(f"Failed to create DataManager: {e}")
+            raise
+
+    def create_cache(self, config: Dict[str, Any]) -> CacheInterface:
+        """Create cache instance with injected dependencies."""
+        key = f"cache_{hash(str(config))}"
+
+        if key in self._create_cache:
+            return self._create_cache[key]
+
+        try:
+            # Import configuration from centralized system
+            from .config_manager import get_config_manager
+            from .cache import RedisCache
+
+            config_manager = get_config_manager()
+            cache_config = config_manager.get_cache_config()
+
+            # Create Redis cache with configuration
+            cache = RedisCache(cache_config)
+
+            # Cache the instance
+            self._create_cache[key] = cache
+
+            logger.info("Created Cache with dependency injection")
+            return cache
+
+        except Exception as e:
+            logger.error(f"Failed to create Cache: {e}")
+            raise
+
+    def create_memory_manager(self, config: Dict[str, Any]) -> MemoryManagerInterface:
+        """Create memory manager instance with injected dependencies."""
+        key = f"memory_manager_{hash(str(config))}"
+
+        if key in self._create_cache:
+            return self._create_cache[key]
+
+        try:
+            # Import configuration from centralized system
+            from .config_manager import get_config_manager
+            from .memory_manager import MemoryManager
+
+            config_manager = get_config_manager()
+            memory_config = config_manager.get_memory_config()
+
+            # Create memory manager with configuration
+            memory_manager = MemoryManager(
+                enable_monitoring=memory_config.enable_monitoring,
+                cleanup_interval=memory_config.cleanup_interval,
+            )
+
+            # Configure memory thresholds
+            memory_manager.set_memory_thresholds(
+                warning_mb=memory_config.warning_memory_mb,
+                critical_mb=memory_config.max_memory_mb,
+                cleanup_mb=memory_config.cleanup_memory_mb,
+            )
+
+            # Cache the instance
+            self._create_cache[key] = memory_manager
+
+            logger.info("Created MemoryManager with dependency injection")
+            return memory_manager
+
+        except Exception as e:
+            logger.error(f"Failed to create MemoryManager: {e}")
+            raise
+
+    def create_performance_tracker(self, config: Dict[str, Any]) -> PerformanceTrackerInterface:
+        """Create performance tracker instance with injected dependencies."""
+        key = f"performance_tracker_{hash(str(config))}"
+
+        if key in self._create_cache:
+            return self._create_cache[key]
+
+        try:
+            # Import configuration from centralized system
+            from .config_manager import get_config_manager
+            from .performance_tracker import PerformanceTracker
+
+            config_manager = get_config_manager()
+            pt_config = config_manager.get_performance_tracker_config()
+
+            # Create performance tracker with configuration
+            performance_tracker = PerformanceTracker(config)
+            performance_tracker.starting_balance = pt_config.starting_balance
+
+            # Cache the instance
+            self._create_cache[key] = performance_tracker
+
+            logger.info("Created PerformanceTracker with dependency injection")
+            return performance_tracker
+
+        except Exception as e:
+            logger.error(f"Failed to create PerformanceTracker: {e}")
+            raise
 
 
 # Backward compatibility - keep the old interface for existing code

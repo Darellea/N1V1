@@ -328,23 +328,73 @@ class Cache:
             return f"Cache(size={len(self._cache)}/{self.max_entries}, ttl={self.ttl_seconds})"
 
 
+# Backward-compatible alias for existing code
+class LRUCacheWithTTL(Cache):
+    """Backward-compatible alias for Cache class."""
+
+    def __init__(
+        self,
+        max_size: int = 1000,
+        ttl_seconds: int = 3600,
+        enable_metrics: bool = True
+    ):
+        """
+        Initialize the LRU cache with backward-compatible parameter names.
+
+        Args:
+            max_size: Maximum number of entries to store (maps to max_entries)
+            ttl_seconds: Time-to-live for entries in seconds
+            enable_metrics: Whether to track performance metrics
+        """
+        if max_size <= 0:
+            raise ValueError("max_size must be positive")
+
+        super().__init__(
+            max_entries=max_size,
+            ttl_seconds=ttl_seconds,
+            enable_metrics=enable_metrics
+        )
+
+    @property
+    def max_size(self):
+        """Backward-compatible property for max_size."""
+        return self.max_entries
+
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        Get comprehensive cache statistics with backward-compatible keys.
+
+        Returns:
+            Dictionary with cache statistics
+        """
+        stats = super().get_stats()
+        # Add backward-compatible key
+        stats["max_size"] = stats.get("max_entries", 0)
+        return stats
+
+    def __repr__(self) -> str:
+        """String representation with backward-compatible class name."""
+        with self._lock:
+            return f"LRUCacheWithTTL(size={len(self._cache)}/{self.max_entries}, ttl={self.ttl_seconds})"
+
+
 # Global cache instances for common use cases
-_default_cache = Cache(max_entries=1000, ttl_seconds=300)  # 5 minutes TTL
-_large_cache = Cache(max_entries=10000, ttl_seconds=3600)  # 1 hour TTL
-_no_ttl_cache = Cache(max_entries=500, ttl_seconds=None)  # No TTL
+_default_cache = LRUCacheWithTTL(max_size=1000, ttl_seconds=300)  # 5 minutes TTL
+_large_cache = LRUCacheWithTTL(max_size=10000, ttl_seconds=3600)  # 1 hour TTL
+_no_ttl_cache = LRUCacheWithTTL(max_size=500, ttl_seconds=None)  # No TTL
 
 
-def get_default_cache() -> Cache:
+def get_default_cache() -> LRUCacheWithTTL:
     """Get the default cache instance (1000 items, 5min TTL)."""
     return _default_cache
 
 
-def get_large_cache() -> Cache:
+def get_large_cache() -> LRUCacheWithTTL:
     """Get the large cache instance (10000 items, 1hr TTL)."""
     return _large_cache
 
 
-def get_no_ttl_cache() -> Cache:
+def get_no_ttl_cache() -> LRUCacheWithTTL:
     """Get the no-TTL cache instance (500 items, no expiration)."""
     return _no_ttl_cache
 
@@ -352,21 +402,38 @@ def get_no_ttl_cache() -> Cache:
 def create_cache(
     max_entries: int = 1000,
     ttl_seconds: Optional[float] = 300,
-    enable_metrics: bool = True
-) -> Cache:
+    enable_metrics: bool = True,
+    max_size: Optional[int] = None
+) -> LRUCacheWithTTL:
     """
     Create a new cache instance with specified parameters.
 
     Args:
-        max_entries: Maximum number of entries
+        max_entries: Maximum number of entries (deprecated, use max_size)
         ttl_seconds: TTL in seconds (None for no TTL)
         enable_metrics: Whether to enable metrics tracking
+        max_size: Maximum number of entries (backward-compatible alias)
 
     Returns:
-        New Cache instance
+        New LRUCacheWithTTL instance
     """
-    return Cache(
-        max_entries=max_entries,
+    # Use max_size if provided, otherwise max_entries
+    actual_max_size = max_size if max_size is not None else max_entries
+
+    return LRUCacheWithTTL(
+        max_size=actual_max_size,
         ttl_seconds=ttl_seconds,
         enable_metrics=enable_metrics
     )
+
+
+__all__ = [
+    "Cache",
+    "CacheEntry",
+    "CacheMetrics",
+    "LRUCacheWithTTL",
+    "get_default_cache",
+    "get_large_cache",
+    "get_no_ttl_cache",
+    "create_cache",
+]

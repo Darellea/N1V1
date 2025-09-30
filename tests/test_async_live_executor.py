@@ -32,7 +32,11 @@ class TestAsyncLiveExecutor:
         """Test that order execution includes timeout protection."""
         # Mock slow order creation
         mock_exchange = AsyncMock()
-        mock_exchange.create_order = AsyncMock(side_effect=asyncio.sleep(60))  # Very slow
+
+        async def slow_order(*args, **kwargs):
+            await asyncio.sleep(60)
+
+        mock_exchange.create_order = AsyncMock(side_effect=slow_order)  # Very slow
         executor.exchange = mock_exchange
 
         # Mock signal
@@ -97,7 +101,12 @@ class TestAsyncLiveExecutor:
         """Test that order processing doesn't block the event loop."""
         # Mock exchange with slow response
         mock_exchange = AsyncMock()
-        mock_exchange.create_order = AsyncMock(side_effect=lambda *args, **kwargs: asyncio.sleep(0.2))
+
+        async def slow_create_order(*args, **kwargs):
+            await asyncio.sleep(0.2)
+            return {"id": "test_order", "status": "filled"}
+
+        mock_exchange.create_order.side_effect = slow_create_order
         executor.exchange = mock_exchange
 
         # Simple signal
@@ -109,14 +118,12 @@ class TestAsyncLiveExecutor:
             "order_type": "market",
         }
 
-        # Mock the parameter processing to be slow (simulating CPU work)
-        original_prepare = executor._prepare_order_params
-
-        async def slow_prepare(signal):
+        # Mock the thread pool operation to be slow (simulating CPU work)
+        async def slow_to_thread(func, *args, **kwargs):
             await asyncio.sleep(0.1)  # Simulate slow CPU work in thread pool
-            return original_prepare(signal)
+            return func(*args, **kwargs)
 
-        with patch.object(executor, '_prepare_order_params', side_effect=slow_prepare):
+        with patch("asyncio.to_thread", side_effect=slow_to_thread):
             # Start order execution
             order_task = asyncio.create_task(executor.execute_live_order(signal))
 
@@ -134,7 +141,7 @@ class TestAsyncLiveExecutor:
 
             # Verify event loop remained responsive during order processing
             assert responsive_check > 5, "Event loop was blocked during order processing"
-            assert "id" in result
+            assert result["id"] == "test_order"
 
     @pytest.mark.asyncio
     async def test_concurrent_orders_dont_block_each_other(self, executor):
@@ -213,7 +220,11 @@ class TestAsyncLiveExecutor:
         """Test that timeout errors are properly handled and converted."""
         # Mock exchange that times out
         mock_exchange = AsyncMock()
-        mock_exchange.create_order = AsyncMock(side_effect=asyncio.sleep(35))  # Longer than timeout
+
+        async def slow_order(*args, **kwargs):
+            await asyncio.sleep(35)  # Longer than timeout
+
+        mock_exchange.create_order = AsyncMock(side_effect=slow_order)
         executor.exchange = mock_exchange
 
         signal = {
@@ -337,6 +348,7 @@ class TestAsyncOrderParameterProcessing:
         # Test ENTRY_LONG -> buy
         signal = MagicMock()
         signal.symbol = "BTC/USDT"
+        signal.side = None  # Explicitly set to None to trigger signal_type mapping
         signal.amount = 0.001
         signal.price = 50000
         signal.order_type.value = "market"

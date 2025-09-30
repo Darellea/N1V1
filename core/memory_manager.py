@@ -479,6 +479,10 @@ class MemoryManager(MemoryManagerInterface):
 
         logger.info(f"Updated memory thresholds: {self._memory_thresholds}")
 
+    async def initialize(self) -> None:
+        """Initialize the memory manager asynchronously."""
+        pass
+
     def shutdown(self):
         """Shutdown the memory manager."""
         logger.info("Shutting down MemoryManager")

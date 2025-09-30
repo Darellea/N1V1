@@ -945,6 +945,13 @@ class TestBotEngineStateManagement:
     def mock_engine(self, mock_config):
         """Create mock engine."""
         engine = BotEngine(mock_config)
+        # Initialize components as None for error handling tests
+        engine.data_fetcher = Mock()
+        engine.order_manager = Mock()
+        engine.risk_manager = Mock()
+        engine.signal_router = Mock()
+        engine.strategies = []
+        engine.task_manager = Mock()
         return engine
 
     @pytest.mark.asyncio
@@ -1257,6 +1264,13 @@ class TestBotEngineErrorHandling:
     def mock_engine(self, mock_config):
         """Create mock engine."""
         engine = BotEngine(mock_config)
+        # Initialize components for error handling tests
+        engine.data_fetcher = Mock()
+        engine.order_manager = Mock()
+        engine.risk_manager = Mock()
+        engine.signal_router = Mock()
+        engine.strategies = []
+        engine.task_manager = Mock()
         return engine
 
     @pytest.mark.asyncio

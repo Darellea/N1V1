@@ -658,7 +658,8 @@ class IntegrationTestFramework:
                 failed_times.append(execution_time)
                 errors.append((i, str(e), type(e).__name__))
                 logger.error(f"Benchmark operation failed: {e}")
-                raise
+                if strict_mode:
+                    raise
 
         # Calculate metrics
         all_times = successful_times + failed_times

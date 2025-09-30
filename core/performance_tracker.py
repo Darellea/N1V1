@@ -291,6 +291,10 @@ class PerformanceTracker(PerformanceTrackerInterface):
             logger.exception(f"Failed to calculate additional metrics: {e}")
             return {"profit_factor": 0.0}
 
+    async def initialize(self) -> None:
+        """Initialize the performance tracker asynchronously."""
+        pass
+
     def reset_performance(self):
         """Reset all performance tracking data."""
         self.performance_stats = {

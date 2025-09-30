@@ -45,13 +45,11 @@ try:
 except ImportError:
     cb = None
 try:
-    import tensorflow as tf
-except ImportError:
-    tf = None
-try:
     import torch
 except ImportError:
     torch = None
+
+# TensorFlow import moved inside main() to prevent loading during pytest collection
 
 # Environment helpers
 import pkg_resources
@@ -134,10 +132,11 @@ def set_deterministic_seeds(seed: int = 42) -> None:
     # TensorFlow
     try:
         import tensorflow as tf
-
-        tf.random.set_seed(seed)
-    except ImportError:
-        logger.warning("TensorFlow not available, skipping tf seeding")
+        if hasattr(tf, "random") and hasattr(tf.random, "set_seed"):
+            tf.random.set_seed(seed)
+            logger.info(f"TensorFlow seed set to {seed}")
+    except Exception as e:
+        logger.warning(f"TensorFlow not available, skipping tf.random.set_seed: {e}")
 
     # PyTorch
     try:

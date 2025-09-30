@@ -223,5 +223,9 @@ class LiveOrderExecutor:
     async def shutdown(self) -> None:
         """Cleanup exchange resources."""
         if self.exchange:
-            await self.exchange.close()
-            self.exchange = None
+            try:
+                await self.exchange.close()
+            except Exception as e:
+                logger.error(f"Error during exchange shutdown: {str(e)}")
+            finally:
+                self.exchange = None

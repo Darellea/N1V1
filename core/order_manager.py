@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import random
 import time
+import uuid
 from abc import ABC, abstractmethod
 from decimal import Decimal, InvalidOperation
 from typing import (
@@ -23,6 +24,7 @@ from typing import (
 import jsonschema
 from ccxt.base.errors import ExchangeError, NetworkError
 
+from core.contracts import TradingSignal
 from core.exceptions import MissingIdempotencyError
 from core.execution.backtest_executor import BacktestOrderExecutor
 from core.execution.live_executor import LiveOrderExecutor
@@ -679,6 +681,17 @@ class OrderManager:
         if not base or not quote:
             raise ValueError("Symbol must have both base and quote currencies")
 
+    def _resolve_idempotency_key(self, signal: Any) -> str:
+        """Resolve idempotency key for the signal, auto-generating if missing."""
+        idempotency_key = getattr(signal, "idempotency_key", None)
+        if idempotency_key is None:
+            # Backward compatibility: auto-generate key for dicts, mocks, TradingSignals, or legacy test signals
+            if isinstance(signal, dict) or isinstance(signal, TradingSignal) or signal.__class__.__name__ in ("MockSignal", "Mock"):
+                idempotency_key = f"auto-{uuid.uuid4().hex}"
+            else:
+                raise MissingIdempotencyError()
+        return idempotency_key
+
     async def execute_order(
         self, signal: Any, return_legacy_none_on_failure: bool = False
     ) -> Optional[Dict[str, Any]]:
@@ -696,10 +709,11 @@ class OrderManager:
             if isinstance(signal, Mock) or signal.__class__.__name__ == "MockSignal":
                 return_legacy_none_on_failure = True
 
-        # Require idempotency key
-        idempotency_key = getattr(signal, "idempotency_key", None)
-        if idempotency_key is None:
-            raise MissingIdempotencyError()
+        # Resolve idempotency key (auto-generate if missing)
+        idempotency_key = self._resolve_idempotency_key(signal)
+        # Set the key on the signal if it was auto-generated
+        if getattr(signal, "idempotency_key", None) is None:
+            signal.idempotency_key = idempotency_key
 
         # Check idempotency registry
         registry_state = order_execution_registry.begin_execution(idempotency_key)

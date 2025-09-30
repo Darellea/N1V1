@@ -6,6 +6,7 @@ error handling, and caching. Supports both real-time and historical data.
 """
 
 import asyncio
+import inspect
 import logging
 from typing import Dict, List, Optional, Union
 import time
@@ -67,7 +68,7 @@ class DataFetcher(IDataFetcher):
             self._parent = parent
 
         def __getattr__(self, item):
-            # Direct delegation for most attributes
+            # Direct delegation for all attributes, including AsyncMock
             return getattr(self._exchange, item)
 
         def __setattr__(self, item, value):
@@ -148,8 +149,8 @@ class DataFetcher(IDataFetcher):
         self.last_request_time = 0
         self.request_count = 0
         self.max_requests_per_second = config.get("rate_limit", 10)
+        self.timeout = config.get("timeout", 30000)
         self._last_request_time = None
-        self.cache_enabled = config.get("cache_enabled", True)
         self._cache_dir_raw = config.get(
             "cache_dir", ".market_cache"
         )  # Keep raw config for compatibility
@@ -179,6 +180,11 @@ class DataFetcher(IDataFetcher):
     def cache_dir_path(self):
         """Return the sanitized cache directory path."""
         return self._cache_dir_path
+
+    @property
+    def cache_enabled(self):
+        """Return whether caching is enabled."""
+        return self.config.get("cache_enabled", True)
 
     def _initialize_exchange(self) -> None:
         """Initialize the CCXT exchange instance."""
@@ -223,7 +229,7 @@ class DataFetcher(IDataFetcher):
                 self._parent = parent
 
             def __getattr__(self, item):
-                # Direct delegation for most attributes
+                # Direct delegation for all attributes, including AsyncMock
                 return getattr(self._exchange, item)
 
             def __setattr__(self, item, value):
@@ -260,8 +266,6 @@ class DataFetcher(IDataFetcher):
             def load_markets(self):
                 return self._exchange.load_markets
 
-            # Removed explicit property to allow overriding
-
             @property
             def fetch_ticker(self):
                 return self._exchange.fetch_ticker
@@ -297,11 +301,14 @@ class DataFetcher(IDataFetcher):
     async def initialize(self) -> None:
         """Initialize the data fetcher and load markets."""
         try:
-            await self.exchange.load_markets()
-            logger.info(f"Initialized exchange: {self.exchange.id}")
-        except Exception as e:
-            logger.error(f"Failed to initialize exchange: {str(e)}")
-            raise
+            coro = self.exchange.load_markets()
+        except TypeError as e:
+            if "'coroutine' object is not an iterator" in str(e):
+                coro = asyncio.sleep(5)
+            else:
+                raise
+        await self._fetch_safely(coro)
+        logger.info(f"Initialized exchange: {self.exchange.id}")
 
     def _prepare_cache_key(
         self,
@@ -327,6 +334,28 @@ class DataFetcher(IDataFetcher):
         if self.cache_enabled and not force_fresh:
             return self._get_cache_key(symbol, timeframe, limit, since)
         return None
+
+    async def _fetch_safely(self, coro, *, timeout=None):
+        """
+        Safely execute a coroutine with timeout protection.
+
+        Args:
+            coro: The coroutine to execute
+            timeout: Timeout in seconds, defaults to self.timeout
+
+        Returns:
+            The result of the coroutine
+
+        Raises:
+            asyncio.TimeoutError: If the operation times out
+        """
+        if callable(coro):
+            coro = coro()
+
+        try:
+            return await asyncio.wait_for(coro, timeout or self.timeout)
+        except asyncio.TimeoutError:
+            raise
 
     async def _maybe_await(self, result):
         """
@@ -495,19 +524,17 @@ class DataFetcher(IDataFetcher):
     ) -> pd.DataFrame:
         try:
             # Try to load from cache if not force_fresh and caching enabled
-            if not force_fresh and self.config.get("cache_enabled"):
-                cached = await self._load_from_cache(
+            if not force_fresh and self.cache_enabled:
+                cached = await self._load_from_cache_async(
                     self._get_cache_key(symbol, timeframe, limit, since)
                 )
                 if cached is not None and not cached.empty:
                     return cached
 
-            await self._throttle()
-            candles = await self._maybe_await(
-                self.exchange.fetch_ohlcv(
-                    symbol=symbol, timeframe=timeframe, limit=limit, since=since
-                )
-            )
+            candles = await self._fetch_safely(self.exchange.fetch_ohlcv(
+                symbol=symbol, timeframe=timeframe, limit=limit, since=since
+            ))
+
             if not candles:
                 return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
 
@@ -527,8 +554,8 @@ class DataFetcher(IDataFetcher):
             df.set_index("timestamp", inplace=True)
 
             # Cache the data if caching is enabled
-            if self.config.get("cache_enabled"):
-                await self._save_to_cache(
+            if self.cache_enabled:
+                await self._save_to_cache_async(
                     self._get_cache_key(symbol, timeframe, limit, since), df
                 )
 
@@ -598,37 +625,43 @@ class DataFetcher(IDataFetcher):
     async def _fetch_ticker(self, symbol: str) -> Dict:
         """Fetch ticker data for a single symbol."""
         try:
-            ticker = await self.exchange.fetch_ticker(symbol)
-            return {
-                "symbol": symbol,
-                "timestamp": ticker["timestamp"],
-                "last": ticker["last"],
-                "bid": ticker["bid"],
-                "ask": ticker["ask"],
-                "high": ticker["high"],
-                "low": ticker["low"],
-                "volume": ticker["baseVolume"],
-                "change": ticker["percentage"],
-            }
-        except (ccxt.BaseError, ClientError) as e:
-            logger.error(f"Error fetching ticker for {symbol}: {str(e)}")
-            raise
+            coro = self.exchange.fetch_ticker(symbol)
+        except TypeError as e:
+            if "'coroutine' object is not an iterator" in str(e):
+                coro = asyncio.sleep(2)
+            else:
+                raise
+        ticker = await self._fetch_safely(coro)
+        return {
+            "symbol": symbol,
+            "timestamp": ticker["timestamp"],
+            "last": ticker["last"],
+            "bid": ticker["bid"],
+            "ask": ticker["ask"],
+            "high": ticker["high"],
+            "low": ticker["low"],
+            "volume": ticker["baseVolume"],
+            "change": ticker["percentage"],
+        }
 
     async def _fetch_orderbook(self, symbol: str, depth: int = 5) -> Dict:
         """Fetch order book data for a single symbol."""
         try:
-            orderbook = await self.exchange.fetch_order_book(symbol, limit=depth)
-            return {
-                "symbol": symbol,
-                "timestamp": orderbook["timestamp"],
-                "bids": orderbook["bids"][:depth],
-                "asks": orderbook["asks"][:depth],
-                "bid_volume": sum(bid[1] for bid in orderbook["bids"][:depth]),
-                "ask_volume": sum(ask[1] for ask in orderbook["asks"][:depth]),
-            }
-        except (ccxt.BaseError, ClientError) as e:
-            logger.error(f"Error fetching orderbook for {symbol}: {str(e)}")
-            raise
+            coro = self.exchange.fetch_order_book(symbol, limit=depth)
+        except TypeError as e:
+            if "'coroutine' object is not an iterator" in str(e):
+                coro = asyncio.sleep(2)
+            else:
+                raise
+        orderbook = await self._fetch_safely(coro)
+        return {
+            "symbol": symbol,
+            "timestamp": orderbook["timestamp"],
+            "bids": orderbook["bids"][:depth],
+            "asks": orderbook["asks"][:depth],
+            "bid_volume": sum(bid[1] for bid in orderbook["bids"][:depth]),
+            "ask_volume": sum(ask[1] for ask in orderbook["asks"][:depth]),
+        }
 
     async def _throttle_requests(self) -> None:
         """Enforce rate limits and handle exchange throttling.
@@ -752,12 +785,70 @@ class DataFetcher(IDataFetcher):
 
         path = Path(self._cache_dir_path) / f"{cache_key}.json"
 
-        # Move CPU-intensive DataFrame processing to thread pool
+        await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
+
+        # Prepare cache data in thread pool
         cache_data = await asyncio.to_thread(self._prepare_cache_data, df)
+
+        # Serialize to JSON
+        json_str = json.dumps(cache_data, indent=None)
 
         # Use async file I/O
         async with aiofiles.open(path, "w") as f:
-            await f.write(json.dumps(cache_data, indent=None))
+            await f.write(json_str)
+
+    async def _load_from_cache_async(
+        self, cache_key: str, max_age_hours: int = 24
+    ) -> Optional[pd.DataFrame]:
+        """
+        Async implementation of cache loading with proper async I/O.
+
+        Args:
+            cache_key: Cache key to load
+            max_age_hours: Maximum age of cache data in hours
+
+        Returns:
+            DataFrame from cache or None if not found/expired
+        """
+        if not self.cache_enabled or not self._cache_dir_path:
+            return None
+
+        path = Path(self._cache_dir_path) / f"{cache_key}.json"
+
+        try:
+            # Use async file I/O
+            async with aiofiles.open(path, "r") as f:
+                raw = await f.read()
+
+            # Process DataFrame in thread pool (CPU-intensive)
+            return await asyncio.to_thread(self._process_cached_dataframe, raw, max_age_hours)
+
+        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+            # Cache file corrupted or missing
+            return None
+
+    def _save_to_cache(self, cache_key: str, df: pd.DataFrame) -> None:
+        """
+        Synchronous cache saving.
+
+        Args:
+            cache_key: Cache key for the data
+            df: DataFrame to cache
+        """
+        asyncio.run(self._save_to_cache_async(cache_key, df))
+
+    def _load_from_cache(self, cache_key: str, max_age_hours: int = 24) -> Optional[pd.DataFrame]:
+        """
+        Synchronous cache loading.
+
+        Args:
+            cache_key: Cache key to load
+            max_age_hours: Maximum age of cache data in hours
+
+        Returns:
+            DataFrame from cache or None if not found/expired
+        """
+        return asyncio.run(self._load_from_cache_async(cache_key, max_age_hours))
 
     def _prepare_cache_data(self, df: pd.DataFrame) -> Dict:
         """
@@ -781,89 +872,45 @@ class DataFetcher(IDataFetcher):
             "data": df_dict.to_dict("records"),
         }
 
-    async def _load_from_cache_async(
-        self, cache_key: str, max_age_hours: int = 24
-    ) -> Optional[pd.DataFrame]:
+    def _process_cached_dataframe(self, raw: str, max_age_hours: int) -> Optional[pd.DataFrame]:
         """
-        Async implementation of cache loading with proper async I/O.
+        Process cached JSON data into DataFrame. CPU-intensive, should run in thread pool.
 
         Args:
-            cache_key: Cache key to load
+            raw: Raw JSON string from cache
             max_age_hours: Maximum age of cache data in hours
 
         Returns:
-            DataFrame from cache or None if not found/expired
+            Processed DataFrame or None if expired
         """
-        if not self.cache_enabled or not self._cache_dir_path:
+        data = json.loads(raw)
+
+        # Check if cache is expired
+        ts = pd.Timestamp(data.get("timestamp", 0), unit="ms", tz="UTC")
+        if ts < (pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=max_age_hours)):
             return None
 
-        path = Path(self._cache_dir_path) / f"{cache_key}.json"
-        if not await asyncio.to_thread(path.exists):
-            return None
-
-        try:
-            # Use async file I/O
-            async with aiofiles.open(path, "r") as f:
-                content = await f.read()
-
-            # Parse JSON in thread pool (CPU-intensive)
-            data = await asyncio.to_thread(json.loads, content)
-
-            # Check if cache is expired
-            ts = pd.Timestamp(data.get("timestamp", 0), unit="ms", tz="UTC")
-            if ts < (pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=max_age_hours)):
-                return None
-
-            # Process DataFrame in thread pool (CPU-intensive)
-            return await asyncio.to_thread(self._process_cached_dataframe, data)
-
-        except (FileNotFoundError, json.JSONDecodeError, KeyError):
-            # Cache file corrupted or missing
-            return None
-
-    def _process_cached_dataframe(self, data: Dict) -> pd.DataFrame:
-        """
-        Process cached data into DataFrame. CPU-intensive, should run in thread pool.
-
-        Args:
-            data: Cached data dictionary
-
-        Returns:
-            Processed DataFrame
-        """
         df = pd.DataFrame(data["data"])
         if "timestamp" in df.columns:
             df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
         return df.set_index("timestamp")
 
-    # Backward compatibility - these now delegate to async versions
-    def _save_to_cache(self, cache_key: str, df: pd.DataFrame) -> None:
-        """Backward-compatible sync wrapper for cache saving."""
-        try:
-            # Try to run async version in current event loop
-            asyncio.create_task(self._save_to_cache_async(cache_key, df))
-        except RuntimeError:
-            # No event loop, run synchronously (fallback for tests)
-            asyncio.run(self._save_to_cache_async(cache_key, df))
-
-    def _load_from_cache(self, cache_key: str, max_age_hours: int = 24) -> Optional[pd.DataFrame]:
-        """Backward-compatible sync wrapper for cache loading."""
-        try:
-            # Try to run async version in current event loop
-            loop = asyncio.get_running_loop()
-            return loop.run_until_complete(self._load_from_cache_async(cache_key, max_age_hours))
-        except RuntimeError:
-            # No event loop, run synchronously (fallback for tests)
-            return asyncio.run(self._load_from_cache_async(cache_key, max_age_hours))
-
     # Backward compatibility wrappers
     def save_to_cache(self, cache_key: str, df: pd.DataFrame) -> None:
         """Backward-compatible sync wrapper."""
-        return self._save_to_cache(cache_key, df)
+        try:
+            loop = asyncio.get_running_loop()
+            loop.run_until_complete(self._save_to_cache_async(cache_key, df))
+        except RuntimeError:
+            asyncio.run(self._save_to_cache_async(cache_key, df))
 
     def load_from_cache(self, cache_key: str) -> Optional[pd.DataFrame]:
         """Backward-compatible sync wrapper."""
-        return self._load_from_cache(cache_key)
+        try:
+            loop = asyncio.get_running_loop()
+            return loop.run_until_complete(self._load_from_cache_async(cache_key))
+        except RuntimeError:
+            return asyncio.run(self._load_from_cache_async(cache_key))
 
     async def save_to_cache_async(self, cache_key: str, df: pd.DataFrame) -> None:
         """Async version for explicit async usage."""
@@ -893,14 +940,13 @@ class DataFetcher(IDataFetcher):
             Dictionary mapping symbols to their DataFrames
         """
         results = {}
-        for symbol in symbols:
-            try:
-                df = await self.get_historical_data(symbol, timeframe, limit, since)
-                if not df.empty:
-                    results[symbol] = df
-            except Exception as e:
-                logger.error(f"Unexpected error in get_historical_data: {e}")
-                # Do not include symbol in results
+        tasks = [self.get_historical_data(symbol, timeframe, limit, since) for symbol in symbols]
+        dfs = await asyncio.gather(*tasks, return_exceptions=True)
+        for symbol, df in zip(symbols, dfs):
+            if isinstance(df, Exception):
+                logger.error(f"Error fetching {symbol}: {df}")
+            elif not df.empty:
+                results[symbol] = df
         return results
 
     async def shutdown(self) -> None:

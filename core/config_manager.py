@@ -503,6 +503,16 @@ class ConfigManager:
         except Exception:
             return {}
 
+    def get_config(self) -> Dict[str, Any]:
+        """Get the main configuration dictionary for backward compatibility.
+
+        Returns:
+            Dictionary containing all main configuration sections
+        """
+        if hasattr(self, "main_config") and self.main_config:
+            return self.main_config.dict()
+        return getattr(self, "config", None) or getattr(self, "_config", None)
+
     def save_config(self, file_path: Optional[str] = None) -> bool:
         """Save current configuration to file.
 

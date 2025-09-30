@@ -32,7 +32,12 @@ class TestAsyncDataFetcher:
         """Test that OHLCV fetching includes timeout protection."""
         # Mock a slow exchange that takes too long
         mock_exchange = AsyncMock()
-        mock_exchange.fetch_ohlcv = AsyncMock(side_effect=asyncio.sleep(2))  # 2 second delay
+
+        async def slow_ohlcv(*a, **k):
+            await asyncio.sleep(2)
+            return []
+
+        mock_exchange.fetch_ohlcv = AsyncMock(side_effect=slow_ohlcv)  # 2 second delay
         fetcher.exchange = mock_exchange
 
         start_time = time.time()
@@ -274,7 +279,11 @@ class TestAsyncTimeoutProtection:
         """Test that exchange initialization has timeout protection."""
         # Mock slow exchange initialization
         mock_exchange = AsyncMock()
-        mock_exchange.load_markets = AsyncMock(side_effect=asyncio.sleep(5))  # Slow init
+
+        async def slow_load(*a, **k):
+            await asyncio.sleep(5)
+
+        mock_exchange.load_markets = AsyncMock(side_effect=slow_load)  # Slow init
         fetcher.exchange = mock_exchange
 
         with pytest.raises(asyncio.TimeoutError):
@@ -286,7 +295,12 @@ class TestAsyncTimeoutProtection:
         """Test timeout protection for real-time data fetching."""
         # Mock slow ticker fetch
         mock_exchange = AsyncMock()
-        mock_exchange.fetch_ticker = AsyncMock(side_effect=asyncio.sleep(2))
+
+        async def slow_ticker(*a, **k):
+            await asyncio.sleep(2)
+            return {"timestamp": 1234567890000, "last": 50000, "bid": 49900, "ask": 50100, "high": 51000, "low": 49000, "baseVolume": 100, "percentage": 1.0}
+
+        mock_exchange.fetch_ticker = AsyncMock(side_effect=slow_ticker)
         fetcher.exchange = mock_exchange
 
         with pytest.raises(asyncio.TimeoutError):
@@ -300,7 +314,12 @@ class TestAsyncTimeoutProtection:
         """Test timeout protection for orderbook fetching."""
         # Mock slow orderbook fetch
         mock_exchange = AsyncMock()
-        mock_exchange.fetch_order_book = AsyncMock(side_effect=asyncio.sleep(2))
+
+        async def slow_orderbook(*a, **k):
+            await asyncio.sleep(2)
+            return {"timestamp": 1234567890000, "bids": [[50000, 1], [49900, 2]], "asks": [[50100, 1], [50200, 2]]}
+
+        mock_exchange.fetch_order_book = AsyncMock(side_effect=slow_orderbook)
         fetcher.exchange = mock_exchange
 
         with pytest.raises(asyncio.TimeoutError):

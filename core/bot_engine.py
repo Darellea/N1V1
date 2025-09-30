@@ -120,27 +120,6 @@ class BotEngine:
         self.signal_router: Optional[SignalRouter] = None
         self.notifier: Optional[DiscordNotifier] = None
 
-        # Provide default mocks for testing compatibility
-        if self.order_manager is None:
-            from unittest.mock import AsyncMock, Mock
-
-            self.order_manager = Mock(
-                get_equity=AsyncMock(return_value=0.0),
-                execute_order=AsyncMock(return_value={"pnl": 0.0}),
-                get_balance=AsyncMock(return_value=0.0),
-                get_active_order_count=AsyncMock(return_value=0),
-                get_open_position_count=AsyncMock(return_value=0),
-                safe_mode_active=False,
-            )
-
-        if self.risk_manager is None:
-            self.risk_manager = Mock(
-                evaluate_signal=AsyncMock(return_value=True), block_signals=False
-            )
-
-        if self.signal_router is None:
-            self.signal_router = Mock(block_signals=False)
-
         # Task management for background tasks
         self.task_manager: TaskManager = TaskManager(self.config)
 
@@ -285,20 +264,27 @@ class BotEngine:
                         f"Failed to register {symbol} with timeframe manager"
                     )
 
-        # Initialize risk manager and order manager via DI
-        from core.component_factory import ComponentFactory
-        self.risk_manager = ComponentFactory.get("risk_manager")
-        self.order_manager = ComponentFactory.get("order_manager")
-        if hasattr(self.order_manager, "shutdown"):
-            self._shutdown_hooks.append(self.order_manager.shutdown)
+        # Initialize risk manager and order manager directly
+        if not getattr(self, "risk_manager", None):
+            risk_config = self.config.get("risk_management", {})
+            self.risk_manager = RiskManager(risk_config)
+
+        if not getattr(self, "order_manager", None):
+            from core.types import TradingMode
+            mode_str = self.config.get("environment", {}).get("mode", "paper")
+            mode = TradingMode[mode_str.upper()]
+            self.order_manager = OrderManager(self.config, mode)
+            if hasattr(self.order_manager, "shutdown"):
+                self._shutdown_hooks.append(self.order_manager.shutdown)
 
         # Configure order manager
         await self._configure_order_manager()
 
         # Initialize signal router
-        self.signal_router = SignalRouter(
-            self.risk_manager, task_manager=self.task_manager
-        )
+        if not getattr(self, "signal_router", None):
+            self.signal_router = SignalRouter(
+                self.risk_manager, task_manager=self.task_manager
+            )
 
     async def _configure_order_manager(self) -> None:
         """Configure order manager with portfolio and pairs information."""
