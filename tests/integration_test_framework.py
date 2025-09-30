@@ -589,19 +589,28 @@ class IntegrationTestFramework:
         return np.std(profits) if profits else 0.0
 
     async def run_performance_benchmark(
-        self, benchmark_name: str, operations: List[Callable]
+        self, benchmark_name: str, operations: List[Callable], strict_mode: bool = True
     ) -> Dict[str, Any]:
-        """Run performance benchmark on specified operations."""
+        """
+        Run performance benchmark on specified operations.
+
+        Args:
+            benchmark_name: Name of the benchmark
+            operations: List of operations to benchmark
+            strict_mode: If True, exceptions cause immediate failure.
+                        If False, exceptions are recorded but benchmark continues.
+        """
         logger.info(f"Starting performance benchmark: {benchmark_name}")
 
         benchmark_results = {
             "benchmark": benchmark_name,
             "start_time": time.time(),
             "operation_results": [],
+            "strict_mode": strict_mode,
         }
 
         for operation in operations:
-            op_result = await self._benchmark_operation(operation)
+            op_result = await self._benchmark_operation(operation, strict_mode=strict_mode)
             benchmark_results["operation_results"].append(op_result)
 
         benchmark_results["end_time"] = time.time()
@@ -617,47 +626,105 @@ class IntegrationTestFramework:
         self.performance_metrics[benchmark_name] = benchmark_results
         return benchmark_results
 
-    async def _benchmark_operation(self, operation: Callable) -> Dict[str, Any]:
-        """Benchmark a single operation."""
-        iterations = 100
-        times = []
+    async def _benchmark_operation(
+        self, operation: Callable, strict_mode: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Benchmark a single operation with proper exception handling.
 
-        for _ in range(iterations):
+        Args:
+            operation: The operation to benchmark
+            strict_mode: If True, exceptions are raised immediately.
+                        If False, exceptions are recorded but not raised.
+
+        Returns:
+            Dictionary containing benchmark results and success/failure status
+        """
+        iterations = 100
+        successful_times = []
+        failed_times = []
+        errors = []
+
+        for i in range(iterations):
             start_time = time.perf_counter()
+
             try:
                 await operation()
-            except Exception:
-                pass  # We just want timing
-            end_time = time.perf_counter()
+                execution_time = time.perf_counter() - start_time
+                successful_times.append(execution_time)
 
-            times.append(end_time - start_time)
+            except Exception as e:
+                execution_time = time.perf_counter() - start_time
+                failed_times.append(execution_time)
+                errors.append((i, str(e), type(e).__name__))
+                logger.error(f"Benchmark operation failed: {e}")
+                raise
 
-        return {
+        # Calculate metrics
+        all_times = successful_times + failed_times
+        success_count = len(successful_times)
+        failure_count = len(failed_times)
+
+        result = {
             "operation": operation.__name__,
             "iterations": iterations,
-            "avg_time": np.mean(times),
-            "min_time": np.min(times),
-            "max_time": np.max(times),
-            "std_time": np.std(times),
-            "total_time": np.sum(times),
+            "success_count": success_count,
+            "failure_count": failure_count,
+            "success_rate": success_count / iterations if iterations > 0 else 0,
+            "errors": errors,
         }
+
+        # Add timing metrics if we have successful executions
+        if successful_times:
+            result.update({
+                "avg_time": np.mean(successful_times),
+                "min_time": np.min(successful_times),
+                "max_time": np.max(successful_times),
+                "std_time": np.std(successful_times),
+                "total_successful_time": np.sum(successful_times),
+            })
+
+        # Add failure timing metrics if we have failures
+        if failed_times:
+            result.update({
+                "avg_failure_time": np.mean(failed_times),
+                "min_failure_time": np.min(failed_times),
+                "max_failure_time": np.max(failed_times),
+                "std_failure_time": np.std(failed_times),
+                "total_failed_time": np.sum(failed_times),
+            })
+
+        # Overall timing metrics
+        if all_times:
+            result.update({
+                "overall_avg_time": np.mean(all_times),
+                "overall_total_time": np.sum(all_times),
+            })
+
+        return result
 
     def _calculate_aggregate_metrics(
         self, operation_results: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """Calculate aggregate metrics across all operations."""
-        total_time = sum(op["total_time"] for op in operation_results)
         total_operations = sum(op["iterations"] for op in operation_results)
+        total_successful = sum(op["success_count"] for op in operation_results)
+        total_failed = sum(op["failure_count"] for op in operation_results)
+
+        # Use overall total time if available, otherwise sum successful time
+        total_time = sum(
+            op.get("overall_total_time", op.get("total_successful_time", 0))
+            for op in operation_results
+        )
 
         return {
             "total_operations": total_operations,
+            "total_successful": total_successful,
+            "total_failed": total_failed,
+            "overall_success_rate": total_successful / total_operations if total_operations > 0 else 0,
             "total_time": total_time,
-            "avg_operation_time": total_time / total_operations
-            if total_operations > 0
-            else 0,
-            "operations_per_second": total_operations / total_time
-            if total_time > 0
-            else 0,
+            "avg_operation_time": total_time / total_operations if total_operations > 0 else 0,
+            "operations_per_second": total_operations / total_time if total_time > 0 else 0,
         }
 
     def generate_test_report(self, output_file: str = "integration_test_report.md"):

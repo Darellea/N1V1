@@ -87,9 +87,9 @@ This document provides comprehensive guidance for configuring the N1V1 Trading F
 {{
   "exchange": {{
     "name": "binance|kucoin",
-    "api_key": "your_api_key",
-    "api_secret": "your_api_secret",
-    "api_passphrase": "your_passphrase",
+    "api_key": "<YOUR_API_KEY_HERE>",
+    "api_secret": "${{ENV:API_SECRET}}",
+    "api_passphrase": "<YOUR_API_PASSPHRASE_HERE>",
     "sandbox": true|false,
     "timeout": 30000,
     "rate_limit": 10
