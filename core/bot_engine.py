@@ -285,11 +285,10 @@ class BotEngine:
                         f"Failed to register {symbol} with timeframe manager"
                     )
 
-        # Initialize risk manager
-        self.risk_manager = RiskManager(self.config["risk_management"])
-
-        # Initialize order manager
-        self.order_manager = OrderManager(self.config, self.mode)
+        # Initialize risk manager and order manager via DI
+        from core.component_factory import ComponentFactory
+        self.risk_manager = ComponentFactory.get("risk_manager")
+        self.order_manager = ComponentFactory.get("order_manager")
         if hasattr(self.order_manager, "shutdown"):
             self._shutdown_hooks.append(self.order_manager.shutdown)
 

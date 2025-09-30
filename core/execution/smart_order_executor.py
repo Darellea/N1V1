@@ -9,6 +9,7 @@ import uuid
 from decimal import Decimal
 from typing import Any, Dict, List
 
+from core.api_protection import guarded_call, get_default_circuit_breaker, get_default_rate_limiter
 from core.contracts import SignalType, TradingSignal
 from core.types.order_types import Order, OrderStatus, OrderType
 from utils.logger import get_trade_logger
@@ -164,7 +165,7 @@ class SmartOrderExecutor(BaseExecutor):
 
     async def _place_order_via_api(self, signal: TradingSignal) -> Dict[str, Any]:
         """
-        Place order via exchange API.
+        Place order via exchange API with circuit breaker and rate limiting protection.
 
         Args:
             signal: Trading signal
@@ -203,8 +204,17 @@ class SmartOrderExecutor(BaseExecutor):
         if signal.metadata:
             params["metadata"] = signal.metadata
 
-        # Place the order
-        response = await self.exchange_api.create_order(**params)
+        # Get protection instances
+        circuit_breaker = get_default_circuit_breaker()
+        rate_limiter = get_default_rate_limiter()
+
+        # Place the order with protection
+        response = await guarded_call(
+            self.exchange_api.create_order,
+            **params,
+            circuit_breaker=circuit_breaker,
+            rate_limiter=rate_limiter
+        )
         return response
 
     def _parse_order_response(self, response: Dict[str, Any]) -> Order:

@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
+from core.idempotency import RetryNotAllowedError
 from core.management.reliability_manager import ReliabilityManager
 
 
@@ -424,3 +425,133 @@ class TestReliabilityManager:
         assert "max_backoff" in reliability_manager._reliability
         assert "safe_mode_threshold" in reliability_manager._reliability
         assert "close_positions_on_safe" in reliability_manager._reliability
+
+    @pytest.mark.asyncio
+    async def test_retry_async_side_effect_without_allow_retry_raises_error(
+        self, reliability_manager
+    ):
+        """Test that retry_async raises RetryNotAllowedError for side effects without allow_side_effect_retry."""
+
+        async def side_effect_operation():
+            return "order_placed"
+
+        with pytest.raises(RetryNotAllowedError, match="Retry disabled for side-effect operation"):
+            await reliability_manager.retry_async(
+                lambda: side_effect_operation(),
+                is_side_effect=True,
+                allow_side_effect_retry=False
+            )
+
+    @pytest.mark.asyncio
+    async def test_retry_async_side_effect_with_allow_retry_but_no_idempotency_key_raises_error(
+        self, reliability_manager
+    ):
+        """Test that retry_async raises RetryNotAllowedError when allow_side_effect_retry=True but no idempotency_key."""
+
+        async def side_effect_operation():
+            return "order_placed"
+
+        with pytest.raises(RetryNotAllowedError, match="Retry not allowed for side-effect operation without idempotency_key"):
+            await reliability_manager.retry_async(
+                lambda: side_effect_operation(),
+                is_side_effect=True,
+                allow_side_effect_retry=True,
+                idempotency_key=None
+            )
+
+    @pytest.mark.asyncio
+    async def test_retry_async_side_effect_with_allow_retry_and_idempotency_key_succeeds(
+        self, reliability_manager
+    ):
+        """Test that retry_async allows retries for side effects when properly configured."""
+
+        async def side_effect_operation():
+            return "order_placed"
+
+        result = await reliability_manager.retry_async(
+            lambda: side_effect_operation(),
+            is_side_effect=True,
+            allow_side_effect_retry=True,
+            idempotency_key="test-key-123"
+        )
+
+        assert result == "order_placed"
+
+    @pytest.mark.asyncio
+    async def test_retry_async_side_effect_defaults_to_fail_fast(
+        self, reliability_manager
+    ):
+        """Test that side-effect operations default to fail-fast (1 attempt) even with allow_side_effect_retry."""
+
+        call_count = 0
+
+        async def failing_side_effect_operation():
+            nonlocal call_count
+            call_count += 1
+            raise ValueError("Side effect failed")
+
+        with patch("asyncio.sleep") as mock_sleep:
+            with pytest.raises(ValueError, match="Side effect failed"):
+                await reliability_manager.retry_async(
+                    lambda: failing_side_effect_operation(),
+                    is_side_effect=True,
+                    allow_side_effect_retry=True,
+                    idempotency_key="test-key-456"
+                )
+
+        # Should only try once (fail-fast for side effects)
+        assert call_count == 1
+        mock_sleep.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_retry_async_non_side_effect_allows_normal_retries(
+        self, reliability_manager
+    ):
+        """Test that non-side-effect operations allow normal retries."""
+
+        call_count = 0
+
+        async def failing_operation():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise ValueError("First attempt fails")
+            return "success"
+
+        with patch("asyncio.sleep") as mock_sleep:
+            result = await reliability_manager.retry_async(
+                lambda: failing_operation(),
+                is_side_effect=False  # Default
+            )
+
+        assert result == "success"
+        assert call_count == 2  # Initial + 1 retry
+        mock_sleep.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_retry_async_side_effect_explicit_retries_override_fail_fast(
+        self, reliability_manager
+    ):
+        """Test that explicitly setting retries overrides fail-fast for side effects."""
+
+        call_count = 0
+
+        async def failing_side_effect_operation():
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise ValueError("Side effect failed")
+            return "success"
+
+        with patch("asyncio.sleep") as mock_sleep:
+            result = await reliability_manager.retry_async(
+                lambda: failing_side_effect_operation(),
+                retries=2,  # Explicitly allow 2 retries
+                is_side_effect=True,
+                allow_side_effect_retry=True,
+                idempotency_key="test-key-789"
+            )
+
+        assert result == "success"
+        assert call_count == 3  # Initial + 2 retries
+        assert mock_sleep.call_count == 2

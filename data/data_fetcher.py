@@ -735,18 +735,14 @@ class DataFetcher(IDataFetcher):
 
         return abs_path
 
-    def _save_to_cache(self, cache_key: str, df: pd.DataFrame):
-        """Save DataFrame to cache. Works both synchronously and asynchronously."""
-        try:
-            loop = asyncio.get_running_loop()
-            # We're in an async context, return a coroutine
-            return self._save_to_cache_async(cache_key, df)
-        except RuntimeError:
-            # No running loop, run synchronously
-            asyncio.run(self._save_to_cache_async(cache_key, df))
-
     async def _save_to_cache_async(self, cache_key: str, df: pd.DataFrame) -> None:
-        """Async implementation of cache saving."""
+        """
+        Async implementation of cache saving with proper async I/O.
+
+        Args:
+            cache_key: Cache key for the data
+            df: DataFrame to cache
+        """
         if not self.cache_enabled or not self._cache_dir_path:
             return
 
@@ -755,8 +751,24 @@ class DataFetcher(IDataFetcher):
             return
 
         path = Path(self._cache_dir_path) / f"{cache_key}.json"
-        os.makedirs(path.parent, exist_ok=True)
 
+        # Move CPU-intensive DataFrame processing to thread pool
+        cache_data = await asyncio.to_thread(self._prepare_cache_data, df)
+
+        # Use async file I/O
+        async with aiofiles.open(path, "w") as f:
+            await f.write(json.dumps(cache_data, indent=None))
+
+    def _prepare_cache_data(self, df: pd.DataFrame) -> Dict:
+        """
+        Prepare cache data structure. This is CPU-intensive and should run in thread pool.
+
+        Args:
+            df: DataFrame to prepare for caching
+
+        Returns:
+            Cache data dictionary
+        """
         # Create cache data structure with metadata
         # Convert DataFrame to dict with string timestamps for JSON serialization
         df_dict = df.reset_index()
@@ -764,48 +776,85 @@ class DataFetcher(IDataFetcher):
         if df.index.name != "timestamp":
             df_dict = df_dict.rename(columns={df.index.name or "index": "timestamp"})
         df_dict["timestamp"] = df_dict["timestamp"].astype(str)
-        cache_data = {
+        return {
             "timestamp": int(pd.Timestamp.now().timestamp() * 1000),
             "data": df_dict.to_dict("records"),
         }
 
-        with open(path, "w") as f:
-            json.dump(cache_data, f)
-
-    def _load_from_cache(self, cache_key: str, max_age_hours: int = 24):
-        """Load DataFrame from cache. Works both synchronously and asynchronously."""
-        try:
-            loop = asyncio.get_running_loop()
-            # We're in an async context, return a coroutine
-            return self._load_from_cache_async(cache_key, max_age_hours)
-        except RuntimeError:
-            # No running loop, run synchronously
-            return asyncio.run(self._load_from_cache_async(cache_key, max_age_hours))
-
     async def _load_from_cache_async(
         self, cache_key: str, max_age_hours: int = 24
     ) -> Optional[pd.DataFrame]:
-        """Async implementation of cache loading."""
+        """
+        Async implementation of cache loading with proper async I/O.
+
+        Args:
+            cache_key: Cache key to load
+            max_age_hours: Maximum age of cache data in hours
+
+        Returns:
+            DataFrame from cache or None if not found/expired
+        """
         if not self.cache_enabled or not self._cache_dir_path:
             return None
 
         path = Path(self._cache_dir_path) / f"{cache_key}.json"
-        if not path.exists():
+        if not await asyncio.to_thread(path.exists):
             return None
 
-        with open(path, "r") as f:
-            data = json.load(f)
+        try:
+            # Use async file I/O
+            async with aiofiles.open(path, "r") as f:
+                content = await f.read()
 
-        # Check if cache is expired
-        ts = pd.Timestamp(data.get("timestamp", 0), unit="ms", tz="UTC")
-        if ts < (pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=max_age_hours)):
+            # Parse JSON in thread pool (CPU-intensive)
+            data = await asyncio.to_thread(json.loads, content)
+
+            # Check if cache is expired
+            ts = pd.Timestamp(data.get("timestamp", 0), unit="ms", tz="UTC")
+            if ts < (pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=max_age_hours)):
+                return None
+
+            # Process DataFrame in thread pool (CPU-intensive)
+            return await asyncio.to_thread(self._process_cached_dataframe, data)
+
+        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+            # Cache file corrupted or missing
             return None
 
-        # Return DataFrame from cached data
+    def _process_cached_dataframe(self, data: Dict) -> pd.DataFrame:
+        """
+        Process cached data into DataFrame. CPU-intensive, should run in thread pool.
+
+        Args:
+            data: Cached data dictionary
+
+        Returns:
+            Processed DataFrame
+        """
         df = pd.DataFrame(data["data"])
         if "timestamp" in df.columns:
             df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
         return df.set_index("timestamp")
+
+    # Backward compatibility - these now delegate to async versions
+    def _save_to_cache(self, cache_key: str, df: pd.DataFrame) -> None:
+        """Backward-compatible sync wrapper for cache saving."""
+        try:
+            # Try to run async version in current event loop
+            asyncio.create_task(self._save_to_cache_async(cache_key, df))
+        except RuntimeError:
+            # No event loop, run synchronously (fallback for tests)
+            asyncio.run(self._save_to_cache_async(cache_key, df))
+
+    def _load_from_cache(self, cache_key: str, max_age_hours: int = 24) -> Optional[pd.DataFrame]:
+        """Backward-compatible sync wrapper for cache loading."""
+        try:
+            # Try to run async version in current event loop
+            loop = asyncio.get_running_loop()
+            return loop.run_until_complete(self._load_from_cache_async(cache_key, max_age_hours))
+        except RuntimeError:
+            # No event loop, run synchronously (fallback for tests)
+            return asyncio.run(self._load_from_cache_async(cache_key, max_age_hours))
 
     # Backward compatibility wrappers
     def save_to_cache(self, cache_key: str, df: pd.DataFrame) -> None:

@@ -386,23 +386,39 @@ class TestOrderManager:
         self, config, mock_executors, mock_managers
     ):
         """Test safe mode trigger counter increment."""
+        from core.idempotency import order_execution_registry
+
+        # Clear registry for clean test
+        order_execution_registry.clear()
+
         om = OrderManager(config, TradingMode.PAPER)
         mock_managers["reliability"].safe_mode_active = True
 
-        signal = TradingSignal(
+        signal1 = TradingSignal(
             strategy_id="test_strategy",
             symbol="BTC/USDT",
             signal_type=SignalType.ENTRY_LONG,
             signal_strength=SignalStrength.STRONG,
             order_type=OrderType.MARKET,
             amount=Decimal("1.0"),
+            idempotency_key="safe-mode-test-1",
         )
 
-        await om.execute_order(signal)
+        signal2 = TradingSignal(
+            strategy_id="test_strategy",
+            symbol="BTC/USDT",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.STRONG,
+            order_type=OrderType.MARKET,
+            amount=Decimal("1.0"),
+            idempotency_key="safe-mode-test-2",
+        )
+
+        await om.execute_order(signal1)
         assert hasattr(om, "_safe_mode_triggers")
         assert om._safe_mode_triggers == 1
 
-        await om.execute_order(signal)
+        await om.execute_order(signal2)
         assert om._safe_mode_triggers == 2
 
     @pytest.mark.asyncio
@@ -861,3 +877,124 @@ class TestOrderManager:
         mock_executors["paper"].execute_paper_order.assert_called_once_with(
             valid_signal
         )
+
+    @pytest.mark.asyncio
+    async def test_idempotency_first_order_executes(
+        self, config, mock_executors, mock_managers
+    ):
+        """Test that the first order with a given idempotency key executes normally."""
+        from core.idempotency import order_execution_registry
+
+        # Clear registry for clean test
+        order_execution_registry.clear()
+
+        om = OrderManager(config, TradingMode.PAPER)
+
+        signal = TradingSignal(
+            strategy_id="test_strategy",
+            symbol="BTC/USDT",
+            signal_type="ENTRY_LONG",
+            signal_strength="STRONG",
+            order_type="MARKET",
+            amount=Decimal("1.0"),
+            idempotency_key="test-key-123",
+        )
+
+        result = await om.execute_order(signal)
+
+        assert result is not None
+        assert result["id"] == "processed_order"
+        assert result["status"] == "filled"
+
+        # Verify execution was called
+        mock_executors["paper"].execute_paper_order.assert_called_once_with(signal)
+
+        # Verify registry state
+        status = order_execution_registry.get_status("test-key-123")
+        assert status is not None
+        assert status["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_idempotency_duplicate_order_returns_cached_result(
+        self, config, mock_executors, mock_managers
+    ):
+        """Test that duplicate order with same idempotency key returns cached result without re-executing."""
+        from core.idempotency import order_execution_registry
+
+        # Clear registry for clean test
+        order_execution_registry.clear()
+
+        om = OrderManager(config, TradingMode.PAPER)
+
+        signal1 = TradingSignal(
+            strategy_id="test_strategy",
+            symbol="BTC/USDT",
+            signal_type="ENTRY_LONG",
+            signal_strength="STRONG",
+            order_type="MARKET",
+            amount=Decimal("1.0"),
+            idempotency_key="test-key-456",
+        )
+
+        signal2 = TradingSignal(
+            strategy_id="test_strategy",
+            symbol="BTC/USDT",
+            signal_type="ENTRY_LONG",
+            signal_strength="STRONG",
+            order_type="MARKET",
+            amount=Decimal("1.0"),
+            idempotency_key="test-key-456",  # Same key
+        )
+
+        # First execution
+        result1 = await om.execute_order(signal1)
+        assert result1 is not None
+        assert result1["id"] == "processed_order"
+
+        # Second execution with same key
+        result2 = await om.execute_order(signal2)
+        assert result2 is not None
+        assert result2["id"] == "processed_order"  # Same result
+
+        # Verify execution was called only once
+        mock_executors["paper"].execute_paper_order.assert_called_once_with(signal1)
+
+        # Verify registry state
+        status = order_execution_registry.get_status("test-key-456")
+        assert status is not None
+        assert status["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_idempotency_auto_generated_key(
+        self, config, mock_executors, mock_managers
+    ):
+        """Test that idempotency key is auto-generated when not provided."""
+        from core.idempotency import order_execution_registry
+
+        # Clear registry for clean test
+        order_execution_registry.clear()
+
+        om = OrderManager(config, TradingMode.PAPER)
+
+        signal = TradingSignal(
+            strategy_id="test_strategy",
+            symbol="BTC/USDT",
+            signal_type="ENTRY_LONG",
+            signal_strength="STRONG",
+            order_type="MARKET",
+            amount=Decimal("1.0"),
+            # No idempotency_key provided
+        )
+
+        result = await om.execute_order(signal)
+
+        assert result is not None
+        # Verify that a key was set on the signal
+        assert hasattr(signal, "idempotency_key")
+        assert signal.idempotency_key is not None
+        assert isinstance(signal.idempotency_key, str)
+
+        # Verify registry has the key
+        status = order_execution_registry.get_status(signal.idempotency_key)
+        assert status is not None
+        assert status["status"] == "success"

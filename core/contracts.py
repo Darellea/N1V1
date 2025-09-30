@@ -66,6 +66,7 @@ class TradingSignal:
         take_profit: Take profit price (optional)
         trailing_stop: Trailing stop config (optional)
         metadata: Additional strategy-specific data
+        idempotency_key: Unique key to ensure order idempotency (optional, auto-generated if not provided)
     """
 
     strategy_id: str
@@ -87,6 +88,7 @@ class TradingSignal:
     take_profit: Optional[float] = None
     trailing_stop: Optional[Dict] = None
     metadata: Optional[Dict] = field(default_factory=dict)
+    idempotency_key: Optional[str] = None
 
     def __post_init__(self):
         """
@@ -173,6 +175,7 @@ class TradingSignal:
             "take_profit": self.take_profit,
             "trailing_stop": self.trailing_stop,
             "metadata": self.metadata,
+            "idempotency_key": self.idempotency_key,
         }
 
     def __repr__(self) -> str:

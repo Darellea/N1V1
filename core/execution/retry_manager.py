@@ -1,6 +1,9 @@
 """
 Retry Manager
 
+DEPRECATED: This module is now a thin wrapper around core.retry.retry_call.
+New code should use core.retry.retry_call directly.
+
 Handles retry logic with exponential backoff and fallback mechanisms
 for failed execution attempts.
 """
@@ -13,6 +16,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
+from core.api_protection import APICircuitBreaker, CircuitOpenError
+from core.idempotency import RetryNotAllowedError
+from core.retry import retry_call, update_global_retry_config
 from utils.logger import get_trade_logger
 
 from .execution_types import ExecutionPolicy, ExecutionStatus
@@ -126,23 +132,45 @@ class RetryManager:
         signal: Any,
         policy: ExecutionPolicy,
         context: Dict[str, Any],
+        allow_side_effect_retry: bool = False,
+        idempotency_key: Optional[str] = None,
+        is_side_effect: bool = False,
+        circuit_breaker: Optional[APICircuitBreaker] = None,
         *args,
         **kwargs,
     ) -> Dict[str, Any]:
         """
         Execute a function with retry logic and fallback mechanisms.
+        Includes safety checks for side-effecting operations.
 
         Args:
             execution_func: Function to execute
             signal: Trading signal
             policy: Execution policy
             context: Execution context
+            allow_side_effect_retry: Whether to allow retries for side-effecting operations
+            idempotency_key: Idempotency key for side-effecting operations
+            is_side_effect: Whether this operation has side effects
             *args: Additional positional arguments
             **kwargs: Additional keyword arguments
 
         Returns:
             Execution result dictionary
+
+        Raises:
+            RetryNotAllowedError: If retry is not allowed for side-effecting operations
         """
+        # Safety check for side-effecting operations
+        if is_side_effect and not allow_side_effect_retry:
+            raise RetryNotAllowedError(
+                f"Retry disabled for side-effect function {execution_func.__name__} without explicit allow_side_effect_retry=True"
+            )
+
+        if is_side_effect and allow_side_effect_retry and idempotency_key is None:
+            raise RetryNotAllowedError(
+                f"Retry not allowed for side-effect function {execution_func.__name__} without idempotency_key"
+            )
+
         if not self.enabled:
             return await execution_func(signal, policy, context, *args, **kwargs)
 
@@ -152,6 +180,15 @@ class RetryManager:
         fallback_used = False
 
         for attempt in range(self.max_retries + 1):  # +1 for initial attempt
+            # Check circuit breaker before each attempt
+            if circuit_breaker and circuit_breaker.is_open():
+                self.logger.warning(
+                    f"Circuit breaker is OPEN, aborting retry for {execution_func.__name__}"
+                )
+                raise CircuitOpenError(
+                    f"Circuit is open for {execution_func.__name__}, aborting retry"
+                )
+
             try:
                 self.logger.debug(
                     f"Execution attempt {attempt + 1}/{self.max_retries + 1} "
@@ -168,6 +205,9 @@ class RetryManager:
                 # Check if execution was successful
                 if self._is_successful_execution(result):
                     self.logger.info(f"Execution succeeded on attempt {attempt + 1}")
+                    # Record success with circuit breaker
+                    if circuit_breaker:
+                        circuit_breaker.record_success()
                     # Ensure status is COMPLETED for successful executions
                     result["status"] = ExecutionStatus.COMPLETED
                     return self._enrich_result_with_retry_info(
@@ -187,6 +227,9 @@ class RetryManager:
                     self.logger.warning(
                         f"Execution failed on attempt {attempt + 1}, not retrying: {error_type.value}"
                     )
+                    # Record failure with circuit breaker
+                    if circuit_breaker:
+                        circuit_breaker.record_failure()
                     return self._create_failure_result(
                         attempt,
                         total_delay,
@@ -240,10 +283,21 @@ class RetryManager:
                     self.logger.debug(f"Waiting {delay:.1f}s before retry")
                     await asyncio.sleep(delay)
 
+            except CircuitOpenError:
+                # Circuit breaker is open - don't retry this exception
+                self.logger.warning(
+                    f"Circuit breaker open during attempt {attempt + 1}, not retrying"
+                )
+                raise
+
             except Exception as e:
                 self.logger.error(
                     f"Unexpected error during execution attempt {attempt + 1}: {e}"
                 )
+
+                # Record failure with circuit breaker
+                if circuit_breaker:
+                    circuit_breaker.record_failure()
 
                 # Check kill switch
                 if self.kill_switch_enabled:
@@ -572,3 +626,51 @@ class RetryManager:
         )
 
         self.logger.info("Retry configuration updated")
+
+        # Update global retry config to match
+        update_global_retry_config({
+            "max_attempts": self.max_retries + 1,  # +1 for initial attempt
+            "base_delay": self.backoff_base,
+            "max_delay": self.max_backoff,
+        })
+
+    async def retry_call_centralized(
+        self,
+        fn: Callable[..., Any],
+        *args,
+        idempotency_key: Optional[str] = None,
+        circuit_breaker: Optional[APICircuitBreaker] = None,
+        is_side_effect: bool = False,
+        **kwargs
+    ) -> Any:
+        """
+        Centralized retry using the new core.retry.retry_call.
+
+        This is the recommended way to retry operations. The old execute_with_retry
+        method is kept for backward compatibility but should be migrated to use this.
+
+        Args:
+            fn: Function to retry
+            *args: Positional arguments for fn
+            idempotency_key: Required for side-effect functions
+            circuit_breaker: Optional circuit breaker integration
+            is_side_effect: Whether fn has side effects
+            **kwargs: Keyword arguments for fn
+
+        Returns:
+            Result of successful function call
+
+        Raises:
+            RetryNotAllowedError: If retrying side-effect function without idempotency_key
+            CircuitOpenError: If circuit breaker is open
+        """
+        return await retry_call(
+            fn,
+            *args,
+            max_attempts=self.max_retries + 1,  # +1 for initial attempt
+            base_delay=self.backoff_base,
+            idempotency_key=idempotency_key,
+            circuit_breaker=circuit_breaker,
+            is_side_effect=is_side_effect,
+            **kwargs
+        )

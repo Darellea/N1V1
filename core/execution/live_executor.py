@@ -4,6 +4,7 @@ core/execution/live_executor.py
 Handles live order execution and exchange communication.
 """
 
+import asyncio
 import logging
 import os
 from typing import Any, Dict, Optional
@@ -11,6 +12,7 @@ from typing import Any, Dict, Optional
 import ccxt.async_support as ccxt
 from ccxt.base.errors import ExchangeError, NetworkError
 
+from core.api_protection import guarded_call, get_default_circuit_breaker, get_default_rate_limiter
 from utils.logger import get_trade_logger
 
 logger = logging.getLogger(__name__)
@@ -68,7 +70,7 @@ class LiveOrderExecutor:
         Adapter that calls ccxt.create_order using a safe positional-args first strategy
         and falling back to keyword-args. This helps support exchanges with different
         create_order signatures and provides a single place to adapt our internal
-        order dict to ccxt.
+        order dict to ccxt. All calls are protected by circuit breaker and rate limiter.
         """
         symbol = order_params.get("symbol")
         otype = order_params.get("type") or order_params.get("order_type") or "market"
@@ -77,21 +79,31 @@ class LiveOrderExecutor:
         price = order_params.get("price", None)
         params = order_params.get("params", {}) or {}
 
+        # Get protection instances
+        circuit_breaker = get_default_circuit_breaker()
+        rate_limiter = get_default_rate_limiter()
+
         # Try positional API first (common ccxt signature)
         try:
-            return await self.exchange.create_order(
-                symbol, otype, side, amount, price, params
+            return await guarded_call(
+                self.exchange.create_order,
+                symbol, otype, side, amount, price, params,
+                circuit_breaker=circuit_breaker,
+                rate_limiter=rate_limiter
             )
         except TypeError:
             # Some adapters accept kwargs - try a kwargs call as a fallback
             try:
-                return await self.exchange.create_order(
+                return await guarded_call(
+                    self.exchange.create_order,
                     symbol=symbol,
                     type=otype,
                     side=side,
                     amount=amount,
                     price=price,
                     params=params,
+                    circuit_breaker=circuit_breaker,
+                    rate_limiter=rate_limiter
                 )
             except Exception:
                 # Re-raise original exception for upstream handling
@@ -104,6 +116,9 @@ class LiveOrderExecutor:
         """
         Execute a live order on the exchange.
 
+        This method is fully async-first and offloads any CPU-bound operations
+        to thread pools to prevent blocking the event loop.
+
         Args:
             signal: Object providing order details.
 
@@ -113,6 +128,37 @@ class LiveOrderExecutor:
         if not self.exchange:
             raise RuntimeError("Exchange not initialized for live trading")
 
+        # Move order parameter processing to thread pool (CPU-bound)
+        order_params = await asyncio.to_thread(self._prepare_order_params, signal)
+
+        try:
+            # Execute the order with timeout protection
+            response = await asyncio.wait_for(
+                self._create_order_on_exchange(order_params),
+                timeout=30.0  # 30 second timeout for order execution
+            )
+            return response
+
+        except asyncio.TimeoutError:
+            logger.error("Order execution timed out after 30 seconds")
+            raise RuntimeError("Order execution timed out")
+        except (NetworkError, ExchangeError) as e:
+            logger.error(f"Exchange error during order execution: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error during live order execution: {str(e)}")
+            raise
+
+    def _prepare_order_params(self, signal: Any) -> Dict[str, Any]:
+        """
+        Prepare order parameters from signal. This is CPU-bound work.
+
+        Args:
+            signal: Object providing order details
+
+        Returns:
+            Dictionary of order parameters
+        """
         # Determine side from signal type if not explicitly provided
         side = None
         if isinstance(signal, dict):
@@ -134,7 +180,7 @@ class LiveOrderExecutor:
             elif signal_type == SignalType.EXIT_SHORT:
                 side = "buy"
 
-        order_params = {
+        return {
             "symbol": getattr(
                 signal,
                 "symbol",
@@ -173,18 +219,6 @@ class LiveOrderExecutor:
             )
             or {},
         }
-
-        try:
-            # Execute the order
-            response = await self._create_order_on_exchange(order_params)
-            return response
-
-        except (NetworkError, ExchangeError) as e:
-            logger.error(f"Exchange error during order execution: {str(e)}")
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error during live order execution: {str(e)}")
-            raise
 
     async def shutdown(self) -> None:
         """Cleanup exchange resources."""

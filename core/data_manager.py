@@ -23,6 +23,8 @@ from .utils.error_utils import (
     ErrorHandler,
     ErrorSeverity,
 )
+from .exceptions import SchemaValidationError
+from api.models import validate_ticker_data, validate_market_data
 
 logger = get_structured_logger("core.data_manager", LogSensitivity.SECURE)
 error_handler = ErrorHandler("data_manager")
@@ -201,9 +203,38 @@ class DataManager(DataManagerInterface):
 
         try:
             # Use circuit breaker for external service calls
-            return await self.circuit_breaker.call(
+            raw_data = await self.circuit_breaker.call(
                 self.data_fetcher.get_realtime_data, self.pairs
             )
+
+            # Validate and parse the data
+            validated_data = {}
+            for symbol, data in raw_data.items():
+                if isinstance(data, dict):
+                    # Try to validate as ticker data
+                    try:
+                        validated_ticker = validate_ticker_data(data)
+                        validated_data[symbol] = validated_ticker.model_dump()
+                    except SchemaValidationError:
+                        # If ticker validation fails, try general market data validation
+                        try:
+                            validated_market = validate_market_data({
+                                "symbol": symbol,
+                                "data_type": "realtime",
+                                "payload": data,
+                                "timestamp": time.time()
+                            })
+                            validated_data[symbol] = validated_market.model_dump()
+                        except SchemaValidationError as e:
+                            logger.error(f"Schema validation failed for {symbol} realtime data: {e}")
+                            # Continue with raw data but log the issue
+                            validated_data[symbol] = data
+                else:
+                    # Non-dict data (e.g., DataFrames) pass through
+                    validated_data[symbol] = data
+
+            return validated_data
+
         except Exception:
             logger.exception("Failed to fetch portfolio realtime data")
             raise

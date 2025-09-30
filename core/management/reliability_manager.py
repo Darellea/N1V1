@@ -9,6 +9,8 @@ import logging
 import random
 from typing import Any, Callable, Dict, Optional
 
+from core.idempotency import RetryNotAllowedError
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,9 +43,13 @@ class ReliabilityManager:
         base_backoff: Optional[float] = None,
         max_backoff: Optional[float] = None,
         exceptions: tuple = (Exception,),
+        allow_side_effect_retry: bool = False,
+        idempotency_key: Optional[str] = None,
+        is_side_effect: bool = False,
     ) -> Any:
         """
         Execute an async operation with exponential backoff and jitter.
+        Includes safety checks for side-effecting operations.
 
         Args:
             coro_factory: A zero-arg callable returning the coroutine to execute.
@@ -51,16 +57,41 @@ class ReliabilityManager:
             base_backoff: Base backoff in seconds (will be doubled each retry).
             max_backoff: Maximum backoff cap.
             exceptions: Tuple of exception types that should trigger a retry.
+            allow_side_effect_retry: Whether to allow retries for side-effecting operations.
+            idempotency_key: Idempotency key for side-effecting operations.
+            is_side_effect: Whether this operation has side effects.
 
         Returns:
             Result of the coroutine if successful.
 
         Raises:
+            RetryNotAllowedError: If retry is not allowed for side-effecting operations.
             The last exception if all retries are exhausted.
         """
+        # Safety check for side-effecting operations
+        if is_side_effect and not allow_side_effect_retry:
+            raise RetryNotAllowedError(
+                f"Retry disabled for side-effect operation without explicit allow_side_effect_retry=True"
+            )
+
+        if is_side_effect and allow_side_effect_retry and idempotency_key is None:
+            raise RetryNotAllowedError(
+                f"Retry not allowed for side-effect operation without idempotency_key"
+            )
+
         retries = (
             retries if retries is not None else self._reliability.get("max_retries", 3)
         )
+
+        # Default to fail-fast (1 attempt) for side-effecting operations
+        # Only allow retries if explicitly configured with allow_side_effect_retry=True AND retries > 0
+        if is_side_effect:
+            if not allow_side_effect_retry:
+                retries = 0
+            # If allow_side_effect_retry=True but retries not explicitly set, still fail-fast
+            elif retries is None or retries == self._reliability.get("max_retries", 3):
+                retries = 0
+
         base_backoff = (
             base_backoff
             if base_backoff is not None
