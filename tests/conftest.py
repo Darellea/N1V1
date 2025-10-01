@@ -15,11 +15,16 @@ Test Categories:
 """
 import os
 import sys
+import threading
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 
 # Set testing environment variable for API tests
 os.environ["TESTING"] = "1"
+
+# TensorFlow import isolation
+_tf_import_lock = threading.Lock()
+_tf_loaded = False
 
 import asyncio
 import os
@@ -1066,3 +1071,24 @@ def cache_instance(cache_config, mock_redis):
     cache._redis_client = mock_redis
     cache._connected = True
     return cache
+
+
+@pytest.fixture(scope="session", autouse=True)
+def initialize_tensorflow():
+    """Ensure TensorFlow is imported once in a thread-safe manner"""
+    global _tf_loaded
+    with _tf_import_lock:
+        if not _tf_loaded:
+            try:
+                # Configure TensorFlow to avoid thread conflicts
+                os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+                os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+
+                import tensorflow as tf
+                # Configure threading to prevent conflicts
+                tf.config.threading.set_intra_op_parallelism_threads(1)
+                tf.config.threading.set_inter_op_parallelism_threads(1)
+                _tf_loaded = True
+            except ImportError:
+                # TensorFlow not available, skip initialization
+                _tf_loaded = True  # Mark as loaded to avoid retries

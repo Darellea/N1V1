@@ -173,6 +173,11 @@ class ModelMonitor:
             logger.warning("Monitoring is already active")
             return
 
+        # Skip monitoring in testing mode to avoid thread conflicts
+        if os.environ.get("TESTING"):
+            logger.info("Skipping model monitoring in testing mode")
+            return
+
         self.monitoring_active = True
         self.monitor_thread = threading.Thread(
             target=self._monitoring_loop, daemon=True

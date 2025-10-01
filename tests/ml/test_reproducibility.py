@@ -30,10 +30,24 @@ from ml.train import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolate_tensorflow_operations():
+    """Isolate TensorFlow operations to prevent thread conflicts"""
+    try:
+        import tensorflow as tf
+        # Clear any existing graph and session
+        tf.keras.backend.clear_session()
+        yield
+        tf.keras.backend.clear_session()
+    except ImportError:
+        # TensorFlow not available, skip isolation
+        yield
+
+
 class TestDeterministicSeeds:
     """Test deterministic seed setting functionality."""
 
-    def test_set_deterministic_seeds_python_random(self):
+    def test_set_deterministic_seeds_python_random(self, isolate_tensorflow_operations):
         """Test that Python's random module is seeded."""
         # Set seed
         set_deterministic_seeds(42)

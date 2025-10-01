@@ -56,18 +56,22 @@ or .env file.
 
 
 @pytest.fixture
-async def discord_webhook_notifier(discord_webhook_config):
+def discord_webhook_notifier(discord_webhook_config, event_loop):
     """Fixture to create DiscordNotifier instances for webhook tests."""
-    notifier = DiscordNotifier(discord_webhook_config)
-    try:
+    async def _create_notifier():
+        notifier = DiscordNotifier(discord_webhook_config)
         await notifier.initialize()
-        yield notifier
-    finally:
-        # Ensure proper cleanup even if test fails
+        return notifier
+
+    notifier = event_loop.run_until_complete(_create_notifier())
+    yield notifier
+    # Cleanup
+    async def _cleanup():
         try:
             await notifier.shutdown()
         except Exception:
             pass  # Ignore cleanup errors in tests
+    event_loop.run_until_complete(_cleanup())
 
 
 @pytest.fixture

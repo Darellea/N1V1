@@ -7,6 +7,7 @@ and automatic cleanup triggers for optimal memory usage.
 
 import gc
 import logging
+import os
 import threading
 import time
 import tracemalloc
@@ -86,8 +87,8 @@ class MemoryManager(MemoryManagerInterface):
         self._memory_warnings = 0
         self._memory_criticals = 0
 
-        # Initialize monitoring if enabled
-        if enable_monitoring:
+        # Initialize monitoring if enabled and not in testing mode
+        if enable_monitoring and not os.environ.get("TESTING"):
             self._start_memory_monitoring()
 
     def _start_memory_monitoring(self):

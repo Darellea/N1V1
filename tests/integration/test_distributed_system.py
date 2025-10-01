@@ -26,21 +26,52 @@ from core.task_manager import (
 )
 
 
-class TestDistributedTaskManager:
-    """Test cases for the distributed task manager."""
+@pytest.fixture
+def config() -> Dict[str, Any]:
+    """Test configuration for distributed system."""
+    return {"queue": {"type": "in_memory", "max_workers": 2, "worker_timeout": 30}}
 
-    @pytest.fixture
-    def config(self) -> Dict[str, Any]:
-        """Test configuration for distributed system."""
-        return {"queue": {"type": "in_memory", "max_workers": 2, "worker_timeout": 30}}
 
-    @pytest.fixture
-    async def task_manager(self, config: Dict[str, Any]) -> TaskManager:
-        """Create a task manager instance for testing."""
+@pytest.fixture
+def task_manager(config: Dict[str, Any], event_loop) -> TaskManager:
+    """Create a task manager instance for testing."""
+    async def _create_manager():
         manager = TaskManager(config)
         await manager.initialize_queue()
-        yield manager
-        await manager.shutdown_queue()
+        return manager
+
+    manager = event_loop.run_until_complete(_create_manager())
+    yield manager
+    event_loop.run_until_complete(manager.shutdown_queue())
+
+
+@pytest.fixture
+def scheduler(task_manager, config: Dict[str, Any], event_loop) -> DistributedScheduler:
+    """Create a distributed scheduler instance for testing."""
+    async def _create_scheduler():
+        scheduler = DistributedScheduler(task_manager, config)
+        await scheduler.initialize()
+        return scheduler
+
+    scheduler = event_loop.run_until_complete(_create_scheduler())
+    yield scheduler
+    # No specific cleanup for scheduler in current implementation
+
+
+@pytest.fixture
+def executor(task_manager, config: Dict[str, Any], event_loop) -> DistributedExecutor:
+    """Create a distributed executor instance for testing."""
+    async def _create_executor():
+        executor = DistributedExecutor(task_manager, config)
+        return executor
+
+    executor = event_loop.run_until_complete(_create_executor())
+    yield executor
+    # No specific cleanup for executor in current implementation
+
+
+class TestDistributedTaskManager:
+    """Test cases for the distributed task manager."""
 
     @pytest.mark.asyncio
     async def test_task_enqueue_dequeue(self, task_manager: TaskManager):
@@ -225,18 +256,6 @@ class TestQueueAdapters:
 class TestDistributedScheduler:
     """Test cases for the distributed scheduler."""
 
-    @pytest.fixture
-    def config(self) -> Dict[str, Any]:
-        return {"queue": {"type": "in_memory", "max_workers": 2}}
-
-    @pytest.fixture
-    async def scheduler(self, config: Dict[str, Any]) -> DistributedScheduler:
-        task_manager = TaskManager(config)
-        scheduler = DistributedScheduler(task_manager, config)
-        await scheduler.initialize()
-        yield scheduler
-        await task_manager.shutdown_queue()
-
     @pytest.mark.asyncio
     async def test_signal_scheduling(self, scheduler: DistributedScheduler):
         """Test signal processing task scheduling."""
@@ -284,13 +303,6 @@ class TestDistributedExecutor:
     @pytest.fixture
     def config(self) -> Dict[str, Any]:
         return {"queue": {"type": "in_memory", "max_workers": 1}}
-
-    @pytest.fixture
-    async def executor(self, config: Dict[str, Any]) -> DistributedExecutor:
-        task_manager = TaskManager(config)
-        executor = DistributedExecutor(task_manager, config)
-        yield executor
-        await task_manager.shutdown_queue()
 
     @pytest.mark.asyncio
     async def test_task_handler_registration(self, executor: DistributedExecutor):
