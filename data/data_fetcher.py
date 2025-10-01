@@ -352,10 +352,14 @@ class DataFetcher(IDataFetcher):
         if callable(coro):
             coro = coro()
 
-        try:
-            return await asyncio.wait_for(coro, timeout or self.timeout)
-        except asyncio.TimeoutError:
-            raise
+        if asyncio.iscoroutine(coro):
+            try:
+                return await asyncio.wait_for(coro, timeout or self.timeout)
+            except asyncio.TimeoutError:
+                raise
+        else:
+            # For synchronous results (e.g., from mocks), return directly
+            return coro
 
     async def _maybe_await(self, result):
         """
@@ -523,6 +527,9 @@ class DataFetcher(IDataFetcher):
         force_fresh: bool = True,
     ) -> pd.DataFrame:
         try:
+            # Respect rate limits
+            await self._throttle_requests()
+
             # Try to load from cache if not force_fresh and caching enabled
             if not force_fresh and self.cache_enabled:
                 cached = await self._load_from_cache_async(
@@ -827,19 +834,25 @@ class DataFetcher(IDataFetcher):
             # Cache file corrupted or missing
             return None
 
-    def _save_to_cache(self, cache_key: str, df: pd.DataFrame) -> None:
+    def _save_to_cache(self, cache_key: str, df: pd.DataFrame):
         """
-        Synchronous cache saving.
+        Cache saving method (context-aware wrapper).
 
         Args:
             cache_key: Cache key for the data
             df: DataFrame to cache
         """
-        asyncio.run(self._save_to_cache_async(cache_key, df))
+        try:
+            asyncio.get_running_loop()
+            # In async context - return coroutine
+            return self._save_to_cache_async(cache_key, df)
+        except RuntimeError:
+            # In sync context - run synchronously
+            asyncio.run(self._save_to_cache_async(cache_key, df))
 
-    def _load_from_cache(self, cache_key: str, max_age_hours: int = 24) -> Optional[pd.DataFrame]:
+    def _load_from_cache(self, cache_key: str, max_age_hours: int = 24):
         """
-        Synchronous cache loading.
+        Cache loading method (context-aware wrapper).
 
         Args:
             cache_key: Cache key to load
@@ -848,7 +861,13 @@ class DataFetcher(IDataFetcher):
         Returns:
             DataFrame from cache or None if not found/expired
         """
-        return asyncio.run(self._load_from_cache_async(cache_key, max_age_hours))
+        try:
+            asyncio.get_running_loop()
+            # In async context - return coroutine
+            return self._load_from_cache_async(cache_key, max_age_hours)
+        except RuntimeError:
+            # In sync context - run synchronously
+            return asyncio.run(self._load_from_cache_async(cache_key, max_age_hours))
 
     def _prepare_cache_data(self, df: pd.DataFrame) -> Dict:
         """

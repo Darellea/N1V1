@@ -1,6 +1,6 @@
 {
   "experiment_name": "integration_test",
-  "start_time": "2025-09-30T15:32:16.588806",
+  "start_time": "2025-10-01T12:15:44.747156",
   "status": "completed",
   "parameters": {
     "random_seed": 777,
@@ -40,16 +40,16 @@
         "NUMEXPR_NUM_THREADS": "not set"
       },
       "git_info": {
-        "commit_hash": "336b294641555bb00880ab497c3c0b8a5f0f4a33",
+        "commit_hash": "03bd723c6ad5ad743d73fc8a6aec475010556d35",
         "branch": "main",
         "remote_url": "https://github.com/Darellea/N1V1.git",
-        "status": "M anomalies.json\n M core/bot_engine.py\n M core/component_factory.py\n M core/config_manager.py\n M core/memory_cache.py\n M core/memory_manager.py\n M core/order_manager.py\n M core/performance_tracker.py\n M data/data_fetcher.py\n M data/performance_baselines.json\n M experiments/integration_test/metadata.json\n M experiments/integration_test/parameters.json\n M experiments/integration_test/reproducibility_checklist.json\n M experiments/test_reproducibility/metadata.json\n M experiments/test_reproducibility/reproducibility_checklist.json\n M logs/anomalies/anomalies.json\n M md/LAST.md\n M ml/train.py\n M monitoring/alerts.json\n M monitoring/drift_history.json\n M monitoring/performance_history.json\n M results/walk_forward/walk_forward_results.json\n M results/walk_forward/walk_forward_summary.json\n M tests/core/test_bot_engine_comprehensive.py\n D tests/utils/test_retry.py\n?? experiments/train_all_20250930_133701/\n?? experiments/train_all_20250930_135315/\n?? experiments/train_all_20250930_143503/\n?? reports/metrics/metrics_test_strategy_20250930_132934.json\n?? reports/metrics/metrics_test_strategy_20250930_134111.json\n?? reports/metrics/metrics_test_strategy_20250930_134519.json\n?? reports/metrics/metrics_test_strategy_20250930_134627.json\n?? reports/metrics/metrics_test_strategy_20250930_142514.json\n?? tests/utils/test_utils_retry.py"
+        "status": "M anomalies.json\n M core/component_factory.py\n M core/config_manager.py\n M core/metrics_collector.py\n M core/order_manager.py\n M core/performance_profiler.py\n M data/data_fetcher.py\n D data/historical/test_data/f78c83afe6d317f0c106b24ac826d8d0.parquet\n M data/performance_baselines.json\n M experiments/integration_test/metadata.json\n M experiments/integration_test/parameters.json\n M experiments/integration_test/reproducibility_checklist.json\n M experiments/test_reproducibility/metadata.json\n M experiments/test_reproducibility/reproducibility_checklist.json\n M logs/anomalies/anomalies.json\n M md/LAST.md\n M monitoring/alerts.json\n M monitoring/drift_history.json\n M monitoring/performance_history.json\n M results/walk_forward/walk_forward_results.json\n M results/walk_forward/walk_forward_summary.json\n M tests/core/test_performance_optimization.py\n M tests/execution/test_smart_layer.py\n M tests/test_async_data_fetcher.py\n?? experiments/train_all_20251001_080910/\n?? experiments/train_all_20251001_083219/\n?? experiments/train_all_20251001_091137/\n?? experiments/train_all_20251001_093121/\n?? experiments/train_all_20251001_100045/\n?? experiments/train_all_20251001_111310/\n?? experiments/train_all_20251001_113815/\n?? experiments/train_all_20251001_120043/\n?? reports/metrics/metrics_test_strategy_20251001_080152.json\n?? reports/metrics/metrics_test_strategy_20251001_082331.json\n?? reports/metrics/metrics_test_strategy_20251001_082338.json\n?? reports/metrics/metrics_test_strategy_20251001_082418.json\n?? reports/metrics/metrics_test_strategy_20251001_082738.json\n?? reports/metrics/metrics_test_strategy_20251001_083820.json\n?? reports/metrics/metrics_test_strategy_20251001_084921.json\n?? reports/metrics/metrics_test_strategy_20251001_090109.json\n?? reports/metrics/metrics_test_strategy_20251001_092154.json\n?? reports/metrics/metrics_test_strategy_20251001_095138.json\n?? reports/metrics/metrics_test_strategy_20251001_100856.json\n?? reports/metrics/metrics_test_strategy_20251001_101758.json\n?? reports/metrics/metrics_test_strategy_20251001_110348.json\n?? reports/metrics/metrics_test_strategy_20251001_112907.json\n?? reports/metrics/metrics_test_strategy_20251001_115121.json\n?? reports/metrics/metrics_test_strategy_20251001_120617.json"
       },
       "hardware": {
         "cpu_count": 4,
         "cpu_count_logical": 4,
         "memory_total_gb": 15.83,
-        "memory_available_gb": 3.77
+        "memory_available_gb": 4.46
       }
     },
     "model_config": {
@@ -116,16 +116,16 @@
         "NUMEXPR_NUM_THREADS": "not set"
       },
       "git_info": {
-        "commit_hash": "336b294641555bb00880ab497c3c0b8a5f0f4a33",
+        "commit_hash": "03bd723c6ad5ad743d73fc8a6aec475010556d35",
         "branch": "main",
         "remote_url": "https://github.com/Darellea/N1V1.git",
-        "status": "M anomalies.json\n M core/bot_engine.py\n M core/component_factory.py\n M core/config_manager.py\n M core/memory_cache.py\n M core/memory_manager.py\n M core/order_manager.py\n M core/performance_tracker.py\n M data/data_fetcher.py\n M data/performance_baselines.json\n M experiments/integration_test/metadata.json\n M experiments/integration_test/parameters.json\n M experiments/integration_test/reproducibility_checklist.json\n M experiments/test_reproducibility/metadata.json\n M experiments/test_reproducibility/reproducibility_checklist.json\n M logs/anomalies/anomalies.json\n M md/LAST.md\n M ml/train.py\n M monitoring/alerts.json\n M monitoring/drift_history.json\n M monitoring/performance_history.json\n M results/walk_forward/walk_forward_results.json\n M results/walk_forward/walk_forward_summary.json\n M tests/core/test_bot_engine_comprehensive.py\n D tests/utils/test_retry.py\n?? experiments/train_all_20250930_133701/\n?? experiments/train_all_20250930_135315/\n?? experiments/train_all_20250930_143503/\n?? reports/metrics/metrics_test_strategy_20250930_132934.json\n?? reports/metrics/metrics_test_strategy_20250930_134111.json\n?? reports/metrics/metrics_test_strategy_20250930_134519.json\n?? reports/metrics/metrics_test_strategy_20250930_134627.json\n?? reports/metrics/metrics_test_strategy_20250930_142514.json\n?? tests/utils/test_utils_retry.py"
+        "status": "M anomalies.json\n M core/component_factory.py\n M core/config_manager.py\n M core/metrics_collector.py\n M core/order_manager.py\n M core/performance_profiler.py\n M data/data_fetcher.py\n D data/historical/test_data/f78c83afe6d317f0c106b24ac826d8d0.parquet\n M data/performance_baselines.json\n M experiments/integration_test/metadata.json\n M experiments/integration_test/parameters.json\n M experiments/integration_test/reproducibility_checklist.json\n M experiments/test_reproducibility/metadata.json\n M experiments/test_reproducibility/reproducibility_checklist.json\n M logs/anomalies/anomalies.json\n M md/LAST.md\n M monitoring/alerts.json\n M monitoring/drift_history.json\n M monitoring/performance_history.json\n M results/walk_forward/walk_forward_results.json\n M results/walk_forward/walk_forward_summary.json\n M tests/core/test_performance_optimization.py\n M tests/execution/test_smart_layer.py\n M tests/test_async_data_fetcher.py\n?? experiments/train_all_20251001_080910/\n?? experiments/train_all_20251001_083219/\n?? experiments/train_all_20251001_091137/\n?? experiments/train_all_20251001_093121/\n?? experiments/train_all_20251001_100045/\n?? experiments/train_all_20251001_111310/\n?? experiments/train_all_20251001_113815/\n?? experiments/train_all_20251001_120043/\n?? reports/metrics/metrics_test_strategy_20251001_080152.json\n?? reports/metrics/metrics_test_strategy_20251001_082331.json\n?? reports/metrics/metrics_test_strategy_20251001_082338.json\n?? reports/metrics/metrics_test_strategy_20251001_082418.json\n?? reports/metrics/metrics_test_strategy_20251001_082738.json\n?? reports/metrics/metrics_test_strategy_20251001_083820.json\n?? reports/metrics/metrics_test_strategy_20251001_084921.json\n?? reports/metrics/metrics_test_strategy_20251001_090109.json\n?? reports/metrics/metrics_test_strategy_20251001_092154.json\n?? reports/metrics/metrics_test_strategy_20251001_095138.json\n?? reports/metrics/metrics_test_strategy_20251001_100856.json\n?? reports/metrics/metrics_test_strategy_20251001_101758.json\n?? reports/metrics/metrics_test_strategy_20251001_110348.json\n?? reports/metrics/metrics_test_strategy_20251001_112907.json\n?? reports/metrics/metrics_test_strategy_20251001_115121.json\n?? reports/metrics/metrics_test_strategy_20251001_120617.json"
       },
       "hardware": {
         "cpu_count": 4,
         "cpu_count_logical": 4,
         "memory_total_gb": 15.83,
-        "memory_available_gb": 3.77
+        "memory_available_gb": 4.46
       }
     },
     "git_commit": "unknown",
@@ -137,6 +137,6 @@
       "processor": "Intel64 Family 6 Model 60 Stepping 3, GenuineIntel"
     }
   },
-  "end_time": "2025-09-30T15:32:16.782882",
-  "duration_seconds": 0.194076
+  "end_time": "2025-10-01T12:15:44.967092",
+  "duration_seconds": 0.219936
 }

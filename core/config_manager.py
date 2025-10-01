@@ -587,6 +587,36 @@ class ConfigManager:
         """Get bot engine configuration."""
         return self._config.bot_engine.copy()
 
+    def get_reliability_config(self) -> Dict[str, Any]:
+        """Get reliability configuration with retry settings."""
+        if hasattr(self, "main_config") and self.main_config:
+            config = self.main_config.dict()
+            reliability = config.get("reliability", {})
+            return {
+                "enabled": reliability.get("enabled", True),
+                "max_retries": reliability.get("max_retries", 3),
+                "backoff_base": reliability.get("backoff_base", 1.0),
+                "max_backoff": reliability.get("max_backoff", 30.0),
+                "retry_on_errors": reliability.get("retry_on_errors", ["network", "exchange_timeout", "rate_limit"]),
+                "fallback_enabled": reliability.get("fallback_enabled", True),
+                "fallback_policy": reliability.get("fallback_policy", "market"),
+                "fallback_on_attempt": reliability.get("fallback_on_attempt", 2),
+                "kill_switch_enabled": reliability.get("kill_switch_enabled", True),
+                "kill_switch_threshold": reliability.get("kill_switch_threshold", 5),
+            }
+        return {
+            "enabled": True,
+            "max_retries": 3,
+            "backoff_base": 1.0,
+            "max_backoff": 30.0,
+            "retry_on_errors": ["network", "exchange_timeout", "rate_limit"],
+            "fallback_enabled": True,
+            "fallback_policy": "market",
+            "fallback_on_attempt": 2,
+            "kill_switch_enabled": True,
+            "kill_switch_threshold": 5,
+        }
+
     def validate_main_config(self, config_dict: Dict[str, Any]) -> List[str]:
         """Validate main configuration sections with strict schema validation.
 

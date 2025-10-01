@@ -682,10 +682,10 @@ def _register_core_components():
 
 def _create_retry_manager():
     """Create retry manager with configuration."""
-    from .management.reliability_manager import ReliabilityManager
+    from .execution.retry_manager import RetryManager
     config_manager = ComponentFactory.get("config_manager")
     config = config_manager.get_reliability_config()
-    return ReliabilityManager(config)
+    return RetryManager(config)
 
 
 def _create_circuit_breaker():

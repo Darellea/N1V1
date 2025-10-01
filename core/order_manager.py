@@ -30,7 +30,7 @@ from core.execution.backtest_executor import BacktestOrderExecutor
 from core.execution.live_executor import LiveOrderExecutor
 from core.execution.order_processor import OrderProcessor
 from core.execution.paper_executor import PaperOrderExecutor
-from core.idempotency import generate_idempotency_key, order_execution_registry
+from core.idempotency import generate_idempotency_key, OrderExecutionRegistry, order_execution_registry
 from core.management.portfolio_manager import PortfolioManager
 from core.management.reliability_manager import ReliabilityManager
 from core.types import TradingMode
@@ -39,6 +39,14 @@ from utils.adapter import signal_to_dict
 from utils.logger import get_trade_logger
 
 from .logging_utils import LogSensitivity, get_structured_logger
+
+
+def get_signal_attr(signal, attr, default=None):
+    """Get attribute from signal, handling both dict and object types."""
+    if isinstance(signal, dict):
+        return signal.get(attr, default)
+    else:
+        return getattr(signal, attr, default)
 
 logger = get_structured_logger("core.order_manager", LogSensitivity.SECURE)
 trade_logger = get_trade_logger()
@@ -57,9 +65,9 @@ class MockLiveExecutor:
         return {
             "id": f"mock_order_{random.randint(1000, 9999)}",
             "status": "filled",
-            "amount": getattr(signal, "amount", 0.001),
+            "amount": get_signal_attr(signal, "amount", 0.001),
             "price": 50000.0,
-            "symbol": getattr(signal, "symbol", "BTC/USDT"),
+            "symbol": get_signal_attr(signal, "symbol", "BTC/USDT"),
         }
 
     async def shutdown(self):
@@ -94,7 +102,7 @@ class LiveOrderExecutionStrategy(OrderExecutionStrategy):
         """Execute order in live mode with retry and error handling."""
         try:
             # Get idempotency key for safe retries
-            idempotency_key = getattr(signal, "idempotency_key", None)
+            idempotency_key = get_signal_attr(signal, "idempotency_key", None)
             order_response = await self.order_manager.reliability_manager.retry_async(
                 lambda: self.order_manager.live_executor.execute_live_order(signal),
                 exceptions=(NetworkError, ExchangeError, asyncio.TimeoutError, OSError),
@@ -113,7 +121,7 @@ class LiveOrderExecutionStrategy(OrderExecutionStrategy):
         except (NetworkError, ExchangeError, asyncio.TimeoutError) as e:
             # Increment critical error counter and potentially activate safe mode
             self.order_manager.reliability_manager.record_critical_error(
-                e, context={"symbol": getattr(signal, "symbol", None)}
+                e, context={"symbol": get_signal_attr(signal, "symbol", None)}
             )
             logger.error(f"Live order failed after retries: {e}")
             trade_logger.log_failed_order(signal_to_dict(signal), str(e))
@@ -124,9 +132,9 @@ class LiveOrderExecutionStrategy(OrderExecutionStrategy):
                     {
                         "component_id": "order_manager",
                         "error_message": str(e),
-                        "symbol": getattr(signal, "symbol", None),
-                        "strategy_id": getattr(signal, "strategy_id", "unknown"),
-                        "correlation_id": getattr(
+                        "symbol": get_signal_attr(signal, "symbol", None),
+                        "strategy_id": get_signal_attr(signal, "strategy_id", "unknown"),
+                        "correlation_id": get_signal_attr(
                             signal, "correlation_id", f"order_{int(time.time())}"
                         ),
                     }
@@ -141,7 +149,7 @@ class LiveOrderExecutionStrategy(OrderExecutionStrategy):
         except Exception as e:
             # Increment critical error counter and potentially activate safe mode
             self.order_manager.reliability_manager.record_critical_error(
-                e, context={"symbol": getattr(signal, "symbol", None)}
+                e, context={"symbol": get_signal_attr(signal, "symbol", None)}
             )
             logger.error(f"Live order failed after retries: {e}")
             trade_logger.log_failed_order(signal_to_dict(signal), str(e))
@@ -152,9 +160,9 @@ class LiveOrderExecutionStrategy(OrderExecutionStrategy):
                     {
                         "component_id": "order_manager",
                         "error_message": str(e),
-                        "symbol": getattr(signal, "symbol", None),
-                        "strategy_id": getattr(signal, "strategy_id", "unknown"),
-                        "correlation_id": getattr(
+                        "symbol": get_signal_attr(signal, "symbol", None),
+                        "strategy_id": get_signal_attr(signal, "strategy_id", "unknown"),
+                        "correlation_id": get_signal_attr(
                             signal, "correlation_id", f"order_{int(time.time())}"
                         ),
                     }
@@ -168,13 +176,13 @@ class LiveOrderExecutionStrategy(OrderExecutionStrategy):
                 "id": None,
                 "status": "failed",
                 "error": str(e),
-                "symbol": getattr(signal, "symbol", None),
+                "symbol": get_signal_attr(signal, "symbol", None),
             }
 
     async def _rollback_failed_order(self, signal: Any, error_message: str) -> None:
         """Rollback logic for failed orders."""
         try:
-            symbol = getattr(signal, "symbol", None)
+            symbol = get_signal_attr(signal, "symbol", None)
             if symbol:
                 # Cancel any pending orders for this symbol
                 await self.order_manager.cancel_all_orders()
@@ -448,6 +456,10 @@ class OrderManager:
         self.portfolio_manager = PortfolioManager()
         self.watchdog_service = watchdog_service
 
+        # Initialize per-instance idempotency registry (using global registry for backward compatibility)
+        self.registry = order_execution_registry
+        self.registry.clear()
+
         # Set initial paper balance - use Decimal for precision
         default_balance = Decimal("1000.00")
         raw_balance = config.get("paper", {}).get("initial_balance", default_balance)
@@ -682,15 +694,30 @@ class OrderManager:
             raise ValueError("Symbol must have both base and quote currencies")
 
     def _resolve_idempotency_key(self, signal: Any) -> str:
-        """Resolve idempotency key for the signal, auto-generating if missing."""
-        idempotency_key = getattr(signal, "idempotency_key", None)
+        """Resolve idempotency key for the signal, rejecting empty keys."""
+        idempotency_key = get_signal_attr(signal, "idempotency_key", None)
         if idempotency_key is None:
             # Backward compatibility: auto-generate key for dicts, mocks, TradingSignals, or legacy test signals
             if isinstance(signal, dict) or isinstance(signal, TradingSignal) or signal.__class__.__name__ in ("MockSignal", "Mock"):
                 idempotency_key = f"auto-{uuid.uuid4().hex}"
             else:
-                raise MissingIdempotencyError()
+                raise MissingIdempotencyError("Idempotency key is required")
+        elif not idempotency_key.strip():
+            raise MissingIdempotencyError("Idempotency key is required")
         return idempotency_key
+
+    def _generate_cache_key(self, signal: Any, idempotency_key: str) -> str:
+        """Generate a cache key that includes both signal content and idempotency key."""
+        # Include key signal attributes to ensure uniqueness per signal content
+        signal_parts = [
+            get_signal_attr(signal, 'symbol', ''),
+            get_signal_attr(signal, 'signal_type', ''),
+            get_signal_attr(signal, 'order_type', ''),
+            get_signal_attr(signal, 'amount', ''),
+            get_signal_attr(signal, 'price', '') or '',
+        ]
+        signal_str = '_'.join(str(p) for p in signal_parts)
+        return f"{idempotency_key}_{hash(signal_str)}"
 
     async def execute_order(
         self, signal: Any, return_legacy_none_on_failure: bool = False
@@ -712,11 +739,18 @@ class OrderManager:
         # Resolve idempotency key (auto-generate if missing)
         idempotency_key = self._resolve_idempotency_key(signal)
         # Set the key on the signal if it was auto-generated
-        if getattr(signal, "idempotency_key", None) is None:
-            signal.idempotency_key = idempotency_key
+        if isinstance(signal, dict):
+            if "idempotency_key" not in signal:
+                signal["idempotency_key"] = idempotency_key
+        else:
+            if getattr(signal, "idempotency_key", None) is None:
+                signal.idempotency_key = idempotency_key
+
+        # Generate cache key that includes signal content
+        cache_key = self._generate_cache_key(signal, idempotency_key)
 
         # Check idempotency registry
-        registry_state = order_execution_registry.begin_execution(idempotency_key)
+        registry_state = self.registry.begin_execution(idempotency_key)
         if registry_state is not None:
             if isinstance(registry_state, dict):
                 if registry_state.get("status") == "pending":
@@ -738,7 +772,7 @@ class OrderManager:
             trade_logger.log_failed_order(
                 signal_to_dict(signal), f"validation_error: {str(e)}"
             )
-            order_execution_registry.mark_failure(idempotency_key, e)
+            self.registry.mark_failure(idempotency_key, e)
             # Return legacy None for test contexts, structured dict for production
             if return_legacy_none_on_failure:
                 return None
@@ -762,11 +796,11 @@ class OrderManager:
             )
             skipped_result = {
                 "id": None,
-                "symbol": getattr(signal, "symbol", None),
+                "symbol": get_signal_attr(signal, "symbol", None),
                 "status": "skipped",
                 "reason": "safe_mode_active",
             }
-            order_execution_registry.mark_success(idempotency_key, skipped_result)
+            self.registry.mark_success(idempotency_key, skipped_result)
             return skipped_result
 
         # Use strategy pattern for order execution
@@ -776,9 +810,9 @@ class OrderManager:
             )
             result = await strategy.execute_order(signal)
             if result is not None:
-                order_execution_registry.mark_success(idempotency_key, result)
+                self.registry.mark_success(idempotency_key, result)
             else:
-                order_execution_registry.mark_failure(idempotency_key, Exception("Execution returned None"))
+                self.registry.mark_failure(idempotency_key, Exception("Execution returned None"))
             return result
         except (
             NetworkError,
@@ -789,19 +823,19 @@ class OrderManager:
         ) as e:
             logger.error(f"Order execution failed: {str(e)}", exc_info=True)
             trade_logger.log_failed_order(signal_to_dict(signal), str(e))
-            order_execution_registry.mark_failure(idempotency_key, e)
+            self.registry.mark_failure(idempotency_key, e)
             return None
         except asyncio.CancelledError:
             # Preserve cancellation semantics
-            order_execution_registry.mark_failure(idempotency_key, Exception("Execution cancelled"))
+            self.registry.mark_failure(idempotency_key, Exception("Execution cancelled"))
             raise
         except Exception as e:
             logger.exception("Unexpected error during order execution")
             self.reliability_manager.record_critical_error(
-                e, context={"symbol": getattr(signal, "symbol", None)}
+                e, context={"symbol": get_signal_attr(signal, "symbol", None)}
             )
             trade_logger.log_failed_order(signal_to_dict(signal), str(e))
-            order_execution_registry.mark_failure(idempotency_key, e)
+            self.registry.mark_failure(idempotency_key, e)
             return None
 
     async def cancel_order(self, order_id: str) -> bool:

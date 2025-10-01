@@ -74,6 +74,7 @@ class TestExecutionSmartLayer:
             current_price=Decimal("50000"),
             stop_loss=Decimal("49000"),
             timestamp=datetime.now(),
+            idempotency_key="test_sample_signal_123",
         )
 
     @pytest.fixture
@@ -418,6 +419,7 @@ class TestIntegrationScenarios:
             price=Decimal("50000"),
             current_price=Decimal("50000"),
             timestamp=datetime.now(),
+            idempotency_key="test_small_limit_order_456",
         )
 
         context = {
@@ -447,6 +449,7 @@ class TestIntegrationScenarios:
             amount=Decimal("10000"),  # Large order
             current_price=Decimal("50000"),
             timestamp=datetime.now(),
+            idempotency_key="test_large_order_twap_789",
         )
 
         context = {
@@ -475,6 +478,7 @@ class TestIntegrationScenarios:
             amount=Decimal("1000"),
             current_price=Decimal("3000"),
             timestamp=datetime.now(),
+            idempotency_key="test_high_spread_dca_101",
         )
 
         context = {

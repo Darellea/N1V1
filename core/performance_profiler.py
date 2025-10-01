@@ -122,7 +122,47 @@ class PerformanceProfiler:
         # Locks for thread safety
         self._lock = threading.RLock()
 
+        # Profiler overhead compensation
+        self._profiler_overhead: Optional[float] = None
+        self._measure_profiler_overhead()
+
         logger.info("Performance Profiler initialized")
+
+    def _measure_profiler_overhead(self):
+        """Measure the overhead introduced by the profiler itself."""
+        # Measure overhead by profiling an empty function multiple times
+        overhead_times = []
+
+        for _ in range(100):  # Take multiple measurements for accuracy
+            # Measure time without profiler
+            start = time.perf_counter()
+            # Empty function - just pass
+            end = time.perf_counter()
+            baseline_time = end - start
+
+            # Measure time with profiler
+            start = time.perf_counter()
+            with self.profile_function("__overhead_test__"):
+                pass  # Empty profiled block
+            end = time.perf_counter()
+            profiled_time = end - start
+
+            # Overhead is the difference
+            overhead = profiled_time - baseline_time
+            if overhead > 0:  # Only count positive overhead
+                overhead_times.append(overhead)
+
+        # Calculate average overhead
+        if overhead_times:
+            self._profiler_overhead = statistics.mean(overhead_times)
+            logger.debug(f"Measured profiler overhead: {self._profiler_overhead:.6f}s")
+        else:
+            self._profiler_overhead = 0.0
+            logger.debug("Could not measure profiler overhead accurately")
+
+    def get_profiler_overhead(self) -> float:
+        """Get the measured profiler overhead in seconds."""
+        return self._profiler_overhead or 0.0
 
     def start_profiling(self, session_id: str) -> str:
         """
@@ -259,7 +299,10 @@ class PerformanceProfiler:
             end_io = process.io_counters()
 
             # Calculate metrics
-            execution_time = end_time - start_time
+            raw_execution_time = end_time - start_time
+            # Compensate for profiler overhead (if measured)
+            overhead = self._profiler_overhead if self._profiler_overhead is not None else 0.0
+            execution_time = max(0.0, raw_execution_time - overhead)
             memory_delta = end_memory - start_memory
             memory_peak = max(start_memory, end_memory)
 

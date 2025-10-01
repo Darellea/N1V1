@@ -236,8 +236,7 @@ class TestAsyncDataFetcher:
             # Verify async sleep was used, not time.sleep
             mock_async_sleep.assert_called_once()
 
-    @pytest.mark.asyncio
-    async def test_backward_compatibility_sync_wrappers(self, fetcher):
+    def test_backward_compatibility_sync_wrappers(self, fetcher):
         """Test that sync wrapper methods work for backward compatibility."""
         fetcher.config["cache_enabled"] = True
         fetcher._cache_dir_path = "/tmp/test_cache"
@@ -249,14 +248,14 @@ class TestAsyncDataFetcher:
 
         # Test sync save (should work via async fallback)
         with patch("asyncio.run") as mock_asyncio_run:
-            fetcher._save_to_cache("test_key", df)
+            fetcher.save_to_cache("test_key", df)
             # Should have called asyncio.run for the async operation
             mock_asyncio_run.assert_called_once()
 
         # Test sync load (should work via async fallback)
         with patch("asyncio.run") as mock_asyncio_run:
             mock_asyncio_run.return_value = df
-            result = fetcher._load_from_cache("test_key")
+            result = fetcher.load_from_cache("test_key")
             assert result is not None
             mock_asyncio_run.assert_called_once()
 

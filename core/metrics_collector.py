@@ -326,13 +326,27 @@ class MetricsCollector:
     async def record_metric(
         self, name: str, value: float, labels: Dict[str, str] = None
     ) -> None:
-        """Record a metric value asynchronously without lock for performance."""
-        # Register metric if it doesn't exist
-        if name not in self.metrics:
-            self.register_metric(name)
-        series = self.metrics[name]
+        """Record a metric value asynchronously using queue for batched processing."""
+        # If collector is not running, process synchronously for immediate recording
+        if not self._running or self._record_task is None or self._record_task.done():
+            async with self._lock:
+                if name not in self.metrics:
+                    self.register_metric(name)
+                series = self.metrics[name]
+                series.add_sample(value, labels or {})
+            return
 
-        series.add_sample(value, labels)
+        # Put metric recording request in queue for batched processing
+        try:
+            await self._record_queue.put((name, value, labels or {}))
+        except asyncio.QueueFull:
+            # If queue is full, process synchronously as fallback
+            logger.warning("Metrics queue full, processing synchronously")
+            async with self._lock:
+                if name not in self.metrics:
+                    self.register_metric(name)
+                series = self.metrics[name]
+                series.add_sample(value, labels or {})
 
     async def increment_counter(self, name: str, labels: Dict[str, str] = None) -> None:
         """Increment a counter metric."""
