@@ -9,9 +9,11 @@ import json
 import logging
 import random
 import sys  # For dynamic access to patched ml_predict
+import time
+from collections import deque
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -165,6 +167,10 @@ class SignalRouter:
         backoff_base: float = 0.5,
         max_backoff: float = 5.0,
         safe_mode_threshold: int = 10,
+        enable_queue: bool = True,
+        deduplication_window: float = 300.0,  # 5 minutes default
+        max_queue_size: int = 1000,
+        worker_count: int = 1,
     ):
         """Initialize the SignalRouter."""
         self.risk_manager = risk_manager
@@ -194,6 +200,31 @@ class SignalRouter:
 
         # Task manager for tracking background tasks
         self.task_manager = task_manager or None
+
+        # Message queue configuration
+        self.enable_queue = bool(enable_queue)
+        self.deduplication_window = float(deduplication_window)
+        self.max_queue_size = int(max_queue_size)
+        self.worker_count = int(worker_count)
+
+        # Message queue and processing
+        self._signal_queue: "asyncio.Queue[Tuple[TradingSignal, Dict, asyncio.Future]]" = asyncio.Queue(maxsize=max_queue_size)
+        self._processing_tasks: Set[asyncio.Task] = set()
+        self._queue_worker_tasks: Set[asyncio.Task] = set()
+
+        # Idempotency tracking: signal_id -> (timestamp, result_future)
+        self._processed_signals: Dict[str, Tuple[float, Optional[asyncio.Future]]] = {}
+        self._idempotency_cleanup_task: Optional[asyncio.Task] = None
+
+        # Metrics
+        self._metrics = {
+            "queue_depth": 0,
+            "processed_signals": 0,
+            "duplicate_signals": 0,
+            "processing_latency": deque(maxlen=1000),  # Keep last 1000 latencies
+            "queue_full_rejects": 0,
+            "processing_errors": 0,
+        }
 
         # Ensemble manager for combining multiple strategies
         self.ensemble_manager = EnsembleManager()
@@ -291,6 +322,10 @@ class SignalRouter:
         except Exception:
             self._journal_enabled = False
             self._journal_writer = None
+
+        # Start background tasks if queue is enabled
+        if self.enable_queue:
+            self._start_background_tasks()
 
     def _extract_features_for_ml(self, market_data, signal) -> Optional[pd.DataFrame]:
         """
@@ -483,314 +518,93 @@ class SignalRouter:
         if self.block_signals:
             return self._reject_signal(signal, "router_blocking")
 
-        # 1. Validate timestamp
+        # Check for duplicates using idempotency
+        signal_id = self._generate_signal_id(signal)
+        current_time = time.time()
+
+        async with self._lock:
+            # Check if we've seen this signal recently
+            if signal_id in self._processed_signals:
+                stored_time, existing_future = self._processed_signals[signal_id]
+                if current_time - stored_time <= self.deduplication_window:
+                    self._metrics["duplicate_signals"] += 1
+                    logger.info(f"Duplicate signal detected: {signal_id}")
+                    # If we have an existing future, wait for its result
+                    if existing_future and not existing_future.done():
+                        try:
+                            return await existing_future
+                        except Exception:
+                            # If the existing processing failed, allow retry
+                            pass
+                    elif existing_future and existing_future.done():
+                        try:
+                            return existing_future.result()
+                        except Exception:
+                            # If the existing processing failed, allow retry
+                            pass
+                else:
+                    # Deduplication window expired, remove old record
+                    del self._processed_signals[signal_id]
+
+        # If queue is enabled and workers are available, enqueue the signal
+        if self.enable_queue and self.worker_count > 0:
+            return await self._enqueue_signal(signal, market_data)
+
+        # Otherwise, process synchronously (backward compatibility or no workers)
+        return await self._process_signal_internal(signal, market_data)
+
+    async def _enqueue_signal(
+        self, signal: TradingSignal, market_data: Optional[Dict] = None
+    ) -> Optional[TradingSignal]:
+        """
+        Enqueue a signal for background processing.
+
+        Args:
+            signal: The signal to enqueue
+            market_data: Optional market data
+
+        Returns:
+            Processing result or None if queue is full
+        """
+        signal_id = self._generate_signal_id(signal)
+        current_time = time.time()
+
+        # Create a future for the result
+        result_future = asyncio.Future()
+
+        # Store idempotency record
+        async with self._lock:
+            self._processed_signals[signal_id] = (current_time, result_future)
+
         try:
-            if not self._validate_timestamp(signal):
-                return self._reject_signal(signal, "corrupted_timestamp")
-        except Exception:
-            logger.exception("Error validating timestamp")
-            return self._reject_signal(signal, "corrupted_timestamp")
+            # Try to enqueue the signal
+            await asyncio.wait_for(
+                self._signal_queue.put((signal, market_data, result_future)),
+                timeout=1.0  # Don't block too long
+            )
 
-        # 2. Check ensemble manager first (if enabled and signal is from individual strategy)
-        if (
-            self.ensemble_manager.enabled
-            and signal.strategy_id != "ensemble"
-            and hasattr(signal, "metadata")
-            and not signal.metadata.get("ensemble", False)
-        ):
-            try:
-                ensemble_signal = self.ensemble_manager.get_ensemble_signal(market_data)
-                if ensemble_signal:
-                    logger.info("Ensemble signal generated, using ensemble decision")
-                    signal = ensemble_signal
-                elif self.ensemble_manager.voting_mode.value != "majority_vote":
-                    # For non-majority modes, if no consensus, don't process individual signal
-                    return self._reject_signal(signal, "no_ensemble_consensus")
-            except Exception as e:
-                logger.warning(
-                    f"Ensemble processing failed: {e}, proceeding with individual signal"
-                )
+            # Update queue depth metric
+            self._metrics["queue_depth"] = self._signal_queue.qsize()
 
-        # 3. Validate basic signal properties
-        try:
-            if not self._validate_signal(signal):
-                return self._reject_signal(signal, ERROR_VALIDATION)
-        except Exception:
-            logger.exception("Unexpected error during signal validation")
-            return self._reject_signal(signal, ERROR_VALIDATION)
+            # Wait for the result
+            return await result_future
 
-        # 4. Validate order with execution validator
-        try:
-            if hasattr(self, "validator") and self.validator:
-                if not self.validator.validate_order(signal):
-                    return self._reject_signal(signal, "validator_rejection")
-        except Exception:
-            logger.exception("Error during order validation")
-            return self._reject_signal(signal, "validator_error")
-
-        # 2-5. Per-symbol serialization: acquire a symbol-specific lock to avoid races
-        try:
-            symbol = getattr(signal, "symbol", None)
-            symbol_lock = await self._get_symbol_lock(symbol)
-            async with symbol_lock:
-                # Re-check validation in case state changed (defensive)
-                if not self._validate_signal(signal):
-                    return self._reject_signal(signal, ERROR_VALIDATION)
-
-                # Check & resolve conflicts while holding the symbol lock to guarantee
-                # at-most-one active signal per symbol during concurrent processing.
-                conflicting = self._check_signal_conflicts(signal)
-                if conflicting:
-                    signal = await self._resolve_conflicts(signal, conflicting)
-                    if not signal:
-                        return self._reject_signal(signal, "conflict_resolution")
-
-                # Apply risk manager checks (still under symbol lock to avoid races)
-                try:
-                    approved = await self._retry_async_call(
-                        lambda: self.risk_manager.evaluate_signal(signal, market_data),
-                        retries=self.retry_config["max_retries"],
-                        base_backoff=self.retry_config["backoff_base"],
-                        max_backoff=self.retry_config["max_backoff"],
-                    )
-                    if not approved:
-                        return self._reject_signal(signal, "risk_check")
-                except Exception as e:
-                    await self._record_router_error(
-                        e, context={"symbol": getattr(signal, "symbol", None)}
-                    )
-                    logger.exception("Risk manager evaluation failed after retries")
-                    return self._reject_signal(signal, ERROR_RISK)
-
-                # ML confirmation (optional)
-                try:
-                    if self.ml_enabled and self.ml_filter:
-                        ml_result = self.ml_filter.filter_signal(signal, market_data)
-                        if not ml_result.get("approved", True):
-                            logger.info(
-                                f"ML filter rejected signal: {ml_result.get('reason')} "
-                                f"(confidence={ml_result.get('confidence', 0):.2f})"
-                            )
-                            return self._reject_signal(signal, "ml_filter_rejection")
-
-                    if (
-                        self.ml_enabled
-                        and self.ml_model
-                        and signal.signal_type
-                        in {SignalType.ENTRY_LONG, SignalType.ENTRY_SHORT}
-                    ):
-                        features_df = self._extract_features_for_ml(market_data, signal)
-                        if features_df is None or features_df.empty:
-                            logger.info(
-                                "ML confirmation skipped: no feature row available"
-                            )
-                            if not self.ml_fallback_to_raw:
-                                logger.warning(
-                                    "ML required but no features available, rejecting signal"
-                                )
-                                return self._reject_signal(signal, "ml_no_features")
-                        else:
-                            # Call ML prediction
-                            logger.debug(
-                                f"Calling ML prediction with features shape: {features_df.shape}"
-                            )
-                            ml_result = sys.modules["core.signal_router"].ml_predict(
-                                self.ml_model, features_df
-                            )
-
-                            if ml_result is None or ml_result.empty:
-                                logger.warning(
-                                    "ML prediction returned None or empty result"
-                                )
-                                if not self.ml_fallback_to_raw:
-                                    return self._reject_signal(signal, "ml_error")
-                            else:
-                                # Check if ML rejected the signal
-                                if not ml_result.get("approved", True):
-                                    logger.info(
-                                        f"ML rejected signal {signal.symbol} "
-                                        f"(confidence={ml_result.get('confidence')}, reason={ml_result.get('reason')})"
-                                    )
-                                    return self._reject_signal(signal, "ml_rejection")
-                                # Extract prediction and confidence
-                                prediction_row = ml_result.iloc[0]
-                                ml_prediction = prediction_row.get("prediction", 0)
-                                ml_confidence = prediction_row.get("confidence", 0.0)
-
-                                # Convert prediction to signal direction
-                                desired_direction = (
-                                    1
-                                    if signal.signal_type == SignalType.ENTRY_LONG
-                                    else -1
-                                )
-                                ml_direction = 1 if ml_prediction > 0 else -1
-
-                                logger.info(
-                                    f"ML prediction: direction={ml_direction}, confidence={ml_confidence:.3f}"
-                                )
-
-                                # Apply ML decision rules
-                                confidence_threshold = getattr(
-                                    self, "ml_confidence_threshold", 0.6
-                                )
-
-                                if ml_confidence >= confidence_threshold:
-                                    # High confidence ML prediction - apply decision rules
-                                    if signal.signal_strength == SignalStrength.WEAK:
-                                        # Weak signals require ML confirmation
-                                        if ml_direction == desired_direction:
-                                            logger.info(
-                                                "Weak signal approved by ML (same direction, high confidence)"
-                                            )
-                                            trade_logger.trade(
-                                                "ML confirmation",
-                                                {
-                                                    "signal": "BUY"
-                                                    if desired_direction == 1
-                                                    else "SELL",
-                                                    "confidence": ml_confidence,
-                                                    "approved": True,
-                                                    "reason": "weak_signal_confirmed",
-                                                },
-                                            )
-                                        else:
-                                            logger.info(
-                                                "Weak signal rejected by ML (opposite direction)"
-                                            )
-                                            return self._reject_signal(
-                                                signal, "ml_opposite_direction"
-                                            )
-                                    else:
-                                        # Strong signals bypass ML rejection but still log the result
-                                        if ml_direction != desired_direction:
-                                            # Reduce signal strength due to ML disagreement
-                                            if (
-                                                signal.signal_strength
-                                                == SignalStrength.STRONG
-                                            ):
-                                                signal.signal_strength = (
-                                                    SignalStrength.MODERATE
-                                                )
-                                                logger.info(
-                                                    "Signal strength reduced due to ML disagreement"
-                                                )
-                                            elif (
-                                                signal.signal_strength
-                                                == SignalStrength.MODERATE
-                                            ):
-                                                signal.signal_strength = (
-                                                    SignalStrength.WEAK
-                                                )
-                                                logger.info(
-                                                    "Signal strength reduced due to ML disagreement"
-                                                )
-
-                                        trade_logger.trade(
-                                            "ML confirmation",
-                                            {
-                                                "signal": "BUY"
-                                                if desired_direction == 1
-                                                else "SELL",
-                                                "confidence": ml_confidence,
-                                                "approved": True,
-                                                "reason": "strong_signal_bypass",
-                                            },
-                                        )
-                                else:
-                                    # Low confidence - ignore ML result and proceed with original signal
-                                    logger.info(
-                                        f"ML confidence too low ({ml_confidence:.3f} < {confidence_threshold}), ignoring ML result"
-                                    )
-                                    trade_logger.trade(
-                                        "ML confirmation",
-                                        {
-                                            "signal": "BUY"
-                                            if desired_direction == 1
-                                            else "SELL",
-                                            "confidence": ml_confidence,
-                                            "approved": True,
-                                            "reason": "low_confidence_ignored",
-                                        },
-                                    )
-
-                except Exception:
-                    logger.exception("ML confirmation step failed")
-                    if not self.ml_fallback_to_raw:
-                        logger.warning("ML required but failed, rejecting signal")
-                        return self._reject_signal(signal, "ml_error")
-                    else:
-                        logger.warning("ML failed, proceeding with raw signal")
-
-                # Predictive models filtering (optional)
-                try:
-                    if self.predictive_manager.enabled and signal.signal_type in {
-                        SignalType.ENTRY_LONG,
-                        SignalType.ENTRY_SHORT,
-                    }:
-                        # Extract market data for predictions
-                        market_df = self._extract_market_data_for_prediction(
-                            market_data, signal
-                        )
-                        if market_df is not None and not market_df.empty:
-                            # Generate predictions
-                            predictions = self.predictive_manager.predict(market_df)
-
-                            # Check if signal should be allowed based on predictions
-                            signal_type_str = (
-                                "BUY"
-                                if signal.signal_type == SignalType.ENTRY_LONG
-                                else "SELL"
-                            )
-                            if not self.predictive_manager.should_allow_signal(
-                                signal_type_str, predictions
-                            ):
-                                logger.info(
-                                    f"Signal rejected by predictive models: {predictions.price_direction}, {predictions.volatility}, surge={predictions.volume_surge}"
-                                )
-                                return self._reject_signal(signal, "predictive_filter")
-                            else:
-                                logger.debug(
-                                    f"Signal approved by predictive models (confidence: {predictions.confidence:.3f})"
-                                )
-                                trade_logger.trade(
-                                    "Predictive models",
-                                    {
-                                        "signal": signal_type_str,
-                                        "price_direction": predictions.price_direction,
-                                        "volatility": predictions.volatility,
-                                        "volume_surge": predictions.volume_surge,
-                                        "confidence": predictions.confidence,
-                                        "approved": True,
-                                    },
-                                )
-
-                                # Store predictions in signal metadata for later use
-                                if (
-                                    not hasattr(signal, "metadata")
-                                    or signal.metadata is None
-                                ):
-                                    signal.metadata = {}
-                                signal.metadata["predictions"] = predictions.to_dict()
-                        else:
-                            logger.debug(
-                                "Predictive models skipped: no market data available"
-                            )
-                except Exception:
-                    logger.exception("Predictive models filtering failed")
-                    # Don't reject signal on predictive model failure - continue with processing
-
-                # Finalize and store the signal while still holding the symbol lock.
-                try:
-                    self._store_signal(signal)
-                    logger.info(f"Signal approved: {signal}")
-                    trade_logger.log_signal(signal_to_dict(signal))
-                    return signal
-                except Exception:
-                    logger.exception("Failed to store approved signal")
-                    return self._reject_signal(signal, "store_failed")
-        except Exception:
-            logger.exception("Error processing signal under symbol lock")
-            return self._reject_signal(signal, "processing_error")
+        except asyncio.TimeoutError:
+            # Queue is full
+            self._metrics["queue_full_rejects"] += 1
+            logger.warning(f"Signal queue full, rejecting signal: {signal_id}")
+            async with self._lock:
+                if signal_id in self._processed_signals:
+                    del self._processed_signals[signal_id]
+            return self._reject_signal(signal, "queue_full")
+        except Exception as e:
+            logger.exception(f"Error enqueuing signal: {signal_id}")
+            async with self._lock:
+                if signal_id in self._processed_signals:
+                    del self._processed_signals[signal_id]
+            if not result_future.done():
+                result_future.set_exception(e)
+            raise
 
     def _validate_timestamp(self, signal: TradingSignal) -> bool:
         """
@@ -1387,6 +1201,465 @@ class SignalRouter:
             except Exception:
                 logger.exception("Failed to close journal writer")
         return
+
+    def get_queue_metrics(self) -> Dict[str, Any]:
+        """
+        Get queue and processing metrics.
+
+        Returns:
+            Dictionary with queue metrics
+        """
+        metrics = dict(self._metrics)  # Copy to avoid external modification
+
+        # Add computed metrics
+        latencies = list(metrics["processing_latency"])
+        if latencies:
+            metrics["avg_processing_latency"] = sum(latencies) / len(latencies)
+            metrics["max_processing_latency"] = max(latencies)
+            metrics["min_processing_latency"] = min(latencies)
+        else:
+            metrics["avg_processing_latency"] = 0.0
+            metrics["max_processing_latency"] = 0.0
+            metrics["min_processing_latency"] = 0.0
+
+        # Add queue status
+        try:
+            metrics["current_queue_size"] = self._signal_queue.qsize()
+        except Exception:
+            metrics["current_queue_size"] = 0
+
+        # Add background task status
+        metrics["active_workers"] = len([t for t in self._queue_worker_tasks if not t.done()])
+        metrics["idempotency_records"] = len(self._processed_signals)
+
+        return metrics
+
+    async def shutdown(self) -> None:
+        """Shutdown the signal router and cleanup background tasks."""
+        logger.info("Shutting down SignalRouter...")
+
+        # Cancel background tasks
+        tasks_to_cancel = []
+
+        # Cancel idempotency cleanup task
+        if self._idempotency_cleanup_task and not self._idempotency_cleanup_task.done():
+            self._idempotency_cleanup_task.cancel()
+            tasks_to_cancel.append(self._idempotency_cleanup_task)
+
+        # Cancel queue worker tasks
+        for task in self._queue_worker_tasks:
+            if not task.done():
+                task.cancel()
+                tasks_to_cancel.append(task)
+
+        # Wait for tasks to finish
+        if tasks_to_cancel:
+            try:
+                await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+            except Exception:
+                logger.exception("Error during task cancellation")
+
+        # Close journal
+        await self.close_journal()
+
+        # Clear state
+        self._processed_signals.clear()
+        self._processing_tasks.clear()
+        self._queue_worker_tasks.clear()
+
+        logger.info("SignalRouter shutdown complete")
+
+    def _start_background_tasks(self) -> None:
+        """Start background tasks for queue processing and cleanup."""
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            # No event loop, tasks will be started lazily when needed
+            return
+
+        # Start idempotency cleanup task
+        if not self._idempotency_cleanup_task or self._idempotency_cleanup_task.done():
+            self._idempotency_cleanup_task = loop.create_task(self._cleanup_idempotency_records())
+
+        # Start queue worker tasks
+        for i in range(self.worker_count):
+            if len(self._queue_worker_tasks) < self.worker_count:
+                task = loop.create_task(self._queue_worker(f"worker-{i}"))
+                self._queue_worker_tasks.add(task)
+
+    async def _cleanup_idempotency_records(self) -> None:
+        """Periodically clean up expired idempotency records."""
+        while True:
+            try:
+                await asyncio.sleep(60)  # Clean up every minute
+                current_time = time.time()
+                expired_keys = [
+                    key for key, (timestamp, _) in self._processed_signals.items()
+                    if current_time - timestamp > self.deduplication_window
+                ]
+                for key in expired_keys:
+                    del self._processed_signals[key]
+                if expired_keys:
+                    logger.debug(f"Cleaned up {len(expired_keys)} expired idempotency records")
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("Error in idempotency cleanup task")
+
+    async def _queue_worker(self, worker_id: str) -> None:
+        """Background worker to process signals from the queue."""
+        logger.info(f"Started signal queue worker {worker_id}")
+        while True:
+            try:
+                # Get signal from queue
+                signal, market_data, result_future = await self._signal_queue.get()
+
+                # Process the signal
+                start_time = time.time()
+                try:
+                    result = await self._process_signal_internal(signal, market_data)
+                    processing_time = time.time() - start_time
+
+                    # Update metrics
+                    self._metrics["processed_signals"] += 1
+                    self._metrics["processing_latency"].append(processing_time)
+                    self._metrics["queue_depth"] = self._signal_queue.qsize()
+
+                    # Set result on future
+                    if not result_future.done():
+                        result_future.set_result(result)
+
+                except Exception as e:
+                    logger.exception(f"Error processing signal in queue worker {worker_id}")
+                    self._metrics["processing_errors"] += 1
+                    if not result_future.done():
+                        result_future.set_exception(e)
+
+                finally:
+                    # Mark task as done
+                    self._signal_queue.task_done()
+
+            except asyncio.CancelledError:
+                logger.info(f"Signal queue worker {worker_id} cancelled")
+                break
+            except Exception:
+                logger.exception(f"Unexpected error in queue worker {worker_id}")
+
+    async def _process_signal_internal(
+        self, signal: TradingSignal, market_data: Optional[Dict] = None
+    ) -> Optional[TradingSignal]:
+        """
+        Internal signal processing logic (extracted from process_signal for queue use).
+        This contains the core validation and processing logic.
+        """
+        # 1. Validate timestamp
+        try:
+            if not self._validate_timestamp(signal):
+                return self._reject_signal(signal, "corrupted_timestamp")
+        except Exception:
+            logger.exception("Error validating timestamp")
+            return self._reject_signal(signal, "corrupted_timestamp")
+
+        # 2. Check ensemble manager first (if enabled and signal is from individual strategy)
+        if (
+            self.ensemble_manager.enabled
+            and signal.strategy_id != "ensemble"
+            and hasattr(signal, "metadata")
+            and not signal.metadata.get("ensemble", False)
+        ):
+            try:
+                ensemble_signal = self.ensemble_manager.get_ensemble_signal(market_data)
+                if ensemble_signal:
+                    logger.info("Ensemble signal generated, using ensemble decision")
+                    signal = ensemble_signal
+                elif self.ensemble_manager.voting_mode.value != "majority_vote":
+                    # For non-majority modes, if no consensus, don't process individual signal
+                    return self._reject_signal(signal, "no_ensemble_consensus")
+            except Exception as e:
+                logger.warning(
+                    f"Ensemble processing failed: {e}, proceeding with individual signal"
+                )
+
+        # 3. Validate basic signal properties
+        try:
+            if not self._validate_signal(signal):
+                return self._reject_signal(signal, ERROR_VALIDATION)
+        except Exception:
+            logger.exception("Unexpected error during signal validation")
+            return self._reject_signal(signal, ERROR_VALIDATION)
+
+        # 4. Validate order with execution validator
+        try:
+            if hasattr(self, "validator") and self.validator:
+                if not self.validator.validate_order(signal):
+                    return self._reject_signal(signal, "validator_rejection")
+        except Exception:
+            logger.exception("Error during order validation")
+            return self._reject_signal(signal, "validator_error")
+
+        # 5. Per-symbol serialization: acquire a symbol-specific lock to avoid races
+        try:
+            symbol = getattr(signal, "symbol", None)
+            symbol_lock = await self._get_symbol_lock(symbol)
+            async with symbol_lock:
+                # Re-check validation in case state changed (defensive)
+                if not self._validate_signal(signal):
+                    return self._reject_signal(signal, ERROR_VALIDATION)
+
+                # Check & resolve conflicts while holding the symbol lock to guarantee
+                # at-most-one active signal per symbol during concurrent processing.
+                conflicting = self._check_signal_conflicts(signal)
+                if conflicting:
+                    signal = await self._resolve_conflicts(signal, conflicting)
+                    if not signal:
+                        return self._reject_signal(signal, "conflict_resolution")
+
+                # Apply risk manager checks (still under symbol lock to avoid races)
+                try:
+                    approved = await self._retry_async_call(
+                        lambda: self.risk_manager.evaluate_signal(signal, market_data),
+                        retries=self.retry_config["max_retries"],
+                        base_backoff=self.retry_config["backoff_base"],
+                        max_backoff=self.retry_config["max_backoff"],
+                    )
+                    if not approved:
+                        return self._reject_signal(signal, "risk_check")
+                except Exception as e:
+                    await self._record_router_error(
+                        e, context={"symbol": getattr(signal, "symbol", None)}
+                    )
+                    logger.exception("Risk manager evaluation failed after retries")
+                    return self._reject_signal(signal, ERROR_RISK)
+
+                # ML confirmation (optional)
+                try:
+                    if self.ml_enabled and self.ml_filter:
+                        ml_result = self.ml_filter.filter_signal(signal, market_data)
+                        if not ml_result.get("approved", True):
+                            logger.info(
+                                f"ML filter rejected signal: {ml_result.get('reason')} "
+                                f"(confidence={ml_result.get('confidence', 0):.2f})"
+                            )
+                            return self._reject_signal(signal, "ml_filter_rejection")
+
+                    if (
+                        self.ml_enabled
+                        and self.ml_model
+                        and signal.signal_type
+                        in {SignalType.ENTRY_LONG, SignalType.ENTRY_SHORT}
+                    ):
+                        features_df = self._extract_features_for_ml(market_data, signal)
+                        if features_df is None or features_df.empty:
+                            logger.info(
+                                "ML confirmation skipped: no feature row available"
+                            )
+                            if not self.ml_fallback_to_raw:
+                                logger.warning(
+                                    "ML required but no features available, rejecting signal"
+                                )
+                                return self._reject_signal(signal, "ml_no_features")
+                        else:
+                            # Call ML prediction
+                            logger.debug(
+                                f"Calling ML prediction with features shape: {features_df.shape}"
+                            )
+                            ml_result = sys.modules["core.signal_router"].ml_predict(
+                                self.ml_model, features_df
+                            )
+
+                            if ml_result is None or ml_result.empty:
+                                logger.warning(
+                                    "ML prediction returned None or empty result"
+                                )
+                                if not self.ml_fallback_to_raw:
+                                    return self._reject_signal(signal, "ml_error")
+                            else:
+                                # Check if ML rejected the signal
+                                if not ml_result.get("approved", True):
+                                    logger.info(
+                                        f"ML rejected signal {signal.symbol} "
+                                        f"(confidence={ml_result.get('confidence')}, reason={ml_result.get('reason')})"
+                                    )
+                                    return self._reject_signal(signal, "ml_rejection")
+                                # Extract prediction and confidence
+                                prediction_row = ml_result.iloc[0]
+                                ml_prediction = prediction_row.get("prediction", 0)
+                                ml_confidence = prediction_row.get("confidence", 0.0)
+
+                                # Convert prediction to signal direction
+                                desired_direction = (
+                                    1
+                                    if signal.signal_type == SignalType.ENTRY_LONG
+                                    else -1
+                                )
+                                ml_direction = 1 if ml_prediction > 0 else -1
+
+                                logger.info(
+                                    f"ML prediction: direction={ml_direction}, confidence={ml_confidence:.3f}"
+                                )
+
+                                # Apply ML decision rules
+                                confidence_threshold = getattr(
+                                    self, "ml_confidence_threshold", 0.6
+                                )
+
+                                if ml_confidence >= confidence_threshold:
+                                    # High confidence ML prediction - apply decision rules
+                                    if signal.signal_strength == SignalStrength.WEAK:
+                                        # Weak signals require ML confirmation
+                                        if ml_direction == desired_direction:
+                                            logger.info(
+                                                "Weak signal approved by ML (same direction, high confidence)"
+                                            )
+                                            trade_logger.trade(
+                                                "ML confirmation",
+                                                {
+                                                    "signal": "BUY"
+                                                    if desired_direction == 1
+                                                    else "SELL",
+                                                    "confidence": ml_confidence,
+                                                    "approved": True,
+                                                    "reason": "weak_signal_confirmed",
+                                                },
+                                            )
+                                        else:
+                                            logger.info(
+                                                "Weak signal rejected by ML (opposite direction)"
+                                            )
+                                            return self._reject_signal(
+                                                signal, "ml_opposite_direction"
+                                            )
+                                    else:
+                                        # Strong signals bypass ML rejection but still log the result
+                                        if ml_direction != desired_direction:
+                                            # Reduce signal strength due to ML disagreement
+                                            if (
+                                                signal.signal_strength
+                                                == SignalStrength.STRONG
+                                            ):
+                                                signal.signal_strength = (
+                                                    SignalStrength.MODERATE
+                                                )
+                                                logger.info(
+                                                    "Signal strength reduced due to ML disagreement"
+                                                )
+                                            elif (
+                                                signal.signal_strength
+                                                == SignalStrength.MODERATE
+                                            ):
+                                                signal.signal_strength = (
+                                                    SignalStrength.WEAK
+                                                )
+                                                logger.info(
+                                                    "Signal strength reduced due to ML disagreement"
+                                                )
+
+                                        trade_logger.trade(
+                                            "ML confirmation",
+                                            {
+                                                "signal": "BUY"
+                                                if desired_direction == 1
+                                                else "SELL",
+                                                "confidence": ml_confidence,
+                                                "approved": True,
+                                                "reason": "strong_signal_bypass",
+                                            },
+                                        )
+                                else:
+                                    # Low confidence - ignore ML result and proceed with original signal
+                                    logger.info(
+                                        f"ML confidence too low ({ml_confidence:.3f} < {confidence_threshold}), ignoring ML result"
+                                    )
+                                    trade_logger.trade(
+                                        "ML confirmation",
+                                        {
+                                            "signal": "BUY"
+                                            if desired_direction == 1
+                                            else "SELL",
+                                            "confidence": ml_confidence,
+                                            "approved": True,
+                                            "reason": "low_confidence_ignored",
+                                        },
+                                    )
+
+                except Exception:
+                    logger.exception("ML confirmation step failed")
+                    if not self.ml_fallback_to_raw:
+                        logger.warning("ML required but failed, rejecting signal")
+                        return self._reject_signal(signal, "ml_error")
+                    else:
+                        logger.warning("ML failed, proceeding with raw signal")
+
+                # Predictive models filtering (optional)
+                try:
+                    if self.predictive_manager.enabled and signal.signal_type in {
+                        SignalType.ENTRY_LONG,
+                        SignalType.ENTRY_SHORT,
+                    }:
+                        # Extract market data for predictions
+                        market_df = self._extract_market_data_for_prediction(
+                            market_data, signal
+                        )
+                        if market_df is not None and not market_df.empty:
+                            # Generate predictions
+                            predictions = self.predictive_manager.predict(market_df)
+
+                            # Check if signal should be allowed based on predictions
+                            signal_type_str = (
+                                "BUY"
+                                if signal.signal_type == SignalType.ENTRY_LONG
+                                else "SELL"
+                            )
+                            if not self.predictive_manager.should_allow_signal(
+                                signal_type_str, predictions
+                            ):
+                                logger.info(
+                                    f"Signal rejected by predictive models: {predictions.price_direction}, {predictions.volatility}, surge={predictions.volume_surge}"
+                                )
+                                return self._reject_signal(signal, "predictive_filter")
+                            else:
+                                logger.debug(
+                                    f"Signal approved by predictive models (confidence: {predictions.confidence:.3f})"
+                                )
+                                trade_logger.trade(
+                                    "Predictive models",
+                                    {
+                                        "signal": signal_type_str,
+                                        "price_direction": predictions.price_direction,
+                                        "volatility": predictions.volatility,
+                                        "volume_surge": predictions.volume_surge,
+                                        "confidence": predictions.confidence,
+                                        "approved": True,
+                                    },
+                                )
+
+                                # Store predictions in signal metadata for later use
+                                if (
+                                    not hasattr(signal, "metadata")
+                                    or signal.metadata is None
+                                ):
+                                    signal.metadata = {}
+                                signal.metadata["predictions"] = predictions.to_dict()
+                        else:
+                            logger.debug(
+                                "Predictive models skipped: no market data available"
+                            )
+                except Exception:
+                    logger.exception("Predictive models filtering failed")
+                    # Don't reject signal on predictive model failure - continue with processing
+
+                # Finalize and store the signal while still holding the symbol lock.
+                try:
+                    self._store_signal(signal)
+                    logger.info(f"Signal approved: {signal}")
+                    trade_logger.log_signal(signal_to_dict(signal))
+                    return signal
+                except Exception:
+                    logger.exception("Failed to store approved signal")
+                    return self._reject_signal(signal, "store_failed")
+        except Exception:
+            logger.exception("Error processing signal under symbol lock")
+            return self._reject_signal(signal, "processing_error")
 
     async def _get_symbol_lock(self, symbol: Optional[str]) -> asyncio.Lock:
         """

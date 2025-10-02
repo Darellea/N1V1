@@ -8,7 +8,9 @@ while internally using decomposed components for better architecture.
 import asyncio
 import logging
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
+from threading import Lock
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -37,6 +39,361 @@ logger = logging.getLogger(__name__)
 
 # Strategy mapping for tests to patch
 STRATEGY_MAP = {}
+
+
+@dataclass
+class CacheMetrics:
+    """Metrics for cache performance monitoring."""
+    hits: int = 0
+    misses: int = 0
+    evictions: int = 0
+    sets: int = 0
+    memory_usage_bytes: int = 0
+    max_memory_bytes: int = 0
+
+    @property
+    def hit_rate(self) -> float:
+        """Calculate cache hit rate."""
+        total = self.hits + self.misses
+        return self.hits / total if total > 0 else 0.0
+
+    def reset(self) -> None:
+        """Reset all metrics."""
+        self.hits = 0
+        self.misses = 0
+        self.evictions = 0
+        self.sets = 0
+        self.memory_usage_bytes = 0
+        self.max_memory_bytes = 0
+
+
+class LRUCache:
+    """
+    Thread-safe LRU (Least Recently Used) cache with memory monitoring and size limits.
+
+    Features:
+    - Configurable max size per data type
+    - Memory usage monitoring
+    - Cache hit/miss metrics
+    - Emergency cache clearing
+    - Market close invalidation
+    """
+
+    def __init__(self, maxsize: int = 1000, max_memory_mb: float = 50.0):
+        """
+        Initialize LRU cache.
+
+        Args:
+            maxsize: Maximum number of items in cache
+            max_memory_mb: Maximum memory usage in MB
+        """
+        self.maxsize = maxsize
+        self.max_memory_bytes = int(max_memory_mb * 1024 * 1024)
+        self.cache: OrderedDict[str, Any] = OrderedDict()
+        self.metrics = CacheMetrics()
+        self.lock = Lock()
+        self._shutdown = False
+
+        # Data type specific configurations
+        self.data_type_limits = {
+            "ticker": min(500, maxsize // 4),
+            "ohlcv": min(200, maxsize // 4),
+            "multi_timeframe": min(100, maxsize // 4),
+            "historical": min(100, maxsize // 4),
+        }
+
+        logger.info(f"LRUCache initialized with maxsize={maxsize}, max_memory={max_memory_mb}MB")
+
+    def get(self, key: str) -> Optional[Any]:
+        """
+        Get item from cache.
+
+        Args:
+            key: Cache key
+
+        Returns:
+            Cached value or None if not found
+        """
+        if self._shutdown:
+            return None
+
+        with self.lock:
+            if key in self.cache:
+                # Move to end (most recently used)
+                value = self.cache.pop(key)
+                self.cache[key] = value
+                self.metrics.hits += 1
+                return value
+            else:
+                self.metrics.misses += 1
+                return None
+
+    def set(self, key: str, value: Any, data_type: str = "default") -> None:
+        """
+        Set item in cache with size limits.
+
+        Args:
+            key: Cache key
+            value: Value to cache
+            data_type: Type of data for size limits
+        """
+        if self._shutdown:
+            return
+
+        with self.lock:
+            # Remove existing entry if present
+            if key in self.cache:
+                del self.cache[key]
+
+            # Add new entry
+            self.cache[key] = value
+            self.metrics.sets += 1
+
+            # Apply data type specific limits
+            type_limit = self.data_type_limits.get(data_type, self.maxsize)
+            type_keys = [k for k in self.cache.keys() if k.startswith(f"{data_type}:")]
+
+            while len(type_keys) > type_limit:
+                oldest_key = type_keys.pop(0)
+                if oldest_key in self.cache:
+                    del self.cache[oldest_key]
+                    self.metrics.evictions += 1
+
+            # Apply global size limit
+            while len(self.cache) > self.maxsize:
+                self.cache.popitem(last=False)  # Remove least recently used
+                self.metrics.evictions += 1
+
+            # Update memory usage
+            self._update_memory_usage()
+
+            # Check memory limits
+            if self.metrics.memory_usage_bytes > self.max_memory_bytes:
+                self._evict_to_memory_limit()
+
+    def delete(self, key: str) -> bool:
+        """
+        Delete item from cache.
+
+        Args:
+            key: Cache key
+
+        Returns:
+            True if item was deleted, False otherwise
+        """
+        if self._shutdown:
+            return False
+
+        with self.lock:
+            if key in self.cache:
+                del self.cache[key]
+                self._update_memory_usage()
+                return True
+            return False
+
+    def clear(self) -> None:
+        """Clear all items from cache."""
+        with self.lock:
+            self.cache.clear()
+            self._update_memory_usage()
+            logger.info("Cache cleared")
+
+    def emergency_clear(self) -> None:
+        """Emergency cache clearing for critical situations."""
+        with self.lock:
+            count = len(self.cache)
+            self.cache.clear()
+            self.metrics.reset()
+            logger.warning(f"Emergency cache clear: {count} items removed")
+
+    def invalidate_market_close(self) -> None:
+        """Invalidate cache entries on market close."""
+        with self.lock:
+            # Remove time-sensitive data
+            keys_to_remove = []
+            for key in self.cache.keys():
+                if any(pattern in key.lower() for pattern in ["realtime", "ticker", "current"]):
+                    keys_to_remove.append(key)
+
+            for key in keys_to_remove:
+                del self.cache[key]
+
+            if keys_to_remove:
+                logger.info(f"Invalidated {len(keys_to_remove)} market-close sensitive cache entries")
+                self._update_memory_usage()
+
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        Get cache statistics.
+
+        Returns:
+            Dictionary with cache statistics
+        """
+        with self.lock:
+            return {
+                "size": len(self.cache),
+                "maxsize": self.maxsize,
+                "hit_rate": self.metrics.hit_rate,
+                "hits": self.metrics.hits,
+                "misses": self.metrics.misses,
+                "evictions": self.metrics.evictions,
+                "sets": self.metrics.sets,
+                "memory_usage_mb": self.metrics.memory_usage_bytes / (1024 * 1024),
+                "max_memory_mb": self.max_memory_bytes / (1024 * 1024),
+                "memory_usage_percent": (self.metrics.memory_usage_bytes / self.max_memory_bytes) * 100 if self.max_memory_bytes > 0 else 0,
+                "data_type_counts": self._get_data_type_counts(),
+            }
+
+    def _get_data_type_counts(self) -> Dict[str, int]:
+        """Get count of items per data type."""
+        counts = {}
+        for key in self.cache.keys():
+            data_type = key.split(":")[0] if ":" in key else "default"
+            counts[data_type] = counts.get(data_type, 0) + 1
+        return counts
+
+    def _update_memory_usage(self) -> None:
+        """Update memory usage estimate."""
+        try:
+            # Rough memory estimation
+            total_bytes = 0
+            for key, value in self.cache.items():
+                # Estimate key size
+                total_bytes += len(key.encode('utf-8')) * 2  # Rough overhead
+
+                # Estimate value size
+                if isinstance(value, dict):
+                    total_bytes += len(str(value).encode('utf-8'))
+                elif hasattr(value, 'memory_usage'):
+                    total_bytes += getattr(value, 'memory_usage', 0)
+                else:
+                    total_bytes += len(str(value).encode('utf-8'))
+
+            self.metrics.memory_usage_bytes = total_bytes
+            self.metrics.max_memory_bytes = max(self.metrics.max_memory_bytes, total_bytes)
+
+        except Exception:
+            # Fallback if memory calculation fails
+            self.metrics.memory_usage_bytes = len(self.cache) * 1024  # Rough estimate
+
+    def _evict_to_memory_limit(self) -> None:
+        """Evict items until memory usage is within limits."""
+        while (self.metrics.memory_usage_bytes > self.max_memory_bytes and
+               len(self.cache) > 0):
+            self.cache.popitem(last=False)  # Remove least recently used
+            self.metrics.evictions += 1
+            self._update_memory_usage()
+
+        if self.metrics.evictions > 0:
+            logger.warning(f"Memory limit eviction: {self.metrics.evictions} items removed")
+
+    def shutdown(self) -> None:
+        """Shutdown cache and cleanup resources."""
+        self._shutdown = True
+        with self.lock:
+            self.cache.clear()
+            logger.info("LRUCache shutdown complete")
+
+
+class MemoryManager:
+    """
+    Memory manager for monitoring and controlling cache memory usage.
+    Integrates with existing memory management systems.
+    """
+
+    def __init__(self, cache: LRUCache, warning_threshold: float = 0.8, critical_threshold: float = 0.95):
+        """
+        Initialize memory manager.
+
+        Args:
+            cache: LRUCache instance to monitor
+            warning_threshold: Memory usage threshold for warnings (0.0-1.0)
+            critical_threshold: Memory usage threshold for critical actions (0.0-1.0)
+        """
+        self.cache = cache
+        self.warning_threshold = warning_threshold
+        self.critical_threshold = critical_threshold
+        self._monitoring_active = False
+
+    def start_monitoring(self) -> None:
+        """Start memory monitoring."""
+        self._monitoring_active = True
+        logger.info("Memory manager monitoring started")
+
+    def stop_monitoring(self) -> None:
+        """Stop memory monitoring."""
+        self._monitoring_active = False
+        logger.info("Memory manager monitoring stopped")
+
+    def check_memory_usage(self) -> Dict[str, Any]:
+        """
+        Check current memory usage and take actions if needed.
+
+        Returns:
+            Dictionary with memory status information
+        """
+        if not self._monitoring_active:
+            return {"status": "monitoring_disabled"}
+
+        stats = self.cache.get_stats()
+        memory_percent = stats["memory_usage_percent"]
+
+        status = {
+            "memory_percent": memory_percent,
+            "memory_mb": stats["memory_usage_mb"],
+            "max_memory_mb": stats["max_memory_mb"],
+            "status": "normal",
+            "actions_taken": [],
+        }
+
+        # Check thresholds
+        if memory_percent >= self.critical_threshold:
+            status["status"] = "critical"
+            # Emergency actions
+            self.cache.emergency_clear()
+            status["actions_taken"].append("emergency_clear")
+            logger.critical(f"Critical memory usage: {memory_percent:.1f}%, emergency clear performed")
+
+        elif memory_percent >= self.warning_threshold:
+            status["status"] = "warning"
+            # Warning actions - more aggressive eviction
+            logger.warning(f"High memory usage: {memory_percent:.1f}%")
+
+        return status
+
+    def get_memory_report(self) -> Dict[str, Any]:
+        """
+        Get detailed memory usage report.
+
+        Returns:
+            Dictionary with detailed memory information
+        """
+        stats = self.cache.get_stats()
+        return {
+            "cache_stats": stats,
+            "memory_manager": {
+                "monitoring_active": self._monitoring_active,
+                "warning_threshold": self.warning_threshold,
+                "critical_threshold": self.critical_threshold,
+            },
+            "system_memory": self._get_system_memory_info(),
+        }
+
+    def _get_system_memory_info(self) -> Dict[str, Any]:
+        """Get system memory information."""
+        try:
+            import psutil
+            memory = psutil.virtual_memory()
+            return {
+                "total_mb": memory.total / (1024 * 1024),
+                "available_mb": memory.available / (1024 * 1024),
+                "used_mb": memory.used / (1024 * 1024),
+                "used_percent": memory.percent,
+            }
+        except ImportError:
+            return {"error": "psutil not available"}
+        except Exception as e:
+            return {"error": str(e)}
 
 
 def _safe_get_config(key: str = None, default=None):
@@ -154,10 +511,32 @@ class BotEngine:
         self.live_display: Optional[Any] = None
         self.display_table: Optional[Any] = None
 
-        # Market data cache for performance
-        self.market_data_cache: Dict[str, Any] = {}
-        self.cache_timestamp: float = 0.0
-        self.cache_ttl: float = 60.0  # 1 minute cache
+        # LRU cache for market data with memory monitoring
+        cache_config = self.config.get("cache", {})
+        cache_maxsize = cache_config.get("max_size", 1000)
+        cache_max_memory_mb = cache_config.get("max_memory_mb", 50.0)
+
+        self.market_data_cache = LRUCache(
+            maxsize=cache_maxsize,
+            max_memory_mb=cache_max_memory_mb
+        )
+
+        # Memory manager for cache monitoring
+        memory_config = cache_config.get("memory_manager", {})
+        warning_threshold = memory_config.get("warning_threshold", 0.8)
+        critical_threshold = memory_config.get("critical_threshold", 0.95)
+
+        self.memory_manager = MemoryManager(
+            self.market_data_cache,
+            warning_threshold=warning_threshold,
+            critical_threshold=critical_threshold
+        )
+
+        # Start memory monitoring
+        self.memory_manager.start_monitoring()
+
+        # Register cache shutdown hook
+        self._shutdown_hooks.append(self.market_data_cache.shutdown)
 
         # Concurrency safety
         self._trading_cycle_lock = asyncio.Lock()
@@ -431,23 +810,25 @@ class BotEngine:
             await self._update_state()
 
     async def _fetch_market_data(self) -> Dict[str, Any]:
-        """Fetch market data with Redis caching and multi-timeframe support."""
-        current_time = time.time()
-        cache = get_cache()
+        """Fetch market data with LRU caching and multi-timeframe support."""
+        cache_key = f"market_data:{','.join(sorted(self.pairs))}"
 
-        # Check if we should use internal cache (fallback)
-        use_internal_cache = not cache or not cache._connected
-        if (
-            use_internal_cache
-            and self.market_data_cache
-            and (current_time - self.cache_timestamp) < self.cache_ttl
-        ):
-            logger.debug("Using internal cached market data")
-            return self.market_data_cache
+        # Try to get from LRU cache first
+        cached_data = self.market_data_cache.get(cache_key)
+        if cached_data:
+            logger.debug("Using LRU cached market data")
+            return cached_data
+
+        # Check memory usage before fetching new data
+        memory_status = self.memory_manager.check_memory_usage()
+        if memory_status.get("status") == "critical":
+            logger.warning("Memory usage critical, using minimal data fetch")
+            # Return minimal data or trigger emergency actions
+            return {}
 
         try:
             # Fetch single-timeframe data
-            market_data = await self._fetch_single_timeframe_data(cache)
+            market_data = await self._fetch_single_timeframe_data()
 
             # Fetch multi-timeframe data
             multi_timeframe_data = await self._fetch_multi_timeframe_data()
@@ -455,128 +836,111 @@ class BotEngine:
             # Combine data
             combined_data = self._combine_market_data(market_data, multi_timeframe_data)
 
-            # Cache the fetched data
-            self._cache_market_data(combined_data, current_time)
+            # Cache the fetched data with appropriate data type
+            if combined_data:
+                self.market_data_cache.set(cache_key, combined_data, data_type="market_data")
+                logger.debug(f"Cached market data for {len(combined_data)} symbols")
 
             return combined_data
 
         except Exception:
             logger.exception("Failed to fetch market data")
             # Return cached data if available, otherwise empty dict
-            if self.market_data_cache:
+            cached_data = self.market_data_cache.get(cache_key)
+            if cached_data:
                 logger.warning("Using stale cached data due to fetch failure")
-                return self.market_data_cache
+                return cached_data
 
             return {}
 
-    async def _fetch_single_timeframe_data(self, cache: Any) -> Dict[str, Any]:
-        """Fetch single-timeframe market data with caching support."""
+    async def _fetch_single_timeframe_data(self) -> Dict[str, Any]:
+        """Fetch single-timeframe market data with LRU caching support."""
         market_data = {}
 
         if self.portfolio_mode and hasattr(self.data_fetcher, "get_realtime_data"):
-            market_data = await self._fetch_portfolio_realtime_data(cache)
+            market_data = await self._fetch_portfolio_realtime_data()
         elif not self.portfolio_mode and hasattr(
             self.data_fetcher, "get_historical_data"
         ):
-            market_data = await self._fetch_single_historical_data(cache)
+            market_data = await self._fetch_single_historical_data()
         elif hasattr(self.data_fetcher, "get_multiple_historical_data"):
-            market_data = await self._fetch_multiple_historical_data(cache)
+            market_data = await self._fetch_multiple_historical_data()
 
         return market_data
 
-    async def _fetch_portfolio_realtime_data(self, cache: Any) -> Dict[str, Any]:
-        """Fetch portfolio realtime data with Redis caching."""
-        if cache and cache._connected:
-            # Try to get cached ticker data for all pairs
-            cached_tickers = {}
-            for symbol in self.pairs:
-                ticker_data = await cache.get_market_ticker(symbol)
-                if ticker_data:
-                    cached_tickers[symbol] = ticker_data
+    async def _fetch_portfolio_realtime_data(self) -> Dict[str, Any]:
+        """Fetch portfolio realtime data with LRU caching."""
+        # Create cache key for realtime data
+        cache_key = f"ticker:{','.join(sorted(self.pairs))}"
 
-            if cached_tickers:
-                logger.debug(
-                    f"Using cached ticker data for {len(cached_tickers)} symbols"
-                )
+        # Try to get from LRU cache first
+        cached_data = self.market_data_cache.get(cache_key)
+        if cached_data:
+            logger.debug("Using LRU cached ticker data")
+            return cached_data
 
-            # Fetch fresh data if needed
-            if len(cached_tickers) < len(self.pairs):
-                fresh_data = await self.data_fetcher.get_realtime_data(self.pairs)
-                # Update cache with fresh data
-                for symbol, ticker in fresh_data.items():
-                    await cache.set_market_ticker(symbol, ticker)
-                # Merge cached and fresh data
-                cached_tickers.update(fresh_data)
+        # Fetch fresh data
+        fresh_data = await self.data_fetcher.get_realtime_data(self.pairs)
 
-            return cached_tickers
-        else:
-            # No Redis cache, fetch directly
-            return await self.data_fetcher.get_realtime_data(self.pairs)
+        # Cache the fresh data
+        if fresh_data:
+            self.market_data_cache.set(cache_key, fresh_data, data_type="ticker")
+            logger.debug(f"Cached ticker data for {len(fresh_data)} symbols")
 
-    async def _fetch_single_historical_data(self, cache: Any) -> Dict[str, Any]:
-        """Fetch single historical data with Redis caching."""
+        return fresh_data
+
+    async def _fetch_single_historical_data(self) -> Dict[str, Any]:
+        """Fetch single historical data with LRU caching."""
         symbol = self.pairs[0] if self.pairs else None
         if not symbol:
             return {}
 
         timeframe = self.config.get("backtesting", {}).get("timeframe", "1h")
+        cache_key = f"ohlcv:{symbol}:{timeframe}"
 
-        if cache and cache._connected:
-            # Try to get cached OHLCV data
-            cached_ohlcv = await cache.get_ohlcv(symbol, timeframe)
-            if cached_ohlcv:
-                logger.debug(f"Using cached OHLCV data for {symbol}")
-                return {symbol: cached_ohlcv}
-            else:
-                # Fetch and cache fresh data
-                df = await self.data_fetcher.get_historical_data(
-                    symbol=symbol,
-                    timeframe=timeframe,
-                    limit=100,
-                )
-                await cache.set_ohlcv(symbol, timeframe, df)
-                return {symbol: df}
-        else:
-            # No Redis cache, fetch directly
-            df = await self.data_fetcher.get_historical_data(
-                symbol=symbol,
-                timeframe=timeframe,
-                limit=100,
-            )
-            return {symbol: df}
+        # Try to get from LRU cache first
+        cached_data = self.market_data_cache.get(cache_key)
+        if cached_data:
+            logger.debug(f"Using LRU cached OHLCV data for {symbol}")
+            return {symbol: cached_data}
 
-    async def _fetch_multiple_historical_data(self, cache: Any) -> Dict[str, Any]:
-        """Fetch multiple historical data with Redis caching."""
+        # Fetch fresh data
+        df = await self.data_fetcher.get_historical_data(
+            symbol=symbol,
+            timeframe=timeframe,
+            limit=100,
+        )
+
+        # Cache the fresh data
+        if df is not None and not df.empty:
+            self.market_data_cache.set(cache_key, df, data_type="ohlcv")
+            logger.debug(f"Cached OHLCV data for {symbol}")
+
+        return {symbol: df} if df is not None else {}
+
+    async def _fetch_multiple_historical_data(self) -> Dict[str, Any]:
+        """Fetch multiple historical data with LRU caching."""
         if not self.pairs:
             return {}
 
-        if cache and cache._connected:
-            # Try to get cached OHLCV data for all pairs
-            cached_data = await cache.get_multiple_ohlcv(self.pairs)
+        # Create cache key for multiple symbols
+        cache_key = f"multiple_ohlcv:{','.join(sorted(self.pairs))}"
 
-            # Determine which symbols need fresh data
-            symbols_to_fetch = [s for s in self.pairs if not cached_data.get(s)]
-
-            if symbols_to_fetch:
-                # Fetch fresh data for missing symbols
-                fresh_data = await self.data_fetcher.get_multiple_historical_data(
-                    symbols_to_fetch
-                )
-
-                # Update cache with fresh data
-                await cache.set_multiple_ohlcv(fresh_data, "1h")  # Default timeframe
-
-                # Merge cached and fresh data
-                for symbol, data in fresh_data.items():
-                    cached_data[symbol] = data
-
-            logger.debug(
-                f"Using cached OHLCV data for {len([d for d in cached_data.values() if d])} symbols"
-            )
+        # Try to get from LRU cache first
+        cached_data = self.market_data_cache.get(cache_key)
+        if cached_data:
+            logger.debug("Using LRU cached multiple OHLCV data")
             return cached_data
-        else:
-            # No Redis cache, fetch directly
-            return await self.data_fetcher.get_multiple_historical_data(self.pairs)
+
+        # Fetch fresh data
+        fresh_data = await self.data_fetcher.get_multiple_historical_data(self.pairs)
+
+        # Cache the fresh data
+        if fresh_data:
+            self.market_data_cache.set(cache_key, fresh_data, data_type="ohlcv")
+            logger.debug(f"Cached multiple OHLCV data for {len(fresh_data)} symbols")
+
+        return fresh_data
 
     async def _fetch_multi_timeframe_data(self) -> Dict[str, Any]:
         """Fetch multi-timeframe data for all symbols."""
@@ -619,13 +983,38 @@ class BotEngine:
 
         return combined_data
 
-    def _cache_market_data(
-        self, combined_data: Dict[str, Any], current_time: float
-    ) -> None:
-        """Cache the fetched market data."""
-        self.market_data_cache = combined_data
-        self.cache_timestamp = current_time
-        logger.debug("Fetched and cached market data (including multi-timeframe)")
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """
+        Get cache statistics and metrics.
+
+        Returns:
+            Dictionary with cache performance metrics
+        """
+        return self.market_data_cache.get_stats()
+
+    def get_memory_report(self) -> Dict[str, Any]:
+        """
+        Get detailed memory usage report.
+
+        Returns:
+            Dictionary with memory usage information
+        """
+        return self.memory_manager.get_memory_report()
+
+    def invalidate_market_close_cache(self) -> None:
+        """
+        Invalidate time-sensitive cache entries on market close.
+        Should be called when market closes to clear realtime data.
+        """
+        self.market_data_cache.invalidate_market_close()
+        logger.info("Market close cache invalidation completed")
+
+    def emergency_clear_cache(self) -> None:
+        """
+        Emergency cache clearing for critical memory situations.
+        """
+        self.market_data_cache.emergency_clear()
+        logger.warning("Emergency cache clearing performed")
 
     async def _check_safe_mode_conditions(self) -> bool:
         """Check various safe mode conditions and return True if trading should be skipped."""

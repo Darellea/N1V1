@@ -18,6 +18,7 @@ from core.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
     CircuitBreakerState,
+    CooldownStrategy,
 )
 from core.order_manager import OrderManager
 from core.signal_router import SignalRouter
@@ -192,6 +193,10 @@ class TestCircuitBreakerStateManagement:
         # Move to cooling
         await self.cb._enter_cooling_period()
         assert self.cb.state == CircuitBreakerState.COOLING
+
+        # Set up conditions for health check to pass
+        self.cb.current_equity = 9600  # Above recovery threshold
+        self.cb._record_trade_result(100, True)  # Add winning trade
 
         # Move to recovery
         await self.cb._enter_recovery_period()
@@ -570,6 +575,291 @@ class TestCircuitBreakerConfiguration:
 
         # Test that it uses new configuration
         assert cb._check_equity_drawdown(10000, 9499)  # 5.01% drawdown should trigger
+
+
+class TestCircuitBreakerCooldownEnforcement:
+    """Test cooldown period enforcement functionality."""
+
+    def setup_method(self):
+        """Setup test fixtures."""
+        self.config = CircuitBreakerConfig(
+            enable_cooldown_enforcement=True,
+            cooldown_strategy=CooldownStrategy.EXPONENTIAL,
+            base_cooldown_minutes=5,
+            max_cooldown_minutes=60,
+            cooldown_multiplier=2.0,
+        )
+        self.cb = CircuitBreaker(self.config)
+
+    def test_cooldown_calculation_fixed_strategy(self):
+        """Test fixed cooldown period calculation."""
+        config = CircuitBreakerConfig(
+            cooldown_strategy=CooldownStrategy.FIXED,
+            base_cooldown_minutes=10,
+            max_cooldown_minutes=60,
+        )
+        cb = CircuitBreaker(config)
+
+        # Fixed strategy should always return base_cooldown_minutes
+        assert cb._calculate_cooldown_period(1) == 10
+        assert cb._calculate_cooldown_period(5) == 10
+        assert cb._calculate_cooldown_period(10) == 10
+
+    def test_cooldown_calculation_exponential_strategy(self):
+        """Test exponential cooldown period calculation."""
+        # First trigger: 5 minutes
+        assert self.cb._calculate_cooldown_period(1) == 5
+
+        # Second trigger: 5 * 2^0 = 10 minutes
+        assert self.cb._calculate_cooldown_period(2) == 10
+
+        # Third trigger: 5 * 2^1 = 20 minutes
+        assert self.cb._calculate_cooldown_period(3) == 20
+
+        # Fourth trigger: 5 * 2^2 = 40 minutes
+        assert self.cb._calculate_cooldown_period(4) == 40
+
+        # Fifth trigger: min(5 * 2^3, 60) = 60 minutes (capped)
+        assert self.cb._calculate_cooldown_period(5) == 60
+
+    def test_cooldown_calculation_fibonacci_strategy(self):
+        """Test fibonacci cooldown period calculation."""
+        config = CircuitBreakerConfig(
+            cooldown_strategy=CooldownStrategy.FIBONACCI,
+            base_cooldown_minutes=5,
+            max_cooldown_minutes=100,
+        )
+        cb = CircuitBreaker(config)
+
+        # Fibonacci sequence with base 5: 5, 5, 10, 15, 25, 40, 65, ...
+        assert cb._calculate_cooldown_period(1) == 5
+        assert cb._calculate_cooldown_period(2) == 5
+        assert cb._calculate_cooldown_period(3) == 10
+        assert cb._calculate_cooldown_period(4) == 15
+        assert cb._calculate_cooldown_period(5) == 25
+        assert cb._calculate_cooldown_period(6) == 40
+
+    def test_cooldown_enforcement_disabled(self):
+        """Test behavior when cooldown enforcement is disabled."""
+        config = CircuitBreakerConfig(enable_cooldown_enforcement=False)
+        cb = CircuitBreaker(config)
+
+        # Should always return 0 when disabled
+        assert cb._calculate_cooldown_period(1) == 0
+        assert cb._calculate_cooldown_period(10) == 0
+        assert not cb._is_cooldown_active()
+
+    @pytest.mark.asyncio
+    async def test_cooldown_prevents_triggering(self):
+        """Test that cooldown period prevents new triggers."""
+        # Mock integration components
+        self.cb.order_manager = AsyncMock()
+        self.cb.signal_router = AsyncMock()
+        self.cb.risk_manager = AsyncMock()
+        self.cb.anomaly_detector = None
+
+        # First trigger should work
+        result1 = await self.cb.check_and_trigger({"equity": 8000})
+        assert result1 is True
+        assert self.cb.state == CircuitBreakerState.TRIGGERED
+        assert self.cb.trigger_count == 1
+
+        # Immediately try to trigger again - should be blocked by cooldown
+        result2 = await self.cb.check_and_trigger({"equity": 7000})
+        assert result2 is False  # Should be blocked
+        assert self.cb.state == CircuitBreakerState.TRIGGERED  # State unchanged
+        assert self.cb.trigger_count == 1  # Count unchanged
+
+    def test_remaining_cooldown_calculation(self):
+        """Test remaining cooldown time calculation."""
+        from datetime import datetime, timedelta
+
+        # Simulate a trigger 2 minutes ago
+        past_time = datetime.now() - timedelta(minutes=2)
+        self.cb.last_trigger_time = past_time
+        self.cb.trigger_count = 1
+
+        # With 5 minute cooldown, should have 3 minutes remaining
+        remaining = self.cb.get_remaining_cooldown_minutes()
+        assert abs(remaining - 3.0) < 0.1  # Allow small timing differences
+
+    def test_cooldown_state_after_multiple_triggers(self):
+        """Test cooldown state after multiple triggers."""
+        from datetime import datetime, timedelta
+
+        # Simulate multiple triggers with exponential backoff
+        self.cb.trigger_count = 3  # Third trigger
+        self.cb.last_trigger_time = datetime.now() - timedelta(minutes=10)  # 10 minutes ago
+
+        # Third trigger should have 20 minute cooldown
+        expected_cooldown = 20
+        actual_cooldown = self.cb._calculate_cooldown_period(3)
+        assert actual_cooldown == expected_cooldown
+
+        # Should still be in cooldown (20 min cooldown, only 10 min elapsed)
+        assert self.cb._is_cooldown_active()
+
+        # Remaining time should be about 10 minutes
+        remaining = self.cb.get_remaining_cooldown_minutes()
+        assert abs(remaining - 10.0) < 0.1
+
+
+class TestCircuitBreakerHealthChecks:
+    """Test health check functionality for recovery."""
+
+    def setup_method(self):
+        """Setup test fixtures."""
+        self.config = CircuitBreakerConfig()
+        self.cb = CircuitBreaker(self.config)
+
+    @pytest.mark.asyncio
+    async def test_health_check_equity_recovery(self):
+        """Test health check based on equity recovery."""
+        # Set current equity below recovery threshold
+        self.cb.current_equity = 9000  # Below 9500 (95% of 10000)
+        health_ok = await self.cb._perform_health_check()
+        assert not health_ok
+
+        # Set equity above recovery threshold
+        self.cb.current_equity = 9600  # Above 9500
+        health_ok = await self.cb._perform_health_check()
+        assert health_ok
+
+    @pytest.mark.asyncio
+    async def test_health_check_trade_pattern(self):
+        """Test health check based on recent trade patterns."""
+        # Add some losing trades
+        for i in range(5):
+            self.cb._record_trade_result(100, False)
+
+        # Recent trades are all losses - should fail health check
+        health_ok = await self.cb._perform_health_check()
+        assert not health_ok
+
+        # Add a winning trade to break the losing streak
+        self.cb._record_trade_result(100, True)
+
+        # Now recent trades include a win - should pass health check
+        health_ok = await self.cb._perform_health_check()
+        assert health_ok
+
+    @pytest.mark.asyncio
+    async def test_recovery_with_health_check(self):
+        """Test recovery process with health check validation."""
+        # Start in triggered state
+        await self.cb._trigger_circuit_breaker("Test trigger")
+        assert self.cb.state == CircuitBreakerState.TRIGGERED
+
+        # Move to cooling
+        await self.cb._enter_cooling_period()
+        assert self.cb.state == CircuitBreakerState.COOLING
+
+        # Try to enter recovery - should fail health check
+        self.cb.current_equity = 9000  # Below threshold
+        await self.cb._enter_recovery_period()
+        assert self.cb.state == CircuitBreakerState.COOLING  # Should stay in cooling
+
+        # Set healthy conditions and try again
+        self.cb.current_equity = 9600  # Above threshold
+        self.cb._record_trade_result(100, True)  # Add winning trade
+
+        await self.cb._enter_recovery_period()
+        assert self.cb.state == CircuitBreakerState.RECOVERY  # Should enter recovery
+
+
+class TestCircuitBreakerStateTransitions:
+    """Test circuit breaker state transitions with new features."""
+
+    def setup_method(self):
+        """Setup test fixtures."""
+        self.config = CircuitBreakerConfig(
+            enable_cooldown_enforcement=True,
+            cooldown_strategy=CooldownStrategy.EXPONENTIAL,
+        )
+        self.cb = CircuitBreaker(self.config)
+
+    @pytest.mark.asyncio
+    async def test_state_transition_with_cooldown(self):
+        """Test state transitions respect cooldown periods."""
+        # Mock integration components
+        self.cb.order_manager = AsyncMock()
+        self.cb.signal_router = AsyncMock()
+        self.cb.risk_manager = AsyncMock()
+        self.cb.anomaly_detector = None
+
+        # First trigger
+        result1 = await self.cb.check_and_trigger({"equity": 8000})
+        assert result1 is True
+        assert self.cb.state == CircuitBreakerState.TRIGGERED
+
+        # Try immediate second trigger - should be blocked
+        result2 = await self.cb.check_and_trigger({"equity": 7000})
+        assert result2 is False
+        assert self.cb.state == CircuitBreakerState.TRIGGERED
+
+    @pytest.mark.asyncio
+    async def test_emergency_reset_bypasses_cooldown(self):
+        """Test that emergency reset can bypass cooldown."""
+        # Trigger circuit breaker
+        await self.cb._trigger_circuit_breaker("Test trigger")
+        assert self.cb.state == CircuitBreakerState.TRIGGERED
+
+        # Emergency reset should work even during cooldown
+        result = await self.cb.reset_to_normal("Emergency reset")
+        assert result is True
+        assert self.cb.state == CircuitBreakerState.NORMAL
+
+    def test_circuit_state_metrics(self):
+        """Test circuit state metrics collection."""
+        from datetime import datetime, timedelta
+
+        # Set up some state
+        self.cb.state = CircuitBreakerState.COOLING
+        self.cb.trigger_count = 3
+        self.cb.last_trigger_time = datetime.now() - timedelta(minutes=5)
+        self.cb.current_equity = 9500
+
+        # Get metrics
+        metrics = self.cb.get_circuit_state_metrics()
+
+        # Verify metrics content
+        assert metrics["state"] == "cooling"
+        assert metrics["trigger_count"] == 3
+        assert metrics["current_equity"] == 9500
+        assert metrics["cooldown_strategy"] == "exponential"
+        assert metrics["enable_cooldown_enforcement"] is True
+        assert isinstance(metrics["remaining_cooldown_minutes"], float)
+        assert isinstance(metrics["is_cooldown_active"], bool)
+
+
+@pytest.mark.timeout(10)
+def test_circuit_breaker_cooldown_timeout():
+    """Test circuit breaker cooldown timeout behavior."""
+    import asyncio
+
+    async def run_test():
+        config = CircuitBreakerConfig(
+            enable_cooldown_enforcement=True,
+            cooldown_strategy=CooldownStrategy.FIXED,
+            base_cooldown_minutes=1,  # Short cooldown for testing
+        )
+        cb = CircuitBreaker(config)
+
+        # Mock integration components
+        cb.order_manager = AsyncMock()
+        cb.signal_router = AsyncMock()
+        cb.risk_manager = AsyncMock()
+        cb.anomaly_detector = None
+
+        # First trigger should work
+        result1 = await cb.check_and_trigger({"equity": 8000})
+        assert result1 is True
+
+        # Immediate second trigger should be blocked by cooldown
+        result2 = await cb.check_and_trigger({"equity": 7000})
+        assert result2 is False  # Should timeout quickly due to cooldown
+
+    asyncio.run(run_test())
 
 
 # Integration test fixtures

@@ -22,8 +22,10 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+from contextlib import asynccontextmanager
 
 import numpy as np
+import aiofiles
 from scipy import stats
 
 from core.metrics_collector import get_metrics_collector
@@ -287,13 +289,49 @@ class RealTimePerformanceMonitor:
                 await asyncio.sleep(60)
 
     async def _collect_performance_metrics(self) -> Dict[str, float]:
-        """Collect current performance metrics from various sources."""
+        """Collect current performance metrics from various sources asynchronously."""
         metrics = {}
         current_time = time.time()
 
         try:
-            # Get metrics from profiler
-            profiler_report = self.profiler.generate_report()
+            # Collect metrics concurrently using asyncio.gather for better performance
+            profiler_task = self._collect_profiler_metrics()
+            system_task = self._collect_system_metrics()
+
+            profiler_metrics, system_metrics = await asyncio.gather(
+                profiler_task, system_task, return_exceptions=True
+            )
+
+            # Handle profiler metrics
+            if isinstance(profiler_metrics, Exception):
+                logger.exception(f"Error collecting profiler metrics: {profiler_metrics}")
+            elif isinstance(profiler_metrics, dict):
+                metrics.update(profiler_metrics)
+
+            # Handle system metrics
+            if isinstance(system_metrics, Exception):
+                logger.exception(f"Error collecting system metrics: {system_metrics}")
+            elif isinstance(system_metrics, dict):
+                metrics.update(system_metrics)
+
+            # Add timestamp for time-series analysis
+            metrics["_timestamp"] = current_time
+
+        except Exception as e:
+            logger.exception(f"Error collecting performance metrics: {e}")
+
+        return metrics
+
+    async def _collect_profiler_metrics(self) -> Dict[str, float]:
+        """Collect metrics from performance profiler asynchronously."""
+        metrics = {}
+
+        try:
+            # Run profiler report generation in thread pool to avoid blocking
+            profiler_report = await asyncio.get_event_loop().run_in_executor(
+                None, self.profiler.generate_report
+            )
+
             if "functions" in profiler_report:
                 for func_name, func_data in profiler_report["functions"].items():
                     metrics[f"function_{func_name}_execution_time"] = func_data[
@@ -303,7 +341,17 @@ class RealTimePerformanceMonitor:
                         "memory_usage"
                     ]["mean"]
 
-            # Get system metrics from collector
+        except Exception as e:
+            logger.exception(f"Error in profiler metrics collection: {e}")
+            raise  # Re-raise to be handled by caller
+
+        return metrics
+
+    async def _collect_system_metrics(self) -> Dict[str, float]:
+        """Collect system metrics asynchronously."""
+        metrics = {}
+
+        try:
             system_metrics = [
                 "system_cpu_usage_percent",
                 "system_memory_usage_bytes",
@@ -311,18 +359,36 @@ class RealTimePerformanceMonitor:
                 "process_memory_usage_bytes",
             ]
 
+            # Collect metrics concurrently
+            tasks = []
             for metric_name in system_metrics:
-                value = self.metrics_collector.get_metric_value(metric_name)
-                if value is not None:
-                    metrics[metric_name] = value
+                tasks.append(self._get_metric_value_async(metric_name))
 
-            # Add timestamp for time-series analysis
-            metrics["_timestamp"] = current_time
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for metric_name, result in zip(system_metrics, results):
+                if isinstance(result, Exception):
+                    logger.warning(f"Error getting metric {metric_name}: {result}")
+                    continue
+                if result is not None:
+                    metrics[metric_name] = result
 
         except Exception as e:
-            logger.exception(f"Error collecting performance metrics: {e}")
+            logger.exception(f"Error in system metrics collection: {e}")
+            raise  # Re-raise to be handled by caller
 
         return metrics
+
+    async def _get_metric_value_async(self, metric_name: str) -> Optional[float]:
+        """Get a metric value asynchronously."""
+        try:
+            # Use asyncio.to_thread for potentially blocking operations
+            return await asyncio.to_thread(
+                self.metrics_collector.get_metric_value, metric_name
+            )
+        except Exception as e:
+            logger.exception(f"Error getting metric {metric_name}: {e}")
+            return None
 
     async def _update_baselines_with_metrics(self, metrics: Dict[str, float]) -> None:
         """Update baseline calculations with new metrics data."""
@@ -637,12 +703,13 @@ class RealTimePerformanceMonitor:
         await self._create_initial_baselines()
 
     async def _load_baselines(self) -> None:
-        """Load saved baselines from disk."""
+        """Load saved baselines from disk asynchronously."""
         try:
             baseline_file = Path("data/performance_baselines.json")
             if baseline_file.exists():
-                with open(baseline_file, "r") as f:
-                    data = json.load(f)
+                async with aiofiles.open(baseline_file, "r") as f:
+                    content = await f.read()
+                    data = json.loads(content)
 
                 for metric_name, baseline_data in data.items():
                     baseline = PerformanceBaseline(**baseline_data)
@@ -654,7 +721,7 @@ class RealTimePerformanceMonitor:
             logger.exception(f"Error loading performance baselines: {e}")
 
     async def _save_baselines(self) -> None:
-        """Save current baselines to disk."""
+        """Save current baselines to disk asynchronously."""
         try:
             baseline_file = Path("data/performance_baselines.json")
             baseline_file.parent.mkdir(parents=True, exist_ok=True)
@@ -675,8 +742,9 @@ class RealTimePerformanceMonitor:
                     "is_stable": baseline.is_stable,
                 }
 
-            with open(baseline_file, "w") as f:
-                json.dump(data, f, indent=2)
+            content = json.dumps(data, indent=2)
+            async with aiofiles.open(baseline_file, "w") as f:
+                await f.write(content)
 
         except Exception as e:
             logger.exception(f"Error saving performance baselines: {e}")
@@ -705,6 +773,22 @@ class RealTimePerformanceMonitor:
         await self._update_baselines()
 
         logger.info(f"Created {len(self.baselines)} initial performance baselines")
+
+    @asynccontextmanager
+    async def monitor_context(self):
+        """
+        Async context manager for performance monitoring.
+
+        Usage:
+            async with monitor.monitor_context():
+                # Your code here
+                pass
+        """
+        await self.start_monitoring()
+        try:
+            yield self
+        finally:
+            await self.stop_monitoring()
 
 
 # Global performance monitor instance

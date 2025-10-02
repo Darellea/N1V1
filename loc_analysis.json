@@ -1,59 +1,59 @@
 {
-  "timestamp": "2025-09-29T14:58:35.114719",
+  "timestamp": "2025-10-02T14:01:23.650992",
   "summary": {
-    "total_files": 951,
-    "total_lines": 1554649,
-    "code_lines": 1471692,
-    "comment_lines": 32310,
-    "comment_ratio_percent": 2.2,
-    "avg_lines_per_file": 1634.75
+    "total_files": 1133,
+    "total_lines": 2281195,
+    "code_lines": 2193246,
+    "comment_lines": 33237,
+    "comment_ratio_percent": 1.52,
+    "avg_lines_per_file": 2013.41
   },
   "by_type": {
     "other": {
-      "files": 191,
-      "total_lines": 1289088,
-      "code_lines": 1269163,
-      "comment_lines": 6802
+      "files": 226,
+      "total_lines": 1975410,
+      "code_lines": 1954310,
+      "comment_lines": 6803
     },
     "config": {
-      "files": 387,
-      "total_lines": 68665,
-      "code_lines": 67077,
+      "files": 520,
+      "total_lines": 94710,
+      "code_lines": 92597,
       "comment_lines": 174
     },
     "code": {
-      "files": 331,
-      "total_lines": 173869,
-      "code_lines": 118182,
-      "comment_lines": 22813
+      "files": 349,
+      "total_lines": 194772,
+      "code_lines": 135404,
+      "comment_lines": 24012
     },
     "docs": {
-      "files": 42,
-      "total_lines": 23027,
-      "code_lines": 17270,
-      "comment_lines": 2521
+      "files": 38,
+      "total_lines": 16303,
+      "code_lines": 10935,
+      "comment_lines": 2248
     }
   },
   "by_language": {
     "Other": {
-      "files": 191,
-      "lines": 1289088
+      "files": 226,
+      "lines": 1975410
     },
     "JSON": {
-      "files": 371,
-      "lines": 65655
+      "files": 504,
+      "lines": 91700
     },
     "Python": {
-      "files": 331,
-      "lines": 173869
+      "files": 349,
+      "lines": 194772
     },
     "Markdown": {
-      "files": 30,
-      "lines": 15631
+      "files": 27,
+      "lines": 14796
     },
     "Text": {
-      "files": 11,
-      "lines": 7090
+      "files": 10,
+      "lines": 1201
     },
     "TOML": {
       "files": 1,
@@ -74,28 +74,28 @@
   },
   "by_component": {
     "other": {
-      "files": 852,
-      "total_lines": 1507876,
-      "code_lines": 1431774,
-      "comment_lines": 29789
-    },
-    "docs": {
-      "files": 30,
-      "total_lines": 15631,
-      "code_lines": 9934,
-      "comment_lines": 2504
+      "files": 1012,
+      "total_lines": 2221332,
+      "code_lines": 2140377,
+      "comment_lines": 30989
     },
     "config": {
-      "files": 69,
-      "total_lines": 31142,
-      "code_lines": 29984,
+      "files": 94,
+      "total_lines": 45067,
+      "code_lines": 43384,
       "comment_lines": 17
+    },
+    "docs": {
+      "files": 27,
+      "total_lines": 14796,
+      "code_lines": 9485,
+      "comment_lines": 2231
     }
   },
   "largest_files": [
     {
       "path": "logs\\core.log",
-      "lines": 942129,
+      "lines": 1629938,
       "extension": ".log"
     },
     {
@@ -125,13 +125,13 @@
     },
     {
       "path": "logs\\crypto_bot.log",
-      "lines": 22767,
+      "lines": 22768,
       "extension": ".log"
     },
     {
-      "path": "logs\\trades.csv",
-      "lines": 10153,
-      "extension": ".csv"
+      "path": "warnings.log",
+      "lines": 8336,
+      "extension": ".log"
     },
     {
       "path": ".ruff_cache\\content\\1879841978194122611",
@@ -139,25 +139,25 @@
       "extension": ""
     },
     {
-      "path": "test_output.log",
-      "lines": 6103,
-      "extension": ".log"
+      "path": "logs\\anomalies\\anomalies.json",
+      "lines": 7279,
+      "extension": ".json"
     }
   ],
   "quality_metrics": {
     "test_to_production_ratio": 0.0,
     "component_distribution": {
       "other": {
-        "lines": 1431774,
-        "percentage": 1211.5
-      },
-      "docs": {
-        "lines": 9934,
-        "percentage": 8.41
+        "lines": 2140377,
+        "percentage": 1580.73
       },
       "config": {
-        "lines": 29984,
-        "percentage": 25.37
+        "lines": 43384,
+        "percentage": 32.04
+      },
+      "docs": {
+        "lines": 9485,
+        "percentage": 7.0
       }
     }
   }

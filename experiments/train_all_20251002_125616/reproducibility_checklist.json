@@ -1,10 +1,10 @@
 {
-  "experiment_name": "integration_test",
-  "timestamp": "2025-10-02T13:58:11.277160",
+  "experiment_name": "train_all_20251002_125616",
+  "timestamp": "2025-10-02T12:56:16.637767",
   "reproducibility_requirements": {
-    "random_seed": 777,
+    "random_seed": 42,
     "python_version": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
-    "git_commit": "unknown",
+    "git_commit": "b9be7dbe61e1145eeb8e3cc38b1ac7c5f4b017f9",
     "libraries": {
       "numpy": "1.26.2",
       "pandas": "2.3.2",
@@ -34,8 +34,8 @@
     }
   },
   "reproduction_steps": [
-    "1. Checkout Git commit: unknown",
-    "2. Set random seed: 777",
+    "1. Checkout Git commit: b9be7dbe61e1145eeb8e3cc38b1ac7c5f4b017f9",
+    "2. Set random seed: 42",
     "3. Install dependencies from requirements.txt",
     "4. Run training with same parameters: python ml/train.py --config config.json --data data.csv",
     "5. Verify results match within tolerance"

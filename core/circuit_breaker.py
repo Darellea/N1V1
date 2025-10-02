@@ -36,7 +36,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 
@@ -47,6 +47,14 @@ try:
     _metrics_collector_available = True
 except ImportError:
     _metrics_collector_available = False
+
+
+class CooldownStrategy(Enum):
+    """Cooldown period calculation strategies."""
+
+    FIXED = "fixed"
+    EXPONENTIAL = "exponential"
+    FIBONACCI = "fibonacci"
 
 
 @dataclass
@@ -61,6 +69,13 @@ class CircuitBreakerConfig:
     cooling_period_minutes: int = 5
     recovery_period_minutes: int = 10
     max_history_size: int = 1000
+
+    # Cooldown enforcement settings
+    cooldown_strategy: CooldownStrategy = CooldownStrategy.EXPONENTIAL
+    base_cooldown_minutes: int = 5
+    max_cooldown_minutes: int = 60
+    cooldown_multiplier: float = 2.0
+    enable_cooldown_enforcement: bool = True
 
     def __post_init__(self):
         """Validate configuration parameters."""
@@ -481,9 +496,96 @@ class CircuitBreaker:
                 score += weights.get(factor, 0.0)
         return score
 
+    def _calculate_cooldown_period(self, trigger_count: int) -> int:
+        """Calculate cooldown period based on strategy and trigger count."""
+        if not self.config.enable_cooldown_enforcement:
+            return 0
+
+        base_minutes = self.config.base_cooldown_minutes
+
+        if self.config.cooldown_strategy == CooldownStrategy.FIXED:
+            return min(base_minutes, self.config.max_cooldown_minutes)
+
+        elif self.config.cooldown_strategy == CooldownStrategy.EXPONENTIAL:
+            cooldown = base_minutes * (self.config.cooldown_multiplier ** (trigger_count - 1))
+            return min(int(cooldown), self.config.max_cooldown_minutes)
+
+        elif self.config.cooldown_strategy == CooldownStrategy.FIBONACCI:
+            # Fibonacci sequence: 1, 1, 2, 3, 5, 8, 13, 21, ...
+            if trigger_count <= 1:
+                return base_minutes
+            elif trigger_count == 2:
+                return base_minutes
+            else:
+                a, b = base_minutes, base_minutes
+                for _ in range(trigger_count - 2):
+                    a, b = b, a + b
+                return min(b, self.config.max_cooldown_minutes)
+
+        return base_minutes
+
+    def _is_cooldown_active(self) -> bool:
+        """Check if cooldown period is currently active."""
+        if not self.config.enable_cooldown_enforcement or not self.last_trigger_time:
+            return False
+
+        cooldown_minutes = self._calculate_cooldown_period(self.trigger_count)
+        if cooldown_minutes <= 0:
+            return False
+
+        elapsed_minutes = (datetime.now() - self.last_trigger_time).total_seconds() / 60
+        return elapsed_minutes < cooldown_minutes
+
+    def get_remaining_cooldown_minutes(self) -> float:
+        """Get remaining cooldown minutes if active, 0 otherwise."""
+        if not self.config.enable_cooldown_enforcement or not self.last_trigger_time:
+            return 0.0
+
+        cooldown_minutes = self._calculate_cooldown_period(self.trigger_count)
+        if cooldown_minutes <= 0:
+            return 0.0
+
+        elapsed_minutes = (datetime.now() - self.last_trigger_time).total_seconds() / 60
+        remaining = max(0.0, cooldown_minutes - elapsed_minutes)
+        return remaining
+
+    async def _perform_health_check(self) -> bool:
+        """Perform health check to determine if recovery is safe."""
+        try:
+            # Check if equity has recovered sufficiently
+            if hasattr(self, 'current_equity') and self.current_equity > 0:
+                # Simple recovery check: equity above 95% of initial
+                initial_equity = 10000.0  # This should be configurable
+                recovery_threshold = 0.95
+                if self.current_equity >= initial_equity * recovery_threshold:
+                    return True
+
+            # Check if consecutive losses have reset
+            if len(self.trade_results) >= 3:
+                recent_trades = self.trade_results[-3:]
+                if not all(not win for win in recent_trades):  # Not all losses
+                    return True
+
+            # Default to cautious approach
+            return False
+
+        except Exception as e:
+            self.logger.warning(f"Health check failed: {e}")
+            return False
+
     async def check_and_trigger(self, conditions: Dict[str, Any]) -> bool:
         """Check conditions and trigger if needed using strategy pattern."""
         self.logger.debug(f"Checking trigger conditions: {conditions}")
+
+        # Check cooldown enforcement first
+        if self._is_cooldown_active():
+            remaining_minutes = self.get_remaining_cooldown_minutes()
+            self.logger.info(
+                f"Circuit breaker cooldown active. Remaining: {remaining_minutes:.1f} minutes. "
+                f"Skipping trigger check."
+            )
+            return False
+
         # Cache timestamp to avoid repeated time.monotonic calls
         cached_time = asyncio.get_event_loop().time()
         start_time = cached_time
@@ -664,16 +766,30 @@ class CircuitBreaker:
                 self.logger.warning(f"Failed to freeze portfolio: {e}")
 
     async def _enter_recovery_period(self) -> None:
-        """Enter recovery period."""
+        """Enter recovery period with health check validation."""
+        # Perform health check before entering recovery
+        health_check_passed = await self._perform_health_check()
+
         async with self._lock:
             previous_state = self.state
-            self.state = CircuitBreakerState.RECOVERY
-            self._log_event(
-                "recovery",
-                previous_state,
-                CircuitBreakerState.RECOVERY,
-                "Entering recovery period",
-            )
+            if health_check_passed:
+                self.state = CircuitBreakerState.RECOVERY
+                self._log_event(
+                    "recovery",
+                    previous_state,
+                    CircuitBreakerState.RECOVERY,
+                    "Entering recovery period - health check passed",
+                )
+            else:
+                # Stay in cooling or go back to triggered if health check fails
+                self.logger.warning("Health check failed, remaining in cooling period")
+                self._log_event(
+                    "recovery_blocked",
+                    previous_state,
+                    previous_state,
+                    "Recovery blocked by health check failure",
+                )
+                return
 
     async def _return_to_normal(self) -> None:
         """Return to normal state."""
@@ -824,6 +940,25 @@ class CircuitBreaker:
     def update_config(self, new_config: CircuitBreakerConfig) -> None:
         """Update configuration."""
         self.config = new_config
+
+    def get_circuit_state_metrics(self) -> Dict[str, Any]:
+        """Get circuit state metrics for monitoring."""
+        return {
+            "state": self.state.value,
+            "trigger_count": self.trigger_count,
+            "last_trigger_time": self.last_trigger_time.isoformat() if self.last_trigger_time else None,
+            "remaining_cooldown_minutes": self.get_remaining_cooldown_minutes(),
+            "current_equity": self.current_equity,
+            "is_cooldown_active": self._is_cooldown_active(),
+            "event_history_size": len(self.event_history),
+            "trigger_history_size": len(self.trigger_history),
+            "trade_results_count": len(self.trade_results),
+            "cooldown_strategy": self.config.cooldown_strategy.value,
+            "base_cooldown_minutes": self.config.base_cooldown_minutes,
+            "max_cooldown_minutes": self.config.max_cooldown_minutes,
+            "cooldown_multiplier": self.config.cooldown_multiplier,
+            "enable_cooldown_enforcement": self.config.enable_cooldown_enforcement,
+        }
 
     async def cleanup_background_tasks(self) -> None:
         """Clean up any pending background tasks."""

@@ -8,9 +8,11 @@ covering core functionality, state management, integration, and edge cases.
 
 import asyncio
 import json
+import logging
 import os
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -21,6 +23,9 @@ from core.contracts import SignalStrength, SignalType, TradingSignal
 from core.signal_router import JournalWriter, SignalRouter
 from core.types import OrderType
 from utils.time import now_ms
+
+# Suppress asyncio task destruction warnings during test cleanup
+logging.getLogger('asyncio').setLevel(logging.ERROR)
 
 
 class TestSignalRouterFacade:
@@ -593,7 +598,7 @@ class TestSignalRouterIntegration:
         )
 
         router = SignalRouter(
-            self.risk_manager, self.task_manager, safe_mode_threshold=2
+            self.risk_manager, self.task_manager, safe_mode_threshold=2, enable_queue=False
         )
 
         signal = TradingSignal(
@@ -711,6 +716,353 @@ class TestSignalRouterEdgeCases:
         # Test with future timestamp (too far)
         signal._original_timestamp = int(time.time() + 157784630)  # 5+ years in future
         assert not router._validate_timestamp(signal)
+
+
+class TestSignalRouterQueue:
+    """Test SignalRouter message queue functionality."""
+
+    def setup_method(self):
+        """Setup test fixtures."""
+        self.risk_manager = MagicMock()
+        self.risk_manager.evaluate_signal = AsyncMock(return_value=True)
+        self.risk_manager.validate_signal = MagicMock(return_value=True)
+        self.task_manager = MagicMock()
+
+        self.config_patcher = patch("core.signal_router.router.get_config")
+        self.mock_get_config = self.config_patcher.start()
+        self.mock_get_config.return_value = {
+            "predictive_models": {"enabled": False},
+            "ml": {"enabled": False},
+            "journal": {"enabled": False},
+        }
+
+    def teardown_method(self):
+        """Cleanup patches."""
+        self.config_patcher.stop()
+
+    @pytest.fixture(autouse=True)
+    async def cleanup_routers(self):
+        """Cleanup any routers created during tests."""
+        yield
+        # Cleanup happens in individual test methods via shutdown calls
+
+    def test_initialization_with_queue(self):
+        """Test SignalRouter initialization with queue enabled."""
+        router = SignalRouter(
+            self.risk_manager,
+            self.task_manager,
+            enable_queue=True,
+            max_queue_size=50,
+            worker_count=2,
+            deduplication_window=120.0
+        )
+
+        assert router.enable_queue is True
+        assert router.max_queue_size == 50
+        assert router.worker_count == 2
+        assert router.deduplication_window == 120.0
+        assert router._signal_queue is not None
+        assert len(router._processed_signals) == 0
+
+    def test_initialization_without_queue(self):
+        """Test SignalRouter initialization with queue disabled."""
+        router = SignalRouter(
+            self.risk_manager,
+            self.task_manager,
+            enable_queue=False
+        )
+
+        assert router.enable_queue is False
+
+    @pytest.mark.asyncio
+    async def test_synchronous_processing_when_queue_disabled(self):
+        """Test that signals are processed synchronously when queue is disabled."""
+        router = SignalRouter(
+            self.risk_manager,
+            self.task_manager,
+            enable_queue=False
+        )
+
+        signal = TradingSignal(
+            strategy_id="test",
+            symbol="BTC/USD",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.WEAK,
+            order_type="market",
+            amount=Decimal("1.0"),
+            stop_loss=Decimal("49000"),
+            timestamp=int(time.time()),
+        )
+
+        result = await router.process_signal(signal)
+
+        # Should process synchronously and call risk manager
+        assert result is not None
+        self.risk_manager.evaluate_signal.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_duplicate_signal_detection(self):
+        """Test that duplicate signals are detected and handled properly."""
+        router = SignalRouter(
+            self.risk_manager,
+            self.task_manager,
+            enable_queue=True,
+            deduplication_window=300.0
+        )
+
+        signal = TradingSignal(
+            strategy_id="test",
+            symbol="BTC/USD",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.WEAK,
+            order_type="market",
+            amount=Decimal("1.0"),
+            stop_loss=Decimal("49000"),
+            timestamp=int(time.time()),
+        )
+
+        # First signal should be processed
+        result1 = await router.process_signal(signal)
+        assert result1 is not None
+
+        # Duplicate signal should be detected
+        result2 = await router.process_signal(signal)
+        assert result2 is not None  # Should return the same result
+
+        # Should only call risk manager once
+        self.risk_manager.evaluate_signal.assert_called_once()
+
+        # Check metrics
+        metrics = router.get_queue_metrics()
+        assert metrics["duplicate_signals"] == 1
+
+    @pytest.mark.asyncio
+    async def test_expired_duplicate_signals_allowed(self):
+        """Test that expired duplicate signals are allowed."""
+        router = SignalRouter(
+            self.risk_manager,
+            self.task_manager,
+            enable_queue=False,  # Disable queue for this test to ensure synchronous processing
+            deduplication_window=1.0  # Very short window
+        )
+
+        signal = TradingSignal(
+            strategy_id="test",
+            symbol="BTC/USD",
+            signal_type=SignalType.ENTRY_LONG,
+            signal_strength=SignalStrength.WEAK,
+            order_type="market",
+            amount=Decimal("1.0"),
+            stop_loss=Decimal("49000"),
+            timestamp=int(time.time()),
+        )
+
+        # First signal
+        result1 = await router.process_signal(signal)
+        assert result1 is not None
+
+        # Clear active signals to simulate the signal being executed/cancelled
+        router.clear_signals()
+
+        # Wait for deduplication window to expire
+        await asyncio.sleep(1.1)
+
+        # Same signal should be processed again
+        result2 = await router.process_signal(signal)
+        assert result2 is not None
+
+        # Should call risk manager twice
+        assert self.risk_manager.evaluate_signal.call_count == 2
+
+
+
+    @pytest.mark.timeout(30)
+    @pytest.mark.asyncio
+    async def test_concurrent_signal_processing(self):
+        """Test concurrent signal processing with timeout to prevent hangs."""
+        router = SignalRouter(
+            self.risk_manager,
+            self.task_manager,
+            enable_queue=True,
+            worker_count=4,
+            max_queue_size=100
+        )
+
+        try:
+            # Create multiple signals
+            signals = []
+            for i in range(50):
+                signal = TradingSignal(
+                    strategy_id=f"test_{i}",
+                    symbol=f"BTC/USD_{i}",
+                    signal_type=SignalType.ENTRY_LONG,
+                    signal_strength=SignalStrength.WEAK,
+                    order_type="market",
+                    amount=Decimal("1.0"),
+                    stop_loss=Decimal("49000"),
+                    timestamp=int(time.time()) + i,
+                )
+                signals.append(signal)
+
+            # Process signals concurrently
+            tasks = [router.process_signal(signal) for signal in signals]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # All should succeed
+            successful_results = [r for r in results if not isinstance(r, Exception) and r is not None]
+            assert len(successful_results) == len(signals)
+
+            # Check metrics
+            metrics = router.get_queue_metrics()
+            assert metrics["processed_signals"] == len(signals)
+        finally:
+            # Clean up background tasks
+            await router.shutdown()
+
+    def test_queue_metrics(self):
+        """Test queue metrics collection."""
+        router = SignalRouter(
+            self.risk_manager,
+            self.task_manager,
+            enable_queue=True
+        )
+
+        metrics = router.get_queue_metrics()
+
+        required_keys = [
+            "queue_depth", "processed_signals", "duplicate_signals",
+            "processing_latency", "queue_full_rejects", "processing_errors",
+            "avg_processing_latency", "max_processing_latency", "min_processing_latency",
+            "current_queue_size", "active_workers", "idempotency_records"
+        ]
+
+        for key in required_keys:
+            assert key in metrics
+
+    @pytest.mark.asyncio
+    async def test_shutdown_cleans_up_tasks(self):
+        """Test that shutdown properly cleans up background tasks."""
+        router = SignalRouter(
+            self.risk_manager,
+            self.task_manager,
+            enable_queue=True,
+            worker_count=2
+        )
+
+        # Let tasks start
+        await asyncio.sleep(0.1)
+
+        # Shutdown
+        await router.shutdown()
+
+        # Check that tasks are cleaned up
+        assert len(router._queue_worker_tasks) == 0
+        assert len(router._processing_tasks) == 0
+        assert len(router._processed_signals) == 0
+
+
+class TestSignalRouterRaceConditions:
+    """Test SignalRouter race condition handling."""
+
+    def setup_method(self):
+        """Setup test fixtures."""
+        self.risk_manager = MagicMock()
+        self.risk_manager.evaluate_signal = AsyncMock(return_value=True)
+        self.risk_manager.validate_signal = MagicMock(return_value=True)
+        self.task_manager = MagicMock()
+
+        self.config_patcher = patch("core.signal_router.router.get_config")
+        self.mock_get_config = self.config_patcher.start()
+        self.mock_get_config.return_value = {
+            "predictive_models": {"enabled": False},
+            "ml": {"enabled": False},
+            "journal": {"enabled": False},
+        }
+
+    def teardown_method(self):
+        """Cleanup patches."""
+        self.config_patcher.stop()
+
+    @pytest.mark.timeout(30)
+    @pytest.mark.asyncio
+    async def test_concurrent_access_from_multiple_coroutines(self):
+        """Test concurrent access from multiple coroutines."""
+        router = SignalRouter(
+            self.risk_manager,
+            self.task_manager,
+            enable_queue=True,
+            worker_count=4
+        )
+
+        try:
+            async def process_signal(coro_id: int):
+                """Process a signal in a coroutine."""
+                signal = TradingSignal(
+                    strategy_id=f"coro_{coro_id}",
+                    symbol=f"BTC/USD_{coro_id}",
+                    signal_type=SignalType.ENTRY_LONG,
+                    signal_strength=SignalStrength.WEAK,
+                    order_type="market",
+                    amount=Decimal("1.0"),
+                    stop_loss=Decimal("49000"),
+                    timestamp=int(time.time()) + coro_id,
+                )
+                result = await router.process_signal(signal)
+                return result
+
+            # Create multiple concurrent tasks
+            tasks = [process_signal(i) for i in range(20)]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Should have processed signals without errors
+            successful_results = [r for r in results if not isinstance(r, Exception) and r is not None]
+            assert len(successful_results) == 20
+        finally:
+            # Clean up background tasks
+            await router.shutdown()
+
+    @pytest.mark.timeout(30)
+    @pytest.mark.asyncio
+    async def test_high_frequency_duplicate_signals(self):
+        """Test handling of high-frequency duplicate signals."""
+        router = SignalRouter(
+            self.risk_manager,
+            self.task_manager,
+            enable_queue=True,
+            deduplication_window=60.0  # 1 minute window
+        )
+
+        try:
+            signal = TradingSignal(
+                strategy_id="high_freq",
+                symbol="BTC/USD",
+                signal_type=SignalType.ENTRY_LONG,
+                signal_strength=SignalStrength.WEAK,
+                order_type="market",
+                amount=Decimal("1.0"),
+                stop_loss=Decimal("49000"),
+                timestamp=int(time.time()),
+            )
+
+            # Send duplicate signals sequentially to avoid overwhelming the queue
+            results = []
+            for _ in range(20):  # Reduced from 100 to 20
+                result = await router.process_signal(signal)
+                results.append(result)
+
+            # All should succeed
+            successful_results = [r for r in results if not isinstance(r, Exception) and r is not None]
+            assert len(successful_results) == 20
+
+            # But risk manager should only be called once
+            self.risk_manager.evaluate_signal.assert_called_once()
+
+            # Check duplicate count
+            metrics = router.get_queue_metrics()
+            assert metrics["duplicate_signals"] == 19  # First one + 19 duplicates
+        finally:
+            # Clean up background tasks
+            await router.shutdown()
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0009999275207519531,
+      "optimization_time": 0.0009992122650146484,
       "train_data_shape": [
         30,
         5
@@ -61,7 +61,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0009996891021728516,
+      "optimization_time": 0.0009989738464355469,
       "train_data_shape": [
         30,
         5
@@ -84,7 +84,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0009996891021728516,
+      "optimization_time": 0.0009989738464355469,
       "train_data_shape": [
         30,
         5
@@ -107,7 +107,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0019979476928710938,
+      "optimization_time": 0.0,
       "train_data_shape": [
         30,
         5
@@ -130,7 +130,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0,
+      "optimization_time": 0.000997781753540039,
       "train_data_shape": [
         30,
         5
@@ -153,7 +153,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0,
+      "optimization_time": 0.00099945068359375,
       "train_data_shape": [
         30,
         5
@@ -176,7 +176,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0,
+      "optimization_time": 0.0009984970092773438,
       "train_data_shape": [
         30,
         5
@@ -199,7 +199,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0,
+      "optimization_time": 0.0010175704956054688,
       "train_data_shape": [
         30,
         5
@@ -232,6 +232,6 @@
     "fitness_metric": "sharpe_ratio",
     "convergence_info": null
   },
-  "timestamp": "2025-10-01T13:58:44.062344",
-  "total_time": 0.030034542083740234
+  "timestamp": "2025-10-02T13:59:02.480660",
+  "total_time": 0.02868509292602539
 }

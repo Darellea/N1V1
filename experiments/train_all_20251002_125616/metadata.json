@@ -1,9 +1,15 @@
 {
-  "experiment_name": "integration_test",
-  "start_time": "2025-10-02T13:58:11.074180",
+  "experiment_name": "train_all_20251002_125616",
+  "start_time": "2025-10-02T12:56:16.212786",
   "status": "completed",
   "parameters": {
-    "random_seed": 777,
+    "data_file": "data.csv",
+    "symbol": null,
+    "min_samples": 100,
+    "verbose": false,
+    "config_file": "config.json",
+    "output_file": "results.json",
+    "random_seed": 42,
     "environment_snapshot": {
       "python_version": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
       "platform": "Windows-10-10.0.19042-SP0",
@@ -43,31 +49,77 @@
         "commit_hash": "b9be7dbe61e1145eeb8e3cc38b1ac7c5f4b017f9",
         "branch": "main",
         "remote_url": "https://github.com/Darellea/N1V1.git",
-        "status": "M anomalies.json\n M core/bot_engine.py\n M core/circuit_breaker.py\n M core/performance_monitor.py\n M core/signal_router/router.py\n M data/performance_baselines.json\n M experiments/integration_test/metadata.json\n M experiments/integration_test/parameters.json\n M experiments/integration_test/reproducibility_checklist.json\n M experiments/test_reproducibility/metadata.json\n M experiments/test_reproducibility/reproducibility_checklist.json\n M logs/anomalies/anomalies.json\n M monitoring/alerts.json\n M monitoring/drift_history.json\n M monitoring/performance_history.json\n M results/walk_forward/walk_forward_results.json\n M results/walk_forward/walk_forward_summary.json\n M tests/core/test_circuit_breaker.py\n M tests/core/test_signal_router.py\n?? experiments/train_all_20251002_125616/\n?? reports/metrics/metrics_test_strategy_20251002_124801.json\n?? reports/metrics/metrics_test_strategy_20251002_134858.json\n?? tests/core/test_async_metrics.py\n?? tests/core/test_bot_engine_memory.py"
+        "status": "M core/signal_router/router.py\n M data/performance_baselines.json\n M experiments/integration_test/metadata.json\n M experiments/integration_test/parameters.json\n M experiments/integration_test/reproducibility_checklist.json\n M experiments/test_reproducibility/metadata.json\n M experiments/test_reproducibility/reproducibility_checklist.json\n M logs/anomalies/anomalies.json\n M monitoring/alerts.json\n M monitoring/drift_history.json\n M monitoring/performance_history.json\n M tests/core/test_signal_router.py\n?? experiments/train_all_20251002_125616/\n?? reports/metrics/metrics_test_strategy_20251002_124801.json"
       },
       "hardware": {
         "cpu_count": 4,
         "cpu_count_logical": 4,
         "memory_total_gb": 15.83,
-        "memory_available_gb": 4.34
+        "memory_available_gb": 5.95
       }
     },
-    "model_config": {
-      "type": "test",
-      "params": {
-        "n_estimators": 100
-      }
+    "predictive_models_enabled": true,
+    "models_config": [
+      "price_predictor"
+    ]
+  },
+  "metrics": {
+    "data_preparation": {
+      "data_loading": "started",
+      "data_samples_loaded": 100,
+      "data_file": "data.csv",
+      "symbol": "all",
+      "data_preparation": "started",
+      "data_samples_prepared": 100,
+      "min_samples_required": 100
+    },
+    "training": {
+      "training": "started",
+      "training_duration_seconds": 0.0,
+      "training_status": "success"
+    },
+    "final": {
+      "total_duration_seconds": 0.0,
+      "data_samples": 100,
+      "status": "success",
+      "price_predictor_accuracy": 0.85
     }
   },
-  "metrics": {},
-  "artifacts": {},
-  "git_info": {},
+  "artifacts": {
+    "data": [
+      {
+        "name": "data.csv",
+        "path": "data.csv",
+        "logged_at": "2025-10-02T12:56:16.647761"
+      }
+    ],
+    "config": [
+      {
+        "name": "config.json",
+        "path": "experiments\\train_all_20251002_125616\\artifacts\\config.json",
+        "logged_at": "2025-10-02T12:56:16.647761"
+      }
+    ],
+    "results": [
+      {
+        "name": "results.json",
+        "path": "results.json",
+        "logged_at": "2025-10-02T12:56:16.657736"
+      }
+    ]
+  },
+  "git_info": {
+    "commit_hash": "b9be7dbe61e1145eeb8e3cc38b1ac7c5f4b017f9",
+    "branch": "main",
+    "remote_url": "https://github.com/Darellea/N1V1.git",
+    "status": "M core/signal_router/router.py\n M data/performance_baselines.json\n M experiments/integration_test/metadata.json\n M experiments/integration_test/parameters.json\n M experiments/integration_test/reproducibility_checklist.json\n M experiments/test_reproducibility/metadata.json\n M experiments/test_reproducibility/reproducibility_checklist.json\n M logs/anomalies/anomalies.json\n M monitoring/alerts.json\n M monitoring/drift_history.json\n M monitoring/performance_history.json\n M tests/core/test_signal_router.py\n?? experiments/train_all_20251002_125616/\n?? reports/metrics/metrics_test_strategy_20251002_124801.json"
+  },
   "system_info": {
     "python_version": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
     "platform": "win32"
   },
   "reproducibility": {
-    "random_seed": 777,
+    "random_seed": 42,
     "deterministic_mode": true,
     "libraries_with_seeds": [
       "python_random",
@@ -119,16 +171,16 @@
         "commit_hash": "b9be7dbe61e1145eeb8e3cc38b1ac7c5f4b017f9",
         "branch": "main",
         "remote_url": "https://github.com/Darellea/N1V1.git",
-        "status": "M anomalies.json\n M core/bot_engine.py\n M core/circuit_breaker.py\n M core/performance_monitor.py\n M core/signal_router/router.py\n M data/performance_baselines.json\n M experiments/integration_test/metadata.json\n M experiments/integration_test/parameters.json\n M experiments/integration_test/reproducibility_checklist.json\n M experiments/test_reproducibility/metadata.json\n M experiments/test_reproducibility/reproducibility_checklist.json\n M logs/anomalies/anomalies.json\n M monitoring/alerts.json\n M monitoring/drift_history.json\n M monitoring/performance_history.json\n M results/walk_forward/walk_forward_results.json\n M results/walk_forward/walk_forward_summary.json\n M tests/core/test_circuit_breaker.py\n M tests/core/test_signal_router.py\n?? experiments/train_all_20251002_125616/\n?? reports/metrics/metrics_test_strategy_20251002_124801.json\n?? reports/metrics/metrics_test_strategy_20251002_134858.json\n?? tests/core/test_async_metrics.py\n?? tests/core/test_bot_engine_memory.py"
+        "status": "M core/signal_router/router.py\n M data/performance_baselines.json\n M experiments/integration_test/metadata.json\n M experiments/integration_test/parameters.json\n M experiments/integration_test/reproducibility_checklist.json\n M experiments/test_reproducibility/metadata.json\n M experiments/test_reproducibility/reproducibility_checklist.json\n M logs/anomalies/anomalies.json\n M monitoring/alerts.json\n M monitoring/drift_history.json\n M monitoring/performance_history.json\n M tests/core/test_signal_router.py\n?? experiments/train_all_20251002_125616/\n?? reports/metrics/metrics_test_strategy_20251002_124801.json"
       },
       "hardware": {
         "cpu_count": 4,
         "cpu_count_logical": 4,
         "memory_total_gb": 15.83,
-        "memory_available_gb": 4.34
+        "memory_available_gb": 5.95
       }
     },
-    "git_commit": "unknown",
+    "git_commit": "b9be7dbe61e1145eeb8e3cc38b1ac7c5f4b017f9",
     "platform_info": {
       "system": "Windows",
       "release": "10",
@@ -137,6 +189,6 @@
       "processor": "Intel64 Family 6 Model 60 Stepping 3, GenuineIntel"
     }
   },
-  "end_time": "2025-10-02T13:58:11.278164",
-  "duration_seconds": 0.203984
+  "end_time": "2025-10-02T12:56:16.662741",
+  "duration_seconds": 0.449955
 }
