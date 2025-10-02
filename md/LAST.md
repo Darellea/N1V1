@@ -1,5 +1,3 @@
-Here are the updated prompts with the new "update tests/ files related to the patch" detail added to each one:
-
 ---
 
 **Prompt 1: Fix Race Condition in Signal Routing**
@@ -10,6 +8,7 @@ Here are the updated prompts with the new "update tests/ files related to the pa
 **Task / Objective:**
 - Implement a message queue with idempotency checks in the signal routing system to prevent race conditions and ensure exactly-once processing.
 - **Update tests/ files related to the patch**: Add comprehensive tests for race condition scenarios, duplicate signal detection, and message queue behavior in `tests/core/test_signal_router.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must maintain backward compatibility with existing signal handlers
@@ -29,14 +28,17 @@ Here are the updated prompts with the new "update tests/ files related to the pa
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_duplicate_signal_detection(self):
-    signal = TradingSignal(id="test_123", symbol="BTC/USDT")
-    # Send same signal twice
-    await router.route_signal(signal)
-    await router.route_signal(signal)
-    # Verify only processed once
-    assert processor.call_count == 1
+# Test case to add with timeout:
+@pytest.mark.timeout(30)
+def test_concurrent_signal_processing(self):
+    router = SignalRouter()
+    signals = [TradingSignal(id=f"test_{i}") for i in range(1000)]
+    
+    # Process signals concurrently
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(router.route_signal, signal) for signal in signals]
+        for future in as_completed(futures, timeout=10):
+            future.result()  # Should not hang
 ```
 
 ---
@@ -49,6 +51,7 @@ def test_duplicate_signal_detection(self):
 **Task / Objective:**
 - Add mandatory cooldown period enforcement to the circuit breaker system with exponential backoff and health checks.
 - **Update tests/ files related to the patch**: Add tests for cooldown period validation, exponential backoff behavior, and circuit state transitions in `tests/core/test_circuit_breaker.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must integrate with existing circuit breaker patterns
@@ -68,13 +71,15 @@ def test_duplicate_signal_detection(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_circuit_breaker_cooldown_respect(self):
-    breaker = CircuitBreaker(cooldown_period=60)
+# Test case to add with timeout:
+@pytest.mark.timeout(10)
+def test_circuit_breaker_cooldown_timeout(self):
+    breaker = CircuitBreaker(cooldown_period=5)
     breaker.trip()
-    # Attempt execution during cooldown
+    
+    # Should timeout quickly, not wait full cooldown
     with pytest.raises(CircuitBreakerError):
-        breaker.execute(lambda: "test")
+        breaker.execute_with_timeout(lambda: "test", timeout=1.0)
 ```
 
 ---
@@ -87,6 +92,7 @@ def test_circuit_breaker_cooldown_respect(self):
 **Task / Objective:**
 - Implement LRU cache with size limits and memory monitoring for market data caching in the bot engine.
 - **Update tests/ files related to the patch**: Add memory leak detection tests, cache eviction tests, and performance benchmarks in `tests/core/test_bot_engine_memory.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must maintain real-time data access performance
@@ -106,13 +112,21 @@ def test_circuit_breaker_cooldown_respect(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_cache_memory_limits(self):
-    cache = LRUCache(maxsize=1000)
-    # Add data beyond limit
-    for i in range(2000):
-        cache[f"key_{i}"] = "x" * 100
-    assert len(cache) <= 1000  # Should respect size limit
+# Test case to add with timeout:
+@pytest.mark.timeout(15)
+def test_cache_performance_with_timeout(self):
+    cache = LRUCache(maxsize=10000)
+    
+    # Large batch operations with timeout
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = []
+        for i in range(10000):
+            future = executor.submit(cache.set, f"key_{i}", f"value_{i}")
+            futures.append(future)
+        
+        # Wait with timeout to prevent hangs
+        for future in as_completed(futures, timeout=10):
+            future.result()
 ```
 
 ---
@@ -125,6 +139,7 @@ def test_cache_memory_limits(self):
 **Task / Objective:**
 - Convert blocking metrics collection to async patterns using asyncio and proper async libraries.
 - **Update tests/ files related to the patch**: Add async metric collection tests, concurrency tests, and performance comparison tests in `tests/core/test_async_metrics.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must maintain all existing metric types and aggregations
@@ -144,14 +159,22 @@ def test_cache_memory_limits(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
+# Test case to add with timeout:
 @pytest.mark.asyncio
-async def test_async_metrics_concurrent_collection(self):
+@pytest.mark.timeout(30)
+async def test_async_metrics_timeout_protection(self):
     monitor = AsyncPerformanceMonitor()
-    # Collect metrics from multiple coroutines simultaneously
-    tasks = [monitor.collect_metrics() for _ in range(100)]
-    results = await asyncio.gather(*tasks)
-    assert all(r is not None for r in results)
+    
+    # Create hanging collector
+    async def hanging_collector():
+        await asyncio.sleep(60)  # Would hang without timeout
+        return {"metric": 1}
+    
+    monitor.add_collector(hanging_collector)
+    
+    # Should timeout, not hang
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(monitor.collect_metrics(), timeout=5.0)
 ```
 
 ---
@@ -164,6 +187,7 @@ async def test_async_metrics_concurrent_collection(self):
 **Task / Objective:**
 - Implement atomic operations and proper locking for circuit breaker state management.
 - **Update tests/ files related to the patch**: Add thread safety tests, race condition detection tests, and concurrent access tests in `tests/core/test_thread_safe_circuit_breaker.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must maintain existing circuit breaker logic and thresholds
@@ -183,18 +207,18 @@ async def test_async_metrics_concurrent_collection(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_circuit_breaker_thread_safety(self):
-    breaker = ThreadSafeCircuitBreaker()
-    def worker():
-        for _ in range(1000):
-            breaker.trip()
-            breaker.reset()
+# Test case to add with timeout:
+@pytest.mark.timeout(10)
+def test_lock_timeout_prevention(self):
+    breaker = ThreadSafeCircuitBreaker(lock_timeout=1.0)
     
-    threads = [threading.Thread(target=worker) for _ in range(10)]
-    for t in threads: t.start()
-    for t in threads: t.join()
-    # Should not have race conditions or corrupted state
+    # Acquire lock in one thread
+    with breaker._state_lock:
+        # Another thread should timeout, not deadlock
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(breaker.trip)
+            with pytest.raises(TimeoutError):
+                future.result(timeout=2.0)
 ```
 
 ---
@@ -207,6 +231,7 @@ def test_circuit_breaker_thread_safety(self):
 **Task / Objective:**
 - Implement dynamic slippage models based on market liquidity, volatility, and order size for accurate position sizing.
 - **Update tests/ files related to the patch**: Add slippage model validation tests, liquidity scenario tests, and accuracy benchmarks in `tests/risk/test_slippage_models.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must integrate with existing position sizing algorithms
@@ -226,15 +251,21 @@ def test_circuit_breaker_thread_safety(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_slippage_impact_on_position_sizing(self):
+# Test case to add with timeout:
+@pytest.mark.timeout(15)
+def test_slippage_calculation_performance(self):
     risk_mgr = RiskManager()
-    # Test with different market conditions
-    size_without_slippage = risk_mgr.calculate_position_size(10000, 0.02)
-    size_with_slippage = risk_mgr.calculate_position_size_with_slippage(
-        10000, 0.02, liquidity="low"
-    )
-    assert size_with_slippage < size_without_slippage
+    
+    # Test with large number of calculations
+    start_time = time.time()
+    for i in range(10000):
+        size = risk_mgr.calculate_position_size_with_slippage(
+            10000, 0.02, market_data=generate_market_data()
+        )
+        assert size > 0
+    
+    # Should complete within timeout
+    assert time.time() - start_time < 10.0
 ```
 
 ---
@@ -247,6 +278,7 @@ def test_slippage_impact_on_position_sizing(self):
 **Task / Objective:**
 - Implement Kalman filtering and adaptive thresholding for more accurate anomaly detection in market data.
 - **Update tests/ files related to the patch**: Add Kalman filter accuracy tests, false positive reduction tests, and regime change detection tests in `tests/ml/test_kalman_anomaly_detection.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must maintain real-time detection performance
@@ -266,13 +298,23 @@ def test_slippage_impact_on_position_sizing(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_kalman_filter_false_positive_reduction(self):
+# Test case to add with timeout:
+@pytest.mark.timeout(20)
+def test_kalman_filter_real_time_performance(self):
     detector = KalmanAnomalyDetector()
-    normal_data = generate_normal_market_data()
-    # Should not flag normal volatility as anomaly
-    anomalies = detector.detect(normal_data)
-    assert len(anomalies) == 0  # No false positives
+    
+    # Stream large dataset with timeout protection
+    data_stream = generate_realtime_data_stream(count=10000)
+    
+    start_time = time.time()
+    anomaly_count = 0
+    for data_point in data_stream:
+        if time.time() - start_time > 15:  # Prevent infinite loops
+            break
+        if detector.detect_anomaly(data_point):
+            anomaly_count += 1
+    
+    assert anomaly_count < 100  # Should have reasonable false positive rate
 ```
 
 ---
@@ -285,6 +327,7 @@ def test_kalman_filter_false_positive_reduction(self):
 **Task / Objective:**
 - Implement comprehensive partial fill reconciliation with retry logic and fill validation.
 - **Update tests/ files related to the patch**: Add partial fill scenario tests, reconciliation logic tests, and exchange compatibility tests in `tests/core/test_partial_fill_reconciliation.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must handle all major exchange fill patterns
@@ -304,13 +347,23 @@ def test_kalman_filter_false_positive_reduction(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_partial_fill_reconciliation(self):
+# Test case to add with timeout:
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_partial_fill_timeout_handling(self):
     order_mgr = OrderManager()
-    partial_fill = Fill(quantity=0.5, order_id="test_123")
-    # Process partial fill and verify reconciliation
-    await order_mgr.process_fill(partial_fill)
-    assert order_mgr.get_pending_quantity("test_123") == 0.5
+    
+    # Mock exchange that hangs on fill reporting
+    async def hanging_fill_report():
+        await asyncio.sleep(60)  # Would hang without timeout
+        return Fill(quantity=0.5, order_id="test")
+    
+    # Should timeout gracefully
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(
+            order_mgr.process_fill_report(hanging_fill_report), 
+            timeout=5.0
+        )
 ```
 
 ---
@@ -323,6 +376,7 @@ def test_partial_fill_reconciliation(self):
 **Task / Objective:**
 - Implement gradual policy transitions with smooth interpolation between policy states.
 - **Update tests/ files related to the patch**: Add policy transition tests, interpolation accuracy tests, and emergency override tests in `tests/core/test_gradual_policy_transitions.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must maintain policy consistency during transitions
@@ -342,16 +396,26 @@ def test_partial_fill_reconciliation(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_gradual_policy_transition(self):
+# Test case to add with timeout:
+@pytest.mark.timeout(10)
+def test_policy_transition_timeout_safety(self):
     policy_mgr = AdaptivePolicyManager()
-    old_policy = RiskPolicy(max_position=1000)
-    new_policy = RiskPolicy(max_position=2000)
     
-    transition = policy_mgr.create_transition(old_policy, new_policy, duration=60)
-    # Verify intermediate states during transition
-    intermediate = transition.get_state_at(30)  # 30 seconds in
-    assert 1000 < intermediate.max_position < 2000
+    # Create transition that would normally take too long
+    long_transition = PolicyTransition(
+        from_policy=RiskPolicy(max_position=1000),
+        to_policy=RiskPolicy(max_position=2000),
+        duration=300  # 5 minutes
+    )
+    
+    # Should allow interruption and timeout
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(policy_mgr.execute_transition, long_transition)
+        time.sleep(1)  # Let it start
+        future.cancel()  # Should handle cancellation gracefully
+        
+        with pytest.raises((CancelledError, TimeoutError)):
+            future.result(timeout=2.0)
 ```
 
 ---
@@ -364,6 +428,7 @@ def test_gradual_policy_transition(self):
 **Task / Objective:**
 - Implement retry mechanism with exponential backoff, jitter, and circuit breaking for all external API calls.
 - **Update tests/ files related to the patch**: Add retry behavior tests, rate limit handling tests, and circuit breaker integration tests in `tests/integration/test_api_retry_mechanisms.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must respect API rate limits and terms of service
@@ -383,20 +448,25 @@ def test_gradual_policy_transition(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_exponential_backoff_retry(self):
-    fetcher = DataFetcher(retry_strategy=ExponentialBackoff(max_retries=3))
-    mock_session = Mock()
-    mock_session.get.side_effect = [RateLimitError, RateLimitError, "success"]
+# Test case to add with timeout:
+@pytest.mark.timeout(15)
+def test_retry_timeout_prevention(self):
+    fetcher = DataFetcher(
+        retry_strategy=ExponentialBackoff(max_retries=10, max_wait=60)
+    )
     
-    result = await fetcher.fetch_data("test_endpoint")
-    assert result == "success"
-    assert mock_session.get.call_count == 3
+    # Mock API that always fails but would cause long retry cycle
+    mock_session = Mock()
+    mock_session.get.side_effect = RateLimitError("Too many requests")
+    
+    # Should timeout before completing all retries
+    start_time = time.time()
+    with pytest.raises((TimeoutError, MaxRetriesExceeded)):
+        with timeout(5.0):  # Custom timeout context
+            fetcher.fetch_data_with_retry("test_endpoint", session=mock_session)
+    
+    assert time.time() - start_time < 6.0  # Should respect timeout
 ```
-
----
-
-Here are the updated prompts with the "update tests/ files related to the patch" detail added to each one:
 
 ---
 
@@ -408,6 +478,7 @@ Here are the updated prompts with the "update tests/ files related to the patch"
 **Task / Objective:**
 - Implement streaming data processing with chunked loading and memory-efficient data structures for historical data operations.
 - **Update tests/ files related to the patch**: Add memory usage monitoring tests, chunked processing validation, and large dataset handling tests in `tests/data/test_memory_efficient_loading.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must maintain data integrity and ordering
@@ -427,14 +498,20 @@ Here are the updated prompts with the "update tests/ files related to the patch"
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_chunked_loading_memory_efficiency(self):
+# Test case to add with timeout:
+@pytest.mark.timeout(30)
+def test_large_dataset_loading_with_timeout(self):
     loader = HistoricalDataLoader(max_memory_mb=100)
-    large_dataset = generate_large_dataset(size_gb=5)
-    # Should process without exceeding memory limits
-    chunks = list(loader.load_chunked(large_dataset))
-    assert len(chunks) > 0
-    assert get_memory_usage() < 100 * 1024 * 1024  # Under 100MB
+    # Generate dataset that would normally cause memory issues
+    large_dataset = generate_large_dataset(size_gb=10)
+    
+    # Process with timeout protection
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        future = executor.submit(
+            lambda: list(loader.load_chunked(large_dataset, chunk_size=1000))
+        )
+        chunks = future.result(timeout=25)  # Should complete within timeout
+        assert len(chunks) > 0
 ```
 
 ---
@@ -447,6 +524,7 @@ def test_chunked_loading_memory_efficiency(self):
 **Task / Objective:**
 - Implement distributed locking mechanism for dataset version operations to prevent concurrent modification conflicts.
 - **Update tests/ files related to the patch**: Add concurrent update tests, lock timeout tests, and deadlock detection tests in `tests/data/test_dataset_versioning_locks.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must support multiple concurrent readers
@@ -466,21 +544,19 @@ def test_chunked_loading_memory_efficiency(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_concurrent_version_updates_prevented(self):
-    version_mgr = DatasetVersionManager()
-    dataset_id = "test_dataset"
+# Test case to add with timeout:
+@pytest.mark.timeout(15)
+def test_lock_timeout_prevention(self):
+    version_mgr = DatasetVersionManager(lock_timeout=5)
     
-    def update_version():
-        version_mgr.update_version(dataset_id, "v2")
-    
-    # Attempt concurrent updates
-    threads = [threading.Thread(target=update_version) for _ in range(5)]
-    for t in threads: t.start()
-    for t in threads: t.join()
-    
-    # Only one update should succeed
-    assert version_mgr.get_version(dataset_id) in ["v1", "v2"]
+    # Acquire lock and try to acquire again (should timeout)
+    with version_mgr.acquire_lock("test_dataset"):
+        # Second attempt should timeout, not hang
+        start_time = time.time()
+        with pytest.raises(LockTimeoutError):
+            with version_mgr.acquire_lock("test_dataset", timeout=2):
+                pass
+        assert time.time() - start_time < 3.0  # Should respect timeout
 ```
 
 ---
@@ -493,6 +569,7 @@ def test_concurrent_version_updates_prevented(self):
 **Task / Objective:**
 - Implement real-time performance tracking with streaming metrics and immediate drift alerts for ML models.
 - **Update tests/ files related to the patch**: Add real-time drift detection tests, streaming metrics accuracy tests, and alert timing tests in `tests/ml/test_realtime_model_monitoring.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must maintain model inference performance
@@ -512,15 +589,28 @@ def test_concurrent_version_updates_prevented(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_realtime_drift_detection_latency(self):
+# Test case to add with timeout:
+@pytest.mark.timeout(20)
+def test_streaming_metrics_performance(self):
     monitor = RealTimeModelMonitor()
+    
+    # Process high-frequency predictions with timeout
     start_time = time.time()
-    # Simulate rapid model degradation
-    for i in range(100):
-        monitor.record_prediction(features=[i], prediction=0.5, actual=0.1)
-    detection_time = monitor.last_drift_alert_time
-    assert detection_time - start_time < 5.0  # Should detect within 5 seconds
+    prediction_count = 0
+    
+    while time.time() - start_time < 15:  # Prevent infinite loops
+        monitor.record_prediction(
+            features=[random.random() for _ in range(10)],
+            prediction=random.random(),
+            actual=random.random()
+        )
+        prediction_count += 1
+        if prediction_count > 10000:  # Safety limit
+            break
+    
+    # Should process efficiently without hanging
+    assert prediction_count > 1000
+    assert monitor.get_metrics() is not None
 ```
 
 ---
@@ -533,6 +623,7 @@ def test_realtime_drift_detection_latency(self):
 **Task / Objective:**
 - Implement strict random seed control and deterministic execution for all optimization algorithms.
 - **Update tests/ files related to the patch**: Add reproducibility tests, seed isolation tests, and deterministic benchmark tests in `tests/optimization/test_deterministic_optimization.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must maintain optimization algorithm effectiveness
@@ -552,14 +643,24 @@ def test_realtime_drift_detection_latency(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_optimization_reproducibility(self):
-    optimizer = GeneticOptimizer()
-    # Run with same seed should produce identical results
-    result1 = optimizer.optimize(seed=42)
-    result2 = optimizer.optimize(seed=42)
-    assert result1.parameters == result2.parameters
-    assert result1.fitness == result2.fitness
+# Test case to add with timeout:
+@pytest.mark.timeout(60)
+def test_optimization_timeout_safety(self):
+    optimizer = GeneticOptimizer(
+        population_size=1000,
+        generations=1000  # Large optimization that could hang
+    )
+    
+    # Should complete within timeout or fail gracefully
+    try:
+        result = optimizer.optimize(
+            objective_function=complex_calculation,
+            timeout=45  # Internal timeout
+        )
+        assert result is not None
+    except TimeoutError:
+        # Should raise timeout rather than hang indefinitely
+        pass
 ```
 
 ---
@@ -572,6 +673,7 @@ def test_optimization_reproducibility(self):
 **Task / Objective:**
 - Vectorize all feature calculations using NumPy/Pandas operations and eliminate Python loops for performance gains.
 - **Update tests/ files related to the patch**: Add performance benchmark tests, numerical accuracy tests, and edge case handling tests in `tests/features/test_vectorized_operations.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must maintain exact numerical accuracy
@@ -591,22 +693,21 @@ def test_optimization_reproducibility(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_vectorized_performance_improvement(self):
-    feature_calc = FeatureCalculator()
-    large_data = generate_large_price_series(100000)
+# Test case to add with timeout:
+@pytest.mark.timeout(30)
+def test_vectorized_large_dataset_performance(self):
+    calculator = VectorizedFeatureCalculator()
     
-    # Time vectorized vs loop-based
-    start = time.time()
-    vectorized_result = feature_calc.calculate_rsi_vectorized(large_data)
-    vectorized_time = time.time() - start
+    # Large dataset that would timeout with loops
+    large_prices = np.random.random(1000000) * 1000  # 1M data points
     
-    start = time.time()
-    loop_result = feature_calc.calculate_rsi_loop(large_data)
-    loop_time = time.time() - start
+    start_time = time.time()
+    features = calculator.calculate_all_features(large_prices)
+    processing_time = time.time() - start_time
     
-    assert vectorized_time < loop_time / 10  # 10x speedup
-    assert np.allclose(vectorized_result, loop_result)  # Same results
+    # Should complete within timeout and be faster than threshold
+    assert processing_time < 10.0
+    assert len(features) == len(large_prices)
 ```
 
 ---
@@ -619,6 +720,7 @@ def test_vectorized_performance_improvement(self):
 **Task / Objective:**
 - Implement multi-stage order validation pipeline with pre-trade checks, risk validation, and exchange compatibility verification.
 - **Update tests/ files related to the patch**: Add validation stage tests, exchange-specific rule tests, and latency measurement tests in `tests/orders/test_comprehensive_validation.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must maintain low latency for order execution
@@ -638,16 +740,27 @@ def test_vectorized_performance_improvement(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_validation_pipeline_stages(self):
+# Test case to add with timeout:
+@pytest.mark.timeout(10)
+def test_validation_pipeline_performance(self):
     validator = OrderValidationPipeline()
-    invalid_order = Order(symbol="BTC/USDT", quantity=0)  # Invalid quantity
     
-    with pytest.raises(ValidationError) as exc_info:
-        validator.validate(invalid_order)
+    # Test with many orders to ensure no performance degradation
+    orders = [generate_valid_order() for _ in range(1000)]
     
-    assert "quantity" in str(exc_info.value).lower()
-    assert validator.get_failed_stages() == ["basic_syntax"]
+    start_time = time.time()
+    results = []
+    for order in orders:
+        try:
+            result = validator.validate(order)
+            results.append(result)
+        except ValidationError:
+            results.append(False)
+    
+    processing_time = time.time() - start_time
+    # Should validate 1000 orders within timeout
+    assert processing_time < 5.0
+    assert len(results) == 1000
 ```
 
 ---
@@ -660,6 +773,7 @@ def test_validation_pipeline_stages(self):
 **Task / Objective:**
 - Implement distributed circuit breaker coordination with consensus and state synchronization across all framework instances.
 - **Update tests/ files related to the patch**: Add distributed state sync tests, network partition tests, and consensus algorithm tests in `tests/distributed/test_circuit_breaker_coordination.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must maintain circuit breaker responsiveness
@@ -679,15 +793,20 @@ def test_validation_pipeline_stages(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_distributed_circuit_breaker_consensus(self):
-    breakers = [DistributedCircuitBreaker(node_id=i) for i in range(3)]
-    # One breaker trips - others should sync
-    breakers[0].trip()
+# Test case to add with timeout:
+@pytest.mark.timeout(20)
+def test_distributed_consensus_timeout(self):
+    nodes = [DistributedCircuitBreaker(node_id=i) for i in range(5)]
     
-    # Wait for state propagation
-    time.sleep(0.1)
-    assert all(b.state == "open" for b in breakers)
+    # Simulate network partition - some nodes unreachable
+    with patch.object(nodes[2], 'broadcast_state', side_effect=NetworkError):
+        nodes[0].trip()
+        
+        # Should reach consensus within timeout despite partition
+        wait_until(lambda: all(n.state == "open" for n in [nodes[0], nodes[1], nodes[3], nodes[4]]),
+                  timeout=10.0)
+        
+        assert nodes[2].state == "closed"  # Partitioned node remains unchanged
 ```
 
 ---
@@ -700,6 +819,7 @@ def test_distributed_circuit_breaker_consensus(self):
 **Task / Objective:**
 - Implement hard memory limits with proactive monitoring and graceful degradation when limits are approached.
 - **Update tests/ files related to the patch**: Add memory limit enforcement tests, graceful degradation tests, and emergency cleanup tests in `tests/system/test_memory_limits.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must maintain system functionality under memory pressure
@@ -719,20 +839,21 @@ def test_distributed_circuit_breaker_consensus(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_memory_limit_enforcement(self):
-    memory_guard = MemoryGuard(limit_mb=50)
-    large_data = "x" * (40 * 1024 * 1024)  # 40MB
+# Test case to add with timeout:
+@pytest.mark.timeout(15)
+def test_memory_cleanup_timeout(self):
+    memory_manager = MemoryManager(limit_mb=50)
     
-    with memory_guard:
-        # This should work
-        processed = process_data(large_data)
+    # Allocate memory then trigger cleanup
+    large_objects = [bytearray(10 * 1024 * 1024) for _ in range(10)]  # 100MB total
     
-    # Attempt to exceed limit
-    with pytest.raises(MemoryLimitExceeded):
-        with memory_guard:
-            huge_data = "x" * (60 * 1024 * 1024)  # 60MB
-            process_data(huge_data)
+    # Cleanup should complete within timeout
+    start_time = time.time()
+    memory_manager.force_cleanup(timeout=10.0)
+    cleanup_time = time.time() - start_time
+    
+    assert cleanup_time < 11.0  # Should respect timeout
+    assert memory_manager.get_memory_usage() < 50 * 1024 * 1024
 ```
 
 ---
@@ -745,6 +866,7 @@ def test_memory_limit_enforcement(self):
 **Task / Objective:**
 - Implement systematic error recovery with state restoration, cleanup, and resumption capabilities for all major components.
 - **Update tests/ files related to the patch**: Add recovery procedure tests, state restoration tests, and failure scenario tests in `tests/system/test_error_recovery.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must maintain data consistency during recovery
@@ -764,18 +886,25 @@ def test_memory_limit_enforcement(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_automated_recovery_after_crash(self):
-    trading_engine = TradingEngine()
-    # Simulate crash during trade execution
-    with patch.object(trading_engine, '_execute', side_effect=RuntimeError("Crash")):
-        with pytest.raises(RuntimeError):
-            await trading_engine.execute_trade(test_signal)
+# Test case to add with timeout:
+@pytest.mark.timeout(30)
+def test_recovery_timeout_safety(self):
+    recovery_manager = RecoveryManager()
     
-    # System should recover automatically
-    recovery_success = await trading_engine.recovery_manager.recover()
-    assert recovery_success
-    assert trading_engine.state == "ready"
+    # Simulate recovery process that could hang
+    async def hanging_recovery():
+        await asyncio.sleep(60)  # Would hang without timeout
+        return True
+    
+    # Should timeout gracefully
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(
+            recovery_manager.execute_recovery_procedure(hanging_recovery),
+            timeout=5.0
+        )
+    
+    # System should be in safe state after timeout
+    assert recovery_manager.state == "safe"
 ```
 
 ---
@@ -788,8 +917,9 @@ def test_automated_recovery_after_crash(self):
 **Task / Objective:**
 - Implement idempotent message processing with deduplication, exactly-once semantics, and idempotency keys for all critical messages.
 - **Update tests/ files related to the patch**: Add duplicate detection tests, idempotency guarantee tests, and message replay tests in `tests/messaging/test_idempotent_processing.py`.
+- **and all the updated tests must passed. use timeout to prevent hangs**
 
-**Constraints & Rules:**
+**Constraints / Rules:**
 - Must maintain message processing performance
 - Cannot lose legitimate messages
 - Support configurable deduplication windows
@@ -799,7 +929,7 @@ def test_automated_recovery_after_crash(self):
 - **Input:** Current non-idempotent message processing
 - **Output:** Idempotent message processing system + updated test files
 
-**Edge Cases & Additional Conditions:**
+**Edge Cases / Additional Conditions:**
 - Handle message replay attacks
 - Support idempotency key generation and validation
 - Provide message processing idempotency guarantees
@@ -807,23 +937,29 @@ def test_automated_recovery_after_crash(self):
 
 **Examples / Snippets:**
 ```python
-# Test case to add:
-def test_exactly_once_processing_guarantee(self):
+# Test case to add with timeout:
+@pytest.mark.timeout(15)
+def test_duplicate_detection_performance(self):
     processor = IdempotentMessageProcessor()
-    message = TradingSignal(id="test_123", symbol="BTC/USDT")
     
-    # Process same message multiple times
-    result1 = await processor.process(message)
-    result2 = await processor.process(message)
-    result3 = await processor.process(message)
+    # Process many messages with duplicates to test performance
+    messages = []
+    for i in range(1000):
+        msg = TradingSignal(id=f"msg_{i % 100}")  # Create duplicates
+        messages.append(msg)
     
-    # Should only execute once
-    assert result1.executed
-    assert not result2.executed  # Duplicate detected
-    assert not result3.executed  # Duplicate detected
-    assert processor.get_duplicate_count() == 2
+    start_time = time.time()
+    results = []
+    for msg in messages:
+        result = asyncio.run(processor.process(msg))
+        results.append(result)
+    
+    processing_time = time.time() - start_time
+    
+    # Should process efficiently within timeout
+    assert processing_time < 10.0
+    # Verify correct duplicate detection
+    assert sum(1 for r in results if r.executed) == 100  # Only 100 unique messages
 ```
 
 ---
-
-All prompts now include specific test file update requirements, ensuring comprehensive test coverage for each critical patch while maintaining the framework's reliability and performance standards.
