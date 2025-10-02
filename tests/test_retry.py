@@ -9,7 +9,13 @@ import time
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from core.retry import retry_call, retry_call_sync, RetryConfig, get_global_retry_config, update_global_retry_config
+from core.retry import (
+    retry_call,
+    retry_call_sync,
+    RetryConfig,
+    get_global_retry_config,
+    update_global_retry_config,
+)
 from core.api_protection import APICircuitBreaker, CircuitOpenError
 from core.idempotency import RetryNotAllowedError
 
@@ -41,7 +47,7 @@ class TestRetryCall:
             failing_function,
             max_attempts=3,
             base_delay=0.01,  # Very short delay for test
-            circuit_breaker=circuit_breaker
+            circuit_breaker=circuit_breaker,
         )
         elapsed = time.time() - start_time
 
@@ -50,16 +56,21 @@ class TestRetryCall:
         assert elapsed >= 0.02  # Should have delays between retries
 
     @pytest.mark.asyncio
-    async def test_side_effect_function_without_idempotency_raises_error(self, circuit_breaker):
+    async def test_side_effect_function_without_idempotency_raises_error(
+        self, circuit_breaker
+    ):
         """Test that side-effect function without idempotency_key raises RetryNotAllowedError."""
+
         async def side_effect_function():
             return "success"
 
-        with pytest.raises(RetryNotAllowedError, match="Retry not allowed.*without idempotency_key"):
+        with pytest.raises(
+            RetryNotAllowedError, match="Retry not allowed.*without idempotency_key"
+        ):
             await retry_call(
                 side_effect_function,
                 is_side_effect=True,
-                circuit_breaker=circuit_breaker
+                circuit_breaker=circuit_breaker,
             )
 
     @pytest.mark.asyncio
@@ -71,10 +82,7 @@ class TestRetryCall:
             raise ValueError("Should not be called")
 
         with pytest.raises(CircuitOpenError, match="Circuit is open"):
-            await retry_call(
-                failing_function,
-                circuit_breaker=circuit_breaker
-            )
+            await retry_call(failing_function, circuit_breaker=circuit_breaker)
 
     @pytest.mark.asyncio
     async def test_exponential_backoff_with_jitter(self):
@@ -99,14 +107,13 @@ class TestRetryCall:
     @pytest.mark.asyncio
     async def test_sync_function_wrapped_in_thread_pool(self):
         """Test that sync functions are properly wrapped in thread pool."""
+
         def sync_function(x, y):
             time.sleep(0.01)  # Blocking sleep
             return x + y
 
         result = await retry_call_sync(
-            sync_function,
-            5, 3,
-            max_attempts=1  # No retries for this test
+            sync_function, 5, 3, max_attempts=1  # No retries for this test
         )
 
         assert result == 8
@@ -127,11 +134,9 @@ class TestRetryCall:
         original_config = get_global_retry_config()
 
         # Update config
-        update_global_retry_config({
-            "max_attempts": 5,
-            "base_delay": 1.0,
-            "jitter": 0.2
-        })
+        update_global_retry_config(
+            {"max_attempts": 5, "base_delay": 1.0, "jitter": 0.2}
+        )
 
         updated_config = get_global_retry_config()
         assert updated_config.max_attempts == 5
@@ -140,20 +145,24 @@ class TestRetryCall:
         assert updated_config.max_delay == 30.0  # Unchanged
 
         # Reset to original
-        update_global_retry_config({
-            "max_attempts": original_config.max_attempts,
-            "base_delay": original_config.base_delay,
-            "jitter": original_config.jitter
-        })
+        update_global_retry_config(
+            {
+                "max_attempts": original_config.max_attempts,
+                "base_delay": original_config.base_delay,
+                "jitter": original_config.jitter,
+            }
+        )
 
     @pytest.mark.asyncio
     async def test_uses_global_config_when_params_none(self):
         """Test that global config is used when parameters are None."""
         # Update global config
-        update_global_retry_config({
-            "max_attempts": 2,
-            "base_delay": 0.01,
-        })
+        update_global_retry_config(
+            {
+                "max_attempts": 2,
+                "base_delay": 0.01,
+            }
+        )
 
         try:
             call_count = 0
@@ -170,19 +179,23 @@ class TestRetryCall:
 
         finally:
             # Reset global config
-            update_global_retry_config({
-                "max_attempts": 3,
-                "base_delay": 0.5,
-            })
+            update_global_retry_config(
+                {
+                    "max_attempts": 3,
+                    "base_delay": 0.5,
+                }
+            )
 
     @pytest.mark.asyncio
     async def test_explicit_params_override_global_config(self):
         """Test that explicit parameters override global config."""
         # Set global config
-        update_global_retry_config({
-            "max_attempts": 5,
-            "base_delay": 1.0,
-        })
+        update_global_retry_config(
+            {
+                "max_attempts": 5,
+                "base_delay": 1.0,
+            }
+        )
 
         try:
             call_count = 0
@@ -194,19 +207,19 @@ class TestRetryCall:
 
             with pytest.raises(ValueError):
                 await retry_call(
-                    failing_function,
-                    max_attempts=2,  # Override global
-                    base_delay=0.01
+                    failing_function, max_attempts=2, base_delay=0.01  # Override global
                 )
 
             assert call_count == 2  # Should use explicit max_attempts=2
 
         finally:
             # Reset global config
-            update_global_retry_config({
-                "max_attempts": 3,
-                "base_delay": 0.5,
-            })
+            update_global_retry_config(
+                {
+                    "max_attempts": 3,
+                    "base_delay": 0.5,
+                }
+            )
 
     @pytest.mark.asyncio
     async def test_max_delay_cap(self):
@@ -220,6 +233,7 @@ class TestRetryCall:
     @pytest.mark.asyncio
     async def test_async_and_sync_functions_both_supported(self):
         """Test that both async and sync functions work."""
+
         async def async_func():
             return "async_result"
 
@@ -248,12 +262,9 @@ class TestRetryConfig:
         """Test RetryConfig update."""
         config = RetryConfig()
 
-        config.update_from_config({
-            "max_attempts": 5,
-            "base_delay": 1.0,
-            "jitter": 0.2,
-            "max_delay": 60.0
-        })
+        config.update_from_config(
+            {"max_attempts": 5, "base_delay": 1.0, "jitter": 0.2, "max_delay": 60.0}
+        )
 
         assert config.max_attempts == 5
         assert config.base_delay == 1.0
@@ -264,14 +275,16 @@ class TestRetryConfig:
         """Test partial config update."""
         config = RetryConfig()
 
-        config.update_from_config({
-            "max_attempts": 10,
-            # Other fields should keep defaults
-        })
+        config.update_from_config(
+            {
+                "max_attempts": 10,
+                # Other fields should keep defaults
+            }
+        )
 
         assert config.max_attempts == 10
         assert config.base_delay == 0.5  # Unchanged
-        assert config.jitter == 0.1      # Unchanged
+        assert config.jitter == 0.1  # Unchanged
 
 
 class TestBackwardsCompatibility:

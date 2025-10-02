@@ -11,7 +11,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from pytest import MonkeyPatch
 
 from core.retry import retry_call, update_global_retry_config
-from core.api_protection import APICircuitBreaker, CircuitBreakerConfig, get_default_circuit_breaker
+from core.api_protection import (
+    APICircuitBreaker,
+    CircuitBreakerConfig,
+    get_default_circuit_breaker,
+)
 from core.idempotency import RetryNotAllowedError
 from core.execution.retry_manager import RetryManager
 from core.execution.execution_types import ExecutionStatus
@@ -23,14 +27,9 @@ class TestRetryIntegration:
     @pytest.fixture
     def circuit_breaker(self):
         """Create a test circuit breaker."""
-        config = CircuitBreakerConfig(
-            failure_threshold=2,
-            recovery_timeout=1.0
-        )
+        config = CircuitBreakerConfig(failure_threshold=2, recovery_timeout=1.0)
         cb = APICircuitBreaker(config)
         return cb
-
-
 
     @pytest.mark.asyncio
     async def test_retry_with_circuit_breaker_integration(self, circuit_breaker):
@@ -48,7 +47,7 @@ class TestRetryIntegration:
                 await retry_call(
                     failing_function,
                     max_attempts=1,  # No retries, just test circuit breaker
-                    circuit_breaker=circuit_breaker
+                    circuit_breaker=circuit_breaker,
                 )
 
         # Circuit should now be open
@@ -56,25 +55,21 @@ class TestRetryIntegration:
 
         # Next call should fail fast due to open circuit
         with pytest.raises(Exception, match="Circuit is open"):
-            await retry_call(
-                failing_function,
-                circuit_breaker=circuit_breaker
-            )
+            await retry_call(failing_function, circuit_breaker=circuit_breaker)
 
         assert call_count == 2  # Only called twice before circuit opened
 
     @pytest.mark.asyncio
     async def test_side_effect_retry_requires_idempotency(self, circuit_breaker):
         """Test that side-effect operations require idempotency key."""
+
         async def order_function():
             return {"order_id": "123", "status": "filled"}
 
         # Should fail without idempotency key
         with pytest.raises(RetryNotAllowedError):
             await retry_call(
-                order_function,
-                is_side_effect=True,
-                circuit_breaker=circuit_breaker
+                order_function, is_side_effect=True, circuit_breaker=circuit_breaker
             )
 
         # Should work with idempotency key
@@ -82,7 +77,7 @@ class TestRetryIntegration:
             order_function,
             idempotency_key="order_123",
             is_side_effect=True,
-            circuit_breaker=circuit_breaker
+            circuit_breaker=circuit_breaker,
         )
 
         assert result["order_id"] == "123"
@@ -91,10 +86,12 @@ class TestRetryIntegration:
     async def test_global_config_changes_retry_behavior(self):
         """Test that global config changes affect retry behavior."""
         # Set restrictive global config
-        update_global_retry_config({
-            "max_attempts": 2,
-            "base_delay": 0.01,
-        })
+        update_global_retry_config(
+            {
+                "max_attempts": 2,
+                "base_delay": 0.01,
+            }
+        )
 
         try:
             call_count = 0
@@ -111,14 +108,18 @@ class TestRetryIntegration:
             elapsed = time.time() - start_time
 
             assert call_count == 2  # Should use global max_attempts=2
-            assert elapsed < 0.5    # Should use global base_delay=0.01 with some tolerance
+            assert (
+                elapsed < 0.5
+            )  # Should use global base_delay=0.01 with some tolerance
 
         finally:
             # Reset global config
-            update_global_retry_config({
-                "max_attempts": 3,
-                "base_delay": 0.5,
-            })
+            update_global_retry_config(
+                {
+                    "max_attempts": 3,
+                    "base_delay": 0.5,
+                }
+            )
 
     @pytest.mark.asyncio
     async def test_backoff_timing_observation(self):
@@ -130,6 +131,7 @@ class TestRetryIntegration:
             # Don't call asyncio.sleep to avoid recursion with MonkeyPatch
 
         call_count = 0
+
         async def failing_function():
             nonlocal call_count
             call_count += 1
@@ -137,12 +139,9 @@ class TestRetryIntegration:
 
         with pytest.raises(ValueError, match="Attempt 4 failed"):
             m = MonkeyPatch()
-            m.setattr(asyncio, 'sleep', mock_sleep)
+            m.setattr(asyncio, "sleep", mock_sleep)
             await retry_call(
-                failing_function,
-                max_attempts=4,
-                base_delay=0.1,
-                jitter=0.01
+                failing_function, max_attempts=4, base_delay=0.1, jitter=0.01
             )
 
         # Should have 3 delays (between attempts 1-2, 2-3, 3-4)
@@ -164,10 +163,12 @@ class TestRetryIntegration:
     @pytest.mark.asyncio
     async def test_retry_manager_delegates_to_centralized_retry(self):
         """Test that RetryManager.retry_call_centralized delegates to core.retry.retry_call."""
-        manager = RetryManager({
-            "max_retries": 2,
-            "backoff_base": 0.1,
-        })
+        manager = RetryManager(
+            {
+                "max_retries": 2,
+                "backoff_base": 0.1,
+            }
+        )
 
         call_count = 0
 
@@ -180,9 +181,7 @@ class TestRetryIntegration:
 
         # Should succeed on 3rd attempt
         result = await manager.retry_call_centralized(
-            failing_function,
-            idempotency_key="test_key",
-            is_side_effect=True
+            failing_function, idempotency_key="test_key", is_side_effect=True
         )
 
         assert result == "success"
@@ -191,6 +190,7 @@ class TestRetryIntegration:
     @pytest.mark.asyncio
     async def test_circuit_breaker_failure_recording(self, circuit_breaker):
         """Test that circuit breaker records failures properly."""
+
         async def failing_function():
             raise Exception("Test failure")
 
@@ -200,17 +200,16 @@ class TestRetryIntegration:
                 await retry_call(
                     failing_function,
                     max_attempts=1,  # No retries
-                    circuit_breaker=circuit_breaker
+                    circuit_breaker=circuit_breaker,
                 )
 
         # Circuit should be open after failures
         assert circuit_breaker.is_open()
 
-
-
     @pytest.mark.asyncio
     async def test_mixed_sync_async_functions_in_retry(self):
         """Test that retry works with both sync and async functions in same test suite."""
+
         async def async_func():
             await asyncio.sleep(0.001)
             return "async"
@@ -229,21 +228,13 @@ class TestRetryIntegration:
     @pytest.mark.asyncio
     async def test_retry_preserves_function_arguments(self):
         """Test that retry preserves all function arguments correctly."""
+
         async def complex_function(a, b=None, *args, **kwargs):
-            return {
-                "a": a,
-                "b": b,
-                "args": args,
-                "kwargs": kwargs
-            }
+            return {"a": a, "b": b, "args": args, "kwargs": kwargs}
 
         # Test with simple arguments to avoid parameter conflicts
         result = await retry_call(
-            complex_function,
-            "test_a",
-            b="test_b",
-            key1="value1",
-            max_attempts=1
+            complex_function, "test_a", b="test_b", key1="value1", max_attempts=1
         )
 
         assert result["a"] == "test_a"
@@ -261,6 +252,7 @@ class TestRetryIntegration:
             # Don't call asyncio.sleep to avoid recursion with MonkeyPatch
 
         call_count = 0
+
         async def network_function():
             nonlocal call_count
             call_count += 1
@@ -269,13 +261,13 @@ class TestRetryIntegration:
             return "connected"
 
         m = MonkeyPatch()
-        m.setattr(asyncio, 'sleep', mock_sleep)
+        m.setattr(asyncio, "sleep", mock_sleep)
 
         result = await retry_call(
             network_function,
             max_attempts=3,
             base_delay=1.0,  # 1 second base delay
-            jitter=0.5       # 0.5 second jitter
+            jitter=0.5,  # 0.5 second jitter
         )
 
         assert result == "connected"
@@ -293,10 +285,12 @@ class TestRetryManagerIntegration:
     @pytest.fixture
     def retry_manager(self):
         """Create a test retry manager."""
-        return RetryManager({
-            "max_retries": 2,
-            "backoff_base": 0.1,
-        })
+        return RetryManager(
+            {
+                "max_retries": 2,
+                "backoff_base": 0.1,
+            }
+        )
 
     @pytest.mark.asyncio
     async def test_retry_manager_config_updates_global_config(self, retry_manager):
@@ -304,10 +298,12 @@ class TestRetryManagerIntegration:
         from core.retry import get_global_retry_config
 
         # Update manager config
-        retry_manager.update_retry_config({
-            "max_retries": 5,
-            "backoff_base": 2.0,
-        })
+        retry_manager.update_retry_config(
+            {
+                "max_retries": 5,
+                "backoff_base": 2.0,
+            }
+        )
 
         # Global config should be updated
         global_config = get_global_retry_config()
@@ -329,13 +325,14 @@ class TestRetryManagerIntegration:
 
         # This should work but use the old complex logic
         from core.execution.execution_types import ExecutionPolicy
+
         result = await retry_manager.execute_with_retry(
             test_func,
             None,  # signal
             ExecutionPolicy.MARKET,  # policy
-            {},    # context
+            {},  # context
             allow_side_effect_retry=True,
-            idempotency_key="test"
+            idempotency_key="test",
         )
 
         assert result["status"] == ExecutionStatus.COMPLETED
@@ -349,8 +346,7 @@ class TestErrorScenarios:
     async def test_circuit_breaker_blocks_calls_when_open(self):
         """Test that circuit breaker blocks calls when open."""
         config = CircuitBreakerConfig(
-            failure_threshold=2,
-            recovery_timeout=1.0  # Long timeout for test
+            failure_threshold=2, recovery_timeout=1.0  # Long timeout for test
         )
         cb = APICircuitBreaker(config)
 
@@ -364,21 +360,13 @@ class TestErrorScenarios:
         # First 2 calls fail, opening circuit
         for i in range(2):
             with pytest.raises(Exception):
-                await retry_call(
-                    failing_function,
-                    max_attempts=1,
-                    circuit_breaker=cb
-                )
+                await retry_call(failing_function, max_attempts=1, circuit_breaker=cb)
 
         assert cb.is_open()
 
         # Subsequent calls should be blocked
         with pytest.raises(Exception, match="Circuit is open"):
-            await retry_call(
-                failing_function,
-                max_attempts=1,
-                circuit_breaker=cb
-            )
+            await retry_call(failing_function, max_attempts=1, circuit_breaker=cb)
 
         # Only the first 2 calls should have been made
         assert call_count == 2
@@ -386,19 +374,14 @@ class TestErrorScenarios:
     @pytest.mark.asyncio
     async def test_nested_retry_calls_allowed(self):
         """Test that nesting retry calls works properly."""
+
         async def inner_function():
             return "inner_result"
 
         async def outer_function():
             # This should work fine - nested retry calls are allowed
-            return await retry_call(
-                inner_function,
-                max_attempts=1
-            )
+            return await retry_call(inner_function, max_attempts=1)
 
-        result = await retry_call(
-            outer_function,
-            max_attempts=1
-        )
+        result = await retry_call(outer_function, max_attempts=1)
 
         assert result == "inner_result"

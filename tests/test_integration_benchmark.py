@@ -56,7 +56,9 @@ class TestBenchmarkExceptionHandling:
             return "success"
 
         with pytest.raises(ValueError, match="Test error"):
-            asyncio.run(framework._benchmark_operation(failing_operation, strict_mode=True))
+            asyncio.run(
+                framework._benchmark_operation(failing_operation, strict_mode=True)
+            )
 
         # Should have failed on first iteration
         assert call_count == 1
@@ -72,7 +74,9 @@ class TestBenchmarkExceptionHandling:
                 raise RuntimeError(f"Error on call {call_count}")
             return "success"
 
-        result = asyncio.run(framework._benchmark_operation(failing_operation, strict_mode=False))
+        result = asyncio.run(
+            framework._benchmark_operation(failing_operation, strict_mode=False)
+        )
 
         assert result["operation"] == "failing_operation"
         assert result["iterations"] == 100
@@ -102,7 +106,9 @@ class TestBenchmarkExceptionHandling:
             await asyncio.sleep(0.001)
             return f"result_{call_count}"
 
-        result = asyncio.run(framework._benchmark_operation(mixed_operation, strict_mode=False))
+        result = asyncio.run(
+            framework._benchmark_operation(mixed_operation, strict_mode=False)
+        )
 
         expected_failures = 100 // 3  # 33 failures (iterations 3, 6, 9, ..., 99)
         expected_successes = 100 - expected_failures  # 67 successes
@@ -123,10 +129,13 @@ class TestBenchmarkExceptionHandling:
 
     def test_benchmark_all_failures_relaxed_mode(self, framework):
         """Test benchmark where all operations fail in relaxed mode."""
+
         async def always_failing_operation():
             raise Exception("Always fails")
 
-        result = asyncio.run(framework._benchmark_operation(always_failing_operation, strict_mode=False))
+        result = asyncio.run(
+            framework._benchmark_operation(always_failing_operation, strict_mode=False)
+        )
 
         assert result["iterations"] == 100
         assert result["success_count"] == 0
@@ -155,7 +164,9 @@ class TestBenchmarkExceptionHandling:
             else:
                 return "success"
 
-        result = asyncio.run(framework._benchmark_operation(varied_exceptions, strict_mode=False))
+        result = asyncio.run(
+            framework._benchmark_operation(varied_exceptions, strict_mode=False)
+        )
 
         # Should have 25 of each error type (100 / 4 = 25)
         assert result["success_count"] == 25
@@ -170,6 +181,7 @@ class TestBenchmarkExceptionHandling:
 
     def test_benchmark_performance_metrics_structure(self, framework):
         """Test that benchmark results have the correct structure."""
+
         async def fast_operation():
             return "fast"
 
@@ -177,9 +189,19 @@ class TestBenchmarkExceptionHandling:
 
         # Required fields
         required_fields = [
-            "operation", "iterations", "success_count", "failure_count",
-            "success_rate", "errors", "avg_time", "min_time", "max_time",
-            "std_time", "total_successful_time", "overall_avg_time", "overall_total_time"
+            "operation",
+            "iterations",
+            "success_count",
+            "failure_count",
+            "success_rate",
+            "errors",
+            "avg_time",
+            "min_time",
+            "max_time",
+            "std_time",
+            "total_successful_time",
+            "overall_avg_time",
+            "overall_total_time",
         ]
 
         for field in required_fields:
@@ -206,15 +228,16 @@ class TestBenchmarkIntegration:
 
     def test_run_performance_benchmark_strict_mode(self, framework):
         """Test running performance benchmark in strict mode."""
+
         async def reliable_operation():
             await asyncio.sleep(0.001)
             return "ok"
 
-        result = asyncio.run(framework.run_performance_benchmark(
-            "test_benchmark_strict",
-            [reliable_operation],
-            strict_mode=True
-        ))
+        result = asyncio.run(
+            framework.run_performance_benchmark(
+                "test_benchmark_strict", [reliable_operation], strict_mode=True
+            )
+        )
 
         assert result["benchmark"] == "test_benchmark_strict"
         assert result["strict_mode"] is True
@@ -243,11 +266,11 @@ class TestBenchmarkIntegration:
             await asyncio.sleep(0.001)
             return "ok"
 
-        result = asyncio.run(framework.run_performance_benchmark(
-            "test_benchmark_relaxed",
-            [unreliable_operation],
-            strict_mode=False
-        ))
+        result = asyncio.run(
+            framework.run_performance_benchmark(
+                "test_benchmark_relaxed", [unreliable_operation], strict_mode=False
+            )
+        )
 
         assert result["benchmark"] == "test_benchmark_relaxed"
         assert result["strict_mode"] is False
@@ -267,6 +290,7 @@ class TestBenchmarkIntegration:
 
     def test_run_performance_benchmark_multiple_operations(self, framework):
         """Test running benchmark with multiple operations."""
+
         async def fast_operation():
             return "fast"
 
@@ -274,11 +298,11 @@ class TestBenchmarkIntegration:
             await asyncio.sleep(0.01)
             return "slow"
 
-        result = asyncio.run(framework.run_performance_benchmark(
-            "test_multiple_ops",
-            [fast_operation, slow_operation],
-            strict_mode=True
-        ))
+        result = asyncio.run(
+            framework.run_performance_benchmark(
+                "test_multiple_ops", [fast_operation, slow_operation], strict_mode=True
+            )
+        )
 
         assert len(result["operation_results"]) == 2
 

@@ -97,19 +97,21 @@ init_db()
 # Pydantic validation models for inbound data
 # These models enforce strict schema validation on all external data
 
+
 class TickerPayload(BaseModel):
     """
     Schema for market ticker data from exchanges.
 
     Validates ticker information including symbol, price, and timestamp.
     """
+
     model_config = {"strict": True, "extra": "forbid"}
 
     symbol: str = Field(..., description="Trading pair symbol (e.g., 'BTC/USDT')")
     price: float = Field(..., gt=0, description="Current price in quote currency")
     timestamp: float = Field(..., ge=0, description="Unix timestamp in seconds")
 
-    @field_validator('symbol')
+    @field_validator("symbol")
     @classmethod
     def validate_symbol(cls, v: str) -> str:
         """Validate symbol format."""
@@ -120,7 +122,7 @@ class TickerPayload(BaseModel):
             raise ValueError("Symbol cannot be empty or whitespace")
         return v.strip().upper()
 
-    @field_validator('price')
+    @field_validator("price")
     @classmethod
     def validate_price(cls, v: float) -> float:
         """Validate price is positive and reasonable."""
@@ -138,14 +140,19 @@ class OrderBookPayload(BaseModel):
 
     Validates bid/ask order book information.
     """
+
     model_config = {"strict": True, "extra": "forbid"}
 
     symbol: str = Field(..., description="Trading pair symbol")
-    bids: List[List[float]] = Field(..., description="Bid orders: [[price, quantity], ...]")
-    asks: List[List[float]] = Field(..., description="Ask orders: [[price, quantity], ...]")
+    bids: List[List[float]] = Field(
+        ..., description="Bid orders: [[price, quantity], ...]"
+    )
+    asks: List[List[float]] = Field(
+        ..., description="Ask orders: [[price, quantity], ...]"
+    )
     timestamp: float = Field(..., ge=0, description="Unix timestamp in seconds")
 
-    @field_validator('bids', 'asks')
+    @field_validator("bids", "asks")
     @classmethod
     def validate_order_book(cls, v: List[List[float]]) -> List[List[float]]:
         """Validate order book entries."""
@@ -171,6 +178,7 @@ class TradePayload(BaseModel):
 
     Validates trade execution information.
     """
+
     model_config = {"strict": True, "extra": "forbid"}
 
     symbol: str = Field(..., description="Trading pair symbol")
@@ -180,11 +188,11 @@ class TradePayload(BaseModel):
     side: str = Field(..., description="Trade side: 'buy' or 'sell'")
     trade_id: str = Field(..., description="Unique trade identifier")
 
-    @field_validator('side')
+    @field_validator("side")
     @classmethod
     def validate_side(cls, v: str) -> str:
         """Validate trade side."""
-        if v.lower() not in ['buy', 'sell']:
+        if v.lower() not in ["buy", "sell"]:
             raise ValueError("Side must be 'buy' or 'sell'")
         return v.lower()
 
@@ -195,6 +203,7 @@ class MarketDataPayload(BaseModel):
 
     Flexible schema that can contain various market data types.
     """
+
     model_config = {"strict": True, "extra": "forbid"}
 
     symbol: str = Field(..., description="Trading pair symbol")
@@ -209,14 +218,18 @@ class WebSocketMessagePayload(BaseModel):
 
     Validates WebSocket message structure.
     """
+
     model_config = {"strict": True, "extra": "forbid"}
 
     event_type: str = Field(..., description="WebSocket event type")
     data: Dict[str, Any] = Field(..., description="Event data payload")
-    timestamp: Optional[float] = Field(None, ge=0, description="Unix timestamp in seconds")
+    timestamp: Optional[float] = Field(
+        None, ge=0, description="Unix timestamp in seconds"
+    )
 
 
 # Schema validation functions
+
 
 def validate_ticker_data(raw_data: Dict[str, Any]) -> TickerPayload:
     """
@@ -239,7 +252,7 @@ def validate_ticker_data(raw_data: Dict[str, Any]) -> TickerPayload:
             f"Invalid ticker data: {e}",
             data=raw_data,
             schema_name="TickerPayload",
-            field_errors=e.errors()
+            field_errors=e.errors(),
         )
 
 
@@ -264,7 +277,7 @@ def validate_order_book_data(raw_data: Dict[str, Any]) -> OrderBookPayload:
             f"Invalid order book data: {e}",
             data=raw_data,
             schema_name="OrderBookPayload",
-            field_errors=e.errors()
+            field_errors=e.errors(),
         )
 
 
@@ -289,7 +302,7 @@ def validate_trade_data(raw_data: Dict[str, Any]) -> TradePayload:
             f"Invalid trade data: {e}",
             data=raw_data,
             schema_name="TradePayload",
-            field_errors=e.errors()
+            field_errors=e.errors(),
         )
 
 
@@ -314,7 +327,7 @@ def validate_market_data(raw_data: Dict[str, Any]) -> MarketDataPayload:
             f"Invalid market data: {e}",
             data=raw_data,
             schema_name="MarketDataPayload",
-            field_errors=e.errors()
+            field_errors=e.errors(),
         )
 
 
@@ -339,5 +352,5 @@ def validate_websocket_message(raw_data: Dict[str, Any]) -> WebSocketMessagePayl
             f"Invalid WebSocket message: {e}",
             data=raw_data,
             schema_name="WebSocketMessagePayload",
-            field_errors=e.errors()
+            field_errors=e.errors(),
         )

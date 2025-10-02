@@ -208,7 +208,9 @@ class SignalRouter:
         self.worker_count = int(worker_count)
 
         # Message queue and processing
-        self._signal_queue: "asyncio.Queue[Tuple[TradingSignal, Dict, asyncio.Future]]" = asyncio.Queue(maxsize=max_queue_size)
+        self._signal_queue: "asyncio.Queue[Tuple[TradingSignal, Dict, asyncio.Future]]" = asyncio.Queue(
+            maxsize=max_queue_size
+        )
         self._processing_tasks: Set[asyncio.Task] = set()
         self._queue_worker_tasks: Set[asyncio.Task] = set()
 
@@ -580,7 +582,7 @@ class SignalRouter:
             # Try to enqueue the signal
             await asyncio.wait_for(
                 self._signal_queue.put((signal, market_data, result_future)),
-                timeout=1.0  # Don't block too long
+                timeout=1.0,  # Don't block too long
             )
 
             # Update queue depth metric
@@ -1229,7 +1231,9 @@ class SignalRouter:
             metrics["current_queue_size"] = 0
 
         # Add background task status
-        metrics["active_workers"] = len([t for t in self._queue_worker_tasks if not t.done()])
+        metrics["active_workers"] = len(
+            [t for t in self._queue_worker_tasks if not t.done()]
+        )
         metrics["idempotency_records"] = len(self._processed_signals)
 
         return metrics
@@ -1279,7 +1283,9 @@ class SignalRouter:
 
         # Start idempotency cleanup task
         if not self._idempotency_cleanup_task or self._idempotency_cleanup_task.done():
-            self._idempotency_cleanup_task = loop.create_task(self._cleanup_idempotency_records())
+            self._idempotency_cleanup_task = loop.create_task(
+                self._cleanup_idempotency_records()
+            )
 
         # Start queue worker tasks
         for i in range(self.worker_count):
@@ -1294,13 +1300,16 @@ class SignalRouter:
                 await asyncio.sleep(60)  # Clean up every minute
                 current_time = time.time()
                 expired_keys = [
-                    key for key, (timestamp, _) in self._processed_signals.items()
+                    key
+                    for key, (timestamp, _) in self._processed_signals.items()
                     if current_time - timestamp > self.deduplication_window
                 ]
                 for key in expired_keys:
                     del self._processed_signals[key]
                 if expired_keys:
-                    logger.debug(f"Cleaned up {len(expired_keys)} expired idempotency records")
+                    logger.debug(
+                        f"Cleaned up {len(expired_keys)} expired idempotency records"
+                    )
             except asyncio.CancelledError:
                 break
             except Exception:
@@ -1330,7 +1339,9 @@ class SignalRouter:
                         result_future.set_result(result)
 
                 except Exception as e:
-                    logger.exception(f"Error processing signal in queue worker {worker_id}")
+                    logger.exception(
+                        f"Error processing signal in queue worker {worker_id}"
+                    )
                     self._metrics["processing_errors"] += 1
                     if not result_future.done():
                         result_future.set_exception(e)

@@ -218,15 +218,19 @@ class DataManager(DataManagerInterface):
                     except SchemaValidationError:
                         # If ticker validation fails, try general market data validation
                         try:
-                            validated_market = validate_market_data({
-                                "symbol": symbol,
-                                "data_type": "realtime",
-                                "payload": data,
-                                "timestamp": time.time()
-                            })
+                            validated_market = validate_market_data(
+                                {
+                                    "symbol": symbol,
+                                    "data_type": "realtime",
+                                    "payload": data,
+                                    "timestamp": time.time(),
+                                }
+                            )
                             validated_data[symbol] = validated_market.model_dump()
                         except SchemaValidationError as e:
-                            logger.error(f"Schema validation failed for {symbol} realtime data: {e}")
+                            logger.error(
+                                f"Schema validation failed for {symbol} realtime data: {e}"
+                            )
                             # Continue with raw data but log the issue
                             validated_data[symbol] = data
                 else:

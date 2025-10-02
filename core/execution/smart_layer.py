@@ -114,6 +114,7 @@ class ExecutionSmartLayer:
         validation_config["test_mode"] = self.config.get("test_mode", False)
         self.validator = ExecutionValidator(validation_config)
         from core.component_factory import ComponentFactory
+
         self.retry_manager = ComponentFactory.get("retry_manager")
         self.adaptive_pricer = AdaptivePricer(self.config.get("adaptive_pricing", {}))
 
@@ -248,7 +249,10 @@ class ExecutionSmartLayer:
             # Get idempotency key for safe retries
             idempotency_key = getattr(prepared_signal, "idempotency_key", None)
             execution_result = await self.retry_manager.execute_with_retry(
-                self._execute_with_policy, prepared_signal, policy, market_context or {},
+                self._execute_with_policy,
+                prepared_signal,
+                policy,
+                market_context or {},
                 allow_side_effect_retry=True,
                 idempotency_key=idempotency_key,
                 is_side_effect=True,

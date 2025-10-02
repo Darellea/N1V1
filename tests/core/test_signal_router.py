@@ -25,7 +25,7 @@ from core.types import OrderType
 from utils.time import now_ms
 
 # Suppress asyncio task destruction warnings during test cleanup
-logging.getLogger('asyncio').setLevel(logging.ERROR)
+logging.getLogger("asyncio").setLevel(logging.ERROR)
 
 
 class TestSignalRouterFacade:
@@ -598,7 +598,10 @@ class TestSignalRouterIntegration:
         )
 
         router = SignalRouter(
-            self.risk_manager, self.task_manager, safe_mode_threshold=2, enable_queue=False
+            self.risk_manager,
+            self.task_manager,
+            safe_mode_threshold=2,
+            enable_queue=False,
         )
 
         signal = TradingSignal(
@@ -754,7 +757,7 @@ class TestSignalRouterQueue:
             enable_queue=True,
             max_queue_size=50,
             worker_count=2,
-            deduplication_window=120.0
+            deduplication_window=120.0,
         )
 
         assert router.enable_queue is True
@@ -766,22 +769,14 @@ class TestSignalRouterQueue:
 
     def test_initialization_without_queue(self):
         """Test SignalRouter initialization with queue disabled."""
-        router = SignalRouter(
-            self.risk_manager,
-            self.task_manager,
-            enable_queue=False
-        )
+        router = SignalRouter(self.risk_manager, self.task_manager, enable_queue=False)
 
         assert router.enable_queue is False
 
     @pytest.mark.asyncio
     async def test_synchronous_processing_when_queue_disabled(self):
         """Test that signals are processed synchronously when queue is disabled."""
-        router = SignalRouter(
-            self.risk_manager,
-            self.task_manager,
-            enable_queue=False
-        )
+        router = SignalRouter(self.risk_manager, self.task_manager, enable_queue=False)
 
         signal = TradingSignal(
             strategy_id="test",
@@ -807,7 +802,7 @@ class TestSignalRouterQueue:
             self.risk_manager,
             self.task_manager,
             enable_queue=True,
-            deduplication_window=300.0
+            deduplication_window=300.0,
         )
 
         signal = TradingSignal(
@@ -843,7 +838,7 @@ class TestSignalRouterQueue:
             self.risk_manager,
             self.task_manager,
             enable_queue=False,  # Disable queue for this test to ensure synchronous processing
-            deduplication_window=1.0  # Very short window
+            deduplication_window=1.0,  # Very short window
         )
 
         signal = TradingSignal(
@@ -874,8 +869,6 @@ class TestSignalRouterQueue:
         # Should call risk manager twice
         assert self.risk_manager.evaluate_signal.call_count == 2
 
-
-
     @pytest.mark.timeout(30)
     @pytest.mark.asyncio
     async def test_concurrent_signal_processing(self):
@@ -885,7 +878,7 @@ class TestSignalRouterQueue:
             self.task_manager,
             enable_queue=True,
             worker_count=4,
-            max_queue_size=100
+            max_queue_size=100,
         )
 
         try:
@@ -909,7 +902,9 @@ class TestSignalRouterQueue:
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             # All should succeed
-            successful_results = [r for r in results if not isinstance(r, Exception) and r is not None]
+            successful_results = [
+                r for r in results if not isinstance(r, Exception) and r is not None
+            ]
             assert len(successful_results) == len(signals)
 
             # Check metrics
@@ -921,19 +916,23 @@ class TestSignalRouterQueue:
 
     def test_queue_metrics(self):
         """Test queue metrics collection."""
-        router = SignalRouter(
-            self.risk_manager,
-            self.task_manager,
-            enable_queue=True
-        )
+        router = SignalRouter(self.risk_manager, self.task_manager, enable_queue=True)
 
         metrics = router.get_queue_metrics()
 
         required_keys = [
-            "queue_depth", "processed_signals", "duplicate_signals",
-            "processing_latency", "queue_full_rejects", "processing_errors",
-            "avg_processing_latency", "max_processing_latency", "min_processing_latency",
-            "current_queue_size", "active_workers", "idempotency_records"
+            "queue_depth",
+            "processed_signals",
+            "duplicate_signals",
+            "processing_latency",
+            "queue_full_rejects",
+            "processing_errors",
+            "avg_processing_latency",
+            "max_processing_latency",
+            "min_processing_latency",
+            "current_queue_size",
+            "active_workers",
+            "idempotency_records",
         ]
 
         for key in required_keys:
@@ -943,10 +942,7 @@ class TestSignalRouterQueue:
     async def test_shutdown_cleans_up_tasks(self):
         """Test that shutdown properly cleans up background tasks."""
         router = SignalRouter(
-            self.risk_manager,
-            self.task_manager,
-            enable_queue=True,
-            worker_count=2
+            self.risk_manager, self.task_manager, enable_queue=True, worker_count=2
         )
 
         # Let tasks start
@@ -988,13 +984,11 @@ class TestSignalRouterRaceConditions:
     async def test_concurrent_access_from_multiple_coroutines(self):
         """Test concurrent access from multiple coroutines."""
         router = SignalRouter(
-            self.risk_manager,
-            self.task_manager,
-            enable_queue=True,
-            worker_count=4
+            self.risk_manager, self.task_manager, enable_queue=True, worker_count=4
         )
 
         try:
+
             async def process_signal(coro_id: int):
                 """Process a signal in a coroutine."""
                 signal = TradingSignal(
@@ -1015,7 +1009,9 @@ class TestSignalRouterRaceConditions:
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             # Should have processed signals without errors
-            successful_results = [r for r in results if not isinstance(r, Exception) and r is not None]
+            successful_results = [
+                r for r in results if not isinstance(r, Exception) and r is not None
+            ]
             assert len(successful_results) == 20
         finally:
             # Clean up background tasks
@@ -1029,7 +1025,7 @@ class TestSignalRouterRaceConditions:
             self.risk_manager,
             self.task_manager,
             enable_queue=True,
-            deduplication_window=60.0  # 1 minute window
+            deduplication_window=60.0,  # 1 minute window
         )
 
         try:
@@ -1051,7 +1047,9 @@ class TestSignalRouterRaceConditions:
                 results.append(result)
 
             # All should succeed
-            successful_results = [r for r in results if not isinstance(r, Exception) and r is not None]
+            successful_results = [
+                r for r in results if not isinstance(r, Exception) and r is not None
+            ]
             assert len(successful_results) == 20
 
             # But risk manager should only be called once

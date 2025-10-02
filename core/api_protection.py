@@ -17,24 +17,28 @@ logger = logging.getLogger(__name__)
 
 class CircuitBreakerState(Enum):
     """API circuit breaker states."""
-    CLOSED = "closed"      # Normal operation
-    OPEN = "open"         # Blocking all calls
+
+    CLOSED = "closed"  # Normal operation
+    OPEN = "open"  # Blocking all calls
     HALF_OPEN = "half-open"  # Testing recovery
 
 
 class CircuitOpenError(Exception):
     """Raised when circuit breaker is open."""
+
     pass
 
 
 class RateLimitExceededError(Exception):
     """Raised when rate limit is exceeded."""
+
     pass
 
 
 @dataclass
 class CircuitBreakerConfig:
     """Configuration for API circuit breaker."""
+
     failure_threshold: int = 5  # Failures before opening
     recovery_timeout: float = 60.0  # Seconds to wait before half-open
     success_threshold: int = 3  # Successes needed to close from half-open
@@ -44,6 +48,7 @@ class CircuitBreakerConfig:
 @dataclass
 class RateLimiterConfig:
     """Configuration for rate limiter."""
+
     requests_per_second: float = 10.0
     burst_limit: int = 20
 
@@ -102,7 +107,9 @@ class APICircuitBreaker:
         elif self.state == CircuitBreakerState.CLOSED:
             if self.failure_count >= self.config.failure_threshold:
                 self.state = CircuitBreakerState.OPEN
-                logger.warning(f"Circuit breaker opened after {self.failure_count} failures")
+                logger.warning(
+                    f"Circuit breaker opened after {self.failure_count} failures"
+                )
 
     def get_state(self) -> str:
         """Get current state as string."""
@@ -129,7 +136,7 @@ class TokenBucketRateLimiter:
         # Refill tokens based on time passed
         self.tokens = min(
             self.config.burst_limit,
-            self.tokens + time_passed * self.config.requests_per_second
+            self.tokens + time_passed * self.config.requests_per_second,
         )
         self.last_refill = now
 
@@ -144,7 +151,7 @@ async def guarded_call(
     *args,
     circuit_breaker: Optional[APICircuitBreaker] = None,
     rate_limiter: Optional[TokenBucketRateLimiter] = None,
-    **kwargs
+    **kwargs,
 ) -> Any:
     """
     Execute an API call with circuit breaker and rate limiting protection.

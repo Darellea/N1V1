@@ -12,7 +12,11 @@ from typing import Any, Dict, Optional
 import ccxt.async_support as ccxt
 from ccxt.base.errors import ExchangeError, NetworkError
 
-from core.api_protection import guarded_call, get_default_circuit_breaker, get_default_rate_limiter
+from core.api_protection import (
+    guarded_call,
+    get_default_circuit_breaker,
+    get_default_rate_limiter,
+)
 from utils.logger import get_trade_logger
 
 logger = logging.getLogger(__name__)
@@ -87,9 +91,14 @@ class LiveOrderExecutor:
         try:
             return await guarded_call(
                 self.exchange.create_order,
-                symbol, otype, side, amount, price, params,
+                symbol,
+                otype,
+                side,
+                amount,
+                price,
+                params,
                 circuit_breaker=circuit_breaker,
-                rate_limiter=rate_limiter
+                rate_limiter=rate_limiter,
             )
         except TypeError:
             # Some adapters accept kwargs - try a kwargs call as a fallback
@@ -103,7 +112,7 @@ class LiveOrderExecutor:
                     price=price,
                     params=params,
                     circuit_breaker=circuit_breaker,
-                    rate_limiter=rate_limiter
+                    rate_limiter=rate_limiter,
                 )
             except Exception:
                 # Re-raise original exception for upstream handling
@@ -135,7 +144,7 @@ class LiveOrderExecutor:
             # Execute the order with timeout protection
             response = await asyncio.wait_for(
                 self._create_order_on_exchange(order_params),
-                timeout=30.0  # 30 second timeout for order execution
+                timeout=30.0,  # 30 second timeout for order execution
             )
             return response
 

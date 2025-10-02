@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class CacheEntry:
     """A cache entry with value, timestamp, and access tracking."""
+
     value: Any
     timestamp: float
     ttl_seconds: Optional[float] = None  # Per-entry TTL override
@@ -31,6 +32,7 @@ class CacheEntry:
 @dataclass
 class CacheMetrics:
     """Cache performance and usage metrics."""
+
     hits: int = 0
     misses: int = 0
     evictions: int = 0
@@ -62,7 +64,7 @@ class Cache:
         self,
         max_entries: int = 1000,
         ttl_seconds: int = 3600,
-        enable_metrics: bool = True
+        enable_metrics: bool = True,
     ):
         """
         Initialize the LRU cache.
@@ -157,7 +159,9 @@ class Cache:
                 self._cache.move_to_end(key)
             else:
                 # Create new entry
-                entry = CacheEntry(value=value, timestamp=current_time, ttl_seconds=entry_ttl)
+                entry = CacheEntry(
+                    value=value, timestamp=current_time, ttl_seconds=entry_ttl
+                )
                 self._cache[key] = entry
 
                 # Prune expired or over-capacity entries
@@ -271,15 +275,17 @@ class Cache:
 
             # Add metrics if enabled
             if self._metrics:
-                stats.update({
-                    "hits": self._metrics.hits,
-                    "misses": self._metrics.misses,
-                    "evictions": self._metrics.evictions,
-                    "sets": self._metrics.sets,
-                    "deletes": self._metrics.deletes,
-                    "hit_rate": self._metrics.hit_rate,
-                    "total_accesses": self._metrics.total_accesses,
-                })
+                stats.update(
+                    {
+                        "hits": self._metrics.hits,
+                        "misses": self._metrics.misses,
+                        "evictions": self._metrics.evictions,
+                        "sets": self._metrics.sets,
+                        "deletes": self._metrics.deletes,
+                        "hit_rate": self._metrics.hit_rate,
+                        "total_accesses": self._metrics.total_accesses,
+                    }
+                )
 
             return stats
 
@@ -333,10 +339,7 @@ class LRUCacheWithTTL(Cache):
     """Backward-compatible alias for Cache class."""
 
     def __init__(
-        self,
-        max_size: int = 1000,
-        ttl_seconds: int = 3600,
-        enable_metrics: bool = True
+        self, max_size: int = 1000, ttl_seconds: int = 3600, enable_metrics: bool = True
     ):
         """
         Initialize the LRU cache with backward-compatible parameter names.
@@ -350,9 +353,7 @@ class LRUCacheWithTTL(Cache):
             raise ValueError("max_size must be positive")
 
         super().__init__(
-            max_entries=max_size,
-            ttl_seconds=ttl_seconds,
-            enable_metrics=enable_metrics
+            max_entries=max_size, ttl_seconds=ttl_seconds, enable_metrics=enable_metrics
         )
 
     @property
@@ -403,7 +404,7 @@ def create_cache(
     max_entries: int = 1000,
     ttl_seconds: Optional[float] = 300,
     enable_metrics: bool = True,
-    max_size: Optional[int] = None
+    max_size: Optional[int] = None,
 ) -> LRUCacheWithTTL:
     """
     Create a new cache instance with specified parameters.
@@ -421,9 +422,7 @@ def create_cache(
     actual_max_size = max_size if max_size is not None else max_entries
 
     return LRUCacheWithTTL(
-        max_size=actual_max_size,
-        ttl_seconds=ttl_seconds,
-        enable_metrics=enable_metrics
+        max_size=actual_max_size, ttl_seconds=ttl_seconds, enable_metrics=enable_metrics
     )
 
 

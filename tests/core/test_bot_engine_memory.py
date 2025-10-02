@@ -90,7 +90,9 @@ class TestLRUCacheCoreFunctionality:
 
         stats = self.cache.get_stats()
         assert stats["size"] <= 100  # Global limit
-        assert stats["data_type_counts"]["ticker"] <= 500  # Type limit (but constrained by global)
+        assert (
+            stats["data_type_counts"]["ticker"] <= 500
+        )  # Type limit (but constrained by global)
         assert stats["data_type_counts"]["ohlcv"] <= 200  # Type limit
 
     def test_cache_invalidation_market_close(self):
@@ -146,7 +148,9 @@ class TestLRUCacheCoreFunctionality:
                     self.cache.set(key, f"value{i}")
                     result = self.cache.get(key)
                     if result != f"value{i}":
-                        errors.append(f"Worker {worker_id}: expected {f'value{i}'}, got {result}")
+                        errors.append(
+                            f"Worker {worker_id}: expected {f'value{i}'}, got {result}"
+                        )
             except Exception as e:
                 errors.append(f"Worker {worker_id}: {e}")
 
@@ -192,9 +196,7 @@ class TestMemoryManager:
         """Setup test fixtures."""
         self.cache = LRUCache(maxsize=1000, max_memory_mb=5.0)
         self.memory_manager = MemoryManager(
-            self.cache,
-            warning_threshold=0.7,
-            critical_threshold=0.9
+            self.cache, warning_threshold=0.7, critical_threshold=0.9
         )
 
     def teardown_method(self):
@@ -343,8 +345,12 @@ class TestCachePerformanceBenchmarks:
         assert after_memory > initial_memory
 
         # Memory should be roughly tracked (allowing for overhead)
-        estimated_size_mb = (len("memory_test") + len(test_data) + 100) / (1024 * 1024)  # Rough overhead in MB
-        assert abs(after_memory - initial_memory - estimated_size_mb) < 0.1  # Allow some tolerance
+        estimated_size_mb = (len("memory_test") + len(test_data) + 100) / (
+            1024 * 1024
+        )  # Rough overhead in MB
+        assert (
+            abs(after_memory - initial_memory - estimated_size_mb) < 0.1
+        )  # Allow some tolerance
 
     def test_concurrent_access_performance(self):
         """Test performance under concurrent access."""
@@ -370,7 +376,9 @@ class TestCachePerformanceBenchmarks:
         start_time = time.time()
 
         for i in range(num_threads):
-            t = threading.Thread(target=performance_worker, args=(operations_per_thread,))
+            t = threading.Thread(
+                target=performance_worker, args=(operations_per_thread,)
+            )
             threads.append(t)
             t.start()
 
@@ -386,7 +394,9 @@ class TestCachePerformanceBenchmarks:
 
         # Check performance (should complete within reasonable time)
         operations_per_second = operation_count[0] / total_time
-        assert operations_per_second > 100  # At least 100 ops/sec (realistic for Python threading)
+        assert (
+            operations_per_second > 100
+        )  # At least 100 ops/sec (realistic for Python threading)
 
         stats = self.cache.get_stats()
         assert stats["size"] > 0
@@ -489,7 +499,7 @@ class TestCacheIntegration:
         """Cleanup after tests."""
         self.cache.shutdown()
 
-    @patch('psutil.virtual_memory')
+    @patch("psutil.virtual_memory")
     def test_system_memory_integration(self, mock_memory):
         """Test integration with system memory monitoring."""
         # Mock system memory

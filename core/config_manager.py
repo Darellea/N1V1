@@ -597,7 +597,9 @@ class ConfigManager:
                 "max_retries": reliability.get("max_retries", 3),
                 "backoff_base": reliability.get("backoff_base", 1.0),
                 "max_backoff": reliability.get("max_backoff", 30.0),
-                "retry_on_errors": reliability.get("retry_on_errors", ["network", "exchange_timeout", "rate_limit"]),
+                "retry_on_errors": reliability.get(
+                    "retry_on_errors", ["network", "exchange_timeout", "rate_limit"]
+                ),
                 "fallback_enabled": reliability.get("fallback_enabled", True),
                 "fallback_policy": reliability.get("fallback_policy", "market"),
                 "fallback_on_attempt": reliability.get("fallback_on_attempt", 2),

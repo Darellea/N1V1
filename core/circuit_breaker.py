@@ -507,7 +507,9 @@ class CircuitBreaker:
             return min(base_minutes, self.config.max_cooldown_minutes)
 
         elif self.config.cooldown_strategy == CooldownStrategy.EXPONENTIAL:
-            cooldown = base_minutes * (self.config.cooldown_multiplier ** (trigger_count - 1))
+            cooldown = base_minutes * (
+                self.config.cooldown_multiplier ** (trigger_count - 1)
+            )
             return min(int(cooldown), self.config.max_cooldown_minutes)
 
         elif self.config.cooldown_strategy == CooldownStrategy.FIBONACCI:
@@ -553,7 +555,7 @@ class CircuitBreaker:
         """Perform health check to determine if recovery is safe."""
         try:
             # Check if equity has recovered sufficiently
-            if hasattr(self, 'current_equity') and self.current_equity > 0:
+            if hasattr(self, "current_equity") and self.current_equity > 0:
                 # Simple recovery check: equity above 95% of initial
                 initial_equity = 10000.0  # This should be configurable
                 recovery_threshold = 0.95
@@ -713,7 +715,9 @@ class CircuitBreaker:
                 },
             )
 
-            self.trigger_history.append({"timestamp": cached_timestamp, "reason": reason})
+            self.trigger_history.append(
+                {"timestamp": cached_timestamp, "reason": reason}
+            )
             self.last_trigger_time = cached_timestamp
             self.trigger_count += 1
             self._log_event(
@@ -730,7 +734,7 @@ class CircuitBreaker:
                             metrics_collector,
                             "circuit_breaker_state",
                             1,  # 1 = triggered, 0 = normal
-                            {"account": "main"}
+                            {"account": "main"},
                         )
                     )
                 except Exception as e:
@@ -898,7 +902,9 @@ class CircuitBreaker:
         """Evaluate triggers (simplified)."""
         return {}
 
-    async def _record_metric_async(self, metrics_collector, metric_name: str, value, labels: Dict[str, str]) -> None:
+    async def _record_metric_async(
+        self, metrics_collector, metric_name: str, value, labels: Dict[str, str]
+    ) -> None:
         """Fire-and-forget metric recording to reduce overhead during breaker engagement."""
         try:
             await asyncio.wait_for(
@@ -930,7 +936,7 @@ class CircuitBreaker:
                             metrics_collector,
                             "circuit_breaker_equity",
                             equity,
-                            {"account": "main"}
+                            {"account": "main"},
                         )
                     )
                 except Exception:
@@ -946,7 +952,9 @@ class CircuitBreaker:
         return {
             "state": self.state.value,
             "trigger_count": self.trigger_count,
-            "last_trigger_time": self.last_trigger_time.isoformat() if self.last_trigger_time else None,
+            "last_trigger_time": self.last_trigger_time.isoformat()
+            if self.last_trigger_time
+            else None,
             "remaining_cooldown_minutes": self.get_remaining_cooldown_minutes(),
             "current_equity": self.current_equity,
             "is_cooldown_active": self._is_cooldown_active(),

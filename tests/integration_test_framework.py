@@ -610,7 +610,9 @@ class IntegrationTestFramework:
         }
 
         for operation in operations:
-            op_result = await self._benchmark_operation(operation, strict_mode=strict_mode)
+            op_result = await self._benchmark_operation(
+                operation, strict_mode=strict_mode
+            )
             benchmark_results["operation_results"].append(op_result)
 
         benchmark_results["end_time"] = time.time()
@@ -677,30 +679,36 @@ class IntegrationTestFramework:
 
         # Add timing metrics if we have successful executions
         if successful_times:
-            result.update({
-                "avg_time": np.mean(successful_times),
-                "min_time": np.min(successful_times),
-                "max_time": np.max(successful_times),
-                "std_time": np.std(successful_times),
-                "total_successful_time": np.sum(successful_times),
-            })
+            result.update(
+                {
+                    "avg_time": np.mean(successful_times),
+                    "min_time": np.min(successful_times),
+                    "max_time": np.max(successful_times),
+                    "std_time": np.std(successful_times),
+                    "total_successful_time": np.sum(successful_times),
+                }
+            )
 
         # Add failure timing metrics if we have failures
         if failed_times:
-            result.update({
-                "avg_failure_time": np.mean(failed_times),
-                "min_failure_time": np.min(failed_times),
-                "max_failure_time": np.max(failed_times),
-                "std_failure_time": np.std(failed_times),
-                "total_failed_time": np.sum(failed_times),
-            })
+            result.update(
+                {
+                    "avg_failure_time": np.mean(failed_times),
+                    "min_failure_time": np.min(failed_times),
+                    "max_failure_time": np.max(failed_times),
+                    "std_failure_time": np.std(failed_times),
+                    "total_failed_time": np.sum(failed_times),
+                }
+            )
 
         # Overall timing metrics
         if all_times:
-            result.update({
-                "overall_avg_time": np.mean(all_times),
-                "overall_total_time": np.sum(all_times),
-            })
+            result.update(
+                {
+                    "overall_avg_time": np.mean(all_times),
+                    "overall_total_time": np.sum(all_times),
+                }
+            )
 
         return result
 
@@ -722,10 +730,16 @@ class IntegrationTestFramework:
             "total_operations": total_operations,
             "total_successful": total_successful,
             "total_failed": total_failed,
-            "overall_success_rate": total_successful / total_operations if total_operations > 0 else 0,
+            "overall_success_rate": total_successful / total_operations
+            if total_operations > 0
+            else 0,
             "total_time": total_time,
-            "avg_operation_time": total_time / total_operations if total_operations > 0 else 0,
-            "operations_per_second": total_operations / total_time if total_time > 0 else 0,
+            "avg_operation_time": total_time / total_operations
+            if total_operations > 0
+            else 0,
+            "operations_per_second": total_operations / total_time
+            if total_time > 0
+            else 0,
         }
 
     def generate_test_report(self, output_file: str = "integration_test_report.md"):

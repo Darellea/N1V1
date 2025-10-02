@@ -1081,10 +1081,11 @@ def initialize_tensorflow():
         if not _tf_loaded:
             try:
                 # Configure TensorFlow to avoid thread conflicts
-                os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-                os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+                os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+                os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "true"
 
                 import tensorflow as tf
+
                 # Configure threading to prevent conflicts
                 tf.config.threading.set_intra_op_parallelism_threads(1)
                 tf.config.threading.set_inter_op_parallelism_threads(1)

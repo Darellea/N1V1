@@ -27,11 +27,7 @@ class TestTickerPayloadValidation:
 
     def test_valid_ticker_payload(self):
         """Test that valid ticker data is accepted."""
-        data = {
-            "symbol": "BTC/USDT",
-            "price": 45000.50,
-            "timestamp": 1640995200.0
-        }
+        data = {"symbol": "BTC/USDT", "price": 45000.50, "timestamp": 1640995200.0}
 
         payload = TickerPayload.model_validate(data)
         assert payload.symbol == "BTC/USDT"
@@ -41,11 +37,7 @@ class TestTickerPayloadValidation:
     def test_ticker_symbol_validation(self):
         """Test symbol validation in ticker data."""
         # Valid symbol
-        data = {
-            "symbol": "ETH/USD",
-            "price": 3000.0,
-            "timestamp": 1640995200.0
-        }
+        data = {"symbol": "ETH/USD", "price": 3000.0, "timestamp": 1640995200.0}
         payload = TickerPayload.model_validate(data)
         assert payload.symbol == "ETH/USD"
 
@@ -57,11 +49,7 @@ class TestTickerPayloadValidation:
     def test_ticker_price_validation(self):
         """Test price validation in ticker data."""
         # Valid positive price
-        data = {
-            "symbol": "BTC/USDT",
-            "price": 50000.0,
-            "timestamp": 1640995200.0
-        }
+        data = {"symbol": "BTC/USDT", "price": 50000.0, "timestamp": 1640995200.0}
         payload = TickerPayload.model_validate(data)
         assert payload.price == 50000.0
 
@@ -78,26 +66,17 @@ class TestTickerPayloadValidation:
     def test_missing_required_field(self):
         """Test that missing required fields are rejected."""
         # Missing symbol
-        data = {
-            "price": 45000.50,
-            "timestamp": 1640995200.0
-        }
+        data = {"price": 45000.50, "timestamp": 1640995200.0}
         with pytest.raises(ValidationError):
             TickerPayload.model_validate(data)
 
         # Missing price
-        data = {
-            "symbol": "BTC/USDT",
-            "timestamp": 1640995200.0
-        }
+        data = {"symbol": "BTC/USDT", "timestamp": 1640995200.0}
         with pytest.raises(ValidationError):
             TickerPayload.model_validate(data)
 
         # Missing timestamp
-        data = {
-            "symbol": "BTC/USDT",
-            "price": 45000.50
-        }
+        data = {"symbol": "BTC/USDT", "price": 45000.50}
         with pytest.raises(ValidationError):
             TickerPayload.model_validate(data)
 
@@ -107,7 +86,7 @@ class TestTickerPayloadValidation:
             "symbol": "BTC/USDT",
             "price": 45000.50,
             "timestamp": 1640995200.0,
-            "extra_field": "should_be_rejected"
+            "extra_field": "should_be_rejected",
         }
         with pytest.raises(ValidationError):
             TickerPayload.model_validate(data)
@@ -115,20 +94,12 @@ class TestTickerPayloadValidation:
     def test_wrong_data_type(self):
         """Test that wrong data types are rejected."""
         # String price instead of number
-        data = {
-            "symbol": "BTC/USDT",
-            "price": "45000.50",
-            "timestamp": 1640995200.0
-        }
+        data = {"symbol": "BTC/USDT", "price": "45000.50", "timestamp": 1640995200.0}
         with pytest.raises(ValidationError):
             TickerPayload.model_validate(data)
 
         # Negative timestamp
-        data = {
-            "symbol": "BTC/USDT",
-            "price": 45000.50,
-            "timestamp": -1
-        }
+        data = {"symbol": "BTC/USDT", "price": 45000.50, "timestamp": -1}
         with pytest.raises(ValidationError):
             TickerPayload.model_validate(data)
 
@@ -142,7 +113,7 @@ class TestOrderBookPayloadValidation:
             "symbol": "BTC/USDT",
             "bids": [[45000.0, 1.5], [44950.0, 2.0]],
             "asks": [[45050.0, 1.0], [45100.0, 0.5]],
-            "timestamp": 1640995200.0
+            "timestamp": 1640995200.0,
         }
 
         payload = OrderBookPayload.model_validate(data)
@@ -158,7 +129,7 @@ class TestOrderBookPayloadValidation:
             "symbol": "BTC/USDT",
             "bids": [[45000.0], [44950.0, 2.0]],  # Missing quantity
             "asks": [[45050.0, 1.0]],
-            "timestamp": 1640995200.0
+            "timestamp": 1640995200.0,
         }
         with pytest.raises(ValidationError):
             OrderBookPayload.model_validate(data)
@@ -168,7 +139,7 @@ class TestOrderBookPayloadValidation:
             "symbol": "BTC/USDT",
             "bids": [[-45000.0, 1.5]],
             "asks": [[45050.0, 1.0]],
-            "timestamp": 1640995200.0
+            "timestamp": 1640995200.0,
         }
         with pytest.raises(ValidationError):
             OrderBookPayload.model_validate(data)
@@ -178,7 +149,7 @@ class TestOrderBookPayloadValidation:
             "symbol": "BTC/USDT",
             "bids": [[45000.0, -1.5]],
             "asks": [[45050.0, 1.0]],
-            "timestamp": 1640995200.0
+            "timestamp": 1640995200.0,
         }
         with pytest.raises(ValidationError):
             OrderBookPayload.model_validate(data)
@@ -195,7 +166,7 @@ class TestTradePayloadValidation:
             "quantity": 0.5,
             "timestamp": 1640995200.0,
             "side": "buy",
-            "trade_id": "123456789"
+            "trade_id": "123456789",
         }
 
         payload = TradePayload.model_validate(data)
@@ -215,7 +186,7 @@ class TestTradePayloadValidation:
                 "quantity": 0.5,
                 "timestamp": 1640995200.0,
                 "side": side,
-                "trade_id": "123"
+                "trade_id": "123",
             }
             payload = TradePayload.model_validate(data)
             assert payload.side in ["buy", "sell"]
@@ -231,11 +202,7 @@ class TestValidationFunctions:
 
     def test_validate_ticker_data_success(self):
         """Test successful ticker data validation."""
-        data = {
-            "symbol": "BTC/USDT",
-            "price": 45000.50,
-            "timestamp": 1640995200.0
-        }
+        data = {"symbol": "BTC/USDT", "price": 45000.50, "timestamp": 1640995200.0}
 
         result = validate_ticker_data(data)
         assert isinstance(result, TickerPayload)
@@ -246,7 +213,7 @@ class TestValidationFunctions:
         data = {
             "symbol": "BTC/USDT",
             "price": "invalid_price",  # Wrong type
-            "timestamp": 1640995200.0
+            "timestamp": 1640995200.0,
         }
 
         with pytest.raises(SchemaValidationError) as exc_info:
@@ -262,7 +229,7 @@ class TestValidationFunctions:
             "symbol": "BTC/USDT",
             "bids": [[45000.0, 1.5]],
             "asks": [[45050.0, 1.0]],
-            "timestamp": 1640995200.0
+            "timestamp": 1640995200.0,
         }
 
         result = validate_order_book_data(data)
@@ -277,7 +244,7 @@ class TestValidationFunctions:
             "quantity": 0.5,
             "timestamp": 1640995200.0,
             "side": "buy",
-            "trade_id": "123"
+            "trade_id": "123",
         }
 
         result = validate_trade_data(data)
@@ -290,7 +257,7 @@ class TestValidationFunctions:
             "symbol": "BTC/USDT",
             "data_type": "ticker",
             "payload": {"price": 45000.0},
-            "timestamp": 1640995200.0
+            "timestamp": 1640995200.0,
         }
 
         result = validate_market_data(data)
@@ -301,7 +268,7 @@ class TestValidationFunctions:
         """Test successful WebSocket message validation."""
         data = {
             "event_type": "ticker",
-            "data": {"symbol": "BTC/USDT", "price": 45000.0}
+            "data": {"symbol": "BTC/USDT", "price": 45000.0},
         }
 
         result = validate_websocket_message(data)
@@ -319,19 +286,13 @@ class TestSchemaValidationError:
 
     def test_error_with_schema_name(self):
         """Test error with schema name."""
-        error = SchemaValidationError(
-            "Validation failed",
-            schema_name="TickerPayload"
-        )
+        error = SchemaValidationError("Validation failed", schema_name="TickerPayload")
         assert "[TickerPayload] Validation failed" in str(error)
 
     def test_error_with_field_errors(self):
         """Test error with field errors."""
         field_errors = {"price": ["must be positive"]}
-        error = SchemaValidationError(
-            "Validation failed",
-            field_errors=field_errors
-        )
+        error = SchemaValidationError("Validation failed", field_errors=field_errors)
         assert "field errors:" in str(error)
 
     def test_error_with_all_fields(self):
@@ -341,7 +302,7 @@ class TestSchemaValidationError:
             "Validation failed",
             data={"price": 45000},
             schema_name="TickerPayload",
-            field_errors=field_errors
+            field_errors=field_errors,
         )
         error_str = str(error)
         assert "[TickerPayload] Validation failed" in error_str
@@ -359,7 +320,7 @@ class TestCoercionBehavior:
         data = {
             "symbol": "BTC/USDT",
             "price": "45000.50",  # String instead of float
-            "timestamp": 1640995200.0
+            "timestamp": 1640995200.0,
         }
 
         with pytest.raises(ValidationError):
@@ -371,7 +332,7 @@ class TestCoercionBehavior:
             "symbol": "BTC/USDT",
             "price": 45000.50,
             "timestamp": 1640995200.0,
-            "extra_field": "not allowed"
+            "extra_field": "not allowed",
         }
 
         with pytest.raises(ValidationError):

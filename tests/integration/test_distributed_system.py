@@ -35,6 +35,7 @@ def config() -> Dict[str, Any]:
 @pytest.fixture
 def task_manager(config: Dict[str, Any], event_loop) -> TaskManager:
     """Create a task manager instance for testing."""
+
     async def _create_manager():
         manager = TaskManager(config)
         await manager.initialize_queue()
@@ -48,6 +49,7 @@ def task_manager(config: Dict[str, Any], event_loop) -> TaskManager:
 @pytest.fixture
 def scheduler(task_manager, config: Dict[str, Any], event_loop) -> DistributedScheduler:
     """Create a distributed scheduler instance for testing."""
+
     async def _create_scheduler():
         scheduler = DistributedScheduler(task_manager, config)
         await scheduler.initialize()
@@ -61,6 +63,7 @@ def scheduler(task_manager, config: Dict[str, Any], event_loop) -> DistributedSc
 @pytest.fixture
 def executor(task_manager, config: Dict[str, Any], event_loop) -> DistributedExecutor:
     """Create a distributed executor instance for testing."""
+
     async def _create_executor():
         executor = DistributedExecutor(task_manager, config)
         return executor

@@ -46,7 +46,7 @@ class TestAsyncDataFetcher:
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(
                 fetcher.exchange.fetch_ohlcv("BTC/USDT", "1h", limit=100),
-                timeout=0.1  # Very short timeout for test
+                timeout=0.1,  # Very short timeout for test
             )
 
         elapsed = time.time() - start_time
@@ -60,14 +60,16 @@ class TestAsyncDataFetcher:
         fetcher._cache_dir_path = "/tmp/test_cache"
 
         # Create test DataFrame
-        df = pd.DataFrame({
-            "timestamp": pd.date_range("2023-01-01", periods=100, freq="h"),
-            "open": [50000] * 100,
-            "high": [51000] * 100,
-            "low": [49000] * 100,
-            "close": [50500] * 100,
-            "volume": [100] * 100,
-        }).set_index("timestamp")
+        df = pd.DataFrame(
+            {
+                "timestamp": pd.date_range("2023-01-01", periods=100, freq="h"),
+                "open": [50000] * 100,
+                "high": [51000] * 100,
+                "low": [49000] * 100,
+                "close": [50500] * 100,
+                "volume": [100] * 100,
+            }
+        ).set_index("timestamp")
 
         # Mock the thread pool operation
         with patch("asyncio.to_thread") as mock_to_thread:
@@ -78,8 +80,11 @@ class TestAsyncDataFetcher:
             # Verify that CPU-intensive operations were offloaded
             assert mock_to_thread.called
             # Should call _prepare_cache_data in thread pool
-            prepare_calls = [call for call in mock_to_thread.call_args_list
-                           if len(call[0]) > 0 and call[0][0] == fetcher._prepare_cache_data]
+            prepare_calls = [
+                call
+                for call in mock_to_thread.call_args_list
+                if len(call[0]) > 0 and call[0][0] == fetcher._prepare_cache_data
+            ]
             assert len(prepare_calls) > 0
 
     @pytest.mark.asyncio
@@ -94,10 +99,12 @@ class TestAsyncDataFetcher:
             mock_aiofiles_open.return_value.__aenter__.return_value = mock_file
             mock_aiofiles_open.return_value.__aexit__.return_value = None
 
-            df = pd.DataFrame({
-                "timestamp": pd.date_range("2023-01-01", periods=5, freq="h"),
-                "close": [50000] * 5,
-            }).set_index("timestamp")
+            df = pd.DataFrame(
+                {
+                    "timestamp": pd.date_range("2023-01-01", periods=5, freq="h"),
+                    "close": [50000] * 5,
+                }
+            ).set_index("timestamp")
 
             await fetcher._save_to_cache_async("test_key", df)
 
@@ -112,9 +119,9 @@ class TestAsyncDataFetcher:
         fetcher._cache_dir_path = "/tmp/test_cache"
 
         # Mock async file read
-        with patch("aiofiles.open") as mock_aiofiles_open, \
-             patch("asyncio.to_thread") as mock_to_thread:
-
+        with patch("aiofiles.open") as mock_aiofiles_open, patch(
+            "asyncio.to_thread"
+        ) as mock_to_thread:
             mock_file = AsyncMock()
             mock_file.read.return_value = '{"timestamp": 1234567890000, "data": []}'
             mock_aiofiles_open.return_value.__aenter__.return_value = mock_file
@@ -125,8 +132,11 @@ class TestAsyncDataFetcher:
             result = await fetcher._load_from_cache_async("test_key")
 
             # Verify JSON parsing was offloaded to thread pool
-            json_load_calls = [call for call in mock_to_thread.call_args_list
-                             if len(call[0]) > 0 and call[0][0] == fetcher._process_cached_dataframe]
+            json_load_calls = [
+                call
+                for call in mock_to_thread.call_args_list
+                if len(call[0]) > 0 and call[0][0] == fetcher._process_cached_dataframe
+            ]
             assert len(json_load_calls) > 0
 
     @pytest.mark.asyncio
@@ -136,29 +146,33 @@ class TestAsyncDataFetcher:
         fetcher._cache_dir_path = "/tmp/test_cache"
 
         # Create a large DataFrame to simulate CPU-intensive work
-        df = pd.DataFrame({
-            "timestamp": pd.date_range("2023-01-01", periods=1000, freq="min"),
-            "open": list(range(1000)),
-            "high": list(range(1000, 2000)),
-            "low": list(range(2000, 3000)),
-            "close": list(range(3000, 4000)),
-            "volume": list(range(4000, 5000)),
-        }).set_index("timestamp")
+        df = pd.DataFrame(
+            {
+                "timestamp": pd.date_range("2023-01-01", periods=1000, freq="min"),
+                "open": list(range(1000)),
+                "high": list(range(1000, 2000)),
+                "low": list(range(2000, 3000)),
+                "close": list(range(3000, 4000)),
+                "volume": list(range(4000, 5000)),
+            }
+        ).set_index("timestamp")
 
         # Mock the thread pool to simulate slow processing
         async def slow_prepare(*args, **kwargs):
             await asyncio.sleep(0.1)  # Simulate slow CPU work
             return {"timestamp": 1234567890000, "data": []}
 
-        with patch("asyncio.to_thread", side_effect=slow_prepare), \
-             patch("aiofiles.open") as mock_aiofiles:
-
+        with patch("asyncio.to_thread", side_effect=slow_prepare), patch(
+            "aiofiles.open"
+        ) as mock_aiofiles:
             mock_file = AsyncMock()
             mock_aiofiles.return_value.__aenter__.return_value = mock_file
             mock_aiofiles.return_value.__aexit__.return_value = None
 
             # Start cache operation
-            cache_task = asyncio.create_task(fetcher._save_to_cache_async("test_key", df))
+            cache_task = asyncio.create_task(
+                fetcher._save_to_cache_async("test_key", df)
+            )
 
             # While cache operation is running, verify event loop is still responsive
             start_time = time.time()
@@ -220,9 +234,9 @@ class TestAsyncDataFetcher:
         fetcher.config["rate_limit"] = 10  # 10 requests per second
 
         # Mock time to control timing
-        with patch("time.time") as mock_time, \
-             patch("asyncio.sleep") as mock_async_sleep:
-
+        with patch("time.time") as mock_time, patch(
+            "asyncio.sleep"
+        ) as mock_async_sleep:
             mock_time.return_value = 1000.0
 
             # First call should not sleep
@@ -241,10 +255,12 @@ class TestAsyncDataFetcher:
         fetcher.config["cache_enabled"] = True
         fetcher._cache_dir_path = "/tmp/test_cache"
 
-        df = pd.DataFrame({
-            "timestamp": pd.date_range("2023-01-01", periods=5, freq="h"),
-            "close": [50000] * 5,
-        }).set_index("timestamp")
+        df = pd.DataFrame(
+            {
+                "timestamp": pd.date_range("2023-01-01", periods=5, freq="h"),
+                "close": [50000] * 5,
+            }
+        ).set_index("timestamp")
 
         # Test sync save (should work via async fallback)
         with patch("asyncio.run") as mock_asyncio_run:
@@ -297,16 +313,22 @@ class TestAsyncTimeoutProtection:
 
         async def slow_ticker(*a, **k):
             await asyncio.sleep(2)
-            return {"timestamp": 1234567890000, "last": 50000, "bid": 49900, "ask": 50100, "high": 51000, "low": 49000, "baseVolume": 100, "percentage": 1.0}
+            return {
+                "timestamp": 1234567890000,
+                "last": 50000,
+                "bid": 49900,
+                "ask": 50100,
+                "high": 51000,
+                "low": 49000,
+                "baseVolume": 100,
+                "percentage": 1.0,
+            }
 
         mock_exchange.fetch_ticker = AsyncMock(side_effect=slow_ticker)
         fetcher.exchange = mock_exchange
 
         with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(
-                fetcher._fetch_ticker("BTC/USDT"),
-                timeout=0.1
-            )
+            await asyncio.wait_for(fetcher._fetch_ticker("BTC/USDT"), timeout=0.1)
 
     @pytest.mark.asyncio
     async def test_orderbook_fetch_timeout(self, fetcher):
@@ -316,16 +338,17 @@ class TestAsyncTimeoutProtection:
 
         async def slow_orderbook(*a, **k):
             await asyncio.sleep(2)
-            return {"timestamp": 1234567890000, "bids": [[50000, 1], [49900, 2]], "asks": [[50100, 1], [50200, 2]]}
+            return {
+                "timestamp": 1234567890000,
+                "bids": [[50000, 1], [49900, 2]],
+                "asks": [[50100, 1], [50200, 2]],
+            }
 
         mock_exchange.fetch_order_book = AsyncMock(side_effect=slow_orderbook)
         fetcher.exchange = mock_exchange
 
         with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(
-                fetcher._fetch_orderbook("BTC/USDT", 5),
-                timeout=0.1
-            )
+            await asyncio.wait_for(fetcher._fetch_orderbook("BTC/USDT", 5), timeout=0.1)
 
 
 class TestAsyncResourceManagement:

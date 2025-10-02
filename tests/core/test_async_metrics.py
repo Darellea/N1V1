@@ -84,7 +84,7 @@ def async_monitor():
     """Fixture for async performance monitor."""
     config = {
         "monitoring_interval": 1.0,  # Fast for testing
-        "baseline_window": 60.0,     # 1 minute for testing
+        "baseline_window": 60.0,  # 1 minute for testing
         "anomaly_detection": False,  # Disable for cleaner tests
         "alerting": False,
     }
@@ -97,7 +97,7 @@ def real_monitor():
     """Fixture for real performance monitor."""
     config = {
         "monitoring_interval": 0.1,  # Very fast for testing
-        "baseline_window": 10.0,     # Short window
+        "baseline_window": 10.0,  # Short window
         "anomaly_detection": False,
         "alerting": False,
     }
@@ -117,6 +117,7 @@ def stress_monitor():
     monitor = AsyncPerformanceMonitor(config)
     return monitor
 
+
 @pytest.mark.asyncio
 class TestAsyncMetricsCollection:
     """Test async metrics collection functionality."""
@@ -124,6 +125,7 @@ class TestAsyncMetricsCollection:
     @pytest.mark.timeout(30)
     async def test_async_metrics_collection_basic(self, async_monitor):
         """Test basic async metrics collection."""
+
         # Add a simple async collector
         async def simple_collector():
             await asyncio.sleep(0.1)  # Simulate async work
@@ -142,20 +144,15 @@ class TestAsyncMetricsCollection:
     @pytest.mark.timeout(30)
     async def test_concurrent_async_collectors(self, async_monitor):
         """Test concurrent execution of multiple async collectors."""
+
         async def slow_collector(name: str, value: float, delay: float):
             await asyncio.sleep(delay)
             return {f"{name}_metric": value, f"{name}_delay": delay}
 
         # Add multiple collectors with different delays
-        async_monitor.add_async_collector(
-            lambda: slow_collector("fast", 1.0, 0.1)
-        )
-        async_monitor.add_async_collector(
-            lambda: slow_collector("medium", 2.0, 0.2)
-        )
-        async_monitor.add_async_collector(
-            lambda: slow_collector("slow", 3.0, 0.3)
-        )
+        async_monitor.add_async_collector(lambda: slow_collector("fast", 1.0, 0.1))
+        async_monitor.add_async_collector(lambda: slow_collector("medium", 2.0, 0.2))
+        async_monitor.add_async_collector(lambda: slow_collector("slow", 3.0, 0.3))
 
         start_time = time.time()
         metrics = await async_monitor.collect_async_metrics()
@@ -176,6 +173,7 @@ class TestAsyncMetricsCollection:
     @pytest.mark.timeout(30)
     async def test_async_collector_error_handling(self, async_monitor):
         """Test graceful handling of async collector failures."""
+
         async def failing_collector():
             await asyncio.sleep(0.1)
             raise ValueError("Simulated collector failure")
@@ -233,7 +231,7 @@ class TestConcurrentMetricsUpdates:
                 metrics = {
                     f"task_{task_id}_counter": float(i + 1),
                     f"task_{task_id}_value": float(task_id * 100 + i),
-                    "_timestamp": time.time()
+                    "_timestamp": time.time(),
                 }
                 await real_monitor._update_baselines_with_metrics(metrics)
                 await asyncio.sleep(0.001)  # Small delay to allow interleaving
@@ -247,7 +245,10 @@ class TestConcurrentMetricsUpdates:
             metric_name = f"task_{task_id}_counter"
             assert metric_name in real_monitor.performance_metrics
 
-            values = [entry["value"] for entry in real_monitor.performance_metrics[metric_name]]
+            values = [
+                entry["value"]
+                for entry in real_monitor.performance_metrics[metric_name]
+            ]
             # Each task updates its own metric, so each metric should have update_count values
             assert len(values) == update_count
 
@@ -307,6 +308,7 @@ class TestPerformanceBenchmarks:
     @pytest.mark.timeout(60)
     async def test_async_vs_sync_performance_comparison(self, async_monitor):
         """Compare performance of async vs sync metrics collection."""
+
         # Setup sync-style collection (simulated)
         async def sync_style_collection():
             """Simulate sync-style collection with asyncio.sleep(0) for fairness."""
@@ -367,6 +369,7 @@ class TestPerformanceBenchmarks:
     @pytest.mark.timeout(60)
     async def test_scalability_with_concurrent_collectors(self, async_monitor):
         """Test scalability as number of concurrent collectors increases."""
+
         async def scalable_collector(collector_id: int, base_delay: float = 0.01):
             await asyncio.sleep(base_delay)
             return {f"collector_{collector_id}_metric": float(collector_id)}
@@ -379,9 +382,7 @@ class TestPerformanceBenchmarks:
 
             # Add collectors
             for i in range(num_collectors):
-                async_monitor.add_async_collector(
-                    lambda cid=i: scalable_collector(cid)
-                )
+                async_monitor.add_async_collector(lambda cid=i: scalable_collector(cid))
 
             # Benchmark
             times = []
@@ -474,7 +475,7 @@ class TestEdgeCasesAndStress:
             try:
                 metrics = await asyncio.wait_for(
                     stress_monitor.collect_async_metrics(),
-                    timeout=2.0  # Generous timeout
+                    timeout=2.0,  # Generous timeout
                 )
                 if metrics:  # Some metrics collected despite failures
                     successful_runs += 1
@@ -486,7 +487,9 @@ class TestEdgeCasesAndStress:
         print(".2f")
 
         # At least 50% success rate even under stress
-        assert success_rate >= 0.5, f"Too many failures under stress: {success_rate:.2f}"
+        assert (
+            success_rate >= 0.5
+        ), f"Too many failures under stress: {success_rate:.2f}"
 
     @pytest.mark.timeout(30)
     async def test_concurrent_monitoring_loops(self, stress_monitor):
@@ -558,6 +561,7 @@ class TestEdgeCasesAndStress:
         finally:
             # Cleanup
             import shutil
+
             if temp_dir.exists():
                 shutil.rmtree(temp_dir)
 
@@ -610,17 +614,19 @@ class TestPerformanceRegression:
 
     async def test_async_collection_performance_regression(self):
         """Test that async collection performance doesn't regress."""
-        monitor = AsyncPerformanceMonitor({
-            "monitoring_interval": 0.1,
-            "baseline_window": 10.0,
-            "anomaly_detection": False,
-            "alerting": False,
-        })
+        monitor = AsyncPerformanceMonitor(
+            {
+                "monitoring_interval": 0.1,
+                "baseline_window": 10.0,
+                "anomaly_detection": False,
+                "alerting": False,
+            }
+        )
 
         # Add realistic collectors
         async def realistic_collector(collector_id: int):
             # Simulate real work: some computation + async I/O
-            data = [i ** 2 for i in range(100)]  # Computation
+            data = [i**2 for i in range(100)]  # Computation
             await asyncio.sleep(0.001)  # Minimal async delay
             return {f"computed_metric_{collector_id}": sum(data) / len(data)}
 

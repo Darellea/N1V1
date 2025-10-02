@@ -689,7 +689,9 @@ class TestCircuitBreakerCooldownEnforcement:
 
         # Simulate multiple triggers with exponential backoff
         self.cb.trigger_count = 3  # Third trigger
-        self.cb.last_trigger_time = datetime.now() - timedelta(minutes=10)  # 10 minutes ago
+        self.cb.last_trigger_time = datetime.now() - timedelta(
+            minutes=10
+        )  # 10 minutes ago
 
         # Third trigger should have 20 minute cooldown
         expected_cooldown = 20

@@ -44,6 +44,7 @@ STRATEGY_MAP = {}
 @dataclass
 class CacheMetrics:
     """Metrics for cache performance monitoring."""
+
     hits: int = 0
     misses: int = 0
     evictions: int = 0
@@ -102,7 +103,9 @@ class LRUCache:
             "historical": min(100, maxsize // 4),
         }
 
-        logger.info(f"LRUCache initialized with maxsize={maxsize}, max_memory={max_memory_mb}MB")
+        logger.info(
+            f"LRUCache initialized with maxsize={maxsize}, max_memory={max_memory_mb}MB"
+        )
 
     def get(self, key: str) -> Optional[Any]:
         """
@@ -212,14 +215,19 @@ class LRUCache:
             # Remove time-sensitive data
             keys_to_remove = []
             for key in self.cache.keys():
-                if any(pattern in key.lower() for pattern in ["realtime", "ticker", "current"]):
+                if any(
+                    pattern in key.lower()
+                    for pattern in ["realtime", "ticker", "current"]
+                ):
                     keys_to_remove.append(key)
 
             for key in keys_to_remove:
                 del self.cache[key]
 
             if keys_to_remove:
-                logger.info(f"Invalidated {len(keys_to_remove)} market-close sensitive cache entries")
+                logger.info(
+                    f"Invalidated {len(keys_to_remove)} market-close sensitive cache entries"
+                )
                 self._update_memory_usage()
 
     def get_stats(self) -> Dict[str, Any]:
@@ -240,7 +248,12 @@ class LRUCache:
                 "sets": self.metrics.sets,
                 "memory_usage_mb": self.metrics.memory_usage_bytes / (1024 * 1024),
                 "max_memory_mb": self.max_memory_bytes / (1024 * 1024),
-                "memory_usage_percent": (self.metrics.memory_usage_bytes / self.max_memory_bytes) * 100 if self.max_memory_bytes > 0 else 0,
+                "memory_usage_percent": (
+                    self.metrics.memory_usage_bytes / self.max_memory_bytes
+                )
+                * 100
+                if self.max_memory_bytes > 0
+                else 0,
                 "data_type_counts": self._get_data_type_counts(),
             }
 
@@ -259,18 +272,20 @@ class LRUCache:
             total_bytes = 0
             for key, value in self.cache.items():
                 # Estimate key size
-                total_bytes += len(key.encode('utf-8')) * 2  # Rough overhead
+                total_bytes += len(key.encode("utf-8")) * 2  # Rough overhead
 
                 # Estimate value size
                 if isinstance(value, dict):
-                    total_bytes += len(str(value).encode('utf-8'))
-                elif hasattr(value, 'memory_usage'):
-                    total_bytes += getattr(value, 'memory_usage', 0)
+                    total_bytes += len(str(value).encode("utf-8"))
+                elif hasattr(value, "memory_usage"):
+                    total_bytes += getattr(value, "memory_usage", 0)
                 else:
-                    total_bytes += len(str(value).encode('utf-8'))
+                    total_bytes += len(str(value).encode("utf-8"))
 
             self.metrics.memory_usage_bytes = total_bytes
-            self.metrics.max_memory_bytes = max(self.metrics.max_memory_bytes, total_bytes)
+            self.metrics.max_memory_bytes = max(
+                self.metrics.max_memory_bytes, total_bytes
+            )
 
         except Exception:
             # Fallback if memory calculation fails
@@ -278,14 +293,18 @@ class LRUCache:
 
     def _evict_to_memory_limit(self) -> None:
         """Evict items until memory usage is within limits."""
-        while (self.metrics.memory_usage_bytes > self.max_memory_bytes and
-               len(self.cache) > 0):
+        while (
+            self.metrics.memory_usage_bytes > self.max_memory_bytes
+            and len(self.cache) > 0
+        ):
             self.cache.popitem(last=False)  # Remove least recently used
             self.metrics.evictions += 1
             self._update_memory_usage()
 
         if self.metrics.evictions > 0:
-            logger.warning(f"Memory limit eviction: {self.metrics.evictions} items removed")
+            logger.warning(
+                f"Memory limit eviction: {self.metrics.evictions} items removed"
+            )
 
     def shutdown(self) -> None:
         """Shutdown cache and cleanup resources."""
@@ -301,7 +320,12 @@ class MemoryManager:
     Integrates with existing memory management systems.
     """
 
-    def __init__(self, cache: LRUCache, warning_threshold: float = 0.8, critical_threshold: float = 0.95):
+    def __init__(
+        self,
+        cache: LRUCache,
+        warning_threshold: float = 0.8,
+        critical_threshold: float = 0.95,
+    ):
         """
         Initialize memory manager.
 
@@ -352,7 +376,9 @@ class MemoryManager:
             # Emergency actions
             self.cache.emergency_clear()
             status["actions_taken"].append("emergency_clear")
-            logger.critical(f"Critical memory usage: {memory_percent:.1f}%, emergency clear performed")
+            logger.critical(
+                f"Critical memory usage: {memory_percent:.1f}%, emergency clear performed"
+            )
 
         elif memory_percent >= self.warning_threshold:
             status["status"] = "warning"
@@ -383,6 +409,7 @@ class MemoryManager:
         """Get system memory information."""
         try:
             import psutil
+
             memory = psutil.virtual_memory()
             return {
                 "total_mb": memory.total / (1024 * 1024),
@@ -517,8 +544,7 @@ class BotEngine:
         cache_max_memory_mb = cache_config.get("max_memory_mb", 50.0)
 
         self.market_data_cache = LRUCache(
-            maxsize=cache_maxsize,
-            max_memory_mb=cache_max_memory_mb
+            maxsize=cache_maxsize, max_memory_mb=cache_max_memory_mb
         )
 
         # Memory manager for cache monitoring
@@ -529,7 +555,7 @@ class BotEngine:
         self.memory_manager = MemoryManager(
             self.market_data_cache,
             warning_threshold=warning_threshold,
-            critical_threshold=critical_threshold
+            critical_threshold=critical_threshold,
         )
 
         # Start memory monitoring
@@ -650,6 +676,7 @@ class BotEngine:
 
         if not getattr(self, "order_manager", None):
             from core.types import TradingMode
+
             mode_str = self.config.get("environment", {}).get("mode", "paper")
             mode = TradingMode[mode_str.upper()]
             self.order_manager = OrderManager(self.config, mode)
@@ -838,7 +865,9 @@ class BotEngine:
 
             # Cache the fetched data with appropriate data type
             if combined_data:
-                self.market_data_cache.set(cache_key, combined_data, data_type="market_data")
+                self.market_data_cache.set(
+                    cache_key, combined_data, data_type="market_data"
+                )
                 logger.debug(f"Cached market data for {len(combined_data)} symbols")
 
             return combined_data

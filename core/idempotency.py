@@ -41,7 +41,10 @@ class OrderExecutionRegistry:
                 return None
             elif existing["status"] == "pending":
                 # Block concurrent execution
-                return {"status": "pending", "error": "Order execution already in progress"}
+                return {
+                    "status": "pending",
+                    "error": "Order execution already in progress",
+                }
         else:
             self._registry[key] = {"status": "pending"}
         return None
@@ -102,6 +105,7 @@ class RetryNotAllowedError(Exception):
     Exception raised when retry is not allowed for side-effecting operations
     without proper idempotency protection.
     """
+
     pass
 
 

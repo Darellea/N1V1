@@ -66,7 +66,9 @@ class TestProfilingAccuracy:
         # Debug: Print actual timing values
         print(f"Reference time: {reference_time * 1000:.2f}ms")
         print(f"Profiler time: {metrics.execution_time * 1000:.2f}ms")
-        print(f"Difference: {abs(metrics.execution_time - reference_time) * 1000:.2f}ms")
+        print(
+            f"Difference: {abs(metrics.execution_time - reference_time) * 1000:.2f}ms"
+        )
 
         # Increased tolerance for profiler overhead (50% for short intervals with profiler overhead)
         tolerance = 0.5

@@ -132,6 +132,7 @@ def set_deterministic_seeds(seed: int = 42) -> None:
     # TensorFlow
     try:
         import tensorflow as tf
+
         if hasattr(tf, "random") and hasattr(tf.random, "set_seed"):
             tf.random.set_seed(seed)
             logger.info(f"TensorFlow seed set to {seed}")

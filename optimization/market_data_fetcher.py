@@ -203,7 +203,6 @@ class MarketDataFetcher:
             DataFrame with OHLCV data
         """
         try:
-
             # Initialize Binance client (would need API keys in production)
             # client = BinanceClient(api_key, api_secret)
             # klines = client.get_klines(symbol=symbol, interval=timeframe, limit=limit)

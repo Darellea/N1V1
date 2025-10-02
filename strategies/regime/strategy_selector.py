@@ -1386,6 +1386,7 @@ class StrategySelector:
 
 def get_market_regime_detector():
     from .regime_detector import RegimeDetector
+
     return RegimeDetector()
 
 

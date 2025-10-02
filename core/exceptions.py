@@ -18,7 +18,7 @@ class SchemaValidationError(Exception):
         message: str,
         data: Optional[Any] = None,
         schema_name: Optional[str] = None,
-        field_errors: Optional[Dict[str, Any]] = None
+        field_errors: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize SchemaValidationError.
@@ -52,5 +52,7 @@ class MissingIdempotencyError(Exception):
     providing an idempotency key, which is required for safe retries.
     """
 
-    def __init__(self, message: str = "Idempotency key is required for order execution"):
+    def __init__(
+        self, message: str = "Idempotency key is required for order execution"
+    ):
         super().__init__(message)

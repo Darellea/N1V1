@@ -435,11 +435,13 @@ class TestReliabilityManager:
         async def side_effect_operation():
             return "order_placed"
 
-        with pytest.raises(RetryNotAllowedError, match="Retry disabled for side-effect operation"):
+        with pytest.raises(
+            RetryNotAllowedError, match="Retry disabled for side-effect operation"
+        ):
             await reliability_manager.retry_async(
                 lambda: side_effect_operation(),
                 is_side_effect=True,
-                allow_side_effect_retry=False
+                allow_side_effect_retry=False,
             )
 
     @pytest.mark.asyncio
@@ -451,12 +453,15 @@ class TestReliabilityManager:
         async def side_effect_operation():
             return "order_placed"
 
-        with pytest.raises(RetryNotAllowedError, match="Retry not allowed for side-effect operation without idempotency_key"):
+        with pytest.raises(
+            RetryNotAllowedError,
+            match="Retry not allowed for side-effect operation without idempotency_key",
+        ):
             await reliability_manager.retry_async(
                 lambda: side_effect_operation(),
                 is_side_effect=True,
                 allow_side_effect_retry=True,
-                idempotency_key=None
+                idempotency_key=None,
             )
 
     @pytest.mark.asyncio
@@ -472,7 +477,7 @@ class TestReliabilityManager:
             lambda: side_effect_operation(),
             is_side_effect=True,
             allow_side_effect_retry=True,
-            idempotency_key="test-key-123"
+            idempotency_key="test-key-123",
         )
 
         assert result == "order_placed"
@@ -496,7 +501,7 @@ class TestReliabilityManager:
                     lambda: failing_side_effect_operation(),
                     is_side_effect=True,
                     allow_side_effect_retry=True,
-                    idempotency_key="test-key-456"
+                    idempotency_key="test-key-456",
                 )
 
         # Should only try once (fail-fast for side effects)
@@ -520,8 +525,7 @@ class TestReliabilityManager:
 
         with patch("asyncio.sleep") as mock_sleep:
             result = await reliability_manager.retry_async(
-                lambda: failing_operation(),
-                is_side_effect=False  # Default
+                lambda: failing_operation(), is_side_effect=False  # Default
             )
 
         assert result == "success"
@@ -549,7 +553,7 @@ class TestReliabilityManager:
                 retries=2,  # Explicitly allow 2 retries
                 is_side_effect=True,
                 allow_side_effect_retry=True,
-                idempotency_key="test-key-789"
+                idempotency_key="test-key-789",
             )
 
         assert result == "success"

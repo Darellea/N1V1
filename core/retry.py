@@ -58,7 +58,7 @@ async def retry_call(
     idempotency_key: Optional[str] = None,
     circuit_breaker: Optional[APICircuitBreaker] = None,
     is_side_effect: bool = False,
-    **kwargs
+    **kwargs,
 ) -> Any:
     """
     Centralized retry helper with idempotency-first design.
@@ -86,7 +86,14 @@ async def retry_call(
         Exception: Last exception from failed attempts
     """
     # Filter out retry_call parameters from kwargs to avoid passing them to fn
-    retry_params = {'max_attempts', 'base_delay', 'jitter', 'idempotency_key', 'circuit_breaker', 'is_side_effect'}
+    retry_params = {
+        "max_attempts",
+        "base_delay",
+        "jitter",
+        "idempotency_key",
+        "circuit_breaker",
+        "is_side_effect",
+    }
     fn_kwargs = {k: v for k, v in kwargs.items() if k not in retry_params}
 
     # Use global config if parameters not specified
@@ -108,7 +115,9 @@ async def retry_call(
             raise CircuitOpenError(f"Circuit is open for {fn.__name__}, aborting retry")
 
         try:
-            logger.debug(f"Calling {fn.__name__} (attempt {attempt + 1}/{max_attempts})")
+            logger.debug(
+                f"Calling {fn.__name__} (attempt {attempt + 1}/{max_attempts})"
+            )
             result = await _call_fn(fn, *args, **fn_kwargs)
 
             # Record success with circuit breaker
@@ -122,10 +131,12 @@ async def retry_call(
             if circuit_breaker:
                 circuit_breaker.record_failure()
 
-            is_last_attempt = (attempt + 1 >= max_attempts)
+            is_last_attempt = attempt + 1 >= max_attempts
 
             if is_last_attempt:
-                logger.error(f"All {max_attempts} attempts failed for {fn.__name__}: {e}")
+                logger.error(
+                    f"All {max_attempts} attempts failed for {fn.__name__}: {e}"
+                )
                 raise
 
             # Calculate exponential backoff with jitter
@@ -148,7 +159,7 @@ async def retry_call_sync(
     idempotency_key: Optional[str] = None,
     circuit_breaker: Optional[APICircuitBreaker] = None,
     is_side_effect: bool = False,
-    **kwargs
+    **kwargs,
 ) -> Any:
     """
     Synchronous version of retry_call for non-async functions.
@@ -174,15 +185,19 @@ async def retry_call_sync(
             raise CircuitOpenError(f"Circuit is open for {fn.__name__}, aborting retry")
 
         try:
-            logger.debug(f"Calling {fn.__name__} (attempt {attempt + 1}/{max_attempts})")
+            logger.debug(
+                f"Calling {fn.__name__} (attempt {attempt + 1}/{max_attempts})"
+            )
             # Run sync function in thread pool
             return await asyncio.to_thread(fn, *args, **kwargs)
 
         except Exception as e:
-            is_last_attempt = (attempt + 1 >= max_attempts)
+            is_last_attempt = attempt + 1 >= max_attempts
 
             if is_last_attempt:
-                logger.error(f"All {max_attempts} attempts failed for {fn.__name__}: {e}")
+                logger.error(
+                    f"All {max_attempts} attempts failed for {fn.__name__}: {e}"
+                )
                 raise
 
             # Calculate exponential backoff with jitter
@@ -215,7 +230,9 @@ async def _call_fn(fn: Callable[..., Any], *args, **kwargs) -> Any:
         return await asyncio.to_thread(fn, *args, **kwargs)
 
 
-def _calculate_delay(attempt: int, base_delay: float, jitter: float, max_delay: float) -> float:
+def _calculate_delay(
+    attempt: int, base_delay: float, jitter: float, max_delay: float
+) -> float:
     """
     Calculate delay with exponential backoff and jitter.
 
@@ -231,7 +248,7 @@ def _calculate_delay(attempt: int, base_delay: float, jitter: float, max_delay: 
         Delay in seconds
     """
     # Exponential backoff
-    delay = base_delay * (2 ** attempt)
+    delay = base_delay * (2**attempt)
 
     # Add jitter to prevent thundering herd
     delay += random.uniform(0, jitter)

@@ -125,10 +125,9 @@ class TestTokenBucketRateLimiter:
     @pytest.fixture
     def rate_limiter(self):
         """Create a rate limiter with fast refill for testing."""
-        return TokenBucketRateLimiter(RateLimiterConfig(
-            requests_per_second=10.0,
-            burst_limit=5
-        ))
+        return TokenBucketRateLimiter(
+            RateLimiterConfig(requests_per_second=10.0, burst_limit=5)
+        )
 
     def test_initial_tokens_equal_burst_limit(self, rate_limiter):
         """Test rate limiter starts with tokens equal to burst limit."""
@@ -174,14 +173,16 @@ class TestGuardedCall:
     @pytest.fixture
     def rate_limiter(self):
         """Create a rate limiter for testing."""
-        return TokenBucketRateLimiter(RateLimiterConfig(
-            requests_per_second=100.0,  # Fast for testing
-            burst_limit=10
-        ))
+        return TokenBucketRateLimiter(
+            RateLimiterConfig(
+                requests_per_second=100.0, burst_limit=10  # Fast for testing
+            )
+        )
 
     @pytest.mark.asyncio
     async def test_guarded_call_success(self):
         """Test successful guarded call."""
+
         async def success_fn():
             return "success"
 
@@ -191,6 +192,7 @@ class TestGuardedCall:
     @pytest.mark.asyncio
     async def test_guarded_call_with_sync_function(self):
         """Test guarded call with synchronous function."""
+
         def sync_fn():
             return "sync_success"
 
@@ -226,6 +228,7 @@ class TestGuardedCall:
     @pytest.mark.asyncio
     async def test_guarded_call_records_success(self, circuit_breaker):
         """Test guarded call records success with circuit breaker."""
+
         async def success_fn():
             return "success"
 
@@ -236,6 +239,7 @@ class TestGuardedCall:
     @pytest.mark.asyncio
     async def test_guarded_call_records_failure(self, circuit_breaker):
         """Test guarded call records failure with circuit breaker."""
+
         async def failing_fn():
             raise ValueError("test error")
 
@@ -247,18 +251,17 @@ class TestGuardedCall:
     @pytest.mark.asyncio
     async def test_guarded_call_with_args_and_kwargs(self):
         """Test guarded call passes through args and kwargs."""
+
         async def fn_with_args(*args, **kwargs):
             return {"args": args, "kwargs": kwargs}
 
         result = await guarded_call(
-            fn_with_args,
-            "arg1", "arg2",
-            kwarg1="value1", kwarg2="value2"
+            fn_with_args, "arg1", "arg2", kwarg1="value1", kwarg2="value2"
         )
 
         assert result == {
             "args": ("arg1", "arg2"),
-            "kwargs": {"kwarg1": "value1", "kwarg2": "value2"}
+            "kwargs": {"kwarg1": "value1", "kwarg2": "value2"},
         }
 
 

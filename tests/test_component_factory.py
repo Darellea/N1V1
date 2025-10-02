@@ -253,7 +253,9 @@ class TestComponentFactoryStats:
 
         # Register components
         ComponentFactory.register("stat_test1", lambda: {"comp1": True}, singleton=True)
-        ComponentFactory.register("stat_test2", lambda: {"comp2": True}, singleton=False)
+        ComponentFactory.register(
+            "stat_test2", lambda: {"comp2": True}, singleton=False
+        )
         ComponentFactory.override("stat_test1", {"override": True})
 
         # Get one singleton (creates it) - but overridden components don't get cached

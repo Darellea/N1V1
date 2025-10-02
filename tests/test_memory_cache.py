@@ -134,7 +134,7 @@ class TestLRUCacheWithTTL:
 
         assert len(cache) == 3
         assert cache.get("key1") == "value1"  # Still present (recently accessed)
-        assert cache.get("key2") is None    # Evicted
+        assert cache.get("key2") is None  # Evicted
         assert cache.get("key3") == "value3"  # Still present
         assert cache.get("key4") == "value4"  # New item
 
@@ -250,7 +250,7 @@ class TestLRUCacheWithTTL:
 
         assert stats["current_size"] == 2
         assert stats["max_size"] == 3
-        assert stats["utilization_percent"] == (2/3) * 100
+        assert stats["utilization_percent"] == (2 / 3) * 100
         assert stats["ttl_enabled"] is True
         assert stats["metrics_enabled"] is True
         assert stats["hits"] == 1
@@ -288,7 +288,9 @@ class TestLRUCacheWithTTL:
                 # Get value and check consistency
                 retrieved = cache.get(key)
                 if retrieved is not None and retrieved != expected_value:
-                    results.append(f"Mismatch for {key}: expected {expected_value}, got {retrieved}")
+                    results.append(
+                        f"Mismatch for {key}: expected {expected_value}, got {retrieved}"
+                    )
                 elif retrieved is None:
                     results.append(f"Value disappeared for {key}")
                 else:
@@ -316,7 +318,9 @@ class TestLRUCacheWithTTL:
         total_operations = sum(operations_completed)
         if total_operations > 0:
             mismatch_rate = len(results) / total_operations
-            assert mismatch_rate < 0.05, f"Too many mismatches: {results}"  # Allow up to 5% mismatch rate
+            assert (
+                mismatch_rate < 0.05
+            ), f"Too many mismatches: {results}"  # Allow up to 5% mismatch rate
 
         # Cache should have entries
         assert len(cache) > 0
@@ -421,7 +425,9 @@ class TestCacheIntegrationScenarios:
             if cache.get(f"rare{i}") is not None:
                 rare_items_in_cache += 1
 
-        assert rare_items_in_cache < 4, "Some rare items should have been evicted due to LRU"
+        assert (
+            rare_items_in_cache < 4
+        ), "Some rare items should have been evicted due to LRU"
         assert rare_items_in_cache >= 2, "At least some rare items should remain"
 
     def test_ttl_and_lru_interaction(self):

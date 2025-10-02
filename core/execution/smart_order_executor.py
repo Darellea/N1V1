@@ -9,7 +9,11 @@ import uuid
 from decimal import Decimal
 from typing import Any, Dict, List
 
-from core.api_protection import guarded_call, get_default_circuit_breaker, get_default_rate_limiter
+from core.api_protection import (
+    guarded_call,
+    get_default_circuit_breaker,
+    get_default_rate_limiter,
+)
 from core.contracts import SignalType, TradingSignal
 from core.types.order_types import Order, OrderStatus, OrderType
 from utils.logger import get_trade_logger
@@ -213,7 +217,7 @@ class SmartOrderExecutor(BaseExecutor):
             self.exchange_api.create_order,
             **params,
             circuit_breaker=circuit_breaker,
-            rate_limiter=rate_limiter
+            rate_limiter=rate_limiter,
         )
         return response
 

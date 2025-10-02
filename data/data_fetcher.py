@@ -538,9 +538,11 @@ class DataFetcher(IDataFetcher):
                 if cached is not None and not cached.empty:
                     return cached
 
-            candles = await self._fetch_safely(self.exchange.fetch_ohlcv(
-                symbol=symbol, timeframe=timeframe, limit=limit, since=since
-            ))
+            candles = await self._fetch_safely(
+                self.exchange.fetch_ohlcv(
+                    symbol=symbol, timeframe=timeframe, limit=limit, since=since
+                )
+            )
 
             if not candles:
                 return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
@@ -828,7 +830,9 @@ class DataFetcher(IDataFetcher):
                 raw = await f.read()
 
             # Process DataFrame in thread pool (CPU-intensive)
-            return await asyncio.to_thread(self._process_cached_dataframe, raw, max_age_hours)
+            return await asyncio.to_thread(
+                self._process_cached_dataframe, raw, max_age_hours
+            )
 
         except (FileNotFoundError, json.JSONDecodeError, KeyError):
             # Cache file corrupted or missing
@@ -891,7 +895,9 @@ class DataFetcher(IDataFetcher):
             "data": df_dict.to_dict("records"),
         }
 
-    def _process_cached_dataframe(self, raw: str, max_age_hours: int) -> Optional[pd.DataFrame]:
+    def _process_cached_dataframe(
+        self, raw: str, max_age_hours: int
+    ) -> Optional[pd.DataFrame]:
         """
         Process cached JSON data into DataFrame. CPU-intensive, should run in thread pool.
 
@@ -959,7 +965,10 @@ class DataFetcher(IDataFetcher):
             Dictionary mapping symbols to their DataFrames
         """
         results = {}
-        tasks = [self.get_historical_data(symbol, timeframe, limit, since) for symbol in symbols]
+        tasks = [
+            self.get_historical_data(symbol, timeframe, limit, since)
+            for symbol in symbols
+        ]
         dfs = await asyncio.gather(*tasks, return_exceptions=True)
         for symbol, df in zip(symbols, dfs):
             if isinstance(df, Exception):

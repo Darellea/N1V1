@@ -30,7 +30,11 @@ from core.execution.backtest_executor import BacktestOrderExecutor
 from core.execution.live_executor import LiveOrderExecutor
 from core.execution.order_processor import OrderProcessor
 from core.execution.paper_executor import PaperOrderExecutor
-from core.idempotency import generate_idempotency_key, OrderExecutionRegistry, order_execution_registry
+from core.idempotency import (
+    generate_idempotency_key,
+    OrderExecutionRegistry,
+    order_execution_registry,
+)
 from core.management.portfolio_manager import PortfolioManager
 from core.management.reliability_manager import ReliabilityManager
 from core.types import TradingMode
@@ -47,6 +51,7 @@ def get_signal_attr(signal, attr, default=None):
         return signal.get(attr, default)
     else:
         return getattr(signal, attr, default)
+
 
 logger = get_structured_logger("core.order_manager", LogSensitivity.SECURE)
 trade_logger = get_trade_logger()
@@ -133,7 +138,9 @@ class LiveOrderExecutionStrategy(OrderExecutionStrategy):
                         "component_id": "order_manager",
                         "error_message": str(e),
                         "symbol": get_signal_attr(signal, "symbol", None),
-                        "strategy_id": get_signal_attr(signal, "strategy_id", "unknown"),
+                        "strategy_id": get_signal_attr(
+                            signal, "strategy_id", "unknown"
+                        ),
                         "correlation_id": get_signal_attr(
                             signal, "correlation_id", f"order_{int(time.time())}"
                         ),
@@ -161,7 +168,9 @@ class LiveOrderExecutionStrategy(OrderExecutionStrategy):
                         "component_id": "order_manager",
                         "error_message": str(e),
                         "symbol": get_signal_attr(signal, "symbol", None),
-                        "strategy_id": get_signal_attr(signal, "strategy_id", "unknown"),
+                        "strategy_id": get_signal_attr(
+                            signal, "strategy_id", "unknown"
+                        ),
                         "correlation_id": get_signal_attr(
                             signal, "correlation_id", f"order_{int(time.time())}"
                         ),
@@ -698,7 +707,11 @@ class OrderManager:
         idempotency_key = get_signal_attr(signal, "idempotency_key", None)
         if idempotency_key is None:
             # Backward compatibility: auto-generate key for dicts, mocks, TradingSignals, or legacy test signals
-            if isinstance(signal, dict) or isinstance(signal, TradingSignal) or signal.__class__.__name__ in ("MockSignal", "Mock"):
+            if (
+                isinstance(signal, dict)
+                or isinstance(signal, TradingSignal)
+                or signal.__class__.__name__ in ("MockSignal", "Mock")
+            ):
                 idempotency_key = f"auto-{uuid.uuid4().hex}"
             else:
                 raise MissingIdempotencyError("Idempotency key is required")
@@ -710,13 +723,13 @@ class OrderManager:
         """Generate a cache key that includes both signal content and idempotency key."""
         # Include key signal attributes to ensure uniqueness per signal content
         signal_parts = [
-            get_signal_attr(signal, 'symbol', ''),
-            get_signal_attr(signal, 'signal_type', ''),
-            get_signal_attr(signal, 'order_type', ''),
-            get_signal_attr(signal, 'amount', ''),
-            get_signal_attr(signal, 'price', '') or '',
+            get_signal_attr(signal, "symbol", ""),
+            get_signal_attr(signal, "signal_type", ""),
+            get_signal_attr(signal, "order_type", ""),
+            get_signal_attr(signal, "amount", ""),
+            get_signal_attr(signal, "price", "") or "",
         ]
-        signal_str = '_'.join(str(p) for p in signal_parts)
+        signal_str = "_".join(str(p) for p in signal_parts)
         return f"{idempotency_key}_{hash(signal_str)}"
 
     async def execute_order(
@@ -754,14 +767,20 @@ class OrderManager:
         if registry_state is not None:
             if isinstance(registry_state, dict):
                 if registry_state.get("status") == "pending":
-                    logger.warning(f"Order execution already in progress for key {idempotency_key}")
+                    logger.warning(
+                        f"Order execution already in progress for key {idempotency_key}"
+                    )
                     return None  # Block concurrent execution
                 elif registry_state.get("status") == "success":
-                    logger.info(f"Returning cached successful result for idempotency key {idempotency_key}")
+                    logger.info(
+                        f"Returning cached successful result for idempotency key {idempotency_key}"
+                    )
                     return registry_state.get("result")
                 else:
                     # Should not happen, but handle gracefully
-                    logger.warning(f"Unexpected registry state for key {idempotency_key}: {registry_state}")
+                    logger.warning(
+                        f"Unexpected registry state for key {idempotency_key}: {registry_state}"
+                    )
                     return None
 
         # Validate order payload first
@@ -812,7 +831,9 @@ class OrderManager:
             if result is not None:
                 self.registry.mark_success(idempotency_key, result)
             else:
-                self.registry.mark_failure(idempotency_key, Exception("Execution returned None"))
+                self.registry.mark_failure(
+                    idempotency_key, Exception("Execution returned None")
+                )
             return result
         except (
             NetworkError,
@@ -827,7 +848,9 @@ class OrderManager:
             return None
         except asyncio.CancelledError:
             # Preserve cancellation semantics
-            self.registry.mark_failure(idempotency_key, Exception("Execution cancelled"))
+            self.registry.mark_failure(
+                idempotency_key, Exception("Execution cancelled")
+            )
             raise
         except Exception as e:
             logger.exception("Unexpected error during order execution")

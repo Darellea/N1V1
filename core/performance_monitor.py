@@ -304,7 +304,9 @@ class RealTimePerformanceMonitor:
 
             # Handle profiler metrics
             if isinstance(profiler_metrics, Exception):
-                logger.exception(f"Error collecting profiler metrics: {profiler_metrics}")
+                logger.exception(
+                    f"Error collecting profiler metrics: {profiler_metrics}"
+                )
             elif isinstance(profiler_metrics, dict):
                 metrics.update(profiler_metrics)
 

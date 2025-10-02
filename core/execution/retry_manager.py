@@ -628,11 +628,13 @@ class RetryManager:
         self.logger.info("Retry configuration updated")
 
         # Update global retry config to match
-        update_global_retry_config({
-            "max_attempts": self.max_retries + 1,  # +1 for initial attempt
-            "base_delay": self.backoff_base,
-            "max_delay": self.max_backoff,
-        })
+        update_global_retry_config(
+            {
+                "max_attempts": self.max_retries + 1,  # +1 for initial attempt
+                "base_delay": self.backoff_base,
+                "max_delay": self.max_backoff,
+            }
+        )
 
     async def retry_call_centralized(
         self,
@@ -641,7 +643,7 @@ class RetryManager:
         idempotency_key: Optional[str] = None,
         circuit_breaker: Optional[APICircuitBreaker] = None,
         is_side_effect: bool = False,
-        **kwargs
+        **kwargs,
     ) -> Any:
         """
         Centralized retry using the new core.retry.retry_call.
@@ -672,5 +674,5 @@ class RetryManager:
             idempotency_key=idempotency_key,
             circuit_breaker=circuit_breaker,
             is_side_effect=is_side_effect,
-            **kwargs
+            **kwargs,
         )

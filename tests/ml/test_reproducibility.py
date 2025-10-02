@@ -35,6 +35,7 @@ def isolate_tensorflow_operations():
     """Isolate TensorFlow operations to prevent thread conflicts"""
     try:
         import tensorflow as tf
+
         # Clear any existing graph and session
         tf.keras.backend.clear_session()
         yield

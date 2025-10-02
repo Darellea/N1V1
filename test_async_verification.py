@@ -95,8 +95,20 @@ async def test_concurrent_operations():
     executor.exchange = MockExchange()
 
     signals = [
-        {"symbol": "BTC/USDT", "side": "buy", "amount": 0.001, "price": 50000, "order_type": "market"},
-        {"symbol": "ETH/USDT", "side": "sell", "amount": 1.0, "price": 3000, "order_type": "market"},
+        {
+            "symbol": "BTC/USDT",
+            "side": "buy",
+            "amount": 0.001,
+            "price": 50000,
+            "order_type": "market",
+        },
+        {
+            "symbol": "ETH/USDT",
+            "side": "sell",
+            "amount": 1.0,
+            "price": 3000,
+            "order_type": "market",
+        },
     ]
 
     start_time = time.time()

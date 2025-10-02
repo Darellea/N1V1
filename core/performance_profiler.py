@@ -301,7 +301,9 @@ class PerformanceProfiler:
             # Calculate metrics
             raw_execution_time = end_time - start_time
             # Compensate for profiler overhead (if measured)
-            overhead = self._profiler_overhead if self._profiler_overhead is not None else 0.0
+            overhead = (
+                self._profiler_overhead if self._profiler_overhead is not None else 0.0
+            )
             execution_time = max(0.0, raw_execution_time - overhead)
             memory_delta = end_memory - start_memory
             memory_peak = max(start_memory, end_memory)

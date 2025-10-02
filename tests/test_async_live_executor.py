@@ -91,7 +91,9 @@ class TestAsyncLiveExecutor:
             # Verify that CPU-intensive parameter processing was offloaded
             assert mock_to_thread.called
             args, kwargs = mock_to_thread.call_args
-            assert args[0] == executor._prepare_order_params  # Should call prepare function in thread
+            assert (
+                args[0] == executor._prepare_order_params
+            )  # Should call prepare function in thread
 
             # Verify order was executed
             assert result["id"] == "test_order_123"
@@ -140,7 +142,9 @@ class TestAsyncLiveExecutor:
             result = await order_task
 
             # Verify event loop remained responsive during order processing
-            assert responsive_check > 5, "Event loop was blocked during order processing"
+            assert (
+                responsive_check > 5
+            ), "Event loop was blocked during order processing"
             assert result["id"] == "test_order"
 
     @pytest.mark.asyncio
@@ -156,7 +160,7 @@ class TestAsyncLiveExecutor:
             if "BTC" in symbol:
                 await asyncio.sleep(0.15)  # BTC orders take longer
             elif "ETH" in symbol:
-                await asyncio.sleep(0.1)   # ETH orders medium time
+                await asyncio.sleep(0.1)  # ETH orders medium time
             else:
                 await asyncio.sleep(0.05)  # Other orders fast
 
@@ -166,9 +170,27 @@ class TestAsyncLiveExecutor:
 
         # Create multiple order signals
         signals = [
-            {"symbol": "BTC/USDT", "side": "buy", "amount": 0.001, "price": 50000, "order_type": "market"},
-            {"symbol": "ETH/USDT", "side": "sell", "amount": 1.0, "price": 3000, "order_type": "market"},
-            {"symbol": "ADA/USDT", "side": "buy", "amount": 100.0, "price": 1.5, "order_type": "market"},
+            {
+                "symbol": "BTC/USDT",
+                "side": "buy",
+                "amount": 0.001,
+                "price": 50000,
+                "order_type": "market",
+            },
+            {
+                "symbol": "ETH/USDT",
+                "side": "sell",
+                "amount": 1.0,
+                "price": 3000,
+                "order_type": "market",
+            },
+            {
+                "symbol": "ADA/USDT",
+                "side": "buy",
+                "amount": 100.0,
+                "price": 1.5,
+                "order_type": "market",
+            },
         ]
 
         # Execute orders concurrently
@@ -213,7 +235,7 @@ class TestAsyncLiveExecutor:
         # Verify exchange was called with correct parameters
         call_args = mock_exchange.create_order.call_args
         assert call_args[0][0] == "BTC/USDT"  # symbol
-        assert call_args[0][3] == 0.001      # amount
+        assert call_args[0][3] == 0.001  # amount
 
     @pytest.mark.asyncio
     async def test_timeout_error_properly_handled(self, executor):
@@ -441,7 +463,10 @@ class TestAsyncTimeoutScenarios:
     async def test_very_fast_order_execution(self, executor):
         """Test that fast orders complete successfully."""
         mock_exchange = AsyncMock()
-        mock_exchange.create_order.return_value = {"id": "fast_order_123", "status": "filled"}
+        mock_exchange.create_order.return_value = {
+            "id": "fast_order_123",
+            "status": "filled",
+        }
         executor.exchange = mock_exchange
 
         signal = {

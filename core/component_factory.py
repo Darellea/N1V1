@@ -56,10 +56,7 @@ class ComponentFactory:
 
     @classmethod
     def register(
-        cls,
-        name: str,
-        builder: Callable[[], Any],
-        singleton: bool = True
+        cls, name: str, builder: Callable[[], Any], singleton: bool = True
     ) -> None:
         """
         Register a component builder.
@@ -263,7 +260,9 @@ class ComponentFactory:
             logger.error(f"Failed to create MemoryManager: {e}")
             raise
 
-    def create_performance_tracker(self, config: Dict[str, Any]) -> PerformanceTrackerInterface:
+    def create_performance_tracker(
+        self, config: Dict[str, Any]
+    ) -> PerformanceTrackerInterface:
         """Create performance tracker instance with injected dependencies."""
         key = f"performance_tracker_{hash(str(config))}"
 
@@ -672,7 +671,9 @@ def _register_core_components():
     ComponentFactory.register("order_manager", lambda: _create_order_manager())
     ComponentFactory.register("risk_manager", lambda: _create_risk_manager())
     ComponentFactory.register("signal_processor", lambda: _create_signal_processor())
-    ComponentFactory.register("performance_tracker", lambda: _create_performance_tracker())
+    ComponentFactory.register(
+        "performance_tracker", lambda: _create_performance_tracker()
+    )
     ComponentFactory.register("state_manager", lambda: _create_state_manager())
     ComponentFactory.register("cache", lambda: _create_cache())
     ComponentFactory.register("memory_manager", lambda: _create_memory_manager())
@@ -683,6 +684,7 @@ def _register_core_components():
 def _create_retry_manager():
     """Create retry manager with configuration."""
     from .execution.retry_manager import RetryManager
+
     config_manager = ComponentFactory.get("config_manager")
     config = config_manager.get_reliability_config()
     return RetryManager(config)
@@ -691,6 +693,7 @@ def _create_retry_manager():
 def _create_circuit_breaker():
     """Create circuit breaker with configuration."""
     from .api_protection import APICircuitBreaker, CircuitBreakerConfig
+
     config = CircuitBreakerConfig()
     return APICircuitBreaker(config)
 
@@ -698,6 +701,7 @@ def _create_circuit_breaker():
 def _create_data_manager():
     """Create data manager with configuration."""
     from .data_manager import DataManager
+
     config_manager = ComponentFactory.get("config_manager")
     config = config_manager.get_data_manager_config()
     return DataManager(config)
@@ -707,6 +711,7 @@ def _create_order_manager():
     """Create order manager with configuration."""
     from .order_manager import OrderManager
     from .types import TradingMode
+
     config_manager = ComponentFactory.get("config_manager")
     config = config_manager.get_config()
     mode_str = config.get("environment", {}).get("mode", "paper")
@@ -717,6 +722,7 @@ def _create_order_manager():
 def _create_risk_manager():
     """Create risk manager with configuration."""
     from risk.risk_manager import RiskManager
+
     config_manager = ComponentFactory.get("config_manager")
     config = config_manager.get_config()
     risk_config = config.get("risk_management", {})
@@ -726,6 +732,7 @@ def _create_risk_manager():
 def _create_signal_processor():
     """Create signal processor with configuration."""
     from .signal_processor import SignalProcessor
+
     config_manager = ComponentFactory.get("config_manager")
     config = config_manager.get_config()
     risk_manager = ComponentFactory.get("risk_manager")
@@ -735,6 +742,7 @@ def _create_signal_processor():
 def _create_performance_tracker():
     """Create performance tracker with configuration."""
     from .performance_tracker import PerformanceTracker
+
     config_manager = ComponentFactory.get("config_manager")
     config = config_manager.get_config()
     return PerformanceTracker(config)
@@ -743,12 +751,14 @@ def _create_performance_tracker():
 def _create_state_manager():
     """Create state manager."""
     from .state_manager import StateManager
+
     return StateManager()
 
 
 def _create_cache():
     """Create cache with configuration."""
     from .cache import RedisCache
+
     config_manager = ComponentFactory.get("config_manager")
     cache_config = config_manager.get_cache_config()
     return RedisCache(cache_config)
@@ -757,6 +767,7 @@ def _create_cache():
 def _create_memory_manager():
     """Create memory manager with configuration."""
     from .memory_manager import MemoryManager
+
     config_manager = ComponentFactory.get("config_manager")
     memory_config = config_manager.get_memory_config()
     return MemoryManager(
