@@ -197,7 +197,7 @@ async def test_async_metrics_timeout_protection(self):
 
 **Input & Expected Output Format:**
 - **Input:** Current non-thread-safe circuit breaker implementation
-- **Output:** Thread-safe circuit breaker with atomic state transitions + updated test files
+- **Output:** Thread-safe circuit breaker with atomic state transitions + updated test files and must passed without any error/failure.
 
 **Edge Cases / Additional Conditions:**
 - Handle thread cancellation during state transitions
@@ -241,7 +241,7 @@ def test_lock_timeout_prevention(self):
 
 **Input & Expected Output Format:**
 - **Input:** Current position sizing implementation without slippage
-- **Output:** Enhanced position sizing with dynamic slippage models + updated test files
+- **Output:** Enhanced position sizing with dynamic slippage models + updated test files and must passed without any error/failure.
 
 **Edge Cases / Additional Conditions:**
 - Handle illiquid market conditions
@@ -288,7 +288,7 @@ def test_slippage_calculation_performance(self):
 
 **Input & Expected Output Format:**
 - **Input:** Current anomaly detection with high false positive rate
-- **Output:** Kalman filter-based detection with adaptive thresholds + updated test files
+- **Output:** Kalman filter-based detection with adaptive thresholds + updated test files and must passed without any error/failure.
 
 **Edge Cases / Additional Conditions:**
 - Handle regime changes in market behavior
@@ -337,7 +337,7 @@ def test_kalman_filter_real_time_performance(self):
 
 **Input & Expected Output Format:**
 - **Input:** Current order manager without partial fill handling
-- **Output:** Enhanced order manager with partial fill reconciliation + updated test files
+- **Output:** Enhanced order manager with partial fill reconciliation + updated test files and must passed without any error/failure.
 
 **Edge Cases / Additional Conditions:**
 - Handle exchange discrepancies in fill reporting
@@ -386,7 +386,7 @@ async def test_partial_fill_timeout_handling(self):
 
 **Input & Expected Output Format:**
 - **Input:** Current policy implementation with abrupt changes
-- **Output:** Enhanced policy system with gradual transitions + updated test files
+- **Output:** Enhanced policy system with gradual transitions + updated test files and must passed without any error/failure.
 
 **Edge Cases / Additional Conditions:**
 - Handle emergency policy overrides
@@ -438,7 +438,7 @@ def test_policy_transition_timeout_safety(self):
 
 **Input & Expected Output Format:**
 - **Input:** Current API calling implementation without proper retry logic
-- **Output:** Robust API client with exponential backoff and rate limit handling + updated test files
+- **Output:** Robust API client with exponential backoff and rate limit handling + updated test files and must passed without any error/failure.
 
 **Edge Cases / Additional Conditions:**
 - Handle permanent vs temporary failures differently
@@ -488,7 +488,7 @@ def test_retry_timeout_prevention(self):
 
 **Input & Expected Output Format:**
 - **Input:** Current memory-intensive historical data loading
-- **Output:** Memory-efficient streaming data loader with chunked processing + updated test files
+- **Output:** Memory-efficient streaming data loader with chunked processing + updated test files and must passed without any error/failure.
 
 **Edge Cases / Additional Conditions:**
 - Handle corrupted data chunks gracefully
@@ -534,7 +534,7 @@ def test_large_dataset_loading_with_timeout(self):
 
 **Input & Expected Output Format:**
 - **Input:** Current versioning system without proper locking
-- **Output:** Thread-safe versioning with distributed locks + updated test files
+- **Output:** Thread-safe versioning with distributed locks + updated test files and must passed without any error/failure.
 
 **Edge Cases / Additional Conditions:**
 - Handle lock timeouts gracefully
@@ -579,7 +579,7 @@ def test_lock_timeout_prevention(self):
 
 **Input & Expected Output Format:**
 - **Input:** Current batch-based model monitoring
-- **Output:** Real-time streaming model performance monitoring + updated test files
+- **Output:** Real-time streaming model performance monitoring + updated test files and must passed without any error/failure.
 
 **Edge Cases / Additional Conditions:**
 - Handle concept drift vs data drift differently
@@ -633,7 +633,7 @@ def test_streaming_metrics_performance(self):
 
 **Input & Expected Output Format:**
 - **Input:** Current non-deterministic genetic optimizer
-- **Output:** Deterministic optimizer with controlled randomness + updated test files
+- **Output:** Deterministic optimizer with controlled randomness + updated test files and must passed without any error/failure.
 
 **Edge Cases / Additional Conditions:**
 - Handle parallel execution with seed isolation
@@ -683,7 +683,7 @@ def test_optimization_timeout_safety(self):
 
 **Input & Expected Output Format:**
 - **Input:** Current loop-based feature calculations
-- **Output:** Vectorized feature engineering with significant performance improvement + updated test files
+- **Output:** Vectorized feature engineering with significant performance improvement + updated test files and must passed without any error/failure.
 
 **Edge Cases / Additional Conditions:**
 - Handle NaN values and edge cases in vectorized operations
@@ -730,7 +730,7 @@ def test_vectorized_large_dataset_performance(self):
 
 **Input & Expected Output Format:**
 - **Input:** Current minimal order validation
-- **Output:** Comprehensive multi-stage order validation pipeline + updated test files
+- **Output:** Comprehensive multi-stage order validation pipeline + updated test files and must passed without any error/failure.
 
 **Edge Cases / Additional Conditions:**
 - Handle market hour restrictions
@@ -783,7 +783,7 @@ def test_validation_pipeline_performance(self):
 
 **Input & Expected Output Format:**
 - **Input:** Current isolated circuit breaker implementation
-- **Output:** Distributed circuit breaker coordination system + updated test files
+- **Output:** Distributed circuit breaker coordination system + updated test files and must passed without any error/failure.
 
 **Edge Cases / Additional Conditions:**
 - Handle network partitions gracefully
@@ -829,7 +829,7 @@ def test_distributed_consensus_timeout(self):
 
 **Input & Expected Output Format:**
 - **Input:** Current memory usage without hard limits
-- **Output:** Memory-limited system with graceful degradation + updated test files
+- **Output:** Memory-limited system with graceful degradation + updated test files and must passed without any error/failure.
 
 **Edge Cases / Additional Conditions:**
 - Handle memory pressure during critical operations
@@ -876,7 +876,7 @@ def test_memory_cleanup_timeout(self):
 
 **Input & Expected Output Format:**
 - **Input:** Current limited error handling
-- **Output:** Comprehensive error recovery system + updated test files
+- **Output:** Comprehensive error recovery system + updated test files and must passed without any error/failure.
 
 **Edge Cases / Additional Conditions:**
 - Handle partial recovery scenarios
@@ -927,7 +927,7 @@ def test_recovery_timeout_safety(self):
 
 **Input & Expected Output Format:**
 - **Input:** Current non-idempotent message processing
-- **Output:** Idempotent message processing system + updated test files
+- **Output:** Idempotent message processing system + updated test files and must passed without any error/failure.
 
 **Edge Cases / Additional Conditions:**
 - Handle message replay attacks

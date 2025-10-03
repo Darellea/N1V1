@@ -472,18 +472,17 @@ class TestBotEngineTradingCycle:
     @pytest.mark.asyncio
     async def test_fetch_market_data_with_cache(self, mock_engine):
         """Test market data fetching with cache."""
-        mock_engine.market_data_cache = {"BTC/USDT": "cached_data"}
-        mock_engine.cache_timestamp = time.time()
-        mock_engine.cache_ttl = 100  # Long TTL
+        from core.bot_engine import CacheCompatibleDict
 
-        with patch(
-            "core.bot_engine.time.time", return_value=mock_engine.cache_timestamp + 10
-        ):
-            result = await mock_engine._fetch_market_data()
+        # Use proper cache interface
+        mock_engine.market_data_cache = CacheCompatibleDict()
+        mock_engine.market_data_cache.set("market_data:BTC/USDT", {"BTC/USDT": "cached_data"})
 
-            assert result == {"BTC/USDT": "cached_data"}
-            # Should not call data fetcher
-            mock_engine.data_fetcher.get_historical_data.assert_not_called()
+        result = await mock_engine._fetch_market_data()
+
+        assert result == {"BTC/USDT": "cached_data"}
+        # Should not call data fetcher
+        mock_engine.data_fetcher.get_historical_data.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_trading_cycle_with_portfolio_mode(

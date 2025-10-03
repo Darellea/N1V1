@@ -32,6 +32,8 @@ Trigger Conditions:
 
 import asyncio
 import logging
+import threading
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -104,6 +106,23 @@ class CircuitBreakerConfig:
             f"cooling_period_minutes={self.cooling_period_minutes}, "
             f"recovery_period_minutes={self.recovery_period_minutes})"
         )
+
+
+@dataclass
+class ThreadSafeCircuitBreakerConfig(CircuitBreakerConfig):
+    """Thread-safe configuration for Circuit Breaker with concurrency controls."""
+
+    lock_timeout: float = 5.0  # Timeout for lock acquisition in seconds
+    enable_reentrant_locking: bool = True  # Allow reentrant lock acquisition
+    thread_local: bool = False  # Use thread-local storage for isolation
+
+    def __post_init__(self):
+        """Validate thread-safe configuration parameters."""
+        super().__post_init__()
+        if self.lock_timeout <= 0:
+            raise ValueError("lock_timeout must be positive")
+        if self.lock_timeout > 300:  # 5 minutes max
+            raise ValueError("lock_timeout cannot exceed 300 seconds")
 
 
 class CircuitBreakerState(Enum):
@@ -292,6 +311,8 @@ class StateMachine:
     def __init__(self, circuit_breaker: "CircuitBreaker"):
         self.circuit_breaker = circuit_breaker
         self.transitions = self._build_transitions()
+        # Detect if we're working with a thread-safe circuit breaker
+        self._is_thread_safe = isinstance(circuit_breaker, ThreadSafeCircuitBreaker)
 
     def _build_transitions(
         self,
@@ -323,7 +344,8 @@ class StateMachine:
 
     async def transition(self, action: str, reason: str = "") -> bool:
         """Attempt to transition to a new state based on the action."""
-        async with self.circuit_breaker._lock:
+        if self._is_thread_safe:
+            # Use thread-safe locking
             current_state = self.circuit_breaker.state
 
             if current_state not in self.transitions:
@@ -335,19 +357,44 @@ class StateMachine:
 
             new_state = state_transitions[action]
             old_state = self.circuit_breaker.state
-            self.circuit_breaker.state = new_state
 
-            # Log the transition
-            self.circuit_breaker._log_event(
-                f"state_transition_{action}",
-                old_state,
-                new_state,
-                reason or f"State transition: {action}",
-            )
+            def _transition():
+                self.circuit_breaker.state = new_state
+                self.circuit_breaker._log_event(
+                    f"state_transition_{action}",
+                    old_state,
+                    new_state,
+                    reason or f"State transition: {action}",
+                )
 
-            # Execute state-specific actions (without holding the lock to prevent deadlocks)
-            # Release lock before calling async actions
-            pass
+            self.circuit_breaker._with_lock(_transition)
+        else:
+            # Use asyncio locking
+            async with self.circuit_breaker._lock:
+                current_state = self.circuit_breaker.state
+
+                if current_state not in self.transitions:
+                    return False
+
+                state_transitions = self.transitions[current_state]
+                if action not in state_transitions:
+                    return False
+
+                new_state = state_transitions[action]
+                old_state = self.circuit_breaker.state
+                self.circuit_breaker.state = new_state
+
+                # Log the transition
+                self.circuit_breaker._log_event(
+                    f"state_transition_{action}",
+                    old_state,
+                    new_state,
+                    reason or f"State transition: {action}",
+                )
+
+                # Execute state-specific actions (without holding the lock to prevent deadlocks)
+                # Release lock before calling async actions
+                pass
 
         # Execute state-specific actions outside the lock to prevent deadlocks
         try:
@@ -996,6 +1043,411 @@ class CircuitBreaker:
             await self.reset_to_normal("Shutdown")
 
         self.logger.info("Circuit breaker shutdown complete")
+
+
+class ThreadSafeCircuitBreaker(CircuitBreaker):
+    """
+    Thread-safe Circuit Breaker implementation with atomic operations and proper locking.
+
+    This implementation provides:
+    - Atomic state transitions using threading.Lock
+    - Timeout-based lock acquisition to prevent deadlocks
+    - Reentrant locking support
+    - Thread-local isolation option
+    - Concurrent access protection for all operations
+    """
+
+    def __init__(self, config: ThreadSafeCircuitBreakerConfig):
+        # Validate config type
+        if not isinstance(config, ThreadSafeCircuitBreakerConfig):
+            raise TypeError("ThreadSafeCircuitBreaker requires ThreadSafeCircuitBreakerConfig")
+
+        # Initialize parent class
+        super().__init__(config)
+
+        # Override concurrency protection with thread-safe mechanisms
+        self._lock = threading.RLock() if config.enable_reentrant_locking else threading.Lock()
+        self._lock_timeout = config.lock_timeout
+
+        # Thread-local storage for isolation if enabled
+        if config.thread_local:
+            self._thread_local = threading.local()
+        else:
+            self._thread_local = None
+
+        # Override logger to indicate thread-safe operation
+        self.logger = logging.getLogger(f"{__name__}.ThreadSafeCircuitBreaker")
+
+    def _acquire_lock(self, timeout: Optional[float] = None) -> bool:
+        """Acquire lock with timeout protection."""
+        timeout = timeout or self._lock_timeout
+        return self._lock.acquire(timeout=timeout)
+
+    def _release_lock(self) -> None:
+        """Release the lock."""
+        try:
+            self._lock.release()
+        except RuntimeError:
+            # Lock not held - this can happen in error conditions
+            pass
+
+    def _with_lock(self, func: Callable, *args, **kwargs):
+        """Execute function with lock protection."""
+        if not self._acquire_lock():
+            raise TimeoutError(f"Failed to acquire lock within {self._lock_timeout}s timeout")
+
+        try:
+            return func(*args, **kwargs)
+        finally:
+            self._release_lock()
+
+    def _log_event(
+        self,
+        event_type: str,
+        previous_state: CircuitBreakerState,
+        new_state: CircuitBreakerState,
+        reason: str,
+        **kwargs,
+    ) -> None:
+        """Thread-safe event logging."""
+        def _log():
+            event = {
+                "timestamp": datetime.now(),
+                "event_type": event_type,
+                "previous_state": previous_state.value,
+                "new_state": new_state.value,
+                "reason": reason,
+                **kwargs,
+            }
+            self.event_history.append(event)
+
+            # Maintain max history size
+            if len(self.event_history) > self.config.max_history_size:
+                self.event_history = self.event_history[-self.config.max_history_size :]
+
+            self.logger.info(
+                f"Circuit breaker event: {event_type} - {previous_state.value} -> {new_state.value} ({reason})"
+            )
+
+        self._with_lock(_log)
+
+    def _record_trade_result(self, pnl: float, is_win: bool) -> None:
+        """Thread-safe trade result recording."""
+        def _record():
+            self.trade_results.append(is_win)
+
+        self._with_lock(_record)
+
+    def _check_consecutive_losses(self) -> bool:
+        """Thread-safe consecutive losses check."""
+        def _check():
+            if len(self.trade_results) < self.config.consecutive_losses_threshold:
+                return False
+            # Check the last N trades
+            recent_trades = self.trade_results[-self.config.consecutive_losses_threshold :]
+            return all(not win for win in recent_trades)
+
+        return self._with_lock(_check)
+
+    async def _trigger_circuit_breaker(self, reason: str) -> None:
+        """Thread-safe circuit breaker triggering."""
+        def _trigger():
+            previous_state = self.state
+            self.state = CircuitBreakerState.TRIGGERED
+
+            # Cache timestamp to avoid multiple datetime.now() calls
+            cached_timestamp = datetime.now()
+
+            # Set current trigger for dashboard integration
+            self.current_trigger = TriggerEvent(
+                trigger_type=reason,
+                timestamp=cached_timestamp,
+                details={
+                    "previous_state": previous_state.value,
+                    "current_equity": self.current_equity,
+                    "trigger_count": self.trigger_count + 1,
+                },
+            )
+
+            self.trigger_history.append(
+                {"timestamp": cached_timestamp, "reason": reason}
+            )
+            self.last_trigger_time = cached_timestamp
+            self.trigger_count += 1
+            self._log_event(
+                "trigger", previous_state, CircuitBreakerState.TRIGGERED, reason
+            )
+
+            # Record state change in metrics - fire-and-forget during breaker engagement to reduce overhead
+            if _metrics_collector_available:
+                try:
+                    metrics_collector = get_metrics_collector()
+                    # Create fire-and-forget task for metrics recording during breaker engagement
+                    asyncio.create_task(
+                        self._record_metric_async(
+                            metrics_collector,
+                            "circuit_breaker_state",
+                            1,  # 1 = triggered, 0 = normal
+                            {"account": "main"},
+                        )
+                    )
+                except Exception as e:
+                    # Silent failure during breaker engagement to minimize overhead
+                    pass
+
+        self._with_lock(_trigger)
+
+    async def _enter_cooling_period(self) -> None:
+        """Thread-safe cooling period entry."""
+        def _enter_cooling():
+            previous_state = self.state
+            self.state = CircuitBreakerState.COOLING
+            self._log_event(
+                "cooling",
+                previous_state,
+                CircuitBreakerState.COOLING,
+                "Entering cooling period",
+            )
+
+        self._with_lock(_enter_cooling)
+
+        # Integration: freeze portfolio when entering cooling
+        if self.risk_manager and hasattr(self.risk_manager, "freeze_portfolio"):
+            try:
+                # Create task with proper exception handling and timeout
+                task = asyncio.create_task(
+                    asyncio.wait_for(
+                        self.risk_manager.freeze_portfolio(),
+                        timeout=30.0,  # 30 second timeout
+                    )
+                )
+                # Store task reference to prevent unhandled exceptions
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+            except Exception as e:
+                self.logger.warning(f"Failed to freeze portfolio: {e}")
+
+    async def _enter_recovery_period(self) -> None:
+        """Thread-safe recovery period entry with health check validation."""
+        # Perform health check before entering recovery
+        health_check_passed = await self._perform_health_check()
+
+        def _enter_recovery():
+            previous_state = self.state
+            if health_check_passed:
+                self.state = CircuitBreakerState.RECOVERY
+                self._log_event(
+                    "recovery",
+                    previous_state,
+                    CircuitBreakerState.RECOVERY,
+                    "Entering recovery period - health check passed",
+                )
+            else:
+                # Stay in cooling or go back to triggered if health check fails
+                self.logger.warning("Health check failed, remaining in cooling period")
+                self._log_event(
+                    "recovery_blocked",
+                    previous_state,
+                    previous_state,
+                    "Recovery blocked by health check failure",
+                )
+                return
+
+        self._with_lock(_enter_recovery)
+
+    async def _return_to_normal(self) -> None:
+        """Thread-safe return to normal state."""
+        def _return_normal():
+            previous_state = self.state
+            self.state = CircuitBreakerState.NORMAL
+            self._log_event(
+                "normal",
+                previous_state,
+                CircuitBreakerState.NORMAL,
+                "Returning to normal state",
+            )
+
+        self._with_lock(_return_normal)
+
+        # Integration: unfreeze portfolio when returning to normal
+        if self.risk_manager and hasattr(self.risk_manager, "unfreeze_portfolio"):
+            try:
+                # Create task with proper exception handling and timeout
+                task = asyncio.create_task(
+                    asyncio.wait_for(
+                        self.risk_manager.unfreeze_portfolio(),
+                        timeout=30.0,  # 30 second timeout
+                    )
+                )
+                # Store task reference to prevent unhandled exceptions
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+            except Exception as e:
+                self.logger.warning(f"Failed to unfreeze portfolio: {e}")
+
+        # Integration: unblock signals when returning to normal
+        if self.signal_router and hasattr(self.signal_router, "unblock_signals"):
+            try:
+                # Create task with proper exception handling and timeout
+                task = asyncio.create_task(
+                    asyncio.wait_for(
+                        self.signal_router.unblock_signals(),
+                        timeout=30.0,  # 30 second timeout
+                    )
+                )
+                # Store task reference to prevent unhandled exceptions
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+            except Exception as e:
+                self.logger.warning(f"Failed to unblock signals: {e}")
+
+    async def set_state(self, state: CircuitBreakerState, reason: str) -> None:
+        """Thread-safe manual state setting."""
+        def _set_state():
+            previous_state = self.state
+            self.state = state
+            self._log_event("manual_set", previous_state, state, reason)
+
+        self._with_lock(_set_state)
+
+    async def reset_to_normal(self, reason: str) -> bool:
+        """Thread-safe reset to normal state."""
+        def _reset():
+            if self.state == CircuitBreakerState.NORMAL:
+                return False
+            previous_state = self.state
+            self.state = CircuitBreakerState.NORMAL
+            self._log_event("reset", previous_state, CircuitBreakerState.NORMAL, reason)
+            return True
+
+        return self._with_lock(_reset)
+
+    def get_state_snapshot(self) -> Dict[str, Any]:
+        """Thread-safe state snapshot retrieval."""
+        def _get_snapshot():
+            return {
+                "state": self.state.value,
+                "trigger_history": self.trigger_history.copy(),
+                "event_history": self.event_history.copy(),
+                "trade_results": self.trade_results.copy(),
+                "last_trigger_time": self.last_trigger_time.isoformat()
+                if self.last_trigger_time
+                else None,
+                "trigger_count": self.trigger_count,
+            }
+
+        return self._with_lock(_get_snapshot)
+
+    def restore_state_snapshot(self, snapshot: Dict[str, Any]) -> None:
+        """Thread-safe state snapshot restoration."""
+        def _restore_snapshot():
+            self.state = CircuitBreakerState(snapshot["state"])
+            self.trigger_history = snapshot["trigger_history"]
+            self.event_history = snapshot["event_history"]
+            self.trade_results = snapshot["trade_results"]
+            self.last_trigger_time = (
+                datetime.fromisoformat(snapshot["last_trigger_time"])
+                if snapshot["last_trigger_time"]
+                else None
+            )
+            self.trigger_count = snapshot["trigger_count"]
+
+        self._with_lock(_restore_snapshot)
+
+    async def update_equity(self, equity: float) -> None:
+        """Thread-safe equity update."""
+        def _update_equity():
+            self.current_equity = equity
+            self.logger.info(f"Equity updated: {equity}")
+
+            # Record in metrics - fire-and-forget during breaker engagement to reduce overhead
+            if _metrics_collector_available:
+                try:
+                    metrics_collector = get_metrics_collector()
+                    # Create fire-and-forget task for metrics recording
+                    asyncio.create_task(
+                        self._record_metric_async(
+                            metrics_collector,
+                            "circuit_breaker_equity",
+                            equity,
+                            {"account": "main"},
+                        )
+                    )
+                except Exception:
+                    # Silent failure during breaker engagement to minimize overhead
+                    pass
+
+        self._with_lock(_update_equity)
+
+    def update_config(self, new_config: ThreadSafeCircuitBreakerConfig) -> None:
+        """Thread-safe configuration update."""
+        if not isinstance(new_config, ThreadSafeCircuitBreakerConfig):
+            raise TypeError("ThreadSafeCircuitBreaker requires ThreadSafeCircuitBreakerConfig")
+
+        def _update_config():
+            self.config = new_config
+            self._lock_timeout = new_config.lock_timeout
+
+            # Update lock type if reentrant setting changed
+            if new_config.enable_reentrant_locking and type(self._lock).__name__ != 'RLock':
+                self._lock = threading.RLock()
+            elif not new_config.enable_reentrant_locking and type(self._lock).__name__ == 'RLock':
+                self._lock = threading.Lock()
+
+            # Update thread-local setting
+            if new_config.thread_local:
+                if not hasattr(self, '_thread_local') or self._thread_local is None:
+                    self._thread_local = threading.local()
+            else:
+                self._thread_local = None
+
+        self._with_lock(_update_config)
+
+    def get_circuit_state_metrics(self) -> Dict[str, Any]:
+        """Thread-safe circuit state metrics retrieval."""
+        def _get_metrics():
+            return {
+                "state": self.state.value,
+                "trigger_count": self.trigger_count,
+                "last_trigger_time": self.last_trigger_time.isoformat()
+                if self.last_trigger_time
+                else None,
+                "remaining_cooldown_minutes": self.get_remaining_cooldown_minutes(),
+                "current_equity": self.current_equity,
+                "is_cooldown_active": self._is_cooldown_active(),
+                "event_history_size": len(self.event_history),
+                "trigger_history_size": len(self.trigger_history),
+                "trade_results_count": len(self.trade_results),
+                "cooldown_strategy": self.config.cooldown_strategy.value,
+                "base_cooldown_minutes": self.config.base_cooldown_minutes,
+                "max_cooldown_minutes": self.config.max_cooldown_minutes,
+                "cooldown_multiplier": self.config.cooldown_multiplier,
+                "enable_cooldown_enforcement": self.config.enable_cooldown_enforcement,
+                "lock_timeout": self._lock_timeout,
+                "enable_reentrant_locking": self.config.enable_reentrant_locking,
+                "thread_local": self._thread_local is not None,
+            }
+
+        return self._with_lock(_get_metrics)
+
+
+# Global thread-safe circuit breaker instance
+_thread_safe_circuit_breaker: Optional[ThreadSafeCircuitBreaker] = None
+
+
+def get_thread_safe_circuit_breaker() -> ThreadSafeCircuitBreaker:
+    """Get the global thread-safe circuit breaker instance."""
+    global _thread_safe_circuit_breaker
+    if _thread_safe_circuit_breaker is None:
+        _thread_safe_circuit_breaker = ThreadSafeCircuitBreaker(ThreadSafeCircuitBreakerConfig())
+    return _thread_safe_circuit_breaker
+
+
+def create_thread_safe_circuit_breaker(
+    config: Optional[ThreadSafeCircuitBreakerConfig] = None,
+) -> ThreadSafeCircuitBreaker:
+    """Create a new thread-safe circuit breaker instance."""
+    return ThreadSafeCircuitBreaker(config or ThreadSafeCircuitBreakerConfig())
 
 
 # Global circuit breaker instance

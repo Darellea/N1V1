@@ -12,6 +12,7 @@ import random
 import time
 import uuid
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import (
     Any,
@@ -55,6 +56,263 @@ def get_signal_attr(signal, attr, default=None):
 
 logger = get_structured_logger("core.order_manager", LogSensitivity.SECURE)
 trade_logger = get_trade_logger()
+
+
+@dataclass
+class Fill:
+    """Represents a fill from an exchange."""
+    order_id: str
+    symbol: str
+    amount: Decimal
+    price: Decimal
+    timestamp: float
+    fill_type: str = "full"  # "full", "partial", "final"
+    exchange_order_id: Optional[str] = None
+    fees: Optional[Dict[str, Decimal]] = None
+
+
+@dataclass
+class PartialFillRecord:
+    """Tracks partial fill information for reconciliation."""
+    original_order_id: str
+    symbol: str
+    original_amount: Decimal
+    filled_amount: Decimal = field(default=Decimal(0))
+    remaining_amount: Decimal = field(default=Decimal(0))
+    fills: List[Fill] = field(default_factory=list)
+    status: str = "pending"  # "pending", "partially_filled", "fully_filled", "failed", "timed_out"
+    created_at: float = field(default_factory=time.time)
+    last_updated: float = field(default_factory=time.time)
+    retry_count: int = 0
+    max_retries: int = 3
+    timeout_seconds: float = 300.0  # 5 minutes default
+    reconciliation_attempts: int = 0
+    last_reconciliation_at: Optional[float] = None
+    manual_intervention_required: bool = False
+    audit_trail: List[Dict[str, Any]] = field(default_factory=list)
+
+    def __post_init__(self):
+        if self.remaining_amount == 0:
+            self.remaining_amount = self.original_amount
+
+    def add_fill(self, fill: Fill) -> None:
+        """Add a fill to this record."""
+        self.fills.append(fill)
+        self.filled_amount += fill.amount
+        self.remaining_amount = self.original_amount - self.filled_amount
+        self.last_updated = time.time()
+
+        # Update status based on fill progress
+        if self.filled_amount >= self.original_amount:
+            self.status = "fully_filled"
+        elif self.filled_amount > 0:
+            self.status = "partially_filled"
+        else:
+            self.status = "pending"
+
+        # Add audit entry
+        self.audit_trail.append({
+            "timestamp": self.last_updated,
+            "action": "fill_added",
+            "fill_amount": float(fill.amount),
+            "total_filled": float(self.filled_amount),
+            "remaining": float(self.remaining_amount),
+            "fill_type": fill.fill_type
+        })
+
+    def is_expired(self) -> bool:
+        """Check if the partial fill record has timed out."""
+        return (time.time() - self.created_at) > self.timeout_seconds
+
+    def should_retry(self) -> bool:
+        """Check if we should retry filling the remaining amount."""
+        return (
+            self.status in ["pending", "partially_filled"] and
+            self.retry_count < self.max_retries and
+            not self.is_expired() and
+            not self.manual_intervention_required
+        )
+
+    def mark_for_manual_intervention(self, reason: str) -> None:
+        """Mark this record for manual intervention."""
+        self.manual_intervention_required = True
+        self.status = "manual_intervention"
+        self.audit_trail.append({
+            "timestamp": time.time(),
+            "action": "manual_intervention_required",
+            "reason": reason
+        })
+
+
+class PartialFillReconciliationManager:
+    """Manages partial fill reconciliation with retry logic and validation."""
+
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.partial_fills: Dict[str, PartialFillRecord] = {}
+        self.fill_timeout = config.get("fill_timeout", 300.0)  # 5 minutes
+        self.max_retries = config.get("max_fill_retries", 3)
+        self.retry_delay = config.get("fill_retry_delay", 10.0)  # 10 seconds
+        self.reconciliation_interval = config.get("reconciliation_interval", 30.0)  # 30 seconds
+        self.audit_enabled = config.get("enable_fill_audit", True)
+
+        # Metrics
+        self.metrics = {
+            "total_partial_fills": 0,
+            "successful_reconciliations": 0,
+            "failed_reconciliations": 0,
+            "timed_out_fills": 0,
+            "manual_interventions": 0,
+            "exchange_discrepancies": 0
+        }
+
+        # Background task for reconciliation
+        self._reconciliation_task: Optional[asyncio.Task] = None
+        self._running = False
+
+    async def start_reconciliation_loop(self) -> None:
+        """Start the background reconciliation loop."""
+        if self._running:
+            return
+
+        self._running = True
+        self._reconciliation_task = asyncio.create_task(self._reconciliation_loop())
+        logger.info("Started partial fill reconciliation loop")
+
+    async def stop_reconciliation_loop(self) -> None:
+        """Stop the background reconciliation loop."""
+        self._running = False
+        if self._reconciliation_task:
+            self._reconciliation_task.cancel()
+            try:
+                await self._reconciliation_task
+            except asyncio.CancelledError:
+                pass
+        logger.info("Stopped partial fill reconciliation loop")
+
+    async def _reconciliation_loop(self) -> None:
+        """Background loop for reconciling partial fills."""
+        while self._running:
+            try:
+                await self._reconcile_pending_fills()
+                await asyncio.sleep(self.reconciliation_interval)
+            except Exception as e:
+                logger.error(f"Error in reconciliation loop: {e}")
+                await asyncio.sleep(self.reconciliation_interval)
+
+    async def _reconcile_pending_fills(self) -> None:
+        """Reconcile all pending partial fills."""
+        current_time = time.time()
+        expired_records = []
+
+        for order_id, record in self.partial_fills.items():
+            try:
+                # Check for timeouts
+                if record.is_expired() and record.status != "timed_out":
+                    record.status = "timed_out"
+                    record.audit_trail.append({
+                        "timestamp": current_time,
+                        "action": "timed_out",
+                        "reason": f"Exceeded {record.timeout_seconds}s timeout"
+                    })
+                    self.metrics["timed_out_fills"] += 1
+                    logger.warning(f"Partial fill timed out for order {order_id}")
+
+                # Check for manual intervention
+                if record.manual_intervention_required:
+                    continue  # Skip reconciliation for manual intervention cases
+
+                # Attempt reconciliation
+                if record.status in ["pending", "partially_filled"]:
+                    await self._attempt_reconciliation(record)
+                    record.reconciliation_attempts += 1
+                    record.last_reconciliation_at = current_time
+
+                # Clean up completed records after some time
+                if record.status in ["fully_filled", "failed", "timed_out"]:
+                    # Keep records for 1 hour after completion for audit
+                    if current_time - record.last_updated > 3600:
+                        expired_records.append(order_id)
+
+            except Exception as e:
+                logger.error(f"Error reconciling partial fill {order_id}: {e}")
+
+        # Clean up expired records
+        for order_id in expired_records:
+            del self.partial_fills[order_id]
+
+    async def _attempt_reconciliation(self, record: PartialFillRecord) -> None:
+        """Attempt to reconcile a partial fill record."""
+        # This would typically query the exchange for current order status
+        # For now, we'll implement a basic version that can be extended
+        try:
+            # Placeholder for exchange-specific reconciliation logic
+            # In a real implementation, this would:
+            # 1. Query exchange for current order status
+            # 2. Compare with our records
+            # 3. Handle discrepancies
+            # 4. Update positions accordingly
+
+            if record.reconciliation_attempts > 5:  # Max reconciliation attempts
+                record.mark_for_manual_intervention("Max reconciliation attempts exceeded")
+                self.metrics["manual_interventions"] += 1
+
+        except Exception as e:
+            logger.error(f"Reconciliation attempt failed for {record.original_order_id}: {e}")
+
+    def register_partial_fill(self, order_id: str, symbol: str, original_amount: Decimal) -> PartialFillRecord:
+        """Register a new partial fill for tracking."""
+        if order_id in self.partial_fills:
+            logger.warning(f"Partial fill already registered for order {order_id}")
+            return self.partial_fills[order_id]
+
+        record = PartialFillRecord(
+            original_order_id=order_id,
+            symbol=symbol,
+            original_amount=original_amount,
+            timeout_seconds=self.fill_timeout,
+            max_retries=self.max_retries
+        )
+
+        self.partial_fills[order_id] = record
+        self.metrics["total_partial_fills"] += 1
+
+        if self.audit_enabled:
+            record.audit_trail.append({
+                "timestamp": time.time(),
+                "action": "registered",
+                "original_amount": float(original_amount)
+            })
+
+        logger.info(f"Registered partial fill tracking for order {order_id}")
+        return record
+
+    def add_fill_to_record(self, order_id: str, fill: Fill) -> bool:
+        """Add a fill to an existing partial fill record."""
+        if order_id not in self.partial_fills:
+            logger.warning(f"No partial fill record found for order {order_id}")
+            return False
+
+        record = self.partial_fills[order_id]
+        record.add_fill(fill)
+
+        if record.status == "fully_filled":
+            self.metrics["successful_reconciliations"] += 1
+            logger.info(f"Partial fill fully reconciled for order {order_id}")
+
+        return True
+
+    def get_fill_metrics(self) -> Dict[str, int]:
+        """Get current fill reconciliation metrics."""
+        return self.metrics.copy()
+
+    def get_pending_fills(self) -> List[PartialFillRecord]:
+        """Get all pending partial fill records."""
+        return [r for r in self.partial_fills.values() if r.status in ["pending", "partially_filled"]]
+
+    def get_stuck_fills(self) -> List[PartialFillRecord]:
+        """Get fills that may be stuck and need manual intervention."""
+        return [r for r in self.partial_fills.values() if r.manual_intervention_required or r.is_expired()]
 
 
 class MockLiveExecutor:
@@ -464,6 +722,10 @@ class OrderManager:
         self.reliability_manager = ReliabilityManager(config.get("reliability", {}))
         self.portfolio_manager = PortfolioManager()
         self.watchdog_service = watchdog_service
+
+        # Initialize partial fill reconciliation manager
+        fill_config = config.get("partial_fill", {})
+        self.fill_reconciler = PartialFillReconciliationManager(fill_config)
 
         # Initialize per-instance idempotency registry (using global registry for backward compatibility)
         self.registry = order_execution_registry
@@ -1097,3 +1359,173 @@ class OrderManager:
         """Cleanup resources."""
         if self.live_executor:
             await self.live_executor.shutdown()
+
+        # Stop partial fill reconciliation
+        await self.fill_reconciler.stop_reconciliation_loop()
+
+    async def process_fill_report(self, fill_data: Dict[str, Any]) -> None:
+        """Process a fill report from an exchange."""
+        try:
+            order_id = fill_data.get("order_id")
+            if not order_id:
+                logger.warning("Fill report missing order_id")
+                return
+
+            # Check if this is a partial fill
+            fill_amount = Decimal(str(fill_data.get("amount", 0)))
+            fill_price = Decimal(str(fill_data.get("price", 0)))
+            symbol = fill_data.get("symbol", "")
+            fill_type = fill_data.get("fill_type", "full")
+
+            # Create fill object
+            fill = Fill(
+                order_id=order_id,
+                symbol=symbol,
+                amount=fill_amount,
+                price=fill_price,
+                timestamp=time.time(),
+                fill_type=fill_type,
+                exchange_order_id=fill_data.get("exchange_order_id"),
+                fees=fill_data.get("fees")
+            )
+
+            # Check if we have a partial fill record for this order
+            if order_id in self.fill_reconciler.partial_fills:
+                # Add fill to existing record
+                self.fill_reconciler.add_fill_to_record(order_id, fill)
+                record = self.fill_reconciler.partial_fills[order_id]
+
+                if record.status == "fully_filled":
+                    logger.info(f"Order {order_id} fully filled after partial fills")
+                    # Update position management here if needed
+                    await self._update_position_from_fill(record)
+                elif record.remaining_amount > 0 and record.should_retry():
+                    # Trigger retry for remaining amount
+                    await self._retry_partial_fill(record)
+
+            else:
+                # This might be a full fill or the start of a partial fill
+                if fill_type in ["partial", "final"]:
+                    # Register as partial fill
+                    original_amount = fill_data.get("original_amount", fill_amount)
+                    record = self.fill_reconciler.register_partial_fill(
+                        order_id, symbol, Decimal(str(original_amount))
+                    )
+                    self.fill_reconciler.add_fill_to_record(order_id, fill)
+
+                    # Check if this fill completed the order
+                    if record.status == "fully_filled":
+                        await self._update_position_from_fill(record)
+                    elif record.remaining_amount > 0 and record.should_retry():
+                        await self._retry_partial_fill(record)
+                else:
+                    # Full fill - update position directly
+                    await self._update_position_from_fill(fill)
+
+        except Exception as e:
+            logger.error(f"Error processing fill report: {e}")
+            self.fill_reconciler.metrics["exchange_discrepancies"] += 1
+
+    async def _update_position_from_fill(self, fill_data: Union[Fill, PartialFillRecord]) -> None:
+        """Update position management based on fill data."""
+        try:
+            if isinstance(fill_data, PartialFillRecord):
+                # Use the final reconciled fill data
+                symbol = fill_data.symbol
+                total_amount = fill_data.filled_amount
+                avg_price = sum(f.price * f.amount for f in fill_data.fills) / total_amount
+                order_id = fill_data.original_order_id
+            else:
+                # Single fill
+                symbol = fill_data.symbol
+                total_amount = fill_data.amount
+                avg_price = fill_data.price
+                order_id = fill_data.order_id
+
+            # Update order processor positions
+            # This is a simplified version - in practice, this would integrate
+            # with the existing position management system
+            if symbol not in self.order_processor.positions:
+                self.order_processor.positions[symbol] = {
+                    "amount": 0,
+                    "entry_price": 0,
+                    "orders": []
+                }
+
+            position = self.order_processor.positions[symbol]
+            current_amount = Decimal(str(position.get("amount", 0)))
+            current_avg_price = Decimal(str(position.get("entry_price", 0)))
+
+            # Calculate new average price (volume-weighted)
+            new_amount = current_amount + total_amount
+            if new_amount != 0:
+                new_avg_price = ((current_amount * current_avg_price) + (total_amount * avg_price)) / new_amount
+            else:
+                new_avg_price = avg_price
+
+            position["amount"] = float(new_amount)
+            position["entry_price"] = float(new_avg_price)
+            position["orders"].append(order_id)
+
+            logger.info(f"Updated position for {symbol}: amount={new_amount}, avg_price={new_avg_price}")
+
+        except Exception as e:
+            logger.error(f"Error updating position from fill: {e}")
+
+    async def _retry_partial_fill(self, record: PartialFillRecord) -> None:
+        """Retry filling the remaining amount of a partial fill."""
+        try:
+            if not record.should_retry():
+                return
+
+            record.retry_count += 1
+
+            # Create a new order for the remaining amount
+            # This is a simplified implementation - in practice, this would
+            # create a proper follow-up order with appropriate parameters
+            retry_signal = {
+                "strategy_id": f"partial_fill_retry_{record.original_order_id}",
+                "symbol": record.symbol,
+                "signal_type": "ENTRY_LONG",  # This should be determined from original order
+                "order_type": "MARKET",  # Simplified - use market order for retry
+                "amount": float(record.remaining_amount),
+                "idempotency_key": f"retry_{record.original_order_id}_{record.retry_count}",
+                "timestamp": int(time.time() * 1000)
+            }
+
+            logger.info(f"Retrying partial fill for order {record.original_order_id}, attempt {record.retry_count}")
+
+            # Add delay before retry
+            await asyncio.sleep(self.fill_reconciler.retry_delay)
+
+            # Execute the retry order
+            result = await self.execute_order(retry_signal)
+            if result and result.get("status") == "filled":
+                # Success - this will be handled by process_fill_report when the fill comes in
+                logger.info(f"Partial fill retry successful for {record.original_order_id}")
+            else:
+                logger.warning(f"Partial fill retry failed for {record.original_order_id}")
+
+        except Exception as e:
+            logger.error(f"Error retrying partial fill for {record.original_order_id}: {e}")
+            record.mark_for_manual_intervention(f"Retry failed: {str(e)}")
+
+    def get_fill_reconciliation_metrics(self) -> Dict[str, int]:
+        """Get partial fill reconciliation metrics."""
+        return self.fill_reconciler.get_fill_metrics()
+
+    def get_pending_partial_fills(self) -> List[PartialFillRecord]:
+        """Get all pending partial fill records."""
+        return self.fill_reconciler.get_pending_fills()
+
+    def get_stuck_partial_fills(self) -> List[PartialFillRecord]:
+        """Get partial fills that need manual intervention."""
+        return self.fill_reconciler.get_stuck_fills()
+
+    async def start_fill_reconciliation(self) -> None:
+        """Start the background fill reconciliation process."""
+        await self.fill_reconciler.start_reconciliation_loop()
+
+    async def stop_fill_reconciliation(self) -> None:
+        """Stop the background fill reconciliation process."""
+        await self.fill_reconciler.stop_reconciliation_loop()

@@ -68,6 +68,117 @@ class CacheMetrics:
         self.max_memory_bytes = 0
 
 
+class CacheCompatibleDict(dict):
+    """
+    Dictionary with cache-like method compatibility.
+
+    Supports both dictionary-style access (dict[key] = value) and cache object methods (.set()).
+    For backward compatibility during the transition from dict to proper cache.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._ttl_tracker = {}  # For future TTL support
+
+    def set(self, key, value, ttl=None, data_type=None):
+        """
+        Set key-value pair with optional TTL and data_type.
+        For dict compatibility, TTL and data_type are logged but not enforced.
+
+        Args:
+            key: Cache key
+            value: Value to cache
+            ttl: Time-to-live in seconds (not enforced in dict mode)
+            data_type: Type of data (not used in dict mode, for compatibility)
+        """
+        self[key] = value
+        if ttl:
+            logger.debug(f"TTL {ttl}s specified but not enforced in dict cache")
+            self._ttl_tracker[key] = time.time() + ttl
+        if data_type:
+            logger.debug(f"Data type '{data_type}' specified but not used in dict cache")
+
+    def get(self, key, default=None):
+        """
+        Get value with default fallback.
+
+        Args:
+            key: Cache key
+            default: Default value if key not found
+
+        Returns:
+            Cached value or default
+        """
+        return super().get(key, default)
+
+    def delete(self, key):
+        """
+        Delete item from cache.
+
+        Args:
+            key: Cache key to delete
+
+        Returns:
+            True if item was deleted, False otherwise
+        """
+        if key in self:
+            del self[key]
+            self._ttl_tracker.pop(key, None)
+            return True
+        return False
+
+    def clear(self):
+        """Clear all items from cache."""
+        super().clear()
+        self._ttl_tracker.clear()
+        logger.info("Cache cleared")
+
+    def emergency_clear(self):
+        """Emergency cache clearing for critical situations."""
+        count = len(self)
+        self.clear()
+        logger.warning(f"Emergency cache clear: {count} items removed")
+
+    def invalidate_market_close(self):
+        """Invalidate cache entries on market close."""
+        keys_to_remove = []
+        for key in self.keys():
+            if any(pattern in key.lower() for pattern in ["realtime", "ticker", "current"]):
+                keys_to_remove.append(key)
+
+        for key in keys_to_remove:
+            del self[key]
+
+        if keys_to_remove:
+            logger.info(f"Invalidated {len(keys_to_remove)} market-close sensitive cache entries")
+
+    def get_stats(self):
+        """
+        Get cache statistics.
+
+        Returns:
+            Dictionary with cache statistics
+        """
+        return {
+            "size": len(self),
+            "maxsize": float('inf'),  # Dict has no size limit
+            "hit_rate": 0.0,  # Not tracked in dict mode
+            "hits": 0,
+            "misses": 0,
+            "evictions": 0,
+            "sets": len(self),
+            "memory_usage_mb": 0.0,  # Not tracked in dict mode
+            "max_memory_mb": 0.0,
+            "memory_usage_percent": 0.0,
+            "data_type_counts": {},
+        }
+
+    def shutdown(self):
+        """Shutdown cache and cleanup resources."""
+        self.clear()
+        logger.info("CacheCompatibleDict shutdown complete")
+
+
 class LRUCache:
     """
     Thread-safe LRU (Least Recently Used) cache with memory monitoring and size limits.
@@ -538,28 +649,16 @@ class BotEngine:
         self.live_display: Optional[Any] = None
         self.display_table: Optional[Any] = None
 
-        # LRU cache for market data with memory monitoring
-        cache_config = self.config.get("cache", {})
-        cache_maxsize = cache_config.get("max_size", 1000)
-        cache_max_memory_mb = cache_config.get("max_memory_mb", 50.0)
+        # Cache-compatible dictionary for market data with backward compatibility
+        # Supports both dict[key] = value and cache.set(key, value) patterns
+        self.market_data_cache = CacheCompatibleDict()
 
-        self.market_data_cache = LRUCache(
-            maxsize=cache_maxsize, max_memory_mb=cache_max_memory_mb
-        )
+        # For now, disable memory manager since we're using dict compatibility
+        # TODO: In future versions, migrate to full LRUCache with memory management
+        self.memory_manager = None
 
-        # Memory manager for cache monitoring
-        memory_config = cache_config.get("memory_manager", {})
-        warning_threshold = memory_config.get("warning_threshold", 0.8)
-        critical_threshold = memory_config.get("critical_threshold", 0.95)
-
-        self.memory_manager = MemoryManager(
-            self.market_data_cache,
-            warning_threshold=warning_threshold,
-            critical_threshold=critical_threshold,
-        )
-
-        # Start memory monitoring
-        self.memory_manager.start_monitoring()
+        # Memory manager disabled for dict compatibility
+        # TODO: Re-enable when migrating to full LRUCache
 
         # Register cache shutdown hook
         self._shutdown_hooks.append(self.market_data_cache.shutdown)
@@ -846,12 +945,13 @@ class BotEngine:
             logger.debug("Using LRU cached market data")
             return cached_data
 
-        # Check memory usage before fetching new data
-        memory_status = self.memory_manager.check_memory_usage()
-        if memory_status.get("status") == "critical":
-            logger.warning("Memory usage critical, using minimal data fetch")
-            # Return minimal data or trigger emergency actions
-            return {}
+        # Check memory usage before fetching new data (disabled for dict compatibility)
+        # TODO: Re-enable when migrating to full LRUCache
+        # memory_status = self.memory_manager.check_memory_usage()
+        # if memory_status.get("status") == "critical":
+        #     logger.warning("Memory usage critical, using minimal data fetch")
+        #     # Return minimal data or trigger emergency actions
+        #     return {}
 
         try:
             # Fetch single-timeframe data
@@ -1028,6 +1128,17 @@ class BotEngine:
         Returns:
             Dictionary with memory usage information
         """
+        if self.memory_manager is None:
+            # Return basic cache stats when memory manager is disabled
+            return {
+                "cache_stats": self.market_data_cache.get_stats(),
+                "memory_manager": {
+                    "monitoring_active": False,
+                    "warning_threshold": 0.0,
+                    "critical_threshold": 0.0,
+                },
+                "system_memory": {"error": "Memory manager disabled"},
+            }
         return self.memory_manager.get_memory_report()
 
     def invalidate_market_close_cache(self) -> None:

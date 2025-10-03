@@ -80,6 +80,7 @@ class AnomalyType(Enum):
     PRICE_ZSCORE = "price_zscore"
     VOLUME_ZSCORE = "volume_zscore"
     PRICE_GAP = "price_gap"
+    KALMAN_FILTER = "kalman_filter"
     NONE = "none"
 
 
@@ -933,6 +934,505 @@ class PriceGapDetector(BaseAnomalyDetector):
         return self._create_empty_result()
 
 
+class KalmanFilter:
+    """Simple Kalman filter implementation for state estimation."""
+
+    def __init__(self, process_noise: float = 0.01, measurement_noise: float = 0.1,
+                 initial_state: float = 0.0, initial_covariance: float = 1.0):
+        """
+        Initialize Kalman filter.
+
+        Args:
+            process_noise: Process noise variance (Q)
+            measurement_noise: Measurement noise variance (R)
+            initial_state: Initial state estimate
+            initial_covariance: Initial state covariance (P)
+        """
+        self.process_noise = process_noise
+        self.measurement_noise = measurement_noise
+        self.state = initial_state  # x
+        self.covariance = initial_covariance  # P
+
+    def predict(self) -> None:
+        """Predict next state (time update)."""
+        # For price prediction, we assume constant velocity model
+        # x = x + 0 (no change in state)
+        # P = P + Q
+        self.covariance += self.process_noise
+
+    def update(self, measurement: float) -> Tuple[float, float]:
+        """
+        Update state with new measurement.
+
+        Args:
+            measurement: New measurement value
+
+        Returns:
+            Tuple of (state_estimate, residual)
+        """
+        # Kalman gain: K = P / (P + R)
+        kalman_gain = self.covariance / (self.covariance + self.measurement_noise)
+
+        # Residual: innovation
+        residual = measurement - self.state
+
+        # Update state: x = x + K * residual
+        self.state = self.state + kalman_gain * residual
+
+        # Update covariance: P = (1 - K) * P
+        self.covariance = (1 - kalman_gain) * self.covariance
+
+        return self.state, residual
+
+
+class RegimeDetector:
+    """Adaptive regime detection for market condition classification."""
+
+    def __init__(self, volatility_threshold: float = 0.02, trend_threshold: float = 0.01,
+                 memory: int = 20):
+        """
+        Initialize regime detector.
+
+        Args:
+            volatility_threshold: Threshold for high/low volatility classification
+            trend_threshold: Threshold for trending/sideways classification
+            memory: Number of observations to remember for regime stability
+        """
+        self.volatility_threshold = volatility_threshold
+        self.trend_threshold = trend_threshold
+        self.memory = memory
+
+        # Regime history
+        self.volatility_history = []
+        self.trend_history = []
+        self.regime_history = []
+
+    def detect_regime(self, returns: pd.Series, prices: pd.Series) -> Dict[str, Any]:
+        """
+        Detect current market regime.
+
+        Args:
+            returns: Price returns series
+            prices: Price series
+
+        Returns:
+            Dictionary with regime information
+        """
+        # Calculate volatility (rolling standard deviation of returns)
+        volatility = returns.rolling(window=min(len(returns), 20)).std().iloc[-1]
+        if pd.isna(volatility):
+            volatility = returns.std() if len(returns) > 1 else 0.01
+
+        # Calculate trend strength (absolute slope of linear regression)
+        if len(prices) >= 5:
+            x = np.arange(len(prices))
+            slope = np.polyfit(x, prices.values, 1)[0]
+            trend_strength = abs(slope) / prices.iloc[-1]  # Normalize by current price
+        else:
+            trend_strength = 0.0
+
+        # Classify regime
+        is_high_volatility = volatility > self.volatility_threshold
+        is_trending = trend_strength > self.trend_threshold
+
+        if is_high_volatility and not is_trending:
+            regime = "high_volatility_sideways"
+        elif is_high_volatility and is_trending:
+            regime = "high_volatility_trending"
+        elif not is_high_volatility and is_trending:
+            regime = "low_volatility_trending"
+        else:
+            regime = "low_volatility_sideways"
+
+        # Update history
+        self.volatility_history.append(volatility)
+        self.trend_history.append(trend_strength)
+        self.regime_history.append(regime)
+
+        # Keep only recent history
+        if len(self.volatility_history) > self.memory:
+            self.volatility_history = self.volatility_history[-self.memory:]
+            self.trend_history = self.trend_history[-self.memory:]
+            self.regime_history = self.regime_history[-self.memory:]
+
+        # Calculate regime stability (percentage of time in current regime)
+        current_regime_count = self.regime_history.count(regime)
+        regime_stability = current_regime_count / len(self.regime_history)
+
+        return {
+            "regime": regime,
+            "volatility": volatility,
+            "trend_strength": trend_strength,
+            "is_high_volatility": is_high_volatility,
+            "is_trending": is_trending,
+            "regime_stability": regime_stability,
+        }
+
+
+class AdaptiveThreshold:
+    """Adaptive threshold adjustment based on market regime."""
+
+    def __init__(self, regime_window: int = 50, volatility_multiplier: float = 2.0,
+                 min_threshold: float = 0.5, max_threshold: float = 5.0):
+        """
+        Initialize adaptive threshold.
+
+        Args:
+            regime_window: Window size for regime analysis
+            volatility_multiplier: Multiplier for high volatility regimes
+            min_threshold: Minimum threshold value
+            max_threshold: Maximum threshold value
+        """
+        self.regime_window = regime_window
+        self.volatility_multiplier = volatility_multiplier
+        self.min_threshold = min_threshold
+        self.max_threshold = max_threshold
+
+        # History for adaptation
+        self.residual_history = []
+        self.regime_history = []
+
+    def calculate_threshold(self, base_threshold: float, regime_info: Dict[str, Any],
+                          recent_residuals: List[float]) -> float:
+        """
+        Calculate adaptive threshold based on regime and recent residuals.
+
+        Args:
+            base_threshold: Base threshold value
+            regime_info: Current regime information
+            recent_residuals: Recent residual values
+
+        Returns:
+            Adaptive threshold value
+        """
+        # Update history
+        self.regime_history.append(regime_info)
+        if len(self.regime_history) > self.regime_window:
+            self.regime_history = self.regime_history[-self.regime_window:]
+
+        # Calculate regime-based adjustment
+        regime_multiplier = 1.0
+        if regime_info.get("is_high_volatility", False):
+            regime_multiplier = self.volatility_multiplier
+
+        # Calculate residual-based adjustment
+        if recent_residuals:
+            recent_std = np.std(recent_residuals[-20:]) if len(recent_residuals) >= 5 else 0.1
+            if recent_std > 0:
+                residual_multiplier = min(recent_std * 10, 3.0)  # Cap at 3x
+                regime_multiplier *= residual_multiplier
+
+        # Apply adjustments
+        adaptive_threshold = base_threshold * regime_multiplier
+
+        # Clamp to bounds
+        adaptive_threshold = max(self.min_threshold, min(self.max_threshold, adaptive_threshold))
+
+        return adaptive_threshold
+
+
+class KalmanAnomalyDetector(BaseAnomalyDetector):
+    """
+    Advanced anomaly detector using Kalman filtering with adaptive thresholding.
+
+    This detector uses Kalman filtering to model expected price movements and detects
+    anomalies based on prediction residuals. It adapts to changing market regimes
+    and provides confidence scores based on multiple factors.
+    """
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """
+        Initialize Kalman anomaly detector.
+
+        Args:
+            config: Configuration dictionary
+        """
+        super().__init__(config)
+
+        # Kalman filter configuration
+        kalman_config = self.config.get("kalman_filter", {})
+        self.kalman_filter = KalmanFilter(
+            process_noise=kalman_config.get("process_noise", 0.01),
+            measurement_noise=kalman_config.get("measurement_noise", 0.1),
+            initial_state=kalman_config.get("initial_state", 0.0),
+            initial_covariance=kalman_config.get("initial_covariance", 1.0),
+        )
+
+        # Adaptive threshold configuration
+        threshold_config = self.config.get("adaptive_threshold", {})
+        self.adaptive_threshold = AdaptiveThreshold(
+            regime_window=threshold_config.get("regime_window", 50),
+            volatility_multiplier=threshold_config.get("volatility_multiplier", 2.0),
+            min_threshold=threshold_config.get("min_threshold", 0.5),
+            max_threshold=threshold_config.get("max_threshold", 5.0),
+        )
+
+        # Regime detection configuration
+        regime_config = self.config.get("regime_detection", {})
+        self.regime_detector = RegimeDetector(
+            volatility_threshold=regime_config.get("volatility_threshold", 0.02),
+            trend_threshold=regime_config.get("trend_threshold", 0.01),
+            memory=regime_config.get("regime_memory", 20),
+        )
+
+        # Confidence scoring weights
+        confidence_config = self.config.get("confidence_scoring", {})
+        self.residual_weight = confidence_config.get("residual_weight", 0.6)
+        self.regime_weight = confidence_config.get("regime_weight", 0.3)
+        self.feature_weight = confidence_config.get("feature_weight", 0.1)
+
+        # Manual override events
+        self.manual_overrides = []
+
+        # State tracking
+        self.residual_history = []
+        self.max_residual_history = 100
+
+    def detect(self, data: pd.DataFrame, symbol: str = "") -> AnomalyResult:
+        """
+        Detect anomalies using Kalman filtering with adaptive thresholding.
+
+        Args:
+            data: OHLCV DataFrame
+            symbol: Trading symbol
+
+        Returns:
+            AnomalyResult with detection details
+        """
+        try:
+            # Check prerequisites
+            if not self._check_prerequisites(data):
+                return self._create_conservative_result("insufficient data")
+
+            # Check manual overrides first
+            override_result = self._check_manual_overrides(data, symbol)
+            if override_result:
+                return override_result
+
+            # Calculate returns and prices
+            returns = self._calculate_returns(data)
+            prices = data["close"].values
+
+            if returns is None or len(prices) < 10:
+                return self._create_conservative_result("insufficient data for Kalman filtering")
+
+            # Detect current regime
+            regime_info = self.regime_detector.detect_regime(returns, pd.Series(prices))
+
+            # Run Kalman filtering
+            kalman_result = self._run_kalman_filter(prices)
+
+            if kalman_result is None:
+                return self._create_conservative_result("Kalman filter failed")
+
+            # Calculate adaptive threshold
+            adaptive_threshold = self.adaptive_threshold.calculate_threshold(
+                base_threshold=3.0,  # Base z-score threshold
+                regime_info=regime_info,
+                recent_residuals=self.residual_history[-20:]
+            )
+
+            # Calculate anomaly score
+            anomaly_score = abs(kalman_result["residual"]) / adaptive_threshold
+
+            # Determine if it's an anomaly
+            is_anomaly = anomaly_score > 1.0
+
+            # Calculate confidence score
+            confidence_score = self._calculate_confidence_score(
+                kalman_result, regime_info, anomaly_score, is_anomaly
+            )
+
+            # Calculate severity
+            severity = self._calculate_anomaly_severity(anomaly_score)
+
+            # Calculate feature importance
+            feature_importance = self._calculate_feature_importance(
+                kalman_result, regime_info
+            )
+
+            # Prepare context
+            context = {
+                "kalman_state": kalman_result["state"],
+                "residual": kalman_result["residual"],
+                "regime": regime_info,
+                "adaptive_threshold": adaptive_threshold,
+                "anomaly_score": anomaly_score,
+                "feature_importance": feature_importance,
+            }
+
+            return AnomalyResult(
+                is_anomaly=is_anomaly,
+                anomaly_type=AnomalyType.KALMAN_FILTER,
+                severity=severity,
+                confidence_score=confidence_score,
+                z_score=kalman_result["residual"] if is_anomaly else None,
+                threshold=adaptive_threshold if is_anomaly else None,
+                context=context,
+            )
+
+        except Exception as e:
+            logger.warning(f"Error in Kalman anomaly detection for {symbol}: {e}")
+            logger.warning(f"Stack trace: {traceback.format_exc()}")
+            return self._create_conservative_result(f"detection error: {str(e)}")
+
+    def _check_prerequisites(self, data: pd.DataFrame) -> bool:
+        """Check basic prerequisites for Kalman detection."""
+        return (
+            self.enabled
+            and not data.empty
+            and len(data) >= 10  # Need minimum data for Kalman filter
+            and "close" in data.columns
+        )
+
+    def _create_conservative_result(self, reason: str) -> AnomalyResult:
+        """Create a conservative anomaly result."""
+        return AnomalyResult(
+            is_anomaly=False,
+            anomaly_type=AnomalyType.NONE,
+            severity=AnomalySeverity.LOW,
+            confidence_score=0.0,
+            context={"fallback_reason": reason},
+        )
+
+    def _calculate_returns(self, data: pd.DataFrame) -> Optional[pd.Series]:
+        """Calculate price returns."""
+        try:
+            returns = data["close"].pct_change().dropna()
+            return returns if len(returns) >= 5 else None
+        except Exception:
+            return None
+
+    def _run_kalman_filter(self, prices: np.ndarray) -> Optional[Dict[str, Any]]:
+        """Run Kalman filter on price data."""
+        try:
+            if len(prices) < 2:
+                return None
+
+            # Reset filter for new sequence
+            self.kalman_filter.state = prices[0]
+            self.kalman_filter.covariance = 1.0
+
+            # Process each price point
+            residuals = []
+            states = []
+
+            for i, price in enumerate(prices):
+                if i == 0:
+                    # Initialize with first price
+                    states.append(price)
+                    residuals.append(0.0)
+                    continue
+
+                # Predict
+                self.kalman_filter.predict()
+
+                # Update with measurement
+                state, residual = self.kalman_filter.update(price)
+
+                states.append(state)
+                residuals.append(residual)
+
+                # Track residual history
+                self.residual_history.append(residual)
+                if len(self.residual_history) > self.max_residual_history:
+                    self.residual_history = self.residual_history[-self.max_residual_history:]
+
+            # Return results for the most recent point
+            return {
+                "state": states[-1],
+                "residual": residuals[-1],
+                "all_states": states,
+                "all_residuals": residuals,
+            }
+
+        except Exception as e:
+            logger.warning(f"Kalman filter error: {e}")
+            return None
+
+    def _calculate_confidence_score(self, kalman_result: Dict[str, Any],
+                                  regime_info: Dict[str, Any], anomaly_score: float,
+                                  is_anomaly: bool) -> float:
+        """Calculate confidence score based on multiple factors."""
+        if not is_anomaly:
+            return 0.0
+
+        # Residual-based confidence
+        residual_confidence = min(abs(kalman_result["residual"]) / 5.0, 1.0)
+
+        # Regime-based confidence (higher confidence in stable regimes)
+        regime_stability = regime_info.get("regime_stability", 0.5)
+        regime_confidence = regime_stability
+
+        # Feature consistency confidence
+        feature_consistency = 1.0  # Could be enhanced with more features
+
+        # Weighted combination
+        confidence = (
+            self.residual_weight * residual_confidence +
+            self.regime_weight * regime_confidence +
+            self.feature_weight * feature_consistency
+        )
+
+        return min(confidence, 1.0)
+
+    def _calculate_anomaly_severity(self, anomaly_score: float) -> AnomalySeverity:
+        """Calculate anomaly severity based on score."""
+        if anomaly_score >= 3.0:
+            return AnomalySeverity.CRITICAL
+        elif anomaly_score >= 2.0:
+            return AnomalySeverity.HIGH
+        elif anomaly_score >= 1.5:
+            return AnomalySeverity.MEDIUM
+        else:
+            return AnomalySeverity.LOW
+
+    def _calculate_feature_importance(self, kalman_result: Dict[str, Any],
+                                    regime_info: Dict[str, Any]) -> Dict[str, float]:
+        """Calculate feature importance for the anomaly detection."""
+        residual_importance = abs(kalman_result["residual"]) / 5.0  # Normalize
+        volatility_importance = regime_info.get("volatility", 0.01) / 0.05  # Normalize
+        trend_importance = regime_info.get("trend_strength", 0.0) / 0.02  # Normalize
+
+        # Normalize to sum to 1
+        total = residual_importance + volatility_importance + trend_importance
+        if total > 0:
+            residual_importance /= total
+            volatility_importance /= total
+            trend_importance /= total
+
+        return {
+            "residual": residual_importance,
+            "volatility": volatility_importance,
+            "trend": trend_importance,
+        }
+
+    def _check_manual_overrides(self, data: pd.DataFrame, symbol: str) -> Optional[AnomalyResult]:
+        """Check if any manual overrides apply to current data."""
+        if not self.manual_overrides:
+            return None
+
+        current_time = data.index[-1] if hasattr(data.index, '__getitem__') else datetime.now()
+
+        for override in self.manual_overrides:
+            if override.get("symbol") == symbol:
+                override_time = override.get("timestamp")
+                if override_time and abs((current_time - override_time).total_seconds()) < 300:  # 5 minutes
+                    return AnomalyResult(
+                        is_anomaly=False,
+                        anomaly_type=AnomalyType.NONE,
+                        severity=AnomalySeverity.LOW,
+                        confidence_score=0.0,
+                        context={"manual_override": override},
+                    )
+
+        return None
+
+    def set_manual_overrides(self, overrides: List[Dict[str, Any]]) -> None:
+        """Set manual override events."""
+        self.manual_overrides = overrides
+
+
 class AnomalyDetector:
     """
     Main anomaly detector that combines multiple detection methods
@@ -974,6 +1474,32 @@ class AnomalyDetector:
                 "critical": 15.0,
             },
         },
+        "kalman_anomaly": {
+            "enabled": False,  # Disabled by default for backward compatibility
+            "kalman_filter": {
+                "process_noise": 0.01,
+                "measurement_noise": 0.1,
+                "initial_state": 0.0,
+                "initial_covariance": 1.0,
+            },
+            "adaptive_threshold": {
+                "regime_window": 50,
+                "volatility_multiplier": 2.0,
+                "min_threshold": 0.5,
+                "max_threshold": 5.0,
+            },
+            "regime_detection": {
+                "enabled": True,
+                "volatility_threshold": 0.02,
+                "trend_threshold": 0.01,
+                "regime_memory": 20,
+            },
+            "confidence_scoring": {
+                "residual_weight": 0.6,
+                "regime_weight": 0.3,
+                "feature_weight": 0.1,
+            },
+        },
         "response": {
             "skip_trade_threshold": "critical",
             "scale_down_threshold": "medium",
@@ -1008,6 +1534,7 @@ class AnomalyDetector:
         self.price_detector = PriceZScoreDetector(self.config["price_zscore"])
         self.volume_detector = VolumeZScoreDetector(self.config["volume_zscore"])
         self.gap_detector = PriceGapDetector(self.config["price_gap"])
+        self.kalman_detector = KalmanAnomalyDetector(self.config["kalman_anomaly"])
 
         # Response configuration with safe defaults
         self.response_config = self.config.get("response", {})
@@ -1411,6 +1938,10 @@ class AnomalyDetector:
 
         if self.gap_detector.enabled:
             result = self.gap_detector.detect(data, symbol)
+            results.append(result)
+
+        if self.kalman_detector.enabled:
+            result = self.kalman_detector.detect(data, symbol)
             results.append(result)
 
         return results
