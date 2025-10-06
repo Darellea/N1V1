@@ -26,10 +26,36 @@ class MemoryConfig:
     max_memory_mb: float = 500.0
     warning_memory_mb: float = 400.0
     cleanup_memory_mb: float = 350.0
+    hard_limit_mb: float = 600.0  # Hard limit that triggers immediate action
+    component_limits: Dict[str, float] = None  # Per-component memory limits
+    graceful_degradation_threshold: float = 450.0  # When to start graceful degradation
+    emergency_cleanup_threshold: float = 550.0  # When to trigger emergency cleanup
+    forecasting_window_minutes: int = 10  # Memory usage forecasting window
+    degradation_steps: List[str] = None  # Ordered degradation steps
     eviction_batch_size: int = 100
     memory_check_interval: float = 60.0
     enable_monitoring: bool = True
+    enable_hard_limits: bool = True  # Enable hard memory limits
+    enable_forecasting: bool = True  # Enable memory usage forecasting
     cleanup_interval: float = 300.0
+
+    def __post_init__(self):
+        if self.component_limits is None:
+            self.component_limits = {
+                "cache": 100.0,
+                "data_manager": 150.0,
+                "signal_processor": 100.0,
+                "ml_models": 200.0,
+                "default": 50.0,
+            }
+        if self.degradation_steps is None:
+            self.degradation_steps = [
+                "reduce_cache_size",
+                "clear_unused_objects",
+                "disable_non_critical_features",
+                "force_garbage_collection",
+                "emergency_cleanup"
+            ]
 
 
 # Configuration Protocol
