@@ -1088,7 +1088,7 @@ class DataFetcher(IDataFetcher):
             since: Timestamp in ms of earliest candle
 
         Returns:
-            Dictionary mapping symbols to their DataFrames
+            Dictionary mapping symbols to their DataFrames (failed symbols excluded)
         """
         tasks = [
             self.get_historical_data(symbol, timeframe, limit, since)
@@ -1101,10 +1101,15 @@ class DataFetcher(IDataFetcher):
         for symbol, result in zip(symbols, results):
             if isinstance(result, Exception):
                 logger.error(f"Failed to fetch {symbol}: {result}")
-                # Include symbol with empty DataFrame to maintain expected structure
-                data_dict[symbol] = self._create_empty_dataframe()
+                # Skip failed symbols entirely - they are not included in results
+                continue
             else:
-                data_dict[symbol] = result
+                # Only include successful results with non-empty DataFrames
+                if not result.empty:
+                    data_dict[symbol] = result
+                else:
+                    logger.warning(f"No data returned for {symbol}")
+                    # Don't include empty DataFrames to match test expectation
 
         return data_dict
 

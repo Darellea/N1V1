@@ -107,6 +107,11 @@ def real_monitor():
         "alerting": False,
     }
     monitor = RealTimePerformanceMonitor(config)
+
+    # Ensure no initial baselines are created, but keep baseline_history intact
+    monitor.baselines.clear()
+    # Don't clear baseline_history - tests may add data to it
+
     return monitor
 
 
@@ -269,8 +274,9 @@ class TestConcurrentMetricsUpdates:
         current_time = time.time()
 
         # Add historical data directly to baseline_history (what _update_baselines reads)
+        # Ensure data is within the baseline window (10 seconds)
         for i in range(50):
-            timestamp = current_time - (50 - i) * 1.0  # 1 second intervals
+            timestamp = current_time - (10 - i * 0.2)  # 0.2 second intervals within 10s window
             value = 100.0 + np.random.normal(0, 5)  # Base value with noise
             real_monitor.baseline_history[metric_name].append((timestamp, value))
 

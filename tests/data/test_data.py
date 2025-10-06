@@ -257,7 +257,7 @@ async def test_cache_operations(data_fetcher, mock_ohlcv_data):
 @pytest.mark.asyncio
 async def test_multiple_symbol_fetching(data_fetcher, mock_ohlcv_data):
     """Test concurrent fetching of multiple symbols."""
-    data_fetcher.exchange.fetch_ohlcv = Mock(return_value=mock_ohlcv_data)
+    data_fetcher.exchange._exchange.fetch_ohlcv = AsyncMock(return_value=mock_ohlcv_data)
 
     # Test fetching multiple symbols
     data = await data_fetcher.get_multiple_historical_data(
