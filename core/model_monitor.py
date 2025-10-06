@@ -708,6 +708,30 @@ class ModelMonitor:
             except Exception as e:
                 logger.error(f"Error in alert callback: {e}")
 
+    def _trigger_drift_alert(self):
+        """Trigger drift alert to all registered callbacks."""
+        alert = {"type": "DRIFT_DETECTED", "timestamp": time.time()}
+        for callback in self.alert_callbacks:
+            try:
+                callback(alert)
+            except Exception as e:
+                logger.error(f"Alert callback failed: {e}")
+
+    def _trigger_retraining(self):
+        """Trigger retraining callback."""
+        if self.retraining_callbacks:
+            for callback in self.retraining_callbacks:
+                try:
+                    callback()
+                except Exception as e:
+                    logger.error(f"Retraining callback failed: {e}")
+
+    def _calculate_recent_accuracy(self) -> float:
+        """Calculate accuracy of recent predictions."""
+        recent = self.prediction_buffer[-self.min_samples_for_metrics:]
+        correct = sum(1 for p in recent if (p['prediction'] > 0.5) == (p['actual'] > 0.5))
+        return correct / len(recent)
+
     def add_alert_callback(self, callback: Callable):
         """Add a callback function for alerts."""
         self.alert_callbacks.append(callback)
@@ -1045,6 +1069,8 @@ class RealTimeModelMonitor(ModelMonitor):
         self.prediction_count = 0
         self.consecutive_drift_checks = 0
         self.performance_window = config.get("performance_window", 1000)
+        self.min_samples_for_drift = config.get("min_samples_for_drift", 100)
+        self.min_samples_for_metrics = config.get("min_samples_for_metrics", 50)
 
         logger.info("Real-time model monitor initialized")
 
@@ -1056,7 +1082,7 @@ class RealTimeModelMonitor(ModelMonitor):
         timestamp: Optional[datetime] = None,
     ):
         """
-        Record a single prediction in real-time.
+        Record a single prediction in real-time with automatic drift checking.
 
         Args:
             features: Feature values
@@ -1084,6 +1110,24 @@ class RealTimeModelMonitor(ModelMonitor):
         if len(self.prediction_buffer) > self.max_buffer_size:
             self.prediction_buffer.pop(0)
 
+        # Auto-update reference data when we have enough samples
+        if (len(self.prediction_buffer) >= self.min_samples_for_drift and
+            self.reference_features is None):
+            self._update_reference_data()
+
+        # Check for drift periodically
+        if (self.prediction_count % self.drift_check_interval == 0 and
+            self.reference_features is not None):
+            if self.check_drift():
+                self._trigger_drift_alert()
+
+        # Check for performance degradation
+        if (len(self.prediction_buffer) >= self.min_samples_for_metrics and
+            self.retraining_callbacks is not None):
+            recent_accuracy = self._calculate_recent_accuracy()
+            if recent_accuracy < 0.6:  # Threshold for retraining
+                self._trigger_retraining()
+
         # Periodic updates
         current_time = time.time()
 
@@ -1092,12 +1136,6 @@ class RealTimeModelMonitor(ModelMonitor):
             self._update_streaming_metrics()
             self.last_metrics_update = current_time
 
-        # Check drift periodically
-        if self.prediction_count - self.last_drift_check >= self.drift_check_interval:
-            logger.info(f"Checking drift at prediction {self.prediction_count}")
-            self._check_streaming_drift()
-            self.last_drift_check = self.prediction_count
-
         # Update dashboard periodically
         if current_time - self.last_dashboard_update >= self.dashboard_update_interval:
             self._update_dashboard()
@@ -1105,25 +1143,40 @@ class RealTimeModelMonitor(ModelMonitor):
 
     def get_metrics(self) -> Dict[str, Any]:
         """
-        Get current streaming metrics.
+        Calculate comprehensive streaming metrics.
 
         Returns:
             Dictionary with current performance metrics
         """
-        if not self.prediction_buffer:
-            return {
-                "total_predictions": 0,
-                "auc": 0.0,
-                "drift_score": 0.0,
-                "timestamp": datetime.now(),
+        if len(self.prediction_buffer) < self.min_samples_for_metrics:
+            return {}
+
+        predictions = [p['prediction'] for p in self.prediction_buffer]
+        actuals = [p['actual'] for p in self.prediction_buffer]
+
+        try:
+            from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, recall_score
+
+            # Binary classification metrics - binarize both predictions and actuals
+            pred_binary = [1 if p > 0.5 else 0 for p in predictions]
+            actual_binary = [1 if a > 0.5 else 0 for a in actuals]
+
+            metrics = {
+                'total_predictions': len(self.prediction_buffer),
+                'accuracy': accuracy_score(actual_binary, pred_binary),
+                'precision': precision_score(actual_binary, pred_binary, zero_division=0),
+                'recall': recall_score(actual_binary, pred_binary, zero_division=0),
+                'timestamp': datetime.now(),
             }
 
-        # Use cached metrics if recent
-        if time.time() - self.last_metrics_update < self.streaming_update_interval:
-            return self.metrics_cache.copy()
+            # AUC requires both classes to be present
+            if len(set(actual_binary)) == 2:
+                metrics['auc'] = roc_auc_score(actual_binary, predictions)
 
-        # Calculate fresh metrics
-        return self._calculate_streaming_metrics()
+            return metrics
+        except Exception as e:
+            logger.warning(f"Metrics calculation failed: {e}")
+            return {}
 
     def _calculate_streaming_metrics(self) -> Dict[str, Any]:
         """Calculate metrics from current prediction buffer."""
@@ -1244,7 +1297,10 @@ class RealTimeModelMonitor(ModelMonitor):
         """Detect drift using Kolmogorov-Smirnov test."""
         drift_scores = []
 
-        for col in self.feature_columns:
+        # Use feature_columns if available, otherwise use all common columns
+        columns_to_check = self.feature_columns if self.feature_columns else list(set(current_features.columns) & set(self.reference_features.columns))
+
+        for col in columns_to_check:
             if col in current_features.columns and col in self.reference_features.columns:
                 try:
                     from scipy.stats import ks_2samp
@@ -1257,7 +1313,7 @@ class RealTimeModelMonitor(ModelMonitor):
                     pass
 
         avg_drift = np.mean(drift_scores) if drift_scores else 0.0
-        threshold = self.config.get("drift_thresholds", {}).get("ks_threshold", 0.1)
+        threshold = self.config.get("drift_thresholds", {}).get("ks_threshold", 0.05)  # Lower threshold
 
         return {
             "detected": avg_drift > threshold,
@@ -1269,7 +1325,10 @@ class RealTimeModelMonitor(ModelMonitor):
         """Detect drift using Population Stability Index."""
         drift_scores = []
 
-        for col in self.feature_columns:
+        # Use feature_columns if available, otherwise use all common columns
+        columns_to_check = self.feature_columns if self.feature_columns else list(set(current_features.columns) & set(self.reference_features.columns))
+
+        for col in columns_to_check:
             if col in current_features.columns and col in self.reference_features.columns:
                 try:
                     # Create histograms
@@ -1287,7 +1346,7 @@ class RealTimeModelMonitor(ModelMonitor):
                     pass
 
         avg_drift = np.mean(drift_scores) if drift_scores else 0.0
-        threshold = self.config.get("drift_thresholds", {}).get("psi_threshold", 0.1)
+        threshold = self.config.get("drift_thresholds", {}).get("psi_threshold", 0.05)  # Lower threshold
 
         return {
             "detected": avg_drift > threshold,
@@ -1300,7 +1359,10 @@ class RealTimeModelMonitor(ModelMonitor):
         # Simplified MMD implementation
         drift_scores = []
 
-        for col in self.feature_columns:
+        # Use feature_columns if available, otherwise use all common columns
+        columns_to_check = self.feature_columns if self.feature_columns else list(set(current_features.columns) & set(self.reference_features.columns))
+
+        for col in columns_to_check:
             if col in current_features.columns and col in self.reference_features.columns:
                 try:
                     ref_mean = np.mean(self.reference_features[col].values)
@@ -1452,6 +1514,11 @@ class RealTimeModelMonitor(ModelMonitor):
     def _update_dashboard(self):
         """Update dashboard with current metrics."""
         metrics = self.get_metrics()
+
+        # Add drift score if available
+        if metrics:
+            drift_score = self._calculate_current_drift_score()
+            metrics['drift_score'] = drift_score
 
         for callback in self.dashboard_callbacks:
             try:

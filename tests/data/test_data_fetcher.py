@@ -103,6 +103,13 @@ class TestDataFetcherAsyncMethods:
             "cache_enabled": False,  # Disable for most tests
         }
         self.fetcher = DataFetcher(self.config)
+        # Reset circuit breaker state to avoid interference from other tests
+        if hasattr(self.fetcher, 'circuit_breaker') and self.fetcher.circuit_breaker:
+            self.fetcher.circuit_breaker.state = self.fetcher.circuit_breaker.state.__class__.CLOSED
+            self.fetcher.circuit_breaker.failure_count = 0
+            self.fetcher.circuit_breaker.success_count = 0
+            self.fetcher.circuit_breaker.last_failure_time = None
+            self.fetcher.circuit_breaker.half_open_call_count = 0
 
     @pytest.mark.asyncio
     async def test_initialize_success(self):
@@ -134,7 +141,7 @@ class TestDataFetcherAsyncMethods:
         ]
 
         mock_exchange = AsyncMock()
-        mock_exchange.fetch_ohlcv = Mock(return_value=mock_candles)
+        mock_exchange.fetch_ohlcv = AsyncMock(return_value=mock_candles)
         self.fetcher.exchange = mock_exchange
 
         result = await self.fetcher.get_historical_data("BTC/USDT", "1h", 100)
@@ -204,12 +211,19 @@ class TestDataFetcherAsyncMethods:
             self.config["cache_enabled"] = True
             self.config["cache_dir"] = temp_dir
             fetcher = DataFetcher(self.config)
+            # Reset circuit breaker state
+            if hasattr(fetcher, 'circuit_breaker') and fetcher.circuit_breaker:
+                fetcher.circuit_breaker.state = fetcher.circuit_breaker.state.__class__.CLOSED
+                fetcher.circuit_breaker.failure_count = 0
+                fetcher.circuit_breaker.success_count = 0
+                fetcher.circuit_breaker.last_failure_time = None
+                fetcher.circuit_breaker.half_open_call_count = 0
 
             # Mock exchange response
             mock_candles = [[1640995200000, 50000, 51000, 49000, 50500, 100]]
 
             mock_exchange = AsyncMock()
-            mock_exchange.fetch_ohlcv = Mock(return_value=mock_candles)
+            mock_exchange.fetch_ohlcv = AsyncMock(return_value=mock_candles)
             fetcher.exchange = mock_exchange
 
             result = await fetcher.get_historical_data("BTC/USDT", "1h", 100)
@@ -623,6 +637,13 @@ class TestDataFetcherErrorScenarios:
         """Set up test fixtures."""
         self.config = {"name": "binance", "rate_limit": 10}
         self.fetcher = DataFetcher(self.config)
+        # Reset circuit breaker state to avoid interference from other tests
+        if hasattr(self.fetcher, 'circuit_breaker') and self.fetcher.circuit_breaker:
+            self.fetcher.circuit_breaker.state = self.fetcher.circuit_breaker.state.__class__.CLOSED
+            self.fetcher.circuit_breaker.failure_count = 0
+            self.fetcher.circuit_breaker.success_count = 0
+            self.fetcher.circuit_breaker.last_failure_time = None
+            self.fetcher.circuit_breaker.half_open_call_count = 0
 
     @pytest.mark.asyncio
     async def test_get_historical_data_unexpected_error(self):
@@ -791,6 +812,13 @@ class TestDataFetcherIntegration:
                 "rate_limit": 100,
             }
             self.fetcher = DataFetcher(self.config)
+            # Reset circuit breaker state to avoid interference from other tests
+            if hasattr(self.fetcher, 'circuit_breaker') and self.fetcher.circuit_breaker:
+                self.fetcher.circuit_breaker.state = self.fetcher.circuit_breaker.state.__class__.CLOSED
+                self.fetcher.circuit_breaker.failure_count = 0
+                self.fetcher.circuit_breaker.success_count = 0
+                self.fetcher.circuit_breaker.last_failure_time = None
+                self.fetcher.circuit_breaker.half_open_call_count = 0
 
     @pytest.mark.asyncio
     async def test_full_workflow_with_caching(self):
@@ -799,7 +827,7 @@ class TestDataFetcherIntegration:
         mock_candles = [[1640995200000, 50000, 51000, 49000, 50500, 100]]
 
         mock_exchange = AsyncMock()
-        mock_exchange.fetch_ohlcv = Mock(return_value=mock_candles)
+        mock_exchange.fetch_ohlcv = AsyncMock(return_value=mock_candles)
         self.fetcher.exchange = mock_exchange
 
         # First request - should fetch from exchange and cache
@@ -829,7 +857,7 @@ class TestDataFetcherIntegration:
         mock_candles = [[1640995200000, 50000, 51000, 49000, 50500, 100]]
 
         mock_exchange = AsyncMock()
-        mock_exchange.fetch_ohlcv = Mock(return_value=mock_candles)
+        mock_exchange.fetch_ohlcv = AsyncMock(return_value=mock_candles)
         self.fetcher.exchange = mock_exchange
 
         symbols = ["BTC/USDT", "ETH/USDT", "ADA/USDT"]

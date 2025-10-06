@@ -245,7 +245,7 @@ def calculate_adx(data: pd.DataFrame, period: int = 14) -> pd.Series:
 
 def calculate_obv(data: pd.DataFrame) -> pd.Series:
     """
-    Calculate On-Balance Volume (OBV).
+    Calculate On-Balance Volume with proper edge case handling.
 
     Args:
         data: DataFrame with OHLCV data (must contain 'close', 'volume')
@@ -253,23 +253,35 @@ def calculate_obv(data: pd.DataFrame) -> pd.Series:
     Returns:
         Series with OBV values
     """
-    required_cols = ["close", "volume"]
-    for col in required_cols:
-        if col not in data.columns:
-            raise ValueError(f"Column '{col}' not found in data")
+    if len(data) == 0:
+        return pd.Series([], dtype=float, name='obv')
 
-    if len(data) < 1:
-        logger.warning("Insufficient data for OBV calculation")
-        return pd.Series([], dtype=float)
+    if 'close' not in data.columns or 'volume' not in data.columns:
+        raise ValueError("Data must contain 'close' and 'volume' columns")
 
-    # Vectorized OBV calculation
-    sign_changes = np.sign(data["close"].diff()).fillna(0)
-    obv = pd.Series(index=data.index, dtype=float)
-    obv.iloc[0] = data["volume"].iloc[0]
-    if len(data) > 1:
-        obv.iloc[1:] = data["volume"].iloc[0] + (sign_changes.iloc[1:] * data["volume"].iloc[1:]).cumsum()
+    # Single row case - return NaN since we can't calculate price change
+    if len(data) == 1:
+        return pd.Series([float('nan')], index=data.index, name='obv')
 
-    return obv.astype(int)
+    # Calculate price changes
+    price_change = data['close'].diff()
+
+    # Initialize OBV series
+    obv = pd.Series(0.0, index=data.index, name='obv')
+
+    # First OBV value is the first volume
+    obv.iloc[0] = data['volume'].iloc[0]
+
+    # Calculate OBV for subsequent periods
+    for i in range(1, len(data)):
+        if price_change.iloc[i] > 0:
+            obv.iloc[i] = obv.iloc[i-1] + data['volume'].iloc[i]
+        elif price_change.iloc[i] < 0:
+            obv.iloc[i] = obv.iloc[i-1] - data['volume'].iloc[i]
+        else:
+            obv.iloc[i] = obv.iloc[i-1]  # No change
+
+    return obv
 
 
 def calculate_stochastic(

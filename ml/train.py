@@ -114,59 +114,69 @@ def set_deterministic_seeds(seed: int = 42) -> None:
 
     import numpy as np
 
-    # Python random
-    random.seed(seed)
-
-    # NumPy
+    # NumPy first (affects many libraries)
     np.random.seed(seed)
-
-    # pandas
-    try:
-        from pandas.core.common import random_state
-
-        random_state(seed)
-        logger.debug(f"pandas random_state set to {seed}")
-    except Exception:
-        logger.warning("pandas random_state not available, skipping pandas seeding")
 
     # TensorFlow
     try:
         import tensorflow as tf
-
-        if hasattr(tf, "random") and hasattr(tf.random, "set_seed"):
-            tf.random.set_seed(seed)
-            logger.info(f"TensorFlow seed set to {seed}")
+        tf.random.set_seed(seed)
+        logger.info(f"TensorFlow seed set to {seed}")
     except Exception as e:
-        logger.warning(f"TensorFlow not available, skipping tf.random.set_seed: {e}")
+        logger.warning(f"TensorFlow not available: {e}")
 
     # PyTorch
     try:
         import torch
-
         torch.manual_seed(seed)
-        if hasattr(torch, "cuda"):
+        if torch.cuda.is_available():
             torch.cuda.manual_seed(seed)
             torch.cuda.manual_seed_all(seed)
+        logger.info(f"PyTorch seed set to {seed}")
     except ImportError:
-        logger.warning("PyTorch not available, skipping torch seeding")
+        logger.warning("PyTorch not available")
 
-    # scikit-learn
-    try:
-        import sklearn  # presence only
-
-        # sklearn uses numpy random internally, already seeded above
-    except ImportError:
-        logger.warning("scikit-learn not available, skipping sklearn seeding")
-
-    # CatBoost
+    # CatBoost - handle different API versions safely
     try:
         import catboost as cb
-
-        cb.set_random_seed(seed)
+        # Different CatBoost versions have different APIs
+        if hasattr(cb, 'set_random_seed'):
+            cb.set_random_seed(seed)
+            logger.info(f"CatBoost seed set to {seed}")
+        else:
+            # CatBoost uses numpy internally, already seeded above
+            logger.debug("CatBoost uses seeded NumPy random state")
     except ImportError:
-        logger.warning("CatBoost not available, skipping cb seeding")
+        logger.warning("CatBoost not available")
 
-    logger.info("Set deterministic seeds to %s for all available libraries", seed)
+    # LightGBM
+    try:
+        import lightgbm as lgb
+        # LightGBM uses numpy internally
+        logger.debug("LightGBM uses seeded NumPy random state")
+    except ImportError:
+        logger.warning("LightGBM not available")
+
+    # XGBoost
+    try:
+        import xgboost as xgb
+        # XGBoost uses numpy internally
+        logger.debug("XGBoost uses seeded NumPy random state")
+    except ImportError:
+        logger.warning("XGBoost not available")
+
+    # pandas (uses numpy internally, but we log it)
+    try:
+        import pandas as pd
+        # pandas operations that use randomness will use the seeded numpy state
+        logger.debug(f"pandas uses seeded NumPy random state (seed: {seed})")
+    except ImportError:
+        logger.warning("pandas not available, skipping pandas seeding")
+
+    # CRITICAL: Seed Python's random module LAST to ensure no interference
+    random.seed(seed)
+
+    logger.info(f"Set deterministic seeds to {seed} for all available libraries")
 
 
 def capture_environment_snapshot() -> Dict[str, Any]:
@@ -1033,7 +1043,11 @@ def initialize_experiment_tracking(
     tracker = ExperimentTracker(experiment_name=experiment_name)
 
     # Set deterministic seeds for reproducibility
-    set_deterministic_seeds(seed)
+    try:
+        set_deterministic_seeds(seed)
+    except Exception as e:
+        logger.warning(f"Seed setting partially failed: {e}")
+        # Continue execution - this is not a fatal error
 
     # Capture environment snapshot
     env_snapshot = capture_environment_snapshot()

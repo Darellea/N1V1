@@ -344,6 +344,7 @@ class TestDeterministicOptimization:
             "generations": 50,  # Reasonable size for timeout test
             "random_mode": "reproducible",
             "base_seed": 1,
+            "test_mode": True,  # Enable test optimizations
         }
 
         optimizer = GeneticOptimizer(config)

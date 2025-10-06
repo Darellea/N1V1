@@ -443,6 +443,43 @@ class DataFetcher(IDataFetcher):
 
         return True
 
+    def _convert_to_dataframe(self, candles: list) -> pd.DataFrame:
+        """
+        Convert OHLCV candle data to pandas DataFrame.
+
+        Args:
+            candles: List of OHLCV records in format [timestamp, open, high, low, close, volume]
+
+        Returns:
+            pd.DataFrame: DataFrame with datetime timestamp column and OHLCV columns
+        """
+        if not candles:
+            return pd.DataFrame()
+
+        # Validate data structure
+        valid_candles = []
+        for candle in candles:
+            if len(candle) == 6:  # Must have exactly 6 elements
+                valid_candles.append(candle)
+
+        if not valid_candles:
+            return pd.DataFrame()
+
+        try:
+            df = pd.DataFrame(
+                valid_candles,
+                columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            )
+
+            # Convert timestamp from milliseconds to datetime
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+
+            return df
+
+        except Exception as e:
+            logger.error(f"Failed to convert candles to DataFrame: {e}")
+            return pd.DataFrame()
+
     def _parse_timestamps(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Parse timestamps using multiple strategies.
@@ -494,20 +531,36 @@ class DataFetcher(IDataFetcher):
 
         raise CacheLoadError("Unable to parse timestamps from cache data")
 
-    def _convert_to_dataframe(self, candles: List) -> pd.DataFrame:
+    def _create_dataframe(self, ohlcv_data: list, symbol: str) -> pd.DataFrame:
         """
-        Convert raw candle data to normalized DataFrame.
+        Convert raw OHLCV data to pandas DataFrame.
 
         Args:
-            candles: List of OHLCV candles
+            ohlcv_data: List of OHLCV candles
+            symbol: Trading pair symbol for logging
 
         Returns:
-            Normalized DataFrame with timestamp as column
+            DataFrame with timestamp as index
         """
-        cols = ["timestamp", "open", "high", "low", "close", "volume"]
-        df = pd.DataFrame(candles, columns=cols)
-        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-        return df
+        if not ohlcv_data:
+            return pd.DataFrame()
+
+        # Check if all rows have exactly 6 elements
+        if not all(len(row) == 6 for row in ohlcv_data):
+            logger.warning(f"Malformed OHLCV data for {symbol}; returning empty DataFrame")
+            return pd.DataFrame()
+
+        try:
+            df = pd.DataFrame(
+                ohlcv_data,
+                columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            )
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df.set_index('timestamp', inplace=True)
+            return df
+        except Exception as e:
+            logger.error(f"Failed to create DataFrame for {symbol}: {e}")
+            return pd.DataFrame()
 
     def _cache_data(self, cache_key: str, df: pd.DataFrame) -> None:
         """
@@ -562,10 +615,8 @@ class DataFetcher(IDataFetcher):
         force_fresh: bool = True,
     ) -> pd.DataFrame:
         try:
-            # Respect rate limits
             await self._throttle_requests()
 
-            # Try to load from cache if not force_fresh and caching enabled
             if not force_fresh and self.cache_enabled:
                 cached = await self._load_from_cache_async(
                     self._get_cache_key(symbol, timeframe, limit, since)
@@ -573,27 +624,24 @@ class DataFetcher(IDataFetcher):
                 if cached is not None and not cached.empty:
                     return cached
 
-            candles = await self._fetch_with_retry("fetch_ohlcv", symbol=symbol, timeframe=timeframe, limit=limit, since=since)
-
-            if not candles:
-                return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
-
-            # Validate candle data - ensure all candles have exactly 6 fields
-            if not all(len(candle) == 6 for candle in candles):
-                logger.warning(
-                    f"Malformed candle data for {symbol}; returning empty DataFrame"
-                )
-                return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
-
-            df = pd.DataFrame(
-                candles, columns=["timestamp", "open", "high", "low", "close", "volume"]
+            # Use retry mechanism with circuit breaker integration
+            endpoint_config = self.endpoint_retry_configs.get("fetch_ohlcv", {})
+            ohlcv_data = await retry_call(
+                self.exchange.fetch_ohlcv,
+                symbol=symbol,
+                timeframe=timeframe,
+                since=since,
+                limit=limit,
+                circuit_breaker=self.circuit_breaker,
+                max_attempts=endpoint_config.get("max_attempts", self.retry_config.max_attempts),
+                base_delay=endpoint_config.get("base_delay", self.retry_config.base_delay),
+                jitter=endpoint_config.get("jitter", self.retry_config.jitter),
             )
-            df["timestamp"] = pd.to_datetime(
-                df["timestamp"], unit="ms", errors="coerce", utc=True
-            )
-            df.set_index("timestamp", inplace=True)
 
-            # Cache the data if caching is enabled
+            df = self._create_dataframe(ohlcv_data, symbol)
+            if df.empty:
+                logger.warning(f"No data returned for {symbol}")
+
             if self.cache_enabled:
                 await self._save_to_cache_async(
                     self._get_cache_key(symbol, timeframe, limit, since), df
@@ -601,13 +649,19 @@ class DataFetcher(IDataFetcher):
 
             return df
         except Exception as e:
-            # Re-raise permanent errors and circuit breaker errors
-            from core.retry import _is_permanent_error
+            # Check if this is a circuit breaker open error - should be re-raised
             from core.api_protection import CircuitOpenError
-            if _is_permanent_error(e) or isinstance(e, CircuitOpenError):
+            if isinstance(e, CircuitOpenError):
                 raise
-            logger.error(f"Unexpected error in get_historical_data: {e}")
-            return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+
+            # Check if this is a permanent error that should not be retried
+            if self._is_permanent_error(e):
+                logger.error(f"Permanent error fetching data for {symbol}: {e}")
+                raise  # Re-raise permanent errors
+
+            # For temporary errors, return empty DataFrame with proper structure
+            logger.error(f"Failed to fetch data for {symbol}: {e}")
+            return self._create_empty_dataframe()
 
     async def get_realtime_data(
         self,
@@ -783,6 +837,42 @@ class DataFetcher(IDataFetcher):
 
         cache_key_lower = cache_key.lower()
         return any(keyword in cache_key_lower for keyword in critical_keywords)
+
+    def _is_permanent_error(self, error: Exception) -> bool:
+        """
+        Determine if an exception represents a permanent error that should not be retried.
+
+        Args:
+            error: The exception to check
+
+        Returns:
+            True if the error is permanent and should not be retried
+        """
+        # Import here to avoid circular imports
+        try:
+            from ccxt import BadRequest, AuthenticationError, PermissionDenied
+            if isinstance(error, (BadRequest, AuthenticationError, PermissionDenied)):
+                return True
+        except ImportError:
+            pass
+
+        # Check for common permanent error patterns
+        error_msg = str(error).lower()
+        permanent_indicators = [
+            "invalid", "unauthorized", "forbidden", "not found", "bad request",
+            "authentication failed", "permission denied"
+        ]
+
+        return any(indicator in error_msg for indicator in permanent_indicators)
+
+    def _create_empty_dataframe(self) -> pd.DataFrame:
+        """
+        Create empty DataFrame with proper OHLCV column structure.
+
+        Returns:
+            Empty DataFrame with correct column structure
+        """
+        return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
 
     def _sanitize_cache_path(self, cache_dir: str) -> str:
         """
@@ -985,7 +1075,7 @@ class DataFetcher(IDataFetcher):
         self,
         symbols: List[str],
         timeframe: str = "1h",
-        limit: int = 1000,
+        limit: int = 100,
         since: Optional[int] = None,
     ) -> Dict[str, pd.DataFrame]:
         """
@@ -1000,18 +1090,23 @@ class DataFetcher(IDataFetcher):
         Returns:
             Dictionary mapping symbols to their DataFrames
         """
-        results = {}
         tasks = [
             self.get_historical_data(symbol, timeframe, limit, since)
             for symbol in symbols
         ]
-        dfs = await asyncio.gather(*tasks, return_exceptions=True)
-        for symbol, df in zip(symbols, dfs):
-            if isinstance(df, Exception):
-                logger.error(f"Error fetching {symbol}: {df}")
-            elif not df.empty:
-                results[symbol] = df
-        return results
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        data_dict = {}
+        for symbol, result in zip(symbols, results):
+            if isinstance(result, Exception):
+                logger.error(f"Failed to fetch {symbol}: {result}")
+                # Do not include failed symbols in results
+                continue
+            if not result.empty:
+                data_dict[symbol] = result
+
+        return data_dict
 
     async def shutdown(self) -> None:
         """Cleanup resources."""

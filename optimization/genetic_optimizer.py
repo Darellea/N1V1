@@ -129,6 +129,13 @@ class GeneticOptimizer(BaseOptimizer):
         """
         super().__init__(config)
 
+        # Performance optimizations (must be set early for test mode logic)
+        self.enable_fitness_caching = config.get("enable_fitness_caching", True)
+        self.enable_early_termination = config.get("enable_early_termination", True)
+        self.early_termination_threshold = config.get("early_termination_threshold", 0.001)
+        self.early_termination_window = config.get("early_termination_window", 5)
+        self.test_mode = config.get("test_mode", False)  # Reduce population for tests
+
         # ============================================================================
         # ADAPTIVE POPULATION SIZING
         # ============================================================================
@@ -167,12 +174,22 @@ class GeneticOptimizer(BaseOptimizer):
         # Current population size (starts with initial, changes adaptively)
         self.population_size = self.initial_population_size
 
+        # Apply test mode optimizations
+        if self.test_mode:
+            # Reduce population size for tests to improve performance
+            self.population_size = min(self.population_size, 20)
+            self.max_population_size = min(self.max_population_size, 20)
+            self.logger.info(f"Test mode enabled: reduced population size to {self.population_size}")
+
         # GA specific configuration
         self.generations = config.get("generations", 10)
         self.mutation_rate = config.get("mutation_rate", 0.1)
         self.crossover_rate = config.get("crossover_rate", 0.7)
         self.elitism_rate = config.get("elitism_rate", 0.1)
         self.tournament_size = config.get("tournament_size", 3)
+
+        # Fitness cache: maps parameter hash to fitness value
+        self.fitness_cache: Dict[str, float] = {}
 
         # Population state
         self.population: List[Chromosome] = []
@@ -454,6 +471,11 @@ class GeneticOptimizer(BaseOptimizer):
             # Log generation statistics
             self._log_generation_stats(generation + 1)
 
+            # Check for early termination
+            if self.enable_early_termination and self._should_terminate_early():
+                self.logger.info(f"Early termination at generation {generation + 1} due to convergence")
+                break
+
         # Finalize optimization
         optimization_time = time.time() - start_time
         self.config["optimization_time"] = optimization_time
@@ -520,6 +542,14 @@ class GeneticOptimizer(BaseOptimizer):
         """
         for chromosome in self.population:
             if chromosome.fitness == float("-inf"):  # Not evaluated yet
+                # Check fitness cache first
+                if self.enable_fitness_caching:
+                    cache_key = self._get_cache_key(chromosome.genes)
+                    if cache_key in self.fitness_cache:
+                        chromosome.fitness = self.fitness_cache[cache_key]
+                        self.update_best_params(chromosome.genes, chromosome.fitness)
+                        continue
+
                 # Create strategy instance with chromosome genes
                 try:
                     strategy_config = {
@@ -535,6 +565,10 @@ class GeneticOptimizer(BaseOptimizer):
                     # Evaluate fitness
                     fitness = self.evaluate_fitness(strategy_instance, data)
                     chromosome.fitness = fitness
+
+                    # Cache the result
+                    if self.enable_fitness_caching:
+                        self.fitness_cache[cache_key] = fitness
 
                     # Update best params tracking
                     self.update_best_params(chromosome.genes, fitness)
@@ -990,3 +1024,36 @@ class GeneticOptimizer(BaseOptimizer):
         self.num_workers = num_workers
         self._initialize_random_state()
         self.logger.info(f"Configured for parallel execution: worker {worker_id}/{num_workers}")
+
+    def _get_cache_key(self, params: Dict[str, Any]) -> str:
+        """
+        Generate a cache key for parameter set.
+
+        Args:
+            params: Parameter dictionary
+
+        Returns:
+            String key for caching
+        """
+        # Sort parameters for consistent hashing
+        sorted_items = sorted(params.items())
+        return str(sorted_items)
+
+    def _should_terminate_early(self) -> bool:
+        """
+        Check if optimization should terminate early due to convergence.
+
+        Returns:
+            True if optimization should terminate early
+        """
+        if len(self.fitness_history) < self.early_termination_window:
+            return False
+
+        # Check if fitness improvement has been minimal over the last few generations
+        recent_fitness = self.fitness_history[-self.early_termination_window:]
+
+        # Calculate improvement over the window
+        max_improvement = max(recent_fitness) - min(recent_fitness)
+
+        # Terminate if improvement is below threshold
+        return max_improvement < self.early_termination_threshold

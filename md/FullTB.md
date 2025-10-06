@@ -1,37 +1,20 @@
-FAILED tests/core/test_order_manager.py::TestOrderManager::test_validate_order_payload_invalid_schema - Failed: DID NOT RAISE <class 'ValueError'>
-FAILED tests/core/test_order_manager.py::TestOrderManager::test_validate_order_payload_invalid_symbol_format - Failed: DID NOT RAISE <class 'ValueError'>
-FAILED tests/core/test_order_manager.py::TestOrderManager::test_validate_order_payload_business_rules_negative_amount - Failed: DID NOT RAISE <class 'ValueError'>
-FAILED tests/core/test_order_manager.py::TestOrderManager::test_validate_order_payload_business_rules_stop_without_loss - Failed: DID NOT RAISE <class 'ValueError'>
-FAILED tests/core/test_order_manager.py::TestOrderManager::test_validate_order_payload_business_rules_invalid_signal_order_combo - Failed: DID NOT RAISE <class 'ValueError'>
-FAILED tests/core/test_order_manager.py::TestOrderManager::test_execute_order_with_validation_failure - AssertionError: assert 'filled' == 'validation_failed'
-FAILED tests/data/test_data.py::test_data_validation - assert not True
-FAILED tests/data/test_data.py::test_multiple_symbol_fetching - assert 0 == 2
-FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_initialize_success - core.api_protection.CircuitOpenError: Circuit is open for AsyncMock, aborting retry
-FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_get_historical_data_success - assert 0 == 2
-FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_get_historical_data_exchange_error - core.api_protection.CircuitOpenError: Circuit is open for AsyncMock, aborting retry
-FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_get_historical_data_network_error - core.api_protection.CircuitOpenError: Circuit is open for AsyncMock, aborting retry
-FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_get_historical_data_with_caching - assert 0 == 1
-FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_get_realtime_data_tickers_only - AssertionError: assert 'BTC/USDT' in {}
-FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_get_realtime_data_with_orderbooks - AssertionError: assert 'BTC/USDT' in {}
-FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_fetch_ticker_success - core.api_protection.CircuitOpenError: Circuit is open for AsyncMock, aborting retry
-FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_fetch_orderbook_success - core.api_protection.CircuitOpenError: Circuit is open for AsyncMock, aborting retry
-FAILED tests/data/test_data_fetcher.py::TestDataFetcherMultipleData::test_get_multiple_historical_data_success - AssertionError: assert 'BTC/USDT' in {}
-FAILED tests/data/test_data_fetcher.py::TestDataFetcherMultipleData::test_get_multiple_historical_data_partial_failure - AssertionError: assert 'BTC/USDT' in {}
-FAILED tests/data/test_data_fetcher.py::TestDataFetcherErrorScenarios::test_get_historical_data_unexpected_error - core.api_protection.CircuitOpenError: Circuit is open for AsyncMock, aborting retry
-FAILED tests/data/test_data_fetcher.py::TestDataFetcherErrorScenarios::test_fetch_ticker_error - core.api_protection.CircuitOpenError: Circuit is open for AsyncMock, aborting retry
-FAILED tests/data/test_data_fetcher.py::TestDataFetcherErrorScenarios::test_fetch_orderbook_error - core.api_protection.CircuitOpenError: Circuit is open for AsyncMock, aborting retry
-FAILED tests/data/test_data_fetcher.py::TestDataFetcherIntegration::test_full_workflow_with_caching - assert 0 == 1
-FAILED tests/data/test_data_fetcher.py::TestDataFetcherIntegration::test_multiple_symbols_workflow - assert 0 == 3
-FAILED tests/data/test_data_fetcher.py::TestDataFetcherIntegration::test_realtime_data_workflow - assert 0 == 2
+=============================================== short test summary info ===============================================
+FAILED tests/api/test_endpoints.py::TestReadinessEndpoint::test_readiness_endpoint_latency_measurement - assert 5324.3 < 5000
+FAILED tests/data/test_data_fixes.py::TestRefactoredFunctions::test_convert_to_dataframe - AttributeError: 'DataFetcher' object has no attribute '_convert_to_dataframe'
 FAILED tests/data/test_memory_efficient_loading.py::TestMemoryEfficientLoading::test_large_dataset_loading_with_timeout - Failed: Large dataset loading timed out
-FAILED tests/integration/test_order_flow_integration.py::TestOrderFlowIntegration::test_order_flow_with_validation - AssertionError: assert {'amount': 0.001, 'cost': 50.050000000000004, 'fee': {'cost': 0.050050000000000004, 'currenc...
-FAILED tests/integration/test_order_flow_integration.py::TestOrderFlowIntegration::test_error_handling_in_order_flow - AssertionError: assert {'amount': -1.0, 'cost': -50050.0, 'fee': {'cost': -50.05, 'currency': 'USDT'}, 'filled': -1...
-FAILED tests/ml/test_indicators.py::TestOBV::test_calculate_obv_insufficient_data - assert False
-FAILED tests/ml/test_realtime_model_monitoring.py::TestRealTimeModelMonitoring::test_realtime_drift_detection - assert False
-FAILED tests/ml/test_realtime_model_monitoring.py::TestRealTimeModelMonitoring::test_streaming_metrics_accuracy - AssertionError: assert 'auc' in {}
-FAILED tests/ml/test_realtime_model_monitoring.py::TestRealTimeModelMonitoring::test_alert_timing - assert 0 > 0
-FAILED tests/ml/test_realtime_model_monitoring.py::TestRealTimeModelMonitoring::test_multiple_drift_algorithms - assert False
-FAILED tests/ml/test_realtime_model_monitoring.py::TestRealTimeModelMonitoring::test_automated_retraining_trigger - assert False
-FAILED tests/ml/test_reproducibility.py::TestDeterministicSeeds::test_set_deterministic_seeds_python_random - assert [0.1096491303...50653676, ...] == [0.6394267984...74229113, ...]
-FAILED tests/optimization/test_deterministic_optimization.py::TestDeterministicOptimization::test_optimization_timeout_safety - assert 78.52452087402344 < 30
-36 failed, 3350 passed, 100 skipped, 1230 warnings in 1310.21s (0:21:50)
+FAILED tests/features/test_vectorized_operations.py::TestVectorizedOperations::test_vectorized_large_dataset_performance - assert 136.71458530426025 < 10.0
+FAILED tests/features/test_vectorized_operations.py::TestVectorizedOperations::test_obv_edge_cases - assert nan == 100
+FAILED tests/integration/test_api_retry_mechanisms.py::TestAPIRetryMechanisms::test_retry_timeout_prevention - Failed: DID NOT RAISE (<class 'asyncio.exceptions.TimeoutError'>, <class 'Exception'>)
+FAILED tests/integration/test_api_retry_mechanisms.py::TestAPIRetryMechanisms::test_successful_retry_after_failures - assert not True
+FAILED tests/integration/test_api_retry_mechanisms.py::TestAPIRetryMechanisms::test_circuit_breaker_integration - AssertionError: assert False
+FAILED tests/integration/test_api_retry_mechanisms.py::TestAPIRetryMechanisms::test_endpoint_specific_retry_config - assert not True
+FAILED tests/integration/test_api_retry_mechanisms.py::TestAPIRetryMechanisms::test_graceful_degradation_on_api_unavailable - AssertionError: assert [] == ['open', 'hig...se', 'volume']
+FAILED tests/integration/test_api_retry_mechanisms.py::TestAPIRetryMechanisms::test_request_deduplication_for_idempotent_operations - assert not True
+FAILED tests/integration/test_api_retry_mechanisms.py::TestAPIRetryMechanisms::test_permanent_vs_temporary_failure_handling - Failed: DID NOT RAISE <class 'ccxt.base.errors.BadRequest'>
+FAILED tests/integration/test_api_retry_mechanisms.py::TestAPIRetryMechanisms::test_circuit_breaker_recovery - AssertionError: assert 'half-open' == 'closed'
+FAILED tests/integration/test_api_retry_mechanisms.py::TestAPIRetryMechanisms::test_retry_metrics_and_logging - assert not True
+FAILED tests/integration/test_api_retry_mechanisms.py::TestAPIRetryMechanisms::test_configurable_retry_strategies - assert not True
+FAILED tests/integration/test_cross_feature_integration.py::TestCircuitBreakerMonitoringIntegration::test_monitoring_performance_during_circuit_breaker - AssertionError: Performance degraded by 97.1% during circuit breaker (threshold: 50%)
+FAILED tests/ml/test_reproducibility.py::TestDeterministicSeeds::test_set_deterministic_seeds_python_random - assert [0.2186379748...06032167, ...] == [0.6394267984...74229113, ...]
+FAILED tests/optimization/test_deterministic_optimization.py::TestDeterministicOptimization::test_optimization_timeout_safety - assert 79.4978494644165 < 30
+18 failed, 3368 passed, 100 skipped, 1194 warnings in 1587.57s (0:26:27)

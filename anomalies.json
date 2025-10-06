@@ -1414,5 +1414,53 @@
     "action_taken": "log_only",
     "original_signal": null,
     "timestamp": "2025-10-06T10:14:24.269849"
+  },
+  {
+    "symbol": "TEST",
+    "anomaly_result": {
+      "is_anomaly": true,
+      "anomaly_type": "price_zscore",
+      "severity": "medium",
+      "confidence_score": 0.7,
+      "z_score": 3.5,
+      "threshold": null,
+      "context": null,
+      "timestamp": "2025-10-06T12:34:13.365289"
+    },
+    "market_data": [
+      {
+        "close": 100
+      },
+      {
+        "close": 110
+      }
+    ],
+    "action_taken": "log_only",
+    "original_signal": null,
+    "timestamp": "2025-10-06T12:34:13.397460"
+  },
+  {
+    "symbol": "TEST",
+    "anomaly_result": {
+      "is_anomaly": true,
+      "anomaly_type": "price_zscore",
+      "severity": "medium",
+      "confidence_score": 0.7,
+      "z_score": 3.5,
+      "threshold": null,
+      "context": null,
+      "timestamp": "2025-10-06T14:23:02.643278"
+    },
+    "market_data": [
+      {
+        "close": 100
+      },
+      {
+        "close": 110
+      }
+    ],
+    "action_taken": "log_only",
+    "original_signal": null,
+    "timestamp": "2025-10-06T14:23:02.650631"
   }
 ]
