@@ -107,6 +107,7 @@ class RealTimePerformanceMonitor:
         self.baseline_history: Dict[str, deque] = defaultdict(
             lambda: deque(maxlen=1000)
         )
+        self.baseline_lock = asyncio.Lock()  # Thread-safe baseline updates
 
         # Alert management
         self.alerts: Dict[str, PerformanceAlert] = {}
@@ -410,65 +411,66 @@ class RealTimePerformanceMonitor:
 
     async def _update_baselines(self) -> None:
         """Update statistical baselines for all metrics."""
-        current_time = time.time()
-        window_start = current_time - self.baseline_window
+        async with self.baseline_lock:
+            current_time = time.time()
+            window_start = current_time - self.baseline_window
 
-        for metric_name, history in self.baseline_history.items():
-            # Filter data within baseline window
-            recent_data = [
-                value for timestamp, value in history if timestamp >= window_start
-            ]
+            for metric_name, history in self.baseline_history.items():
+                # Filter data within baseline window
+                recent_data = [
+                    value for timestamp, value in history if timestamp >= window_start
+                ]
 
-            if len(recent_data) < 10:  # Need minimum samples
-                continue
+                if len(recent_data) < 10:  # Need minimum samples
+                    continue
 
-            try:
-                # Calculate statistics
-                mean_val = statistics.mean(recent_data)
-                std_val = statistics.stdev(recent_data) if len(recent_data) > 1 else 0
-                min_val = min(recent_data)
-                max_val = max(recent_data)
+                try:
+                    # Calculate statistics
+                    mean_val = statistics.mean(recent_data)
+                    std_val = statistics.stdev(recent_data) if len(recent_data) > 1 else 0
+                    min_val = min(recent_data)
+                    max_val = max(recent_data)
 
-                # Calculate percentiles
-                sorted_data = sorted(recent_data)
-                percentile_95 = np.percentile(sorted_data, 95)
-                percentile_99 = np.percentile(sorted_data, 99)
+                    # Calculate percentiles
+                    sorted_data = sorted(recent_data)
+                    percentile_95 = np.percentile(sorted_data, 95)
+                    percentile_99 = np.percentile(sorted_data, 99)
 
-                # Calculate trend (simple linear regression)
-                if len(recent_data) > 20:
-                    x = list(range(len(recent_data)))
-                    slope, _ = stats.linregress(x, recent_data)
-                else:
-                    slope = 0.0
+                    # Calculate trend (simple linear regression)
+                    if len(recent_data) > 20:
+                        x = list(range(len(recent_data)))
+                        slope, _ = stats.linregress(x, recent_data)
+                    else:
+                        slope = 0.0
 
-                # Determine stability (coefficient of variation) - safe division
-                if mean_val != 0 and std_val >= 0:
-                    cv = std_val / mean_val
-                    is_stable = cv < 0.5  # Less than 50% variation
-                else:
-                    # Handle edge cases: zero mean or negative std (shouldn't happen but be safe)
-                    cv = 0.0
-                    is_stable = True  # Consider stable if no variation or undefined
+                    # Determine stability (coefficient of variation) - safe division
+                    if mean_val != 0 and std_val >= 0:
+                        cv = std_val / mean_val
+                        is_stable = cv < 0.5  # Less than 50% variation
+                    else:
+                        # Handle edge cases: zero mean or negative std (shouldn't happen but be safe)
+                        cv = 0.0
+                        is_stable = True  # Consider stable if no variation or undefined
 
-                # Update baseline
-                baseline = PerformanceBaseline(
-                    metric_name=metric_name,
-                    mean=mean_val,
-                    std=std_val,
-                    min_value=min_val,
-                    max_value=max_val,
-                    percentile_95=percentile_95,
-                    percentile_99=percentile_99,
-                    sample_count=len(recent_data),
-                    last_updated=current_time,
-                    trend_slope=slope,
-                    is_stable=is_stable,
-                )
+                    # Update baseline
+                    baseline = PerformanceBaseline(
+                        metric_name=metric_name,
+                        mean=mean_val,
+                        std=std_val,
+                        min_value=min_val,
+                        max_value=max_val,
+                        percentile_95=percentile_95,
+                        percentile_99=percentile_99,
+                        sample_count=len(recent_data),
+                        last_updated=current_time,
+                        trend_slope=slope,
+                        is_stable=is_stable,
+                    )
 
-                self.baselines[metric_name] = baseline
+                    self.baselines[metric_name] = baseline
 
-            except Exception as e:
-                logger.exception(f"Error updating baseline for {metric_name}: {e}")
+                except Exception as e:
+                    logger.exception(f"Error updating baseline for {metric_name}: {e}")
 
     def _detect_anomalies(
         self, metrics: Dict[str, float]
@@ -711,14 +713,35 @@ class RealTimePerformanceMonitor:
             if baseline_file.exists():
                 async with aiofiles.open(baseline_file, "r") as f:
                     content = await f.read()
-                    data = json.loads(content)
 
-                for metric_name, baseline_data in data.items():
-                    baseline = PerformanceBaseline(**baseline_data)
-                    self.baselines[metric_name] = baseline
+                # Handle empty or corrupted JSON files
+                if not content.strip():
+                    logger.warning("Baseline file is empty")
+                    return
 
-                logger.info(f"Loaded {len(self.baselines)} performance baselines")
+                data = json.loads(content)
 
+                # Only load baselines if data is not empty
+                if data:
+                    for metric_name, baseline_data in data.items():
+                        baseline = PerformanceBaseline(**baseline_data)
+                        self.baselines[metric_name] = baseline
+
+                    logger.info(f"Loaded {len(self.baselines)} performance baselines")
+                else:
+                    logger.debug("Baseline file exists but contains no data")
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in baseline file: {e}")
+            # Create backup of corrupted file
+            try:
+                baseline_file = Path("data/performance_baselines.json")
+                if baseline_file.exists():
+                    backup_file = baseline_file.with_suffix('.json.backup')
+                    await aiofiles.os.rename(baseline_file, backup_file)
+                    logger.info(f"Created backup of corrupted baseline file: {backup_file}")
+            except Exception as backup_e:
+                logger.warning(f"Failed to create backup of corrupted file: {backup_e}")
         except Exception as e:
             logger.exception(f"Error loading performance baselines: {e}")
 

@@ -259,9 +259,9 @@ def calculate_obv(data: pd.DataFrame) -> pd.Series:
     if 'close' not in data.columns or 'volume' not in data.columns:
         raise ValueError("Data must contain 'close' and 'volume' columns")
 
-    # Single row case - return NaN since we can't calculate price change
+    # SINGLE ROW FIX: Return the volume value as first OBV (standard convention)
     if len(data) == 1:
-        return pd.Series([float('nan')], index=data.index, name='obv')
+        return pd.Series([data['volume'].iloc[0]], index=data.index, name='obv')
 
     # Calculate price changes
     price_change = data['close'].diff()

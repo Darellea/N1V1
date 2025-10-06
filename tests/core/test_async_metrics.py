@@ -95,6 +95,11 @@ def async_monitor():
 @pytest.fixture
 def real_monitor():
     """Fixture for real performance monitor."""
+    # Clean up any existing baseline file
+    baseline_file = Path("data/performance_baselines.json")
+    if baseline_file.exists():
+        baseline_file.unlink()
+
     config = {
         "monitoring_interval": 0.1,  # Very fast for testing
         "baseline_window": 10.0,  # Short window

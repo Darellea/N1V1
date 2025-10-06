@@ -227,11 +227,12 @@ class TestOBV:
         assert not obv.isna().all()
         assert obv.iloc[0] == 100  # First value should equal first volume
 
-    def test_calculate_obv_insufficient_data(self):
-        """Test OBV with insufficient data."""
+    def test_calculate_obv_single_row(self):
+        """Test OBV with single row data (should return volume value)."""
         data = pd.DataFrame({"close": [10], "volume": [100]})
         obv = calculate_obv(data)
-        assert obv.isna().all()
+        assert not obv.isna().all()
+        assert obv.iloc[0] == 100  # Single row should return volume value
 
 
 class TestAllIndicators:

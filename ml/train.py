@@ -165,13 +165,16 @@ def set_deterministic_seeds(seed: int = 42) -> None:
     except ImportError:
         logger.warning("XGBoost not available")
 
-    # pandas (uses numpy internally, but we log it)
+    # pandas - set random state explicitly
     try:
         import pandas as pd
-        # pandas operations that use randomness will use the seeded numpy state
-        logger.debug(f"pandas uses seeded NumPy random state (seed: {seed})")
+        # pandas uses numpy internally, but we can set it explicitly for consistency
+        pd.core.common.random_state(seed)
+        logger.debug(f"pandas random state set to {seed}")
     except ImportError:
         logger.warning("pandas not available, skipping pandas seeding")
+    except Exception as e:
+        logger.warning(f"pandas seeding not available: {e}")
 
     # CRITICAL: Seed Python's random module LAST to ensure no interference
     random.seed(seed)

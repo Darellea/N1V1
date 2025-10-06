@@ -125,18 +125,18 @@ async def test_rate_limiting(data_fetcher):
 async def test_data_validation(data_fetcher, mock_ohlcv_data):
     """Test OHLCV data validation checks."""
     # Test valid data
-    data_fetcher.exchange.fetch_ohlcv = Mock(return_value=mock_ohlcv_data)
+    data_fetcher.exchange._exchange.fetch_ohlcv = AsyncMock(return_value=mock_ohlcv_data)
     df = await data_fetcher.get_historical_data("BTC/USDT", "1h")
     assert not df.empty
 
     # Test empty data
-    data_fetcher.exchange.fetch_ohlcv = Mock(return_value=[])
+    data_fetcher.exchange._exchange.fetch_ohlcv = AsyncMock(return_value=[])
     df = await data_fetcher.get_historical_data("BTC/USDT", "1h")
     assert df.empty
 
     # Test malformed data (missing close price)
     bad_data = [d[:4] for d in mock_ohlcv_data]  # Remove close price
-    data_fetcher.exchange.fetch_ohlcv = Mock(return_value=bad_data)
+    data_fetcher.exchange._exchange.fetch_ohlcv = AsyncMock(return_value=bad_data)
     df = await data_fetcher.get_historical_data("BTC/USDT", "1h")
     assert df.empty
 

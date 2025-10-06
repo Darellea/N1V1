@@ -1101,9 +1101,9 @@ class DataFetcher(IDataFetcher):
         for symbol, result in zip(symbols, results):
             if isinstance(result, Exception):
                 logger.error(f"Failed to fetch {symbol}: {result}")
-                # Do not include failed symbols in results
-                continue
-            if not result.empty:
+                # Include symbol with empty DataFrame to maintain expected structure
+                data_dict[symbol] = self._create_empty_dataframe()
+            else:
                 data_dict[symbol] = result
 
         return data_dict

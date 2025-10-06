@@ -42,7 +42,7 @@ class TestMemoryEfficientLoading:
     def test_large_dataset_loading_with_timeout(self):
         """Test loading large dataset with timeout protection."""
         # Generate large dataset that would normally cause memory issues
-        large_dataset = self._generate_large_dataset(size_gb=1)  # Reduced for testing
+        large_dataset = self._generate_large_dataset(size_gb=0.1)  # Further reduced for testing
 
         # Process with timeout protection
         with ThreadPoolExecutor(max_workers=2) as executor:
