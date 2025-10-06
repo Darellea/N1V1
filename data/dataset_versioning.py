@@ -11,14 +11,230 @@ import logging
 import re
 import time
 import uuid
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
+from contextlib import contextmanager
 import pandas as pd
 import hashlib
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+
+class LockTimeoutError(Exception):
+    """Raised when a lock acquisition times out."""
+
+
+class DeadlockError(Exception):
+    """Raised when a deadlock is detected."""
+
+
+class LockManager:
+    """
+    Distributed lock manager for dataset operations.
+
+    Supports read-write locks with timeouts and basic deadlock detection.
+    """
+
+    def __init__(self):
+        self.locks = {}  # dataset -> {"readers": int, "writer": thread_id, "waiting": list}
+        self.metrics = {
+            "acquisitions": 0,
+            "timeouts": 0,
+            "deadlocks": 0,
+            "avg_acquire_time": 0.0,
+            "total_acquire_time": 0.0
+        }
+        self._lock = threading.Lock()  # Protects the locks dict
+        self._lock_graph = {}  # thread_id -> set of held locks for deadlock detection
+
+    def acquire_read_lock(self, dataset: str, timeout: float = 30.0):
+        """
+        Acquire a read lock for the dataset.
+
+        Args:
+            dataset: Dataset name
+            timeout: Timeout in seconds
+
+        Raises:
+            LockTimeoutError: If timeout exceeded
+            DeadlockError: If deadlock detected
+        """
+        start_time = time.time()
+        thread_id = threading.current_thread().ident
+
+        with self._lock:
+            if dataset not in self.locks:
+                self.locks[dataset] = {"readers": 0, "writer": None, "waiting": []}
+
+            lock_info = self.locks[dataset]
+
+            # Check for potential deadlock
+            if self._would_deadlock(thread_id, {dataset}):
+                self.metrics["deadlocks"] += 1
+                raise DeadlockError(f"Deadlock detected for read lock on {dataset}")
+
+            lock_info["waiting"].append(thread_id)
+
+        try:
+            while True:
+                with self._lock:
+                    if lock_info["writer"] is None:
+                        lock_info["readers"] += 1
+                        lock_info["waiting"].remove(thread_id)
+                        if thread_id not in self._lock_graph:
+                            self._lock_graph[thread_id] = set()
+                        self._lock_graph[thread_id].add(dataset)
+                        break
+
+                if time.time() - start_time > timeout:
+                    with self._lock:
+                        if thread_id in lock_info["waiting"]:
+                            lock_info["waiting"].remove(thread_id)
+                    self.metrics["timeouts"] += 1
+                    raise LockTimeoutError(f"Timeout acquiring read lock for {dataset}")
+
+                time.sleep(0.01)  # Small sleep to avoid busy waiting
+
+            acquire_time = time.time() - start_time
+            self.metrics["acquisitions"] += 1
+            self.metrics["total_acquire_time"] += acquire_time
+            self.metrics["avg_acquire_time"] = self.metrics["total_acquire_time"] / self.metrics["acquisitions"]
+
+        except:
+            with self._lock:
+                if thread_id in lock_info["waiting"]:
+                    lock_info["waiting"].remove(thread_id)
+            raise
+
+    def acquire_write_lock(self, dataset: str, timeout: float = 30.0):
+        """
+        Acquire a write lock for the dataset.
+
+        Args:
+            dataset: Dataset name
+            timeout: Timeout in seconds
+
+        Raises:
+            LockTimeoutError: If timeout exceeded
+            DeadlockError: If deadlock detected
+        """
+        start_time = time.time()
+        thread_id = threading.current_thread().ident
+
+        with self._lock:
+            if dataset not in self.locks:
+                self.locks[dataset] = {"readers": 0, "writer": None, "waiting": []}
+
+            lock_info = self.locks[dataset]
+
+            # Check for potential deadlock
+            if self._would_deadlock(thread_id, {dataset}):
+                self.metrics["deadlocks"] += 1
+                raise DeadlockError(f"Deadlock detected for write lock on {dataset}")
+
+            lock_info["waiting"].append(thread_id)
+
+        try:
+            while True:
+                with self._lock:
+                    if lock_info["readers"] == 0 and lock_info["writer"] is None:
+                        lock_info["writer"] = thread_id
+                        lock_info["waiting"].remove(thread_id)
+                        if thread_id not in self._lock_graph:
+                            self._lock_graph[thread_id] = set()
+                        self._lock_graph[thread_id].add(dataset)
+                        break
+
+                if time.time() - start_time > timeout:
+                    with self._lock:
+                        if thread_id in lock_info["waiting"]:
+                            lock_info["waiting"].remove(thread_id)
+                    self.metrics["timeouts"] += 1
+                    raise LockTimeoutError(f"Timeout acquiring write lock for {dataset}")
+
+                time.sleep(0.01)
+
+            acquire_time = time.time() - start_time
+            self.metrics["acquisitions"] += 1
+            self.metrics["total_acquire_time"] += acquire_time
+            self.metrics["avg_acquire_time"] = self.metrics["total_acquire_time"] / self.metrics["acquisitions"]
+
+        except:
+            with self._lock:
+                if thread_id in lock_info["waiting"]:
+                    lock_info["waiting"].remove(thread_id)
+            raise
+
+    def release_lock(self, dataset: str):
+        """
+        Release a lock for the dataset.
+
+        Args:
+            dataset: Dataset name
+        """
+        thread_id = threading.current_thread().ident
+
+        with self._lock:
+            if dataset not in self.locks:
+                return
+
+            lock_info = self.locks[dataset]
+
+            if lock_info["writer"] == thread_id:
+                lock_info["writer"] = None
+            elif lock_info["readers"] > 0:
+                lock_info["readers"] -= 1
+
+            if thread_id in self._lock_graph:
+                self._lock_graph[thread_id].discard(dataset)
+                if not self._lock_graph[thread_id]:
+                    del self._lock_graph[thread_id]
+
+    def _would_deadlock(self, thread_id, requested_locks):
+        """
+        Check if acquiring the requested locks would cause a deadlock.
+
+        Basic cycle detection in the lock graph.
+        """
+        if thread_id not in self._lock_graph:
+            return False
+
+        held_locks = self._lock_graph[thread_id]
+        # Simple check: if any requested lock is held by another thread that is waiting for our locks
+        for req_lock in requested_locks:
+            if req_lock in self.locks:
+                waiting_threads = self.locks[req_lock]["waiting"]
+                for waiting_thread in waiting_threads:
+                    if waiting_thread in self._lock_graph:
+                        their_held = self._lock_graph[waiting_thread]
+                        if held_locks & their_held:  # Intersection
+                            return True
+        return False
+
+    def get_metrics(self):
+        """Get lock acquisition metrics."""
+        return self.metrics.copy()
+
+    @contextmanager
+    def read_lock(self, dataset: str, timeout: float = 30.0):
+        """Context manager for read lock."""
+        self.acquire_read_lock(dataset, timeout)
+        try:
+            yield
+        finally:
+            self.release_lock(dataset)
+
+    @contextmanager
+    def write_lock(self, dataset: str, timeout: float = 30.0):
+        """Context manager for write lock."""
+        self.acquire_write_lock(dataset, timeout)
+        try:
+            yield
+        finally:
+            self.release_lock(dataset)
 
 
 class PathTraversalError(Exception):
@@ -157,13 +373,15 @@ class DatasetVersionManager:
             base_path: Base directory for storing versioned datasets or config dict
             legacy_mode: If True, return True instead of version IDs for backward compatibility
         """
-        if isinstance(base_path, str):
+        if isinstance(base_path, (str, Path)):
             self.base_path = Path(base_path)
         else:
             self.base_path = Path(base_path["versioning"]["base_dir"])
         self.base_path.mkdir(parents=True, exist_ok=True)
         self.metadata_file = self.base_path / "version_metadata.json"
         self.legacy_mode = legacy_mode
+        self.lock_manager = LockManager()
+        self.metadata_lock = threading.RLock()
         self._load_metadata()
 
     def _load_metadata(self):
@@ -175,38 +393,39 @@ class DatasetVersionManager:
         - JSONDecodeError: Log error, attempt backup recovery, raise MetadataError if failed
         - Other exceptions: Log error and re-raise as MetadataError
         """
-        if not self.metadata_file.exists():
-            logger.warning(
-                f"Metadata file not found: {self.metadata_file}. Initializing with default metadata."
-            )
-            self.metadata = {}
-            return
+        with self.metadata_lock:
+            if not self.metadata_file.exists():
+                logger.warning(
+                    f"Metadata file not found: {self.metadata_file}. Initializing with default metadata."
+                )
+                self.metadata = {}
+                return
 
-        try:
-            with open(self.metadata_file, "r") as f:
-                self.metadata = json.load(f)
-            logger.info(
-                f"Successfully loaded metadata with {len(self.metadata)} versions from {self.metadata_file}"
-            )
-        except FileNotFoundError as e:
-            logger.warning(
-                f"Metadata file not found during loading: {self.metadata_file}. Initializing with default metadata."
-            )
-            self.metadata = {}
-        except json.JSONDecodeError as e:
-            logger.error(
-                f"Corrupted metadata file detected: {self.metadata_file}. Error: {str(e)}"
-            )
-            # Attempt backup recovery
-            if not self._attempt_backup_recovery():
-                error_msg = f"Metadata corruption unrecoverable: {self.metadata_file}. Error: {str(e)}"
-                logger.error(error_msg)
-                raise MetadataError(error_msg)
-        except Exception as e:
-            logger.error(
-                f"Unexpected error loading metadata from {self.metadata_file}: {str(e)}"
-            )
-            raise MetadataError(f"Failed to load metadata: {str(e)}")
+            try:
+                with open(self.metadata_file, "r") as f:
+                    self.metadata = json.load(f)
+                logger.info(
+                    f"Successfully loaded metadata with {len(self.metadata)} versions from {self.metadata_file}"
+                )
+            except FileNotFoundError as e:
+                logger.warning(
+                    f"Metadata file not found during loading: {self.metadata_file}. Initializing with default metadata."
+                )
+                self.metadata = {}
+            except json.JSONDecodeError as e:
+                logger.error(
+                    f"Corrupted metadata file detected: {self.metadata_file}. Error: {str(e)}"
+                )
+                # Attempt backup recovery
+                if not self._attempt_backup_recovery():
+                    error_msg = f"Metadata corruption unrecoverable: {self.metadata_file}. Error: {str(e)}"
+                    logger.error(error_msg)
+                    raise MetadataError(error_msg)
+            except Exception as e:
+                logger.error(
+                    f"Unexpected error loading metadata from {self.metadata_file}: {str(e)}"
+                )
+                raise MetadataError(f"Failed to load metadata: {str(e)}")
 
     def _attempt_backup_recovery(self) -> bool:
         """
@@ -233,11 +452,12 @@ class DatasetVersionManager:
 
     def _save_metadata(self):
         """Save version metadata to disk."""
-        try:
-            with open(self.metadata_file, "w") as f:
-                json.dump(self.metadata, f, indent=2, default=str)
-        except Exception as e:
-            logger.error(f"Failed to save version metadata: {e}")
+        with self.metadata_lock:
+            try:
+                with open(self.metadata_file, "w") as f:
+                    json.dump(self.metadata, f, indent=2, default=str)
+            except Exception as e:
+                logger.error(f"Failed to save version metadata: {e}")
 
     def _sanitize_version_name(self, name: str) -> str:
         """
@@ -314,27 +534,28 @@ class DatasetVersionManager:
         # Sanitize version name to prevent path traversal
         sanitized_name = self._sanitize_version_name(version_name)
 
-        version_id = f"{sanitized_name}_{uuid.uuid4().hex[:8]}"
+        with self.lock_manager.write_lock(sanitized_name):
+            version_id = f"{sanitized_name}_{uuid.uuid4().hex[:8]}"
 
-        version_dir = self.base_path / sanitized_name
-        version_dir.mkdir(parents=True, exist_ok=True)
+            version_dir = self.base_path / sanitized_name
+            version_dir.mkdir(parents=True, exist_ok=True)
 
-        # Save dataset (reset index to ensure consistent structure)
-        df.reset_index().to_json(
-            version_dir / "data.json", orient="records", date_format="iso"
-        )
+            # Save dataset (reset index to ensure consistent structure)
+            df.reset_index().to_json(
+                version_dir / "data.json", orient="records", date_format="iso"
+            )
 
-        # Save metadata
-        version_metadata = {
-            "version_id": version_id,
-            "name": sanitized_name,
-            "description": description,
-            "created_at": datetime.now().isoformat(),
-            "validation_passed": True,
-            "metadata": metadata or {},
-        }
-        self.metadata[version_id] = version_metadata
-        self._save_metadata()
+            # Save metadata
+            version_metadata = {
+                "version_id": version_id,
+                "name": sanitized_name,
+                "description": description,
+                "created_at": datetime.now().isoformat(),
+                "validation_passed": True,
+                "metadata": metadata or {},
+            }
+            self.metadata[version_id] = version_metadata
+            self._save_metadata()
 
         logger.info(
             "Dataset version created successfully",
@@ -365,30 +586,32 @@ class DatasetVersionManager:
             return None
 
         version_name = version_parts[0]
-        version_path = self.base_path / version_name
-        dataset_file = version_path / "data.json"
 
-        if not dataset_file.exists():
-            logger.error(f"Version {version_id} not found at {dataset_file}")
-            return None
+        with self.lock_manager.read_lock(version_name):
+            version_path = self.base_path / version_name
+            dataset_file = version_path / "data.json"
 
-        try:
-            df = pd.read_json(dataset_file, orient="records")
-            # Drop the index column if it exists (artifact from reset_index())
-            if "index" in df.columns:
-                df = df.drop("index", axis=1)
-            # Convert timestamp strings back to datetime if needed
-            if "timestamp" in df.columns:
-                df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-                df.set_index("timestamp", inplace=True)
-            logger.info(f"Loaded dataset version: {version_id}")
-            return df
-        except Exception as e:
-            logger.error(f"Failed to load version {version_id}: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Failed to load version {version_id}: {e}")
-            return None
+            if not dataset_file.exists():
+                logger.error(f"Version {version_id} not found at {dataset_file}")
+                return None
+
+            try:
+                df = pd.read_json(dataset_file, orient="records")
+                # Drop the index column if it exists (artifact from reset_index())
+                if "index" in df.columns:
+                    df = df.drop("index", axis=1)
+                # Convert timestamp strings back to datetime if needed
+                if "timestamp" in df.columns:
+                    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+                    df.set_index("timestamp", inplace=True)
+                logger.info(f"Loaded dataset version: {version_id}")
+                return df
+            except Exception as e:
+                logger.error(f"Failed to load version {version_id}: {e}")
+                return None
+            except Exception as e:
+                logger.error(f"Failed to load version {version_id}: {e}")
+                return None
 
     def get_version_info(self, version_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -400,7 +623,8 @@ class DatasetVersionManager:
         Returns:
             Version information dictionary
         """
-        return self.metadata.get(version_id)
+        with self.metadata_lock:
+            return self.metadata.get(version_id)
 
     def list_versions(self) -> List[str]:
         """
@@ -409,7 +633,12 @@ class DatasetVersionManager:
         Returns:
             List of version IDs
         """
-        return list(self.metadata.keys())
+        with self.metadata_lock:
+            return list(self.metadata.keys())
+
+    def get_lock_metrics(self):
+        """Get lock acquisition metrics."""
+        return self.lock_manager.get_metrics()
 
     def get_latest_version(self, version_name: Optional[str] = None) -> Optional[str]:
         """
@@ -508,32 +737,33 @@ class DatasetVersionManager:
         Args:
             keep_recent: Number of recent versions to keep
         """
-        versions = self.list_versions()
+        with self.metadata_lock:
+            versions = self.list_versions()
 
-        if len(versions) <= keep_recent:
-            return
+            if len(versions) <= keep_recent:
+                return
 
-        # Sort by timestamp (embedded in version ID)
-        versions.sort(reverse=True)
+            # Sort by timestamp (embedded in version ID)
+            versions.sort(reverse=True)
 
-        # Keep recent versions
-        versions_to_keep = versions[:keep_recent]
-        versions_to_remove = versions[keep_recent:]
+            # Keep recent versions
+            versions_to_keep = versions[:keep_recent]
+            versions_to_remove = versions[keep_recent:]
 
-        # Remove old versions
-        for version_id in versions_to_remove:
-            version_path = self.base_path / version_id
-            try:
-                import shutil
+            # Remove old versions
+            for version_id in versions_to_remove:
+                version_path = self.base_path / version_id
+                try:
+                    import shutil
 
-                shutil.rmtree(version_path)
-                del self.metadata[version_id]
-                logger.info(f"Removed old version: {version_id}")
-            except Exception as e:
-                logger.warning(f"Failed to remove version {version_id}: {e}")
+                    shutil.rmtree(version_path)
+                    del self.metadata[version_id]
+                    logger.info(f"Removed old version: {version_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove version {version_id}: {e}")
 
-        # Save updated metadata
-        self._save_metadata()
+            # Save updated metadata
+            self._save_metadata()
 
     def migrate_legacy_dataset(
         self, legacy_path: str, new_name: str, description: str

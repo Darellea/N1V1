@@ -133,6 +133,13 @@ async def retry_call(
 
             is_last_attempt = attempt + 1 >= max_attempts
 
+            # Check if this is a permanent error that should not be retried
+            if _is_permanent_error(e):
+                logger.error(
+                    f"Permanent error for {fn.__name__}: {e}. Not retrying."
+                )
+                raise
+
             if is_last_attempt:
                 logger.error(
                     f"All {max_attempts} attempts failed for {fn.__name__}: {e}"
@@ -194,6 +201,13 @@ async def retry_call_sync(
         except Exception as e:
             is_last_attempt = attempt + 1 >= max_attempts
 
+            # Check if this is a permanent error that should not be retried
+            if _is_permanent_error(e):
+                logger.error(
+                    f"Permanent error for {fn.__name__}: {e}. Not retrying."
+                )
+                raise
+
             if is_last_attempt:
                 logger.error(
                     f"All {max_attempts} attempts failed for {fn.__name__}: {e}"
@@ -228,6 +242,34 @@ async def _call_fn(fn: Callable[..., Any], *args, **kwargs) -> Any:
     else:
         # Run sync function in thread pool to avoid blocking
         return await asyncio.to_thread(fn, *args, **kwargs)
+
+
+def _is_permanent_error(e: Exception) -> bool:
+    """
+    Check if an exception represents a permanent error that should not be retried.
+
+    Args:
+        e: The exception to check
+
+    Returns:
+        True if the error is permanent and should not be retried
+    """
+    # Import here to avoid circular imports
+    try:
+        from ccxt import BadRequest, AuthenticationError, PermissionDenied
+        if isinstance(e, (BadRequest, AuthenticationError, PermissionDenied)):
+            return True
+    except ImportError:
+        pass
+
+    # Check for common permanent error patterns
+    error_msg = str(e).lower()
+    permanent_indicators = [
+        "invalid", "unauthorized", "forbidden", "not found", "bad request",
+        "authentication failed", "permission denied"
+    ]
+
+    return any(indicator in error_msg for indicator in permanent_indicators)
 
 
 def _calculate_delay(

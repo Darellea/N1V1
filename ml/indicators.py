@@ -258,24 +258,18 @@ def calculate_obv(data: pd.DataFrame) -> pd.Series:
         if col not in data.columns:
             raise ValueError(f"Column '{col}' not found in data")
 
-    if len(data) < 2:
-        logger.warning(
-            "Insufficient data for OBV calculation: need at least 2 data points"
-        )
-        return pd.Series([np.nan] * len(data), index=data.index)
+    if len(data) < 1:
+        logger.warning("Insufficient data for OBV calculation")
+        return pd.Series([], dtype=float)
 
-    obv = pd.Series([0] * len(data), index=data.index, dtype=int)
-    obv.iloc[0] = int(data["volume"].iloc[0])
+    # Vectorized OBV calculation
+    sign_changes = np.sign(data["close"].diff()).fillna(0)
+    obv = pd.Series(index=data.index, dtype=float)
+    obv.iloc[0] = data["volume"].iloc[0]
+    if len(data) > 1:
+        obv.iloc[1:] = data["volume"].iloc[0] + (sign_changes.iloc[1:] * data["volume"].iloc[1:]).cumsum()
 
-    for i in range(1, len(data)):
-        if data["close"].iloc[i] > data["close"].iloc[i - 1]:
-            obv.iloc[i] = int(obv.iloc[i - 1] + data["volume"].iloc[i])
-        elif data["close"].iloc[i] < data["close"].iloc[i - 1]:
-            obv.iloc[i] = int(obv.iloc[i - 1] - data["volume"].iloc[i])
-        else:
-            obv.iloc[i] = int(obv.iloc[i - 1])
-
-    return obv
+    return obv.astype(int)
 
 
 def calculate_stochastic(

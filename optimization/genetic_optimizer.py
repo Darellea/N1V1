@@ -191,6 +191,37 @@ class GeneticOptimizer(BaseOptimizer):
 
         # Parameter bounds inherited from BaseOptimizer (dict)
 
+        # ============================================================================
+        # DETERMINISTIC EXECUTION AND SEED MANAGEMENT
+        # ============================================================================
+        #
+        # PROBLEM WITH NON-DETERMINISTIC OPTIMIZATION:
+        # - Random seed issues make backtests irreproducible
+        # - Parallel execution can cause seed conflicts
+        # - No way to resume optimization from specific state
+        # - Hard to debug optimization issues due to randomness
+        #
+        # SOLUTION: STRICT SEED CONTROL AND DETERMINISTIC EXECUTION
+        # - Support reproducible mode (fixed seed) and exploratory mode (random seed)
+        # - Seed isolation for parallel/distributed workers
+        # - Random state checkpointing and restoration
+        # - Maintain optimization algorithm effectiveness
+        # ============================================================================
+
+        # Seed management configuration
+        self.random_mode = config.get("random_mode", "reproducible")  # "reproducible" or "exploratory"
+        self.base_seed = config.get("base_seed", 42)  # Base seed for reproducible mode
+        self.worker_id = config.get("worker_id", 0)  # For parallel execution seed isolation
+        self.num_workers = config.get("num_workers", 1)  # Total number of parallel workers
+
+        # Random state management
+        self.random_state: Optional[np.random.RandomState] = None
+        self.python_random_state: Optional[tuple] = None
+        self.checkpoint_data: Optional[Dict[str, Any]] = None
+
+        # Initialize random state based on mode
+        self._initialize_random_state()
+
     def add_parameter_bounds(self, bounds: ParameterBounds) -> None:
         """
         Add parameter bounds for validation.
@@ -711,3 +742,251 @@ class GeneticOptimizer(BaseOptimizer):
                     diversity[param_name] = dict(value_counts)
 
         return diversity
+
+    def _initialize_random_state(self) -> None:
+        """
+        Initialize random state based on configuration.
+
+        This method sets up deterministic random number generation for reproducible results.
+        """
+        if self.random_mode == "reproducible":
+            # Use fixed seed for reproducible results
+            worker_seed = self.base_seed + self.worker_id
+            self.random_state = np.random.RandomState(worker_seed)
+            random.seed(worker_seed)
+            self.logger.info(f"Initialized reproducible random state with seed: {worker_seed}")
+        elif self.random_mode == "exploratory":
+            # Use random seed for exploration
+            self.random_state = np.random.RandomState()
+            # Don't set python random seed to maintain some randomness
+            self.logger.info("Initialized exploratory random state")
+        else:
+            raise ValueError(f"Invalid random_mode: {self.random_mode}. Must be 'reproducible' or 'exploratory'")
+
+        # Store initial state for checkpointing
+        self._save_random_state()
+
+    def _save_random_state(self) -> None:
+        """
+        Save current random state for checkpointing.
+        """
+        if self.random_state is not None:
+            self.python_random_state = random.getstate()
+            # Note: numpy random state is not directly serializable, so we store the seed
+
+    def _restore_random_state(self) -> None:
+        """
+        Restore random state from checkpoint.
+        """
+        if self.python_random_state is not None:
+            random.setstate(self.python_random_state)
+        if self.random_state is not None and self.random_mode == "reproducible":
+            # Reinitialize numpy random state with the same seed
+            worker_seed = self.base_seed + self.worker_id
+            self.random_state = np.random.RandomState(worker_seed)
+
+    def set_random_seed(self, seed: int) -> None:
+        """
+        Set random seed for reproducible execution.
+
+        Args:
+            seed: Random seed value
+        """
+        self.base_seed = seed
+        self.random_mode = "reproducible"
+        self._initialize_random_state()
+
+    def set_exploratory_mode(self) -> None:
+        """
+        Set exploratory mode for random seed execution.
+        """
+        self.random_mode = "exploratory"
+        self._initialize_random_state()
+
+    def get_random_state_info(self) -> Dict[str, Any]:
+        """
+        Get information about current random state.
+
+        Returns:
+            Dictionary with random state information
+        """
+        return {
+            "random_mode": self.random_mode,
+            "base_seed": self.base_seed,
+            "worker_id": self.worker_id,
+            "num_workers": self.num_workers,
+            "has_numpy_state": self.random_state is not None,
+            "has_python_state": self.python_random_state is not None,
+        }
+
+    def create_checkpoint(self) -> Dict[str, Any]:
+        """
+        Create a checkpoint of the current optimization state.
+
+        Returns:
+            Checkpoint data dictionary
+        """
+        checkpoint = {
+            "random_mode": self.random_mode,
+            "base_seed": self.base_seed,
+            "worker_id": self.worker_id,
+            "num_workers": self.num_workers,
+            "population_size": self.population_size,
+            "current_generation": getattr(self, 'current_iteration', 0),
+            "best_params": self.best_params,
+            "best_fitness": self.best_fitness,
+            "population": [
+                {
+                    "genes": chrom.genes,
+                    "fitness": chrom.fitness
+                } for chrom in self.population
+            ] if self.population else [],
+            "fitness_history": self.fitness_history.copy(),
+            "diversity_history": self.diversity_history.copy(),
+            "population_size_history": self.population_size_history.copy(),
+            "results_history": self.results_history.copy(),
+            "timestamp": time.time(),
+        }
+
+        self.checkpoint_data = checkpoint
+        return checkpoint
+
+    def restore_from_checkpoint(self, checkpoint: Dict[str, Any]) -> None:
+        """
+        Restore optimization state from checkpoint.
+
+        Args:
+            checkpoint: Checkpoint data dictionary
+        """
+        # Restore configuration
+        self.random_mode = checkpoint.get("random_mode", "reproducible")
+        self.base_seed = checkpoint.get("base_seed", 42)
+        self.worker_id = checkpoint.get("worker_id", 0)
+        self.num_workers = checkpoint.get("num_workers", 1)
+
+        # Reinitialize random state
+        self._initialize_random_state()
+
+        # Restore optimization state
+        self.population_size = checkpoint.get("population_size", self.initial_population_size)
+        self.current_iteration = checkpoint.get("current_generation", 0)
+        self.best_params = checkpoint.get("best_params")
+        self.best_fitness = checkpoint.get("best_fitness", float("-inf"))
+
+        # Restore population
+        population_data = checkpoint.get("population", [])
+        self.population = []
+        for chrom_data in population_data:
+            chromosome = Chromosome(
+                genes=chrom_data["genes"],
+                fitness=chrom_data["fitness"]
+            )
+            self.population.append(chromosome)
+
+        # Restore history
+        self.fitness_history = checkpoint.get("fitness_history", [])
+        self.diversity_history = checkpoint.get("diversity_history", [])
+        self.population_size_history = checkpoint.get("population_size_history", [])
+        self.results_history = checkpoint.get("results_history", [])
+
+        # Update best chromosome
+        if self.population:
+            self.best_chromosome = max(
+                self.population,
+                key=lambda x: x.fitness if x.fitness != float("-inf") else float("-inf"),
+            )
+
+        self.checkpoint_data = checkpoint
+        self.logger.info(f"Restored optimization state from checkpoint (generation {self.current_iteration})")
+
+    def validate_reproducibility(self, strategy_class, data: pd.DataFrame, num_runs: int = 3) -> Dict[str, Any]:
+        """
+        Validate that optimization produces reproducible results.
+
+        Args:
+            strategy_class: Strategy class to optimize
+            data: Historical data for optimization
+            num_runs: Number of runs to validate reproducibility
+
+        Returns:
+            Validation results dictionary
+        """
+        if self.random_mode != "reproducible":
+            raise ValueError("Reproducibility validation requires reproducible random mode")
+
+        results = []
+        original_seed = self.base_seed
+
+        for run in range(num_runs):
+            # Reset random state for each run
+            self.set_random_seed(original_seed)
+
+            # Run optimization
+            result = self.optimize(strategy_class, data)
+            results.append(result)
+
+        # Check reproducibility
+        all_same = all(
+            self._params_equal(results[0], result)
+            for result in results[1:]
+        )
+
+        return {
+            "is_reproducible": all_same,
+            "num_runs": num_runs,
+            "results": results,
+            "validation_passed": all_same,
+        }
+
+    def _params_equal(self, params1: Dict[str, Any], params2: Dict[str, Any], tolerance: float = 1e-10) -> bool:
+        """
+        Check if two parameter dictionaries are equal within tolerance.
+
+        Args:
+            params1: First parameter set
+            params2: Second parameter set
+            tolerance: Numerical tolerance for floating point comparison
+
+        Returns:
+            True if parameters are equal
+        """
+        if set(params1.keys()) != set(params2.keys()):
+            return False
+
+        for key in params1.keys():
+            val1, val2 = params1[key], params2[key]
+            if isinstance(val1, float) and isinstance(val2, float):
+                if abs(val1 - val2) > tolerance:
+                    return False
+            elif val1 != val2:
+                return False
+
+        return True
+
+    def get_worker_seed(self, generation: Optional[int] = None) -> int:
+        """
+        Get isolated seed for parallel worker execution.
+
+        Args:
+            generation: Current generation (for additional seed variation)
+
+        Returns:
+            Worker-specific seed
+        """
+        seed = self.base_seed + self.worker_id
+        if generation is not None:
+            seed += generation * self.num_workers
+        return seed
+
+    def set_worker_config(self, worker_id: int, num_workers: int) -> None:
+        """
+        Configure optimizer for parallel execution.
+
+        Args:
+            worker_id: Unique ID for this worker (0 to num_workers-1)
+            num_workers: Total number of parallel workers
+        """
+        self.worker_id = worker_id
+        self.num_workers = num_workers
+        self._initialize_random_state()
+        self.logger.info(f"Configured for parallel execution: worker {worker_id}/{num_workers}")

@@ -35,6 +35,8 @@ from data.constants import (
     DEFAULT_RATE_LIMIT,
     CACHE_BASE_DIR,
 )
+from core.retry import retry_call, RetryConfig, update_global_retry_config
+from core.api_protection import APICircuitBreaker, CircuitBreakerConfig, get_default_circuit_breaker
 
 
 class PathTraversalError(Exception):
@@ -155,6 +157,16 @@ class DataFetcher(IDataFetcher):
             "cache_dir", ".market_cache"
         )  # Keep raw config for compatibility
         self._cache_dir_path = self._cache_dir_raw
+
+        # Initialize retry and circuit breaker
+        self.circuit_breaker = get_default_circuit_breaker()
+        self.retry_config = RetryConfig()
+        if "retry" in config:
+            self.retry_config.update_from_config(config["retry"])
+        update_global_retry_config(self.retry_config.__dict__)
+
+        # Configurable retry strategies per endpoint
+        self.endpoint_retry_configs = config.get("endpoint_retry_configs", {})
 
         if self.cache_enabled:
             try:
@@ -301,13 +313,12 @@ class DataFetcher(IDataFetcher):
     async def initialize(self) -> None:
         """Initialize the data fetcher and load markets."""
         try:
-            coro = self.exchange.load_markets()
+            await self._fetch_with_retry("load_markets")
         except TypeError as e:
             if "'coroutine' object is not an iterator" in str(e):
-                coro = asyncio.sleep(5)
+                await asyncio.sleep(5)
             else:
                 raise
-        await self._fetch_safely(coro)
         logger.info(f"Initialized exchange: {self.exchange.id}")
 
     def _prepare_cache_key(
@@ -509,6 +520,30 @@ class DataFetcher(IDataFetcher):
         if self.cache_enabled and cache_key:
             self._save_to_cache(cache_key, df)
 
+    async def _fetch_with_retry(self, method_name: str, *args, **kwargs):
+        """
+        Fetch data from exchange with retry mechanism and circuit breaker.
+
+        Args:
+            method_name: Name of the exchange method to call
+            *args: Positional arguments for the method
+            **kwargs: Keyword arguments for the method
+
+        Returns:
+            Result from the exchange method call
+        """
+        endpoint_config = self.endpoint_retry_configs.get(method_name, {})
+
+        return await retry_call(
+            getattr(self.exchange, method_name),
+            *args,
+            circuit_breaker=self.circuit_breaker,
+            max_attempts=endpoint_config.get("max_attempts", self.retry_config.max_attempts),
+            base_delay=endpoint_config.get("base_delay", self.retry_config.base_delay),
+            jitter=endpoint_config.get("jitter", self.retry_config.jitter),
+            **kwargs
+        )
+
     async def _throttle(self):
         now = time.time()
         min_interval = 1.0 / self.max_requests_per_second
@@ -538,11 +573,7 @@ class DataFetcher(IDataFetcher):
                 if cached is not None and not cached.empty:
                     return cached
 
-            candles = await self._fetch_safely(
-                self.exchange.fetch_ohlcv(
-                    symbol=symbol, timeframe=timeframe, limit=limit, since=since
-                )
-            )
+            candles = await self._fetch_with_retry("fetch_ohlcv", symbol=symbol, timeframe=timeframe, limit=limit, since=since)
 
             if not candles:
                 return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
@@ -570,6 +601,11 @@ class DataFetcher(IDataFetcher):
 
             return df
         except Exception as e:
+            # Re-raise permanent errors and circuit breaker errors
+            from core.retry import _is_permanent_error
+            from core.api_protection import CircuitOpenError
+            if _is_permanent_error(e) or isinstance(e, CircuitOpenError):
+                raise
             logger.error(f"Unexpected error in get_historical_data: {e}")
             return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
 
@@ -634,13 +670,13 @@ class DataFetcher(IDataFetcher):
     async def _fetch_ticker(self, symbol: str) -> Dict:
         """Fetch ticker data for a single symbol."""
         try:
-            coro = self.exchange.fetch_ticker(symbol)
+            ticker = await self._fetch_with_retry("fetch_ticker", symbol)
         except TypeError as e:
             if "'coroutine' object is not an iterator" in str(e):
-                coro = asyncio.sleep(2)
+                await asyncio.sleep(2)
+                ticker = await self._fetch_with_retry("fetch_ticker", symbol)
             else:
                 raise
-        ticker = await self._fetch_safely(coro)
         return {
             "symbol": symbol,
             "timestamp": ticker["timestamp"],
@@ -656,13 +692,13 @@ class DataFetcher(IDataFetcher):
     async def _fetch_orderbook(self, symbol: str, depth: int = 5) -> Dict:
         """Fetch order book data for a single symbol."""
         try:
-            coro = self.exchange.fetch_order_book(symbol, limit=depth)
+            orderbook = await self._fetch_with_retry("fetch_order_book", symbol, limit=depth)
         except TypeError as e:
             if "'coroutine' object is not an iterator" in str(e):
-                coro = asyncio.sleep(2)
+                await asyncio.sleep(2)
+                orderbook = await self._fetch_with_retry("fetch_order_book", symbol, limit=depth)
             else:
                 raise
-        orderbook = await self._fetch_safely(coro)
         return {
             "symbol": symbol,
             "timestamp": orderbook["timestamp"],

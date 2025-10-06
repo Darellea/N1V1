@@ -1,19 +1,8 @@
 {
   "strategy_name": "unknown",
-  "total_windows": 9,
-  "aggregate_metrics": {
-    "total_windows": 9,
-    "successful_windows": 0,
-    "avg_test_sharpe": 0,
-    "std_test_sharpe": 0,
-    "avg_test_return": 0,
-    "avg_test_win_rate": 0,
-    "avg_test_max_drawdown": 0,
-    "avg_test_sortino": 0,
-    "sharpe_ratio_stability": 0.0,
-    "return_consistency": 0.0
-  },
+  "total_windows": 0,
+  "aggregate_metrics": {},
   "performance_distribution": {},
-  "timestamp": "2025-10-03T09:25:42.239933",
-  "total_time": 0.02998208999633789
+  "timestamp": "2025-10-06T07:46:09.754577",
+  "total_time": 0.04172515869140625
 }

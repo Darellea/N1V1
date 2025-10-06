@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import logging
 import traceback
+import threading
+import time
 from datetime import datetime, timedelta
 from enum import Enum
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Callable
 
 import numpy as np
 import pandas as pd
@@ -56,6 +58,286 @@ class DefensiveMode(Enum):
     CAUTION = "caution"
     DEFENSIVE = "defensive"
     KILL_SWITCH = "kill_switch"
+
+
+class TransitionMode(Enum):
+    """Policy transition modes."""
+
+    IMMEDIATE = "immediate"
+    GRADUAL = "gradual"
+
+
+class TransitionState(Enum):
+    """Policy transition states."""
+
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    PAUSED = "paused"
+
+
+class RiskPolicy:
+    """Represents a risk policy configuration."""
+
+    def __init__(
+        self,
+        max_position: float = 1000.0,
+        max_loss: float = 100.0,
+        volatility_threshold: float = 0.05,
+        trend_threshold: float = 0.02,
+        **kwargs
+    ):
+        self.max_position = max_position
+        self.max_loss = max_loss
+        self.volatility_threshold = volatility_threshold
+        self.trend_threshold = trend_threshold
+        # Store any additional parameters
+        self.__dict__.update(kwargs)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert policy to dictionary."""
+        return self.__dict__.copy()
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RiskPolicy":
+        """Create policy from dictionary."""
+        return cls(**data)
+
+    def __eq__(self, other: object) -> bool:
+        """Check equality with another policy."""
+        if not isinstance(other, RiskPolicy):
+            return False
+        return self.to_dict() == other.to_dict()
+
+
+class PolicyTransition:
+    """Manages gradual transitions between risk policies."""
+
+    def __init__(
+        self,
+        from_policy: RiskPolicy,
+        to_policy: RiskPolicy,
+        duration: float,
+        mode: TransitionMode = TransitionMode.GRADUAL,
+        interpolation_func: Optional[Callable[[float], float]] = None,
+        completion_callback: Optional[Callable[["PolicyTransition"], None]] = None,
+    ):
+        """
+        Initialize policy transition.
+
+        Args:
+            from_policy: Starting policy
+            to_policy: Target policy
+            duration: Transition duration in seconds
+            mode: Transition mode (immediate or gradual)
+            interpolation_func: Custom interpolation function (progress -> progress)
+        """
+        if duration < 0:
+            raise ValueError("Duration must be non-negative")
+        if duration == 0 and mode != TransitionMode.IMMEDIATE:
+            raise ValueError("Duration must be positive for gradual transitions")
+        if from_policy is None or to_policy is None:
+            raise ValueError("Policies cannot be None")
+
+        self.from_policy = from_policy
+        self.to_policy = to_policy
+        self.duration = duration
+        self.mode = mode
+        self.interpolation_func = interpolation_func or (lambda x: x)  # Linear by default
+        self.completion_callback = completion_callback
+
+        # State
+        self.state = TransitionState.PENDING
+        self.progress = 0.0
+        self.start_time: Optional[datetime] = None
+        self.end_time: Optional[datetime] = None
+        self.error_message: Optional[str] = None
+
+        # Threading
+        self._lock = threading.Lock()
+        self._transition_thread: Optional[threading.Thread] = None
+        self._cancel_event = threading.Event()
+
+    def is_valid(self) -> bool:
+        """Check if transition is valid."""
+        try:
+            duration_valid = (
+                self.duration >= 0 and
+                (self.duration > 0 or self.mode == TransitionMode.IMMEDIATE)
+            )
+            return (
+                self.from_policy is not None
+                and self.to_policy is not None
+                and duration_valid
+                and self.mode in TransitionMode
+            )
+        except Exception:
+            return False
+
+    def start(self) -> None:
+        """Start the transition."""
+        with self._lock:
+            if self.state != TransitionState.PENDING:
+                raise RuntimeError(f"Cannot start transition in state {self.state.value}")
+
+            self.state = TransitionState.IN_PROGRESS
+            self.start_time = datetime.now()
+            self._cancel_event.clear()
+
+            if self.mode == TransitionMode.IMMEDIATE:
+                self._complete_immediately()
+            else:
+                self._start_gradual_transition()
+
+    def cancel(self) -> None:
+        """Cancel the transition."""
+        with self._lock:
+            if self.state not in [TransitionState.IN_PROGRESS, TransitionState.PAUSED]:
+                return
+
+            self._cancel_event.set()
+            self.state = TransitionState.CANCELLED
+            self.end_time = datetime.now()
+
+    def pause(self) -> None:
+        """Pause the transition."""
+        with self._lock:
+            if self.state != TransitionState.IN_PROGRESS:
+                raise RuntimeError(f"Cannot pause transition in state {self.state.value}")
+            self.state = TransitionState.PAUSED
+
+    def resume(self) -> None:
+        """Resume the transition."""
+        with self._lock:
+            if self.state != TransitionState.PAUSED:
+                raise RuntimeError(f"Cannot resume transition in state {self.state.value}")
+            self.state = TransitionState.IN_PROGRESS
+
+    def get_current_policy(self) -> RiskPolicy:
+        """Get the current interpolated policy."""
+        if self.state == TransitionState.PENDING:
+            return self.from_policy
+        elif self.state in [TransitionState.COMPLETED, TransitionState.CANCELLED]:
+            return self.to_policy
+        else:
+            return self.interpolate(self.progress)
+
+    def interpolate(self, progress: float) -> RiskPolicy:
+        """
+        Interpolate between from_policy and to_policy at given progress.
+
+        Args:
+            progress: Progress from 0.0 to 1.0
+
+        Returns:
+            Interpolated policy
+        """
+        if not (0.0 <= progress <= 1.0):
+            raise ValueError("Progress must be between 0.0 and 1.0")
+
+        # Apply interpolation function
+        adjusted_progress = self.interpolation_func(progress)
+
+        # Linear interpolation of numeric attributes
+        interpolated_attrs = {}
+        from_dict = self.from_policy.to_dict()
+        to_dict = self.to_policy.to_dict()
+
+        for key in set(from_dict.keys()) | set(to_dict.keys()):
+            from_val = from_dict.get(key, 0.0)
+            to_val = to_dict.get(key, 0.0)
+
+            if isinstance(from_val, (int, float)) and isinstance(to_val, (int, float)):
+                interpolated_attrs[key] = from_val + adjusted_progress * (to_val - from_val)
+            else:
+                # For non-numeric values, use from_policy until halfway, then to_policy
+                interpolated_attrs[key] = from_val if adjusted_progress < 0.5 else to_val
+
+        return RiskPolicy(**interpolated_attrs)
+
+    def _complete_immediately(self) -> None:
+        """Complete immediate transition."""
+        self.progress = 1.0
+        self.state = TransitionState.COMPLETED
+        self.end_time = datetime.now()
+
+    def _start_gradual_transition(self) -> None:
+        """Start gradual transition in background thread."""
+        self._transition_thread = threading.Thread(
+            target=self._run_transition,
+            daemon=True
+        )
+        self._transition_thread.start()
+
+    def _run_transition(self) -> None:
+        """Run the gradual transition."""
+        try:
+            start_time = time.time()
+            while not self._cancel_event.is_set():
+                elapsed = time.time() - start_time
+                if elapsed >= self.duration:
+                    break
+
+                self.progress = min(elapsed / self.duration, 1.0)
+                time.sleep(0.1)  # Update frequency
+
+            if not self._cancel_event.is_set():
+                self.progress = 1.0
+                self.state = TransitionState.COMPLETED
+                # Call completion callback if provided
+                if self.completion_callback:
+                    try:
+                        self.completion_callback(self)
+                    except Exception as e:
+                        logger.error(f"Error in transition completion callback: {e}")
+            else:
+                self.state = TransitionState.CANCELLED
+
+            self.end_time = datetime.now()
+
+        except Exception as e:
+            logger.error(f"Error during policy transition: {e}")
+            self.state = TransitionState.FAILED
+            self.error_message = str(e)
+            self.end_time = datetime.now()
+
+
+class EmergencyOverride:
+    """Represents an emergency policy override."""
+
+    def __init__(
+        self,
+        policy: RiskPolicy,
+        reason: str,
+        timeout: float,
+        priority: int = 1
+    ):
+        """
+        Initialize emergency override.
+
+        Args:
+            policy: Override policy to apply
+            reason: Reason for override
+            timeout: Timeout in seconds
+            priority: Override priority (higher = more important)
+        """
+        self.policy = policy
+        self.reason = reason
+        self.timeout = timeout
+        self.priority = priority
+        self.created_at = datetime.now()
+        self.expires_at = self.created_at + timedelta(seconds=timeout)
+
+    def is_expired(self) -> bool:
+        """Check if override has expired."""
+        return datetime.now() > self.expires_at
+
+    def time_remaining(self) -> float:
+        """Get remaining time in seconds."""
+        remaining = (self.expires_at - datetime.now()).total_seconds()
+        return max(0.0, remaining)
 
 
 class RiskMultiplierEvent:
@@ -762,6 +1044,12 @@ class AdaptiveRiskPolicy:
         self.kill_switch_activated = False
         self.kill_switch_timestamp = None
 
+        # Policy transition state
+        self.current_policy = RiskPolicy()  # Default policy
+        self.active_transition: Optional[PolicyTransition] = None
+        self.emergency_overrides: List[EmergencyOverride] = []
+        self.transition_history: List[PolicyTransition] = []
+
         # Event tracking
         self.multiplier_history: List[RiskMultiplierEvent] = []
         self.defensive_mode_history: List[Dict[str, Any]] = []
@@ -913,6 +1201,9 @@ class AdaptiveRiskPolicy:
                 )
                 return self._get_conservative_fallback_multiplier("insufficient data")
 
+            # Get effective policy (considering transitions and overrides)
+            effective_policy = self.get_effective_policy()
+
             # Try to assess market conditions with fallback mechanisms
             market_conditions = self._assess_market_conditions_with_fallback(
                 symbol, market_data
@@ -926,6 +1217,7 @@ class AdaptiveRiskPolicy:
                 "market_conditions": market_conditions,
                 "performance_metrics": performance_metrics,
                 "additional_context": context or {},
+                "effective_policy": effective_policy.to_dict(),
             }
 
             # Calculate base multiplier from market conditions
@@ -1250,6 +1542,251 @@ class AdaptiveRiskPolicy:
         trade_logger.performance("Kill switch reset", {"manual_reset": True})
 
         return True
+
+    def start_transition(self, transition: PolicyTransition) -> None:
+        """
+        Start a policy transition.
+
+        Args:
+            transition: PolicyTransition to execute
+
+        Raises:
+            RuntimeError: If a transition is already in progress
+        """
+        if self.active_transition is not None:
+            raise RuntimeError("Transition already in progress")
+
+        if not transition.is_valid():
+            raise ValueError("Invalid transition")
+
+        # Validate policy parameters
+        self._validate_policy(transition.to_policy)
+
+        # Set completion callback for gradual transitions
+        if transition.mode == TransitionMode.GRADUAL:
+            transition.completion_callback = self._on_transition_completed
+
+        self.active_transition = transition
+        self.transition_history.append(transition)
+
+        # Keep only recent history
+        if len(self.transition_history) > 10:
+            self.transition_history = self.transition_history[-10:]
+
+        transition.start()
+
+        # For immediate transitions, update current policy immediately
+        if transition.mode == TransitionMode.IMMEDIATE and transition.state == TransitionState.COMPLETED:
+            self.current_policy = transition.to_policy
+            self.active_transition = None
+
+        logger.info(f"Started policy transition: {transition.mode.value}")
+
+    def execute_transition(self, transition: PolicyTransition) -> PolicyTransition:
+        """
+        Execute a transition (blocking).
+
+        Args:
+            transition: Transition to execute
+
+        Returns:
+            Completed transition
+        """
+        self.start_transition(transition)
+
+        # Wait for completion
+        while transition.state not in [TransitionState.COMPLETED, TransitionState.FAILED, TransitionState.CANCELLED]:
+            time.sleep(0.1)
+
+        if transition.state == TransitionState.COMPLETED:
+            self.current_policy = transition.to_policy
+            self.active_transition = None
+        elif transition.state == TransitionState.FAILED:
+            self.active_transition = None
+            raise RuntimeError(f"Transition failed: {transition.error_message}")
+
+        return transition
+
+    def rollback_transition(self, transition: PolicyTransition, reason: str) -> None:
+        """
+        Rollback a failed transition.
+
+        Args:
+            transition: Transition to rollback
+            reason: Reason for rollback
+        """
+        if transition.state != TransitionState.IN_PROGRESS:
+            return
+
+        transition.cancel()
+        transition.state = TransitionState.FAILED  # Mark as failed for rollback
+        transition.error_message = reason
+        self.current_policy = transition.from_policy
+        self.active_transition = None
+
+        logger.warning(f"Rolled back transition: {reason}")
+        trade_logger.performance("Transition rollback", {
+            "reason": reason,
+            "from_policy": transition.from_policy.to_dict(),
+            "to_policy": transition.to_policy.to_dict()
+        })
+
+    def apply_emergency_override(self, override: EmergencyOverride) -> None:
+        """
+        Apply an emergency policy override.
+
+        Args:
+            override: Emergency override to apply
+        """
+        # Check if higher priority override exists
+        existing_higher_priority = any(
+            o for o in self.emergency_overrides
+            if not o.is_expired() and o.priority > override.priority
+        )
+
+        if existing_higher_priority:
+            logger.warning("Higher priority emergency override active, ignoring new override")
+            return
+
+        # Pause active transition if any
+        if self.active_transition and self.active_transition.state == TransitionState.IN_PROGRESS:
+            self.active_transition.pause()
+
+        # Apply override
+        self.current_policy = override.policy
+        self.emergency_overrides.append(override)
+
+        # Keep only active overrides
+        self.emergency_overrides = [o for o in self.emergency_overrides if not o.is_expired()]
+
+        logger.critical(f"Emergency override applied: {override.reason}")
+        trade_logger.performance("Emergency override", {
+            "reason": override.reason,
+            "policy": override.policy.to_dict(),
+            "timeout": override.timeout
+        })
+
+    def get_transition_progress(self) -> Optional[Dict[str, Any]]:
+        """
+        Get current transition progress.
+
+        Returns:
+            Progress information or None if no active transition
+        """
+        if self.active_transition is None:
+            return None
+
+        transition = self.active_transition
+        return {
+            "state": transition.state.value,
+            "progress": transition.progress,
+            "start_time": transition.start_time.isoformat() if transition.start_time else None,
+            "end_time": transition.end_time.isoformat() if transition.end_time else None,
+            "duration": transition.duration,
+            "from_policy": transition.from_policy.to_dict(),
+            "to_policy": transition.to_policy.to_dict(),
+            "current_policy": transition.get_current_policy().to_dict(),
+        }
+
+    def cancel_active_transition(self) -> bool:
+        """
+        Cancel the active transition.
+
+        Returns:
+            True if cancelled, False if no active transition
+        """
+        if self.active_transition is None:
+            return False
+
+        self.active_transition.cancel()
+        self.active_transition = None
+        logger.info("Active transition cancelled")
+        return True
+
+    def get_effective_policy(self) -> RiskPolicy:
+        """
+        Get the currently effective policy, considering transitions and overrides.
+
+        Returns:
+            Effective policy
+        """
+        # Check emergency overrides first (highest priority)
+        active_overrides = [o for o in self.emergency_overrides if not o.is_expired()]
+        if active_overrides:
+            # Use highest priority override
+            highest_priority = max(active_overrides, key=lambda o: o.priority)
+            return highest_priority.policy
+
+        # Check active transition
+        if self.active_transition:
+            return self.active_transition.get_current_policy()
+
+        # Use current policy
+        return self.current_policy
+
+    def _on_transition_completed(self, transition: PolicyTransition) -> None:
+        """
+        Callback called when a transition completes.
+
+        Args:
+            transition: The completed transition
+        """
+        if transition.state == TransitionState.COMPLETED:
+            self.current_policy = transition.to_policy
+            self.active_transition = None
+            logger.info(f"Transition completed: policy updated to {transition.to_policy.to_dict()}")
+        elif transition.state == TransitionState.FAILED:
+            logger.error(f"Transition failed: {transition.error_message}")
+            self.active_transition = None
+        elif transition.state == TransitionState.CANCELLED:
+            logger.info("Transition cancelled")
+            self.active_transition = None
+
+    def _validate_policy(self, policy: RiskPolicy) -> None:
+        """
+        Validate policy parameters.
+
+        Args:
+            policy: Policy to validate
+
+        Raises:
+            ValueError: If policy is invalid
+        """
+        # Basic validation - can be extended
+        if policy.max_position <= 0:
+            raise ValueError("max_position must be positive")
+        if policy.max_loss <= 0:
+            raise ValueError("max_loss must be positive")
+        if not (0 < policy.volatility_threshold <= 1.0):
+            raise ValueError("volatility_threshold must be between 0 and 1")
+        if not (0 < policy.trend_threshold <= 1.0):
+            raise ValueError("trend_threshold must be between 0 and 1")
+
+        # Safety checks for extreme values
+        if policy.max_position > 100000:  # Unrealistic position size
+            raise ValueError("Policy validation failed: max_position too high")
+        if policy.max_loss > 10000:  # Unrealistic loss limit
+            raise ValueError("Policy validation failed: max_loss too high")
+
+    def cleanup_expired_overrides(self) -> int:
+        """
+        Clean up expired emergency overrides.
+
+        Returns:
+            Number of overrides cleaned up
+        """
+        before_count = len(self.emergency_overrides)
+        self.emergency_overrides = [o for o in self.emergency_overrides if not o.is_expired()]
+
+        cleaned = before_count - len(self.emergency_overrides)
+        if cleaned > 0:
+            logger.info(f"Cleaned up {cleaned} expired emergency overrides")
+            # Resume any paused transitions when overrides expire
+            if self.active_transition and self.active_transition.state == TransitionState.PAUSED:
+                self.active_transition.resume()
+                logger.info("Resumed paused transition after emergency override expiry")
+
+        return cleaned
 
     def _get_conservative_fallback_multiplier(self, reason: str) -> Tuple[float, str]:
         """

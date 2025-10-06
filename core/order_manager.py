@@ -38,6 +38,7 @@ from core.idempotency import (
 )
 from core.management.portfolio_manager import PortfolioManager
 from core.management.reliability_manager import ReliabilityManager
+from core.order_validation import OrderValidationPipeline
 from core.types import TradingMode
 from core.types.order_types import OrderStatus
 from utils.adapter import signal_to_dict
@@ -723,6 +724,15 @@ class OrderManager:
         self.portfolio_manager = PortfolioManager()
         self.watchdog_service = watchdog_service
 
+        # Initialize comprehensive validation pipeline
+        validation_config = config.get("validation", {
+            "fail_fast": False,
+            "validation_timeout": 5.0,
+            "enable_circuit_breaker": False,
+            "market_hours": {"enabled": False}
+        })
+        self.validation_pipeline = OrderValidationPipeline(validation_config)
+
         # Initialize partial fill reconciliation manager
         fill_config = config.get("partial_fill", {})
         self.fill_reconciler = PartialFillReconciliationManager(fill_config)
@@ -867,8 +877,8 @@ class OrderManager:
             return [self._normalize_enum(item) for item in value]
         return value
 
-    def _validate_order_payload(self, signal: Any) -> None:
-        """Validate order payload against schema and business rules."""
+    async def _validate_order_payload(self, signal: Any) -> None:
+        """Validate order payload using comprehensive validation pipeline."""
         # Allow mocks in test mode (detected by Mock type)
         from unittest.mock import Mock
 
@@ -876,39 +886,76 @@ class OrderManager:
             logger.debug("Skipping validation for Mock object in test mode")
             return
 
-        try:
-            # Normalize enum attributes in the signal object before conversion
-            self._normalize_signal_enums(signal)
+        # Use new comprehensive validation pipeline if available
+        if hasattr(self, 'validation_pipeline') and self.validation_pipeline:
+            try:
+                # Prepare validation context
+                context = {
+                    "exchange": getattr(self, 'exchange_name', 'default') if hasattr(self, 'live_executor') and self.live_executor else 'default',
+                    "market_data": None,  # Could be populated with real-time data
+                    "max_concurrent_positions": 5  # Configurable
+                }
 
-            # Convert signal to dict for validation
-            signal_dict = signal_to_dict(signal)
+                # Run validation
+                report = await self.validation_pipeline.validate_order(signal, context)
 
-            # Normalize payload to convert numeric types to strings for schema validation
-            normalized_dict = self._normalize_payload(signal_dict)
+                if not report.overall_passed:
+                    # Log validation failures
+                    errors = report.get_errors()
+                    warnings = report.get_warnings()
 
-            # Validate against JSON schema
-            schema = self._get_order_schema()
-            jsonschema.validate(instance=normalized_dict, schema=schema)
+                    for error in errors:
+                        logger.error(f"Validation error [{error.stage.value}]: {error.message}")
+                        if error.suggested_fix:
+                            logger.info(f"Suggested fix: {error.suggested_fix}")
 
-            # Additional business rule validations (use original dict for business logic)
-            self._validate_business_rules(signal_dict)
+                    for warning in warnings:
+                        logger.warning(f"Validation warning [{warning.stage.value}]: {warning.message}")
 
-            logger.debug(
-                f"Order payload validation passed for {signal_dict.get('symbol', 'unknown')}"
-            )
+                    # Raise exception with detailed error information
+                    error_messages = [f"{e.stage.value}: {e.message}" for e in errors]
+                    raise ValueError(f"Order validation failed: {'; '.join(error_messages)}")
 
-        except jsonschema.ValidationError as e:
-            error_msg = f"Schema validation failed: {e.message}"
-            logger.error(f"Order payload validation failed: {error_msg}")
-            raise ValueError(f"Invalid order payload: {error_msg}") from e
-        except jsonschema.SchemaError as e:
-            error_msg = f"Schema error: {e.message}"
-            logger.error(f"Schema validation error: {error_msg}")
-            raise ValueError(f"Schema validation error: {error_msg}") from e
-        except Exception as e:
-            error_msg = f"Unexpected validation error: {str(e)}"
-            logger.error(f"Order payload validation error: {error_msg}")
-            raise ValueError(f"Order validation error: {error_msg}") from e
+                logger.debug(f"Comprehensive validation passed for {signal_to_dict(signal).get('symbol', 'unknown')}")
+
+            except Exception as e:
+                logger.error(f"Comprehensive validation failed: {str(e)}")
+                raise ValueError(f"Order validation error: {str(e)}") from e
+        else:
+            # Fallback to original validation for backward compatibility
+            try:
+                # Normalize enum attributes in the signal object before conversion
+                self._normalize_signal_enums(signal)
+
+                # Convert signal to dict for validation
+                signal_dict = signal_to_dict(signal)
+
+                # Normalize payload to convert numeric types to strings for schema validation
+                normalized_dict = self._normalize_payload(signal_dict)
+
+                # Validate against JSON schema
+                schema = self._get_order_schema()
+                jsonschema.validate(instance=normalized_dict, schema=schema)
+
+                # Additional business rule validations (use original dict for business logic)
+                self._validate_business_rules(signal_dict)
+
+                logger.debug(
+                    f"Legacy order payload validation passed for {signal_dict.get('symbol', 'unknown')}"
+                )
+
+            except jsonschema.ValidationError as e:
+                error_msg = f"Schema validation failed: {e.message}"
+                logger.error(f"Order payload validation failed: {error_msg}")
+                raise ValueError(f"Invalid order payload: {error_msg}") from e
+            except jsonschema.SchemaError as e:
+                error_msg = f"Schema error: {e.message}"
+                logger.error(f"Schema validation error: {error_msg}")
+                raise ValueError(f"Schema validation error: {error_msg}") from e
+            except Exception as e:
+                error_msg = f"Unexpected validation error: {str(e)}"
+                logger.error(f"Order payload validation error: {error_msg}")
+                raise ValueError(f"Order validation error: {error_msg}") from e
 
     def _normalize_signal_enums(self, signal: Any) -> None:
         """Normalize enum attributes in signal object to use names instead of values."""

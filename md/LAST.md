@@ -772,11 +772,12 @@ def test_validation_pipeline_performance(self):
 
 **Task / Objective:**
 - Implement distributed circuit breaker coordination with consensus and state synchronization across all framework instances.
-- **Update tests/ files related to the patch**: Add distributed state sync tests, network partition tests, and consensus algorithm tests in `tests/distributed/test_circuit_breaker_coordination.py`.
+- **Update tests/ files related to the patch**: Add distributed state sync tests, network partition tests, and consensus algorithm tests in `tests/core/test_circuit_breaker_coordination.py`.
 - **and all the updated tests must passed. use timeout to prevent hangs**
 
 **Constraints / Rules:**
 - Must maintain circuit breaker responsiveness
+- Do not break the circuit breaker file
 - Cannot introduce significant coordination overhead
 - Support partial failure scenarios
 - Provide distributed state consistency guarantees

@@ -475,49 +475,91 @@ class ModelMonitor:
 
     def _update_reference_data(self):
         """Update reference data for drift detection."""
-        if not self.prediction_history:
-            return
+        # For streaming monitor, use prediction_buffer; for batch monitor, use prediction_history
+        if hasattr(self, 'prediction_buffer') and self.prediction_buffer:
+            # Streaming monitor
+            recent_records = self.prediction_buffer[-500:]  # Last 500 predictions
 
-        # Use recent historical data as reference
-        recent_records = self.prediction_history[-100:]  # Last 100 batches
+            all_features = []
+            all_predictions = []
+            all_labels = []
 
-        all_features = []
-        all_predictions = []
-        all_labels = []
+            for record in recent_records:
+                if record["features"]:
+                    all_features.append(record["features"])
+                all_predictions.append(record["prediction"])
+                if record["actual"] is not None:
+                    all_labels.append(record["actual"])
 
-        for record in recent_records:
-            if record["features"] is not None:
-                all_features.append(record["features"])
-            if record["predictions"] is not None:
-                all_predictions.extend(record["predictions"])
-            if record["true_labels"] is not None:
-                all_labels.extend(record["true_labels"])
+            if all_features:
+                # Create DataFrame with proper column names
+                column_names = [f"feature{i}" for i in range(len(all_features[0]))] if all_features else []
+                self.reference_features = pd.DataFrame(all_features, columns=column_names)
+                # Sample to reasonable size
+                if len(self.reference_features) > 1000:
+                    self.reference_features = self.reference_features.sample(
+                        1000, random_state=42
+                    )
 
-        if all_features:
-            self.reference_features = pd.concat(all_features, ignore_index=True)
-            # Sample to reasonable size
-            if len(self.reference_features) > 5000:
-                self.reference_features = self.reference_features.sample(
-                    5000, random_state=42
-                )
+            if all_predictions:
+                self.reference_predictions = np.array(all_predictions)
+                # Sample to reasonable size
+                if len(self.reference_predictions) > 1000:
+                    indices = np.random.choice(
+                        len(self.reference_predictions), 1000, replace=False
+                    )
+                    self.reference_predictions = self.reference_predictions[indices]
 
-        if all_predictions:
-            self.reference_predictions = np.array(all_predictions)
-            # Sample to reasonable size
-            if len(self.reference_predictions) > 5000:
-                indices = np.random.choice(
-                    len(self.reference_predictions), 5000, replace=False
-                )
-                self.reference_predictions = self.reference_predictions[indices]
+            if all_labels:
+                self.reference_labels = np.array(all_labels)
+                # Sample to reasonable size
+                if len(self.reference_labels) > 1000:
+                    indices = np.random.choice(
+                        len(self.reference_labels), 1000, replace=False
+                    )
+                    self.reference_labels = self.reference_labels[indices]
 
-        if all_labels:
-            self.reference_labels = np.array(all_labels)
-            # Sample to reasonable size
-            if len(self.reference_labels) > 5000:
-                indices = np.random.choice(
-                    len(self.reference_labels), 5000, replace=False
-                )
-                self.reference_labels = self.reference_labels[indices]
+        elif self.prediction_history:
+            # Batch monitor
+            recent_records = self.prediction_history[-100:]  # Last 100 batches
+
+            all_features = []
+            all_predictions = []
+            all_labels = []
+
+            for record in recent_records:
+                if record["features"] is not None:
+                    all_features.append(record["features"])
+                if record["predictions"] is not None:
+                    all_predictions.extend(record["predictions"])
+                if record["true_labels"] is not None:
+                    all_labels.extend(record["true_labels"])
+
+            if all_features:
+                self.reference_features = pd.concat(all_features, ignore_index=True)
+                # Sample to reasonable size
+                if len(self.reference_features) > 5000:
+                    self.reference_features = self.reference_features.sample(
+                        5000, random_state=42
+                    )
+
+            if all_predictions:
+                self.reference_predictions = np.array(all_predictions)
+                # Sample to reasonable size
+                if len(self.reference_predictions) > 5000:
+                    indices = np.random.choice(
+                        len(self.reference_predictions), 5000, replace=False
+                    )
+                    self.reference_predictions = self.reference_predictions[indices]
+
+            if all_labels:
+                self.reference_labels = np.array(all_labels)
+                # Sample to reasonable size
+                if len(self.reference_labels) > 5000:
+                    indices = np.random.choice(
+                        len(self.reference_labels), 5000, replace=False
+                    )
+                    self.reference_labels = self.reference_labels[indices]
 
         logger.info("Reference data updated for drift detection")
 
@@ -954,10 +996,524 @@ class AutoRecalibrator:
         logger.info("Auto-recalibration system stopped")
 
 
+class RealTimeModelMonitor(ModelMonitor):
+    """
+    Real-time streaming model monitoring system.
+
+    Extends ModelMonitor with streaming capabilities for immediate drift detection
+    and real-time performance tracking.
+    """
+
+    def __init__(self, config: Dict[str, Any]):
+        """
+        Initialize the real-time model monitor.
+
+        Args:
+            config: Configuration dictionary with additional streaming parameters:
+                - max_buffer_size: Maximum predictions to keep in memory
+                - streaming_update_interval: Seconds between metric updates
+                - drift_check_interval: Predictions between drift checks
+                - dashboard_update_interval: Seconds between dashboard updates
+        """
+        super().__init__(config)
+
+        # Streaming configuration
+        self.max_buffer_size = config.get("max_buffer_size", 10000)
+        self.streaming_update_interval = config.get("streaming_update_interval", 1.0)
+        self.drift_check_interval = config.get("drift_check_interval", 100)
+        self.dashboard_update_interval = config.get("dashboard_update_interval", 5.0)
+
+        # Streaming data structures
+        self.prediction_buffer: List[Dict[str, Any]] = []
+        self.metrics_cache: Dict[str, Any] = {}
+        self.last_metrics_update = time.time()
+        self.last_drift_check = 0
+        self.last_dashboard_update = time.time()
+
+        # Callbacks
+        self.dashboard_callbacks: List[Callable] = []
+        self.retraining_callbacks: List[Callable] = []
+
+        # Streaming state
+        self.streaming_active = False
+        self.streaming_thread = None
+
+        # Drift detection algorithms
+        self.drift_algorithms = config.get("drift_algorithms", ["ks_test", "psi"])
+
+        # Performance tracking
+        self.prediction_count = 0
+        self.consecutive_drift_checks = 0
+        self.performance_window = config.get("performance_window", 1000)
+
+        logger.info("Real-time model monitor initialized")
+
+    def record_prediction(
+        self,
+        features: List[float],
+        prediction: float,
+        actual: float,
+        timestamp: Optional[datetime] = None,
+    ):
+        """
+        Record a single prediction in real-time.
+
+        Args:
+            features: Feature values
+            prediction: Model prediction (probability)
+            actual: Actual outcome
+            timestamp: Prediction timestamp
+        """
+        if timestamp is None:
+            timestamp = datetime.now()
+
+        # Create prediction record
+        record = {
+            "timestamp": timestamp,
+            "features": features.copy() if features else [],
+            "prediction": float(prediction),
+            "actual": float(actual) if actual is not None else None,
+            "prediction_id": self.prediction_count,
+        }
+
+        # Add to buffer
+        self.prediction_buffer.append(record)
+        self.prediction_count += 1
+
+        # Maintain buffer size
+        if len(self.prediction_buffer) > self.max_buffer_size:
+            self.prediction_buffer.pop(0)
+
+        # Periodic updates
+        current_time = time.time()
+
+        # Update metrics periodically
+        if current_time - self.last_metrics_update >= self.streaming_update_interval:
+            self._update_streaming_metrics()
+            self.last_metrics_update = current_time
+
+        # Check drift periodically
+        if self.prediction_count - self.last_drift_check >= self.drift_check_interval:
+            logger.info(f"Checking drift at prediction {self.prediction_count}")
+            self._check_streaming_drift()
+            self.last_drift_check = self.prediction_count
+
+        # Update dashboard periodically
+        if current_time - self.last_dashboard_update >= self.dashboard_update_interval:
+            self._update_dashboard()
+            self.last_dashboard_update = current_time
+
+    def get_metrics(self) -> Dict[str, Any]:
+        """
+        Get current streaming metrics.
+
+        Returns:
+            Dictionary with current performance metrics
+        """
+        if not self.prediction_buffer:
+            return {
+                "total_predictions": 0,
+                "auc": 0.0,
+                "drift_score": 0.0,
+                "timestamp": datetime.now(),
+            }
+
+        # Use cached metrics if recent
+        if time.time() - self.last_metrics_update < self.streaming_update_interval:
+            return self.metrics_cache.copy()
+
+        # Calculate fresh metrics
+        return self._calculate_streaming_metrics()
+
+    def _calculate_streaming_metrics(self) -> Dict[str, Any]:
+        """Calculate metrics from current prediction buffer."""
+        if not self.prediction_buffer:
+            return {
+                "total_predictions": 0,
+                "auc": 0.5,
+                "drift_score": 0.0,
+                "timestamp": datetime.now(),
+            }
+
+        # Get recent predictions (last performance_window)
+        recent_predictions = self.prediction_buffer[-self.performance_window:]
+
+        predictions = [r["prediction"] for r in recent_predictions]
+        actuals = [r["actual"] for r in recent_predictions if r["actual"] is not None]
+
+        metrics = {
+            "total_predictions": len(self.prediction_buffer),
+            "recent_predictions": len(recent_predictions),
+            "timestamp": datetime.now(),
+        }
+
+        # Calculate AUC if we have actuals
+        if len(actuals) >= 2:  # Need at least 2 samples for AUC
+            try:
+                # Convert actuals to binary if they're continuous
+                binary_actuals = [1 if a >= 0.5 else 0 for a in actuals]
+                auc = roc_auc_score(binary_actuals, predictions[:len(actuals)])
+                metrics["auc"] = float(auc)
+            except Exception as e:
+                # Fallback: try with original actuals in case they're already binary
+                try:
+                    auc = roc_auc_score(actuals, predictions[:len(actuals)])
+                    metrics["auc"] = float(auc)
+                except Exception as e2:
+                    logger.warning(f"Error calculating AUC: {e2}")
+                    metrics["auc"] = 0.5  # Default neutral score
+        else:
+            metrics["auc"] = 0.5
+
+        # Calculate drift score
+        drift_score = self._calculate_current_drift_score()
+        metrics["drift_score"] = drift_score
+
+        # Additional metrics
+        metrics["avg_prediction"] = float(np.mean(predictions))
+        metrics["prediction_std"] = float(np.std(predictions))
+
+        if actuals:
+            metrics["avg_actual"] = float(np.mean(actuals))
+            metrics["actual_std"] = float(np.std(actuals))
+
+        # Cache metrics
+        self.metrics_cache = metrics.copy()
+
+        return metrics
+
+    def _update_streaming_metrics(self):
+        """Update streaming metrics cache."""
+        self.metrics_cache = self._calculate_streaming_metrics()
+
+    def check_drift(self) -> bool:
+        """
+        Check for drift in real-time.
+
+        Returns:
+            True if drift detected
+        """
+        print(f"DEBUG: check_drift called, ref_features={self.reference_features is not None if self.reference_features is not None else 'None'}, buffer_size={len(self.prediction_buffer)}")
+        if self.reference_features is None or self.reference_features.empty or len(self.prediction_buffer) < 50:
+            print(f"DEBUG: Cannot check drift: ref_features empty or buffer too small")
+            return False
+
+        # Use multiple algorithms
+        drift_results = self.detect_drift_multiple_algorithms()
+
+        # Check if any algorithm detects drift
+        detected = any(result.get("detected", False) for result in drift_results.values())
+        print(f"DEBUG: Drift check: detected={detected}, results={drift_results}")
+        return detected
+
+    def detect_drift_multiple_algorithms(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Detect drift using multiple algorithms.
+
+        Returns:
+            Dictionary with results from each algorithm
+        """
+        results = {}
+
+        if self.reference_features is None or self.reference_features.empty or not self.prediction_buffer:
+            return results
+
+        # Get current data
+        current_data = [r["features"] for r in self.prediction_buffer[-200:]]
+        if current_data:
+            column_names = [f"feature{i}" for i in range(len(current_data[0]))]
+            current_features = pd.DataFrame(current_data, columns=column_names)
+        else:
+            current_features = pd.DataFrame()
+
+        for algorithm in self.drift_algorithms:
+            try:
+                if algorithm == "ks_test":
+                    results["ks_test"] = self._detect_drift_ks_test(current_features)
+                elif algorithm == "psi":
+                    results["psi"] = self._detect_drift_psi(current_features)
+                elif algorithm == "mmd":
+                    results["mmd"] = self._detect_drift_mmd(current_features)
+            except Exception as e:
+                logger.warning(f"Error in drift detection algorithm {algorithm}: {e}")
+                results[algorithm] = {"detected": False, "score": 0.0, "error": str(e)}
+
+        return results
+
+    def _detect_drift_ks_test(self, current_features: pd.DataFrame) -> Dict[str, Any]:
+        """Detect drift using Kolmogorov-Smirnov test."""
+        drift_scores = []
+
+        for col in self.feature_columns:
+            if col in current_features.columns and col in self.reference_features.columns:
+                try:
+                    from scipy.stats import ks_2samp
+                    stat, _ = ks_2samp(
+                        self.reference_features[col].values,
+                        current_features[col].values
+                    )
+                    drift_scores.append(stat)
+                except:
+                    pass
+
+        avg_drift = np.mean(drift_scores) if drift_scores else 0.0
+        threshold = self.config.get("drift_thresholds", {}).get("ks_threshold", 0.1)
+
+        return {
+            "detected": avg_drift > threshold,
+            "score": float(avg_drift),
+            "algorithm": "ks_test",
+        }
+
+    def _detect_drift_psi(self, current_features: pd.DataFrame) -> Dict[str, Any]:
+        """Detect drift using Population Stability Index."""
+        drift_scores = []
+
+        for col in self.feature_columns:
+            if col in current_features.columns and col in self.reference_features.columns:
+                try:
+                    # Create histograms
+                    ref_hist, _ = np.histogram(self.reference_features[col].values, bins=10, density=True)
+                    curr_hist, _ = np.histogram(current_features[col].values, bins=10, density=True)
+
+                    # Avoid division by zero
+                    ref_hist = ref_hist + 1e-10
+                    curr_hist = curr_hist + 1e-10
+
+                    # PSI calculation
+                    psi = np.sum((curr_hist - ref_hist) * np.log(curr_hist / ref_hist))
+                    drift_scores.append(psi)
+                except:
+                    pass
+
+        avg_drift = np.mean(drift_scores) if drift_scores else 0.0
+        threshold = self.config.get("drift_thresholds", {}).get("psi_threshold", 0.1)
+
+        return {
+            "detected": avg_drift > threshold,
+            "score": float(avg_drift),
+            "algorithm": "psi",
+        }
+
+    def _detect_drift_mmd(self, current_features: pd.DataFrame) -> Dict[str, Any]:
+        """Detect drift using Maximum Mean Discrepancy (simplified)."""
+        # Simplified MMD implementation
+        drift_scores = []
+
+        for col in self.feature_columns:
+            if col in current_features.columns and col in self.reference_features.columns:
+                try:
+                    ref_mean = np.mean(self.reference_features[col].values)
+                    curr_mean = np.mean(current_features[col].values)
+                    ref_std = np.std(self.reference_features[col].values)
+                    curr_std = np.std(current_features[col].values)
+
+                    # Simple distance-based drift score
+                    mean_diff = abs(ref_mean - curr_mean)
+                    std_diff = abs(ref_std - curr_std)
+
+                    drift_score = (mean_diff / (abs(ref_mean) + 1e-10)) + (std_diff / (ref_std + 1e-10))
+                    drift_scores.append(drift_score)
+                except:
+                    pass
+
+        avg_drift = np.mean(drift_scores) if drift_scores else 0.0
+        threshold = self.config.get("drift_thresholds", {}).get("mmd_threshold", 0.2)
+
+        return {
+            "detected": avg_drift > threshold,
+            "score": float(avg_drift),
+            "algorithm": "mmd",
+        }
+
+    def analyze_drift_types(self) -> Dict[str, Any]:
+        """
+        Analyze whether drift is concept drift or data drift.
+
+        Returns:
+            Dictionary with drift type analysis
+        """
+        if not self.prediction_buffer or (self.reference_features is None or self.reference_features.empty):
+            return {"concept_drift": False, "data_drift": False}
+
+        # Get recent predictions
+        recent_records = self.prediction_buffer[-200:]
+        current_features = pd.DataFrame([r["features"] for r in recent_records])
+        current_predictions = np.array([r["prediction"] for r in recent_records])
+
+        # Data drift: Check feature distribution changes
+        data_drift_detected = False
+        feature_drift_scores = {}
+
+        for col in self.feature_columns:
+            if col in current_features.columns and col in self.reference_features.columns:
+                try:
+                    from scipy.stats import ks_2samp
+                    stat, _ = ks_2samp(
+                        self.reference_features[col].values,
+                        current_features[col].values
+                    )
+                    feature_drift_scores[col] = stat
+                    if stat > 0.1:  # Threshold for data drift
+                        data_drift_detected = True
+                except:
+                    pass
+
+        # Concept drift: Check if prediction distribution changed while features didn't
+        concept_drift_detected = False
+
+        if self.reference_predictions is not None and len(current_predictions) > 10:
+            try:
+                # Compare prediction distributions
+                pred_drift = self._calculate_distribution_drift(
+                    self.reference_predictions, current_predictions
+                )
+
+                # If predictions drifted but features didn't significantly, it's concept drift
+                avg_feature_drift = np.mean(list(feature_drift_scores.values())) if feature_drift_scores else 0.0
+
+                if pred_drift > 0.15 and avg_feature_drift < 0.05:
+                    concept_drift_detected = True
+            except:
+                pass
+
+        return {
+            "concept_drift": concept_drift_detected,
+            "data_drift": data_drift_detected,
+            "feature_drift_scores": feature_drift_scores,
+            "prediction_drift_score": pred_drift if 'pred_drift' in locals() else 0.0,
+        }
+
+    def _calculate_current_drift_score(self) -> float:
+        """Calculate current drift score from buffer."""
+        if self.reference_features is None or self.reference_features.empty or not self.prediction_buffer:
+            return 0.0
+
+        try:
+            current_features = pd.DataFrame([r["features"] for r in self.prediction_buffer[-100:]])
+            drift_results = self.detect_drift_multiple_algorithms()
+            scores = [r["score"] for r in drift_results.values() if "score" in r]
+            return float(np.mean(scores)) if scores else 0.0
+        except:
+            return 0.0
+
+    def _check_streaming_drift(self):
+        """Check for drift in streaming context."""
+        if self.check_drift():
+            self.consecutive_drift_checks += 1
+
+            # Trigger alert if drift persists
+            if self.consecutive_drift_checks >= 3:
+                self._trigger_alert(
+                    "DRIFT_DETECTED",
+                    f"Persistent drift detected over {self.consecutive_drift_checks} checks"
+                )
+                self.consecutive_drift_checks = 0
+        else:
+            self.consecutive_drift_checks = 0
+
+        # Also check for performance degradation
+        self._check_performance_degradation()
+
+    def _check_performance_degradation(self):
+        """Check for significant performance degradation."""
+        if len(self.prediction_buffer) < 50:  # Need minimum data
+            return
+
+        # Get recent metrics
+        metrics = self.get_metrics()
+        current_auc = metrics.get("auc", 0.5)
+
+        # Simple threshold-based retraining trigger
+        # If AUC drops below 0.3 (significant degradation), trigger retraining
+        if current_auc < 0.3 and self.retraining_callbacks:
+            logger.warning(f"Performance degraded significantly (AUC: {current_auc:.3f}), triggering retraining")
+
+            for callback in self.retraining_callbacks:
+                try:
+                    callback()
+                except Exception as e:
+                    logger.error(f"Error in retraining callback: {e}")
+
+            # Trigger alert as well
+            self._trigger_alert(
+                "PERFORMANCE_DEGRADED",
+                f"Model performance degraded significantly (AUC: {current_auc:.3f})"
+            )
+
+    def set_dashboard_callback(self, callback: Callable):
+        """Set callback for dashboard updates."""
+        self.dashboard_callbacks.append(callback)
+
+    def set_retraining_callback(self, callback: Callable):
+        """Set callback for retraining triggers."""
+        self.retraining_callbacks.append(callback)
+
+    def _update_dashboard(self):
+        """Update dashboard with current metrics."""
+        metrics = self.get_metrics()
+
+        for callback in self.dashboard_callbacks:
+            try:
+                callback(metrics)
+            except Exception as e:
+                logger.error(f"Error in dashboard callback: {e}")
+
+    def start_streaming(self):
+        """Start streaming monitoring."""
+        if self.streaming_active:
+            logger.warning("Streaming is already active")
+            return
+
+        self.streaming_active = True
+        self.streaming_thread = threading.Thread(
+            target=self._streaming_worker, daemon=True
+        )
+        self.streaming_thread.start()
+        logger.info("Real-time streaming monitoring started")
+
+    def stop_streaming(self):
+        """Stop streaming monitoring."""
+        self.streaming_active = False
+        if self.streaming_thread:
+            self.streaming_thread.join(timeout=5)
+        logger.info("Real-time streaming monitoring stopped")
+
+    def _streaming_worker(self):
+        """Background streaming worker."""
+        while self.streaming_active:
+            try:
+                # Periodic maintenance
+                self._cleanup_old_data()
+                time.sleep(10)  # Maintenance every 10 seconds
+            except Exception as e:
+                logger.error(f"Error in streaming worker: {e}")
+                time.sleep(30)
+
+    def _cleanup_old_data(self):
+        """Clean up old data to maintain memory efficiency."""
+        if len(self.prediction_buffer) > self.max_buffer_size:
+            # Keep only recent data
+            keep_count = self.max_buffer_size // 2
+            self.prediction_buffer = self.prediction_buffer[-keep_count:]
+
+        # Clean up old alerts
+        cutoff_time = datetime.now() - timedelta(hours=24)
+        self.alerts = [
+            alert for alert in self.alerts
+            if alert["timestamp"] > cutoff_time
+        ]
+
+
 # Convenience functions
 def create_model_monitor(config: Dict[str, Any]) -> ModelMonitor:
     """Create a model monitor instance."""
     return ModelMonitor(config)
+
+
+def create_realtime_model_monitor(config: Dict[str, Any]) -> RealTimeModelMonitor:
+    """Create a real-time model monitor instance."""
+    return RealTimeModelMonitor(config)
 
 
 def create_auto_recalibrator(config: Dict[str, Any]) -> AutoRecalibrator:

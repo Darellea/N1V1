@@ -1066,6 +1066,508 @@ class HistoricalDataLoader:
         """
         return self.validated_pairs
 
+    def load_chunked(
+        self,
+        data: pd.DataFrame,
+        chunk_size: int = 1000,
+        max_memory_mb: Optional[float] = None,
+        memory_monitor: Optional[callable] = None,
+        progress_callback: Optional[callable] = None,
+        handle_corruption: bool = False,
+        resume_from: Optional[Dict] = None,
+        memory_manager: Optional[any] = None,
+    ):
+        """
+        Load data in chunks to prevent memory issues.
+
+        Args:
+            data: DataFrame to chunk
+            chunk_size: Number of rows per chunk
+            max_memory_mb: Maximum memory per chunk in MB
+            memory_monitor: Callback for memory monitoring
+            progress_callback: Callback for progress updates
+            handle_corruption: Whether to handle corrupted chunks gracefully
+            resume_from: Resume state dict with 'last_index' and 'processed_chunks'
+            memory_manager: Memory manager instance for integration
+
+        Yields:
+            DataFrame chunks
+        """
+        if data.empty:
+            return
+
+        # Get memory manager if not provided
+        if memory_manager is None:
+            try:
+                from core.memory_manager import get_memory_manager
+                memory_manager = get_memory_manager()
+            except ImportError:
+                memory_manager = None
+
+        # Calculate chunk size based on memory limits
+        if max_memory_mb is not None:
+            estimated_chunk_memory = self._estimate_dataframe_memory(data.head(100))
+            dynamic_chunk_size = max(1, int(max_memory_mb / estimated_chunk_memory * 100))
+            chunk_size = min(chunk_size, dynamic_chunk_size)
+
+        # Handle resume
+        start_index = 0
+        processed_chunks = 0
+        if resume_from:
+            start_index = resume_from.get('last_index', 0)
+            processed_chunks = resume_from.get('processed_chunks', 0)
+
+        total_chunks = (len(data) - start_index + chunk_size - 1) // chunk_size
+        total_processed = processed_chunks
+
+        for i in range(start_index, len(data), chunk_size):
+            chunk = data.iloc[i:i + chunk_size].copy()
+
+            # Handle corrupted chunks
+            if handle_corruption and self._is_chunk_corrupted(chunk):
+                logger.warning(f"Skipping corrupted chunk at index {i}")
+                continue
+
+            # Memory monitoring
+            if memory_monitor:
+                memory_info = memory_monitor()
+                if memory_info and memory_info.get('memory_mb', 0) > self.config.get('max_memory_mb', 500):
+                    logger.warning("Memory threshold exceeded, triggering cleanup")
+                    if memory_manager:
+                        memory_manager.trigger_cleanup()
+            elif memory_manager:
+                # Use memory manager for monitoring if no custom monitor provided
+                memory_stats = memory_manager.get_memory_stats()
+                if memory_stats.get('current_memory_mb', 0) > self.config.get('max_memory_mb', 500):
+                    logger.warning("Memory threshold exceeded, triggering cleanup")
+                    memory_manager.trigger_cleanup()
+
+            # Progress tracking
+            total_processed += 1
+            if progress_callback:
+                progress = int((total_processed / (total_chunks + processed_chunks)) * 100)
+                progress_callback(progress)
+
+            yield chunk
+
+    async def load_chunked_async(
+        self,
+        data: pd.DataFrame,
+        chunk_size: int = 1000,
+        max_memory_mb: Optional[float] = None,
+        memory_monitor: Optional[callable] = None,
+        progress_callback: Optional[callable] = None,
+        handle_corruption: bool = False,
+        resume_from: Optional[Dict] = None,
+        memory_manager: Optional[any] = None,
+    ):
+        """
+        Async version of load_chunked.
+
+        Args:
+            data: DataFrame to chunk
+            chunk_size: Number of rows per chunk
+            max_memory_mb: Maximum memory per chunk in MB
+            memory_monitor: Async callback for memory monitoring
+            progress_callback: Callback for progress updates
+            handle_corruption: Whether to handle corrupted chunks gracefully
+            resume_from: Resume state dict
+            memory_manager: Memory manager instance
+
+        Yields:
+            DataFrame chunks
+        """
+        if data.empty:
+            return
+
+        # Get memory manager if not provided
+        if memory_manager is None:
+            try:
+                from core.memory_manager import get_memory_manager
+                memory_manager = get_memory_manager()
+            except ImportError:
+                memory_manager = None
+
+        # Calculate chunk size based on memory limits
+        if max_memory_mb is not None:
+            estimated_chunk_memory = self._estimate_dataframe_memory(data.head(100))
+            dynamic_chunk_size = max(1, int(max_memory_mb / estimated_chunk_memory * 100))
+            chunk_size = min(chunk_size, dynamic_chunk_size)
+
+        # Handle resume
+        start_index = 0
+        processed_chunks = 0
+        if resume_from:
+            start_index = resume_from.get('last_index', 0)
+            processed_chunks = resume_from.get('processed_chunks', 0)
+
+        total_chunks = (len(data) - start_index + chunk_size - 1) // chunk_size
+        total_processed = processed_chunks
+
+        for i in range(start_index, len(data), chunk_size):
+            chunk = data.iloc[i:i + chunk_size].copy()
+
+            # Handle corrupted chunks
+            if handle_corruption and self._is_chunk_corrupted(chunk):
+                logger.warning(f"Skipping corrupted chunk at index {i}")
+                continue
+
+            # Memory monitoring
+            if memory_monitor:
+                memory_info = await memory_monitor()
+                if memory_info and memory_info.get('memory_mb', 0) > self.config.get('max_memory_mb', 500):
+                    logger.warning("Memory threshold exceeded, triggering cleanup")
+                    if memory_manager:
+                        memory_manager.trigger_cleanup()
+
+            # Progress tracking
+            total_processed += 1
+            if progress_callback:
+                progress = int((total_processed / (total_chunks + processed_chunks)) * 100)
+                progress_callback(progress)
+
+            yield chunk
+
+    async def load_historical_data_chunked(
+        self,
+        symbols: List[str],
+        start_date: str,
+        end_date: str,
+        timeframe: str,
+        chunk_size: int = 1000,
+        force_refresh: bool = False,
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        Load historical data using chunked processing for memory efficiency.
+
+        Args:
+            symbols: List of trading pair symbols
+            start_date: Start date in YYYY-MM-DD format
+            end_date: End date in YYYY-MM-DD format
+            timeframe: Timeframe string
+            chunk_size: Number of rows per chunk
+            force_refresh: Whether to ignore cached data
+
+        Returns:
+            Dictionary mapping symbols to their historical DataFrames
+        """
+        start_time = time.time()
+        logger.info(
+            f"Starting chunked historical data load: symbols={symbols}, "
+            f"start_date={start_date}, end_date={end_date}, timeframe={timeframe}, "
+            f"chunk_size={chunk_size}"
+        )
+
+        results = {}
+
+        for symbol in symbols:
+            try:
+                # Load data for this symbol
+                df = await self._load_symbol_data_chunked(
+                    symbol, start_date, end_date, timeframe, chunk_size, force_refresh
+                )
+
+                if df is not None and not df.empty:
+                    results[symbol] = df
+                    self.validated_pairs.append(symbol)
+                    logger.info(f"Successfully loaded chunked data for {symbol}")
+
+            except Exception as e:
+                logger.error(f"Failed to load chunked data for {symbol}: {str(e)}")
+
+        duration = time.time() - start_time
+        logger.info(
+            f"Completed chunked historical data load: {len(results)}/{len(symbols)} symbols successful, "
+            f"duration={duration:.2f}s"
+        )
+
+        return results
+
+    async def _load_symbol_data_chunked(
+        self,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+        timeframe: str,
+        chunk_size: int,
+        force_refresh: bool,
+    ) -> Optional[pd.DataFrame]:
+        """
+        Load historical data for a single symbol using chunked processing.
+
+        Args:
+            symbol: Trading pair symbol
+            start_date: Start date
+            end_date: End date
+            timeframe: Timeframe string
+            chunk_size: Chunk size for processing
+            force_refresh: Whether to ignore cache
+
+        Returns:
+            DataFrame with historical data or None
+        """
+        cache_key = self._generate_cache_key(symbol, start_date, end_date, timeframe)
+        cache_path = os.path.join(self.data_dir_path, f"{cache_key}.parquet")
+
+        # Try to load from cache first
+        if not force_refresh and os.path.exists(cache_path):
+            try:
+                df = pd.read_parquet(cache_path)
+                if self._validate_data(df, timeframe):
+                    logger.info(f"Loaded cached data for {symbol} ({timeframe})")
+                    return df
+            except Exception as e:
+                logger.warning(f"Failed to load cached data for {symbol}: {str(e)}")
+
+        # Fetch data using streaming approach
+        all_chunks = []
+        chunks_processed = 0
+
+        try:
+            async for chunk in self._fetch_historical_data_streaming(
+                symbol, start_date, end_date, timeframe, chunk_size
+            ):
+                if chunk is not None and not chunk.empty:
+                    # Clean and validate chunk
+                    chunk = self._clean_data(chunk)
+                    if self._validate_data(chunk, timeframe):
+                        all_chunks.append(chunk)
+                        chunks_processed += 1
+
+                        # Memory management: combine chunks periodically
+                        if len(all_chunks) >= 10:  # Combine every 10 chunks
+                            combined = pd.concat(all_chunks, copy=False)
+                            combined.sort_index(inplace=True)
+                            if self.deduplicate:
+                                combined = combined[~combined.index.duplicated(keep="first")]
+                            all_chunks = [combined]
+
+            # Final combination
+            if all_chunks:
+                final_df = pd.concat(all_chunks, copy=False)
+                final_df.sort_index(inplace=True)
+                if self.deduplicate:
+                    final_df = final_df[~final_df.index.duplicated(keep="first")]
+
+                # Apply gap handling
+                final_df = self._prepare_data_for_gap_handling(final_df)
+                final_df = self._apply_gap_handling_strategy(final_df, symbol)
+
+                # Cache the result
+                try:
+                    final_df.to_parquet(cache_path)
+                    logger.debug(f"Saved chunked historical data for {symbol} to cache")
+                except Exception as e:
+                    logger.warning(f"Failed to cache chunked data for {symbol}: {str(e)}")
+
+                logger.info(f"Processed {chunks_processed} chunks for {symbol}")
+                return final_df
+
+        except Exception as e:
+            logger.error(f"Error in chunked loading for {symbol}: {str(e)}")
+
+        return None
+
+    async def _fetch_historical_data_streaming(
+        self,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+        timeframe: str,
+        chunk_size: int,
+    ):
+        """
+        Fetch historical data in streaming fashion.
+
+        Args:
+            symbol: Trading pair symbol
+            start_date: Start date
+            end_date: End date
+            timeframe: Timeframe
+            chunk_size: Size of chunks to yield
+
+        Yields:
+            DataFrame chunks
+        """
+        current_start = pd.to_datetime(start_date).tz_localize(None)
+        end = pd.to_datetime(end_date).tz_localize(None)
+        unit = timeframe.lstrip("0123456789")
+        max_iterations = MAX_PAGINATION_ITERATIONS
+        iteration_count = 0
+
+        accumulated_data = []
+
+        while (
+            current_start <= end and iteration_count < max_iterations
+        ):
+            try:
+                # Fetch a batch of data
+                df = await self.data_fetcher.get_historical_data(
+                    symbol, timeframe, since=current_start
+                )
+
+                if df is None or df.empty:
+                    break
+
+                accumulated_data.append(df)
+
+                # When we have enough data for a chunk, yield it
+                while len(accumulated_data) > 0:
+                    combined_length = sum(len(chunk) for chunk in accumulated_data)
+
+                    if combined_length >= chunk_size:
+                        # Combine enough data for one chunk
+                        chunk_data = []
+                        remaining_needed = chunk_size
+
+                        while accumulated_data and remaining_needed > 0:
+                            current_chunk = accumulated_data[0]
+                            if len(current_chunk) <= remaining_needed:
+                                chunk_data.append(current_chunk)
+                                accumulated_data.pop(0)
+                                remaining_needed -= len(current_chunk)
+                            else:
+                                # Split the chunk
+                                split_chunk = current_chunk.iloc[:remaining_needed]
+                                chunk_data.append(split_chunk)
+                                accumulated_data[0] = current_chunk.iloc[remaining_needed:]
+                                remaining_needed = 0
+
+                        if chunk_data:
+                            chunk = pd.concat(chunk_data, copy=False)
+                            chunk.sort_index(inplace=True)
+                            yield chunk
+                    else:
+                        break
+
+                # Advance to next batch
+                last_index = df.index[-1]
+                if hasattr(last_index, "tz_localize"):
+                    last_index = last_index.tz_localize(None)
+                current_start = last_index + pd.Timedelta(1, unit=unit)
+                iteration_count += 1
+
+            except Exception as e:
+                logger.error(f"Error fetching streaming data for {symbol}: {str(e)}")
+                break
+
+        # Yield any remaining data
+        if accumulated_data:
+            remaining = pd.concat(accumulated_data, copy=False)
+            remaining.sort_index(inplace=True)
+
+            # Yield remaining data in chunks
+            for i in range(0, len(remaining), chunk_size):
+                chunk = remaining.iloc[i:i + chunk_size]
+                if not chunk.empty:
+                    yield chunk
+
+    async def resample_data_chunked(
+        self,
+        data: Dict[str, pd.DataFrame],
+        new_timeframe: str,
+        chunk_size: int = 5000,
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        Resample data using chunked processing for memory efficiency.
+
+        Args:
+            data: Dictionary of symbol to DataFrame
+            new_timeframe: Target timeframe
+            chunk_size: Processing chunk size
+
+        Returns:
+            Dictionary of resampled DataFrames
+        """
+        resampled = {}
+
+        for symbol, df in data.items():
+            if df.empty:
+                continue
+
+            logger.info(f"Resampling {symbol} data to {new_timeframe} using chunks")
+
+            try:
+                # Process in chunks to avoid memory issues
+                resampled_chunks = []
+
+                for chunk in self.load_chunked(df, chunk_size=chunk_size):
+                    resample_map = {
+                        "open": "first",
+                        "high": "max",
+                        "low": "min",
+                        "close": "last",
+                        "volume": "sum",
+                    }
+
+                    freq = self._get_pandas_freq(new_timeframe)
+                    try:
+                        resampled_chunk = chunk.resample(freq).agg(resample_map)
+                        if not resampled_chunk.empty:
+                            resampled_chunks.append(resampled_chunk)
+                    except Exception as e:
+                        logger.warning(f"Failed to resample chunk for {symbol}: {str(e)}")
+
+                if resampled_chunks:
+                    # Combine resampled chunks
+                    final_resampled = pd.concat(resampled_chunks, copy=False)
+                    final_resampled.sort_index(inplace=True)
+
+                    # Remove duplicates that may occur at chunk boundaries
+                    final_resampled = final_resampled[~final_resampled.index.duplicated(keep="last")]
+
+                    resampled[symbol] = final_resampled
+                    logger.info(f"Successfully resampled {symbol} with {len(resampled_chunks)} chunks")
+
+            except Exception as e:
+                logger.error(f"Failed to resample {symbol}: {str(e)}")
+
+        return resampled
+
+    def _estimate_dataframe_memory(self, df: pd.DataFrame) -> float:
+        """
+        Estimate memory usage of a DataFrame in MB.
+
+        Args:
+            df: DataFrame to estimate
+
+        Returns:
+            Memory usage in MB
+        """
+        if df.empty:
+            return 0.0
+
+        return df.memory_usage(deep=True).sum() / 1024 / 1024
+
+    def _is_chunk_corrupted(self, chunk: pd.DataFrame) -> bool:
+        """
+        Check if a data chunk is corrupted.
+
+        Args:
+            chunk: DataFrame chunk to check
+
+        Returns:
+            True if chunk appears corrupted
+        """
+        if chunk.empty:
+            return False
+
+        # Check for excessive NaN values
+        required_cols = ["open", "high", "low", "close", "volume"]
+        for col in required_cols:
+            if col in chunk.columns:
+                nan_ratio = chunk[col].isna().sum() / len(chunk)
+                if nan_ratio > 0.5:  # More than 50% NaN values
+                    return True
+
+        # Check for invalid price relationships
+        if all(col in chunk.columns for col in ["high", "low"]):
+            invalid_prices = (chunk["high"] < chunk["low"]).sum()
+            if invalid_prices > len(chunk) * 0.1:  # More than 10% invalid
+                return True
+
+        return False
+
     async def shutdown(self) -> None:
         """Cleanup resources."""
         self.data_cache.clear()
