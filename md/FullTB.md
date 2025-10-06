@@ -1,25 +1,37 @@
-======================================================================= short test summary info =======================================================================
-FAILED tests/core/test_dependency_injection.py::TestDependencyInjection::test_memory_manager_creation - NameError: name 'os' is not defined
-FAILED tests/core/test_dependency_injection.py::TestConfigurationIntegration::test_memory_manager_config_integration - NameError: name 'os' is not defined
-FAILED tests/core/test_dependency_injection.py::TestComponentIsolation::test_factory_creates_correct_types - NameError: name 'os' is not defined
-FAILED tests/integration/test_distributed_system.py::TestDistributedTaskManager::test_task_enqueue_dequeue - AttributeError: 'async_generator' object has no attribute 'enqueue_signal_task'
-FAILED tests/integration/test_distributed_system.py::TestDistributedTaskManager::test_worker_processing - AttributeError: 'async_generator' object has no attribute 'register_task_handler'
-FAILED tests/integration/test_distributed_system.py::TestDistributedTaskManager::test_task_failure_retry - AttributeError: 'async_generator' object has no attribute 'register_task_handler'
-FAILED tests/integration/test_distributed_system.py::TestDistributedTaskManager::test_queue_status_monitoring - AttributeError: 'async_generator' object has no attribute 'enqueue_signal_task'
-FAILED tests/integration/test_distributed_system.py::TestDistributedScheduler::test_signal_scheduling - AttributeError: 'async_generator' object has no attribute 'schedule_signal_processing'
-FAILED tests/integration/test_distributed_system.py::TestDistributedScheduler::test_backtest_scheduling - AttributeError: 'async_generator' object has no attribute 'schedule_backtest'
-FAILED tests/integration/test_distributed_system.py::TestDistributedScheduler::test_optimization_scheduling - AttributeError: 'async_generator' object has no attribute 'schedule_optimization'
-FAILED tests/integration/test_distributed_system.py::TestDistributedExecutor::test_task_handler_registration - AttributeError: 'async_generator' object has no attribute 'task_manager'
-FAILED tests/integration/test_distributed_system.py::TestDistributedExecutor::test_signal_task_processing - AttributeError: 'async_generator' object has no attribute 'initialize'
-FAILED tests/notifier/test_discord_integration.py::TestDiscordIntegration::test_webhook_integration_basic_notification - AttributeError: 'async_generator' object has no attribute 'send_notification'
-FAILED tests/notifier/test_discord_integration.py::TestDiscordIntegration::test_webhook_integration_with_embed - AttributeError: 'async_generator' object has no attribute 'send_notification'
-FAILED tests/notifier/test_discord_integration.py::TestDiscordIntegration::test_webhook_integration_trade_alert - AttributeError: 'async_generator' object has no attribute 'send_trade_alert'
-FAILED tests/notifier/test_discord_integration.py::TestDiscordIntegration::test_webhook_integration_signal_alert - AttributeError: 'async_generator' object has no attribute 'send_signal_alert'
-FAILED tests/notifier/test_discord_integration.py::TestDiscordIntegration::test_webhook_integration_error_alert - AttributeError: 'async_generator' object has no attribute 'send_error_alert'
-FAILED tests/notifier/test_discord_integration.py::TestDiscordIntegration::test_webhook_integration_performance_report - AttributeError: 'async_generator' object has no attribute 'send_performance_report'
-FAILED tests/notifier/test_discord_integration.py::TestDiscordIntegration::test_webhook_integration_rate_limit_handling - AttributeError: 'async_generator' object has no attribute 'send_notification'
-FAILED tests/notifier/test_discord_integration.py::TestDiscordIntegration::test_webhook_integration_large_payload - AttributeError: 'async_generator' object has no attribute 'send_notification'
-FAILED tests/notifier/test_discord_integration.py::TestDiscordIntegration::test_webhook_integration_special_characters - AttributeError: 'async_generator' object has no attribute 'send_notification'
-FAILED tests/notifier/test_discord_integration.py::TestDiscordIntegration::test_webhook_integration_empty_content - AttributeError: 'async_generator' object has no attribute 'send_notification'
-FAILED tests/notifier/test_discord_integration.py::TestDiscordIntegration::test_webhook_integration_order_failure_alert - AttributeError: 'async_generator' object has no attribute 'send_order_failure_alert'
-=============================================== 23 failed, 3010 passed, 98 skipped, 1087 warnings in 707.53s (0:11:47) ================================================
+FAILED tests/core/test_order_manager.py::TestOrderManager::test_validate_order_payload_invalid_schema - Failed: DID NOT RAISE <class 'ValueError'>
+FAILED tests/core/test_order_manager.py::TestOrderManager::test_validate_order_payload_invalid_symbol_format - Failed: DID NOT RAISE <class 'ValueError'>
+FAILED tests/core/test_order_manager.py::TestOrderManager::test_validate_order_payload_business_rules_negative_amount - Failed: DID NOT RAISE <class 'ValueError'>
+FAILED tests/core/test_order_manager.py::TestOrderManager::test_validate_order_payload_business_rules_stop_without_loss - Failed: DID NOT RAISE <class 'ValueError'>
+FAILED tests/core/test_order_manager.py::TestOrderManager::test_validate_order_payload_business_rules_invalid_signal_order_combo - Failed: DID NOT RAISE <class 'ValueError'>
+FAILED tests/core/test_order_manager.py::TestOrderManager::test_execute_order_with_validation_failure - AssertionError: assert 'filled' == 'validation_failed'
+FAILED tests/data/test_data.py::test_data_validation - assert not True
+FAILED tests/data/test_data.py::test_multiple_symbol_fetching - assert 0 == 2
+FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_initialize_success - core.api_protection.CircuitOpenError: Circuit is open for AsyncMock, aborting retry
+FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_get_historical_data_success - assert 0 == 2
+FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_get_historical_data_exchange_error - core.api_protection.CircuitOpenError: Circuit is open for AsyncMock, aborting retry
+FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_get_historical_data_network_error - core.api_protection.CircuitOpenError: Circuit is open for AsyncMock, aborting retry
+FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_get_historical_data_with_caching - assert 0 == 1
+FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_get_realtime_data_tickers_only - AssertionError: assert 'BTC/USDT' in {}
+FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_get_realtime_data_with_orderbooks - AssertionError: assert 'BTC/USDT' in {}
+FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_fetch_ticker_success - core.api_protection.CircuitOpenError: Circuit is open for AsyncMock, aborting retry
+FAILED tests/data/test_data_fetcher.py::TestDataFetcherAsyncMethods::test_fetch_orderbook_success - core.api_protection.CircuitOpenError: Circuit is open for AsyncMock, aborting retry
+FAILED tests/data/test_data_fetcher.py::TestDataFetcherMultipleData::test_get_multiple_historical_data_success - AssertionError: assert 'BTC/USDT' in {}
+FAILED tests/data/test_data_fetcher.py::TestDataFetcherMultipleData::test_get_multiple_historical_data_partial_failure - AssertionError: assert 'BTC/USDT' in {}
+FAILED tests/data/test_data_fetcher.py::TestDataFetcherErrorScenarios::test_get_historical_data_unexpected_error - core.api_protection.CircuitOpenError: Circuit is open for AsyncMock, aborting retry
+FAILED tests/data/test_data_fetcher.py::TestDataFetcherErrorScenarios::test_fetch_ticker_error - core.api_protection.CircuitOpenError: Circuit is open for AsyncMock, aborting retry
+FAILED tests/data/test_data_fetcher.py::TestDataFetcherErrorScenarios::test_fetch_orderbook_error - core.api_protection.CircuitOpenError: Circuit is open for AsyncMock, aborting retry
+FAILED tests/data/test_data_fetcher.py::TestDataFetcherIntegration::test_full_workflow_with_caching - assert 0 == 1
+FAILED tests/data/test_data_fetcher.py::TestDataFetcherIntegration::test_multiple_symbols_workflow - assert 0 == 3
+FAILED tests/data/test_data_fetcher.py::TestDataFetcherIntegration::test_realtime_data_workflow - assert 0 == 2
+FAILED tests/data/test_memory_efficient_loading.py::TestMemoryEfficientLoading::test_large_dataset_loading_with_timeout - Failed: Large dataset loading timed out
+FAILED tests/integration/test_order_flow_integration.py::TestOrderFlowIntegration::test_order_flow_with_validation - AssertionError: assert {'amount': 0.001, 'cost': 50.050000000000004, 'fee': {'cost': 0.050050000000000004, 'currenc...
+FAILED tests/integration/test_order_flow_integration.py::TestOrderFlowIntegration::test_error_handling_in_order_flow - AssertionError: assert {'amount': -1.0, 'cost': -50050.0, 'fee': {'cost': -50.05, 'currency': 'USDT'}, 'filled': -1...
+FAILED tests/ml/test_indicators.py::TestOBV::test_calculate_obv_insufficient_data - assert False
+FAILED tests/ml/test_realtime_model_monitoring.py::TestRealTimeModelMonitoring::test_realtime_drift_detection - assert False
+FAILED tests/ml/test_realtime_model_monitoring.py::TestRealTimeModelMonitoring::test_streaming_metrics_accuracy - AssertionError: assert 'auc' in {}
+FAILED tests/ml/test_realtime_model_monitoring.py::TestRealTimeModelMonitoring::test_alert_timing - assert 0 > 0
+FAILED tests/ml/test_realtime_model_monitoring.py::TestRealTimeModelMonitoring::test_multiple_drift_algorithms - assert False
+FAILED tests/ml/test_realtime_model_monitoring.py::TestRealTimeModelMonitoring::test_automated_retraining_trigger - assert False
+FAILED tests/ml/test_reproducibility.py::TestDeterministicSeeds::test_set_deterministic_seeds_python_random - assert [0.1096491303...50653676, ...] == [0.6394267984...74229113, ...]
+FAILED tests/optimization/test_deterministic_optimization.py::TestDeterministicOptimization::test_optimization_timeout_safety - assert 78.52452087402344 < 30
+36 failed, 3350 passed, 100 skipped, 1230 warnings in 1310.21s (0:21:50)

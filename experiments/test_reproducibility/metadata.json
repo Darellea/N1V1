@@ -1,6 +1,6 @@
 {
   "experiment_name": "test_reproducibility",
-  "start_time": "2025-10-03T09:24:49.681230",
+  "start_time": "2025-10-06T10:12:09.527668",
   "status": "running",
   "parameters": {
     "random_seed": 999,

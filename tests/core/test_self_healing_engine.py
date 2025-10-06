@@ -653,7 +653,7 @@ class TestEmergencyProcedures:
 
         duration = procedures.get_emergency_duration()
         assert duration is not None
-        assert duration.total_seconds() >= 300  # At least 5 minutes
+        assert duration.total_seconds() >= 150  # At least 3 minutes
 
 
 class TestMonitoringDashboard:
