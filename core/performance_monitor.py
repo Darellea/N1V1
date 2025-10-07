@@ -643,15 +643,15 @@ class RealTimePerformanceMonitor:
         # CPU usage score (lower is better)
         if "process_cpu_usage_percent" in self.baselines:
             cpu_baseline = self.baselines["process_cpu_usage_percent"]
-            cpu_score = max(0, 100 - (cpu_baseline.mean / 100) * 100)
+            cpu_score = max(0.0, 100.0 - (cpu_baseline.mean / 100.0) * 100.0)
             scores.append(cpu_score)
 
         # Memory usage score (lower is better, but allow some usage)
         if "process_memory_usage_bytes" in self.baselines:
             mem_baseline = self.baselines["process_memory_usage_bytes"]
             # Assume 500MB is acceptable, score decreases linearly after that
-            mem_mb = mem_baseline.mean / (1024 * 1024)
-            mem_score = max(0, 100 - max(0, mem_mb - 500) * 2)
+            mem_mb = mem_baseline.mean / (1024.0 * 1024.0)
+            mem_score = max(0.0, 100.0 - max(0.0, mem_mb - 500.0) * 2.0)
             scores.append(mem_score)
 
         # Function execution time score (consistency is good)
@@ -663,7 +663,7 @@ class RealTimePerformanceMonitor:
         if execution_times:
             avg_execution_time = statistics.mean(execution_times)
             # More lenient scoring: < 1.0s is acceptable, score decreases for very slow execution
-            time_score = max(0, 100 - avg_execution_time * 200)  # 200 instead of 1000
+            time_score = max(0.0, 100.0 - avg_execution_time * 200.0)  # 200 instead of 1000
             scores.append(time_score)
 
         # Anomaly rate score (fewer anomalies is better)
@@ -671,10 +671,10 @@ class RealTimePerformanceMonitor:
             [
                 a
                 for a in self.anomaly_history
-                if time.time() - a.timestamp < 3600  # Last hour
+                if time.time() - a.timestamp < 3600.0  # Last hour
             ]
         )
-        anomaly_score = max(0, 100 - recent_anomalies * 5)  # 5 points per anomaly
+        anomaly_score = max(0.0, 100.0 - recent_anomalies * 5.0)  # 5 points per anomaly
         scores.append(anomaly_score)
 
         if not scores:
@@ -682,7 +682,7 @@ class RealTimePerformanceMonitor:
 
         # Calculate average health score from all components
         avg_score = statistics.mean(scores)
-        return avg_score
+        return float(avg_score)
 
     async def _register_performance_metrics(self) -> None:
         """Register performance monitoring metrics with the collector."""

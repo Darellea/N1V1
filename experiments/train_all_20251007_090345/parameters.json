@@ -1,5 +1,11 @@
 {
-  "random_seed": 777,
+  "data_file": "data.csv",
+  "symbol": null,
+  "min_samples": 100,
+  "verbose": false,
+  "config_file": "config.json",
+  "output_file": "results.json",
+  "random_seed": 42,
   "environment_snapshot": {
     "python_version": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
     "platform": "Windows-10-10.0.19042-SP0",
@@ -39,7 +45,7 @@
       "commit_hash": "027991668cd228354a8789ec7899e32c5e8c9272",
       "branch": "main",
       "remote_url": "https://github.com/Darellea/N1V1.git",
-      "status": "M core/performance_monitor.py\n D data/historical/test_data/f78c83afe6d317f0c106b24ac826d8d0.parquet\n M data/performance_baselines.json\n M experiments/integration_test/metadata.json\n M experiments/test_reproducibility/metadata.json\n M experiments/test_reproducibility/reproducibility_checklist.json\n M logs/anomalies/anomalies.json\n M monitoring/alerts.json\n M monitoring/drift_history.json\n M monitoring/performance_history.json\n?? reports/metrics/metrics_test_strategy_20251007_084650.json"
+      "status": "M core/performance_monitor.py\n D data/historical/test_data/f78c83afe6d317f0c106b24ac826d8d0.parquet\n M data/performance_baselines.json\n M experiments/integration_test/metadata.json\n M experiments/integration_test/parameters.json\n M experiments/integration_test/reproducibility_checklist.json\n M experiments/test_reproducibility/metadata.json\n M experiments/test_reproducibility/reproducibility_checklist.json\n M logs/anomalies/anomalies.json\n M monitoring/alerts.json\n M monitoring/drift_history.json\n M monitoring/performance_history.json\n?? experiments/train_all_20251007_090345/\n?? reports/metrics/metrics_test_strategy_20251007_084650.json"
     },
     "hardware": {
       "cpu_count": 4,
@@ -48,10 +54,8 @@
       "memory_available_gb": 6.97
     }
   },
-  "model_config": {
-    "type": "test",
-    "params": {
-      "n_estimators": 100
-    }
-  }
+  "predictive_models_enabled": true,
+  "models_config": [
+    "price_predictor"
+  ]
 }
