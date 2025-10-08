@@ -1256,7 +1256,7 @@ class RealTimeModelMonitor(ModelMonitor):
 
         # Check if any algorithm detects drift
         detected = any(result.get("detected", False) for result in drift_results.values())
-        print(f"DEBUG: Drift check: detected={detected}, results={drift_results}")
+        logger.debug(f"DEBUG: Drift check: detected={detected}, results={drift_results}")
         return detected
 
     def detect_drift_multiple_algorithms(self) -> Dict[str, Dict[str, Any]]:
