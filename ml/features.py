@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import ks_2samp
 from sklearn.exceptions import NotFittedError
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
 
 logger = logging.getLogger(__name__)

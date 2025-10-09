@@ -15,7 +15,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0009989738464355469,
+      "optimization_time": 0.00099945068359375,
       "train_data_shape": [
         30,
         5
@@ -38,7 +38,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0019991397857666016,
+      "optimization_time": 0.0009989738464355469,
       "train_data_shape": [
         30,
         5
@@ -61,7 +61,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0009984970092773438,
+      "optimization_time": 0.00099945068359375,
       "train_data_shape": [
         30,
         5
@@ -84,7 +84,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0009992122650146484,
+      "optimization_time": 0.0,
       "train_data_shape": [
         30,
         5
@@ -130,7 +130,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0019986629486083984,
+      "optimization_time": 0.0009984970092773438,
       "train_data_shape": [
         30,
         5
@@ -176,7 +176,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0009982585906982422,
+      "optimization_time": 0.0010001659393310547,
       "train_data_shape": [
         30,
         5
@@ -199,7 +199,7 @@
       "test_metrics": {
         "error": "Optimizer failed"
       },
-      "optimization_time": 0.0010004043579101562,
+      "optimization_time": 0.00099945068359375,
       "train_data_shape": [
         30,
         5
@@ -232,6 +232,6 @@
     "fitness_metric": "sharpe_ratio",
     "convergence_info": null
   },
-  "timestamp": "2025-10-08T08:45:51.073969",
-  "total_time": 0.03298187255859375
+  "timestamp": "2025-10-09T17:07:26.794122",
+  "total_time": 0.037049055099487305
 }

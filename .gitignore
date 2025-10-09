@@ -1,11 +1,34 @@
-# --- Python ---
+# =============================================
+# Python Specific
+# =============================================
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 *$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
 
-# --- Virtual envs ---
+# =============================================
+# Virtual Environments
+# =============================================
 .env
 .venv
 env/
@@ -13,46 +36,104 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+pythonenv*
 
-# --- Jupyter / IPython ---
+# =============================================
+# Testing & Coverage
+# =============================================
+.pytest_cache/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log, cover
+htmlcov/
+
+# =============================================
+# Jupyter & IPython
+# =============================================
 .ipynb_checkpoints
 *.ipynb
+.ipython
+profile_default/
+ipython_config.py
 
-# --- Logs & debug ---
+# =============================================
+# Logs & Debug Files
+# =============================================
 *.log
 *.out
 *.err
+logs/
+debug/
 
-# --- OS / Editor ---
+# =============================================
+# OS & Editor Files
+# =============================================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
-# --- Git ---
+# =============================================
+# Git & Version Control
+# =============================================
 *.orig
 *.lock
+.gitignore
+.gitattributes
 
-# --- Build / Dist ---
+# =============================================
+# Build & Distribution
+# =============================================
 build/
 dist/
 *.egg-info/
 .eggs/
+*.whl
+*.tar.gz
 
-# --- Data / Cache ---
+# =============================================
+# Data Files & Cache
+# =============================================
 cache/
 tmp/
+temp/
+*.tmp
+*.temp
 .test_cache/
+.market_cache/
+.audit_cache/
+
+# Data files
 *.csv
 *.tsv
 *.jsonl
 *.db
 *.sqlite
+*.sqlite3
 *.png
-error.txt
-.market_cache/
+*.jpg
+*.jpeg
 
-# --- Trading Bot specific ---
+# =============================================
+# Trading Bot Specific
+# =============================================
 output/
 backtest_results/
 equity_curves/
@@ -60,36 +141,52 @@ trades.csv
 equity.csv
 signals.csv
 checkpoints/
-.test_cache/
 scrips/
 tools/
-error.txt
 test_logs/
 scripts/
 README/
+reports/
 
-
-# --- Machine Learning models ---
+# =============================================
+# Machine Learning Models
+# =============================================
 *.h5
 *.pkl
 *.joblib
 *.onnx
 *.pt
 *.pth
+models/
+checkpoints/
 
-# --- Secrets ---
+# =============================================
+# Secrets & Configuration
+# =============================================
 config.json
 secrets.json
 *.key
 *.pem
 *.crt
+*.cert
+.env.local
+.env.*.local
 
-# --- Misc ---
+# =============================================
+# Documentation & Misc
+# =============================================
+docs/_build/
+site/
+.ropeproject
+
+# Archive files
 *.zip
 *.rar
 *.tar
 *.gz
-ENSEMBLE_README.md
+*.7z
+
+# Project specific
+error.txt
 listerror.txt
-.audit_cache/*
-reports/
+ENSEMBLE_README.md

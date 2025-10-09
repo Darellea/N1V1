@@ -1,28 +1,20 @@
-# Core dependencies
-ccxt>=4.3.0
-pandas>=2.2.0
+# ==========================================================
+# N1V1 Framework - Core Requirements (Stable Configuration)
+# ==========================================================
+
+# --- Core Dependencies ---
+ccxt==4.3.0
+pandas==2.2.3
 numpy==1.26.2
 python-dotenv==1.0.0
-pytest>=7.0.0
+pytest==8.3.2
 
-# Data analysis and ML (for future phases)
-scikit-learn==1.3.2
-xgboost==2.0.2
-lightgbm==4.1.0
-joblib==1.3.2
-arch==6.3.0  # For GARCH volatility modeling
-
-# Async and networking
+# --- Async & Networking ---
 aiohttp==3.9.0
-requests>=2.32.0
+requests==2.32.3
 websockets==12.0
 
-# UI and visualization
-colorama==0.4.6
-streamlit==1.28.0
-plotly==5.18.0
-
-# Web API
+# --- Web API Layer ---
 fastapi==0.104.1
 uvicorn==0.24.0
 sqlalchemy==2.0.43
@@ -34,23 +26,44 @@ python-multipart==0.0.20
 slowapi==0.1.9
 redis==5.0.1
 
-# Notifications
+# --- Data Analysis & Machine Learning ---
+scikit-learn==1.3.2
+xgboost==2.0.2
+lightgbm==4.1.0
+joblib==1.3.2
+arch==6.3.0
+# Optional heavy dependencies (install only if needed)
+# tensorflow==2.20.0
+# torch==2.8.0+cpu
+# catboost==1.2.8
+# mlflow==3.4.0
+
+# --- Visualization & UI ---
+colorama==0.4.6
+streamlit==1.28.0
+plotly==5.18.0
+
+# --- Notifications ---
 discord.py==2.3.2
 python-telegram-bot==20.5
 
-# Utilities and performance
+# --- Utilities & Performance ---
 python-dateutil==2.8.2
 pytz==2023.3.post1
 tzlocal==5.2
-ujson==5.8.0  # Faster JSON parsing
-orjson==3.9.10  # Alternative JSON parser
-
-# Platform-specific dependencies
-pywin32==306; sys_platform == 'win32'
+ujson==5.8.0
+orjson==3.9.10
 deepmerge==1.1.0
 jsonschema==4.19.1
 pydantic==2.5.2
 
-# Development/test/linting dependencies have been moved to requirements-dev.txt
-# Install dev dependencies with:
-#   pip install -r requirements-dev.txt
+# --- Platform Specific (Windows only) ---
+pywin32==306; sys_platform == "win32"
+
+# ==========================================================
+# Notes:
+# 1. Keep ML libraries commented out unless actively used.
+# 2. Use `requirements-ml.txt` for TensorFlow/PyTorch isolation.
+# 3. Pin exact versions to avoid dependency resolver conflicts.
+# 4. Use a separate `requirements-dev.txt` for testing/linting.
+# ==========================================================

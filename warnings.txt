@@ -1,0 +1,1072 @@
+WARNING  ml.train:train.py:71 MLflow not available. Model registry features will be disabled.
+WARNING  scripts.run_model_benchmarks:run_model_benchmarks.py:40 MLflow not available. Model registry features will be disabled.
+WARNING  risk.anomaly_detector:anomaly_detector.py:1833 price_zscore.z_threshold invalid (-10.0), defaulting to 3.0
+WARNING  risk.anomaly_detector:anomaly_detector.py:2079 No event loop running, logging anomaly synchronously
+ERROR    api.app:app.py:231 Unhandled exception in GET /api/v1/status
+ValueError: Test exception
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+WARNING  slowapi:extension.py:510 ratelimit 60 per 1 minute (testclient) exceeded at endpoint: /api/v1/health
+WARNING  slowapi:extension.py:510 ratelimit 60 per 1 minute (testclient) exceeded at endpoint: /api/v1/health
+WARNING  slowapi:extension.py:510 ratelimit 60 per 1 minute (testclient) exceeded at endpoint: /api/v1/health
+WARNING  slowapi:extension.py:510 ratelimit 60 per 1 minute (testclient) exceeded at endpoint: /api/v1/health
+WARNING  slowapi:extension.py:510 ratelimit 60 per 1 minute (testclient) exceeded at endpoint: /api/v1/health
+WARNING  slowapi:extension.py:510 ratelimit 60 per 1 minute (testclient) exceeded at endpoint: /api/v1/health
+WARNING  slowapi:extension.py:510 ratelimit 60 per 1 minute (testclient) exceeded at endpoint: /api/v1/health
+WARNING  slowapi:extension.py:510 ratelimit 60 per 1 minute (testclient) exceeded at endpoint: /api/v1/health
+WARNING  slowapi:extension.py:510 ratelimit 60 per 1 minute (testclient) exceeded at endpoint: /api/v1/health
+WARNING  slowapi:extension.py:510 ratelimit 60 per 1 minute (testclient) exceeded at endpoint: /api/v1/health
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    api.app:app.py:231 Unhandled exception in GET /api/v1/status
+Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\anyio\streams\memory.py", line 98, in receive
+    return self.receive_nowait()
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\anyio\streams\memory.py", line 93, in receive_nowait
+    raise WouldBlock
+anyio.WouldBlock
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 78, in call_next
+    message = await recv_stream.receive()
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\anyio\streams\memory.py", line 118, in receive
+    raise EndOfStream
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\api\middleware.py", line 57, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 108, in __call__
+    response = await self.dispatch_func(request, call_next)
+  File "C:\Users\TU\Desktop\new project\N1V1\api\middleware.py", line 23, in dispatch
+    response = await call_next(request)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 84, in call_next
+    raise app_exc
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 70, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 108, in __call__
+    response = await self.dispatch_func(request, call_next)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\slowapi\middleware.py", line 136, in dispatch
+    response = await call_next(request)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 84, in call_next
+    raise app_exc
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 70, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\cors.py", line 83, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\exceptions.py", line 79, in __call__
+    raise exc
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\exceptions.py", line 68, in __call__
+    await self.app(scope, receive, sender)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 20, in __call__
+    raise e
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 17, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\routing.py", line 718, in __call__
+    await route.handle(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\routing.py", line 66, in app
+    response = await func(request)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\fastapi\routing.py", line 274, in app
+    raw_response = await run_endpoint_function(
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\fastapi\routing.py", line 191, in run_endpoint_function
+    return await dependant.call(**values)
+  File "C:\Users\TU\Desktop\new project\N1V1\api\app.py", line 283, in get_status
+    "running": bot_engine.state.running,
+  File "C:\Users\TU\Desktop\new project\N1V1\tests\api\test_endpoints.py", line 821, in __getattr__
+    raise RuntimeError("Simulated internal error")
+RuntimeError: Simulated internal error
+ERROR    api.app:app.py:231 Unhandled exception in GET /api/v1/status
+Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\anyio\streams\memory.py", line 98, in receive
+    return self.receive_nowait()
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\anyio\streams\memory.py", line 93, in receive_nowait
+    raise WouldBlock
+anyio.WouldBlock
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 78, in call_next
+    message = await recv_stream.receive()
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\anyio\streams\memory.py", line 118, in receive
+    raise EndOfStream
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\api\middleware.py", line 57, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 108, in __call__
+    response = await self.dispatch_func(request, call_next)
+  File "C:\Users\TU\Desktop\new project\N1V1\api\middleware.py", line 23, in dispatch
+    response = await call_next(request)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 84, in call_next
+    raise app_exc
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 70, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 108, in __call__
+    response = await self.dispatch_func(request, call_next)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\slowapi\middleware.py", line 136, in dispatch
+    response = await call_next(request)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 84, in call_next
+    raise app_exc
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 70, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\cors.py", line 83, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\exceptions.py", line 79, in __call__
+    raise exc
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\exceptions.py", line 68, in __call__
+    await self.app(scope, receive, sender)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 20, in __call__
+    raise e
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 17, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\routing.py", line 718, in __call__
+    await route.handle(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\routing.py", line 66, in app
+    response = await func(request)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\fastapi\routing.py", line 274, in app
+    raw_response = await run_endpoint_function(
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\fastapi\routing.py", line 191, in run_endpoint_function
+    return await dependant.call(**values)
+  File "C:\Users\TU\Desktop\new project\N1V1\api\app.py", line 283, in get_status
+    "running": bot_engine.state.running,
+  File "C:\Users\TU\Desktop\new project\N1V1\tests\api\test_endpoints.py", line 840, in __getattr__
+    raise RuntimeError("Simulated internal error")
+RuntimeError: Simulated internal error
+ERROR    api.app:app.py:231 Unhandled exception in GET /api/v1/status
+Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\anyio\streams\memory.py", line 98, in receive
+    return self.receive_nowait()
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\anyio\streams\memory.py", line 93, in receive_nowait
+    raise WouldBlock
+anyio.WouldBlock
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 78, in call_next
+    message = await recv_stream.receive()
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\anyio\streams\memory.py", line 118, in receive
+    raise EndOfStream
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\api\middleware.py", line 57, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 108, in __call__
+    response = await self.dispatch_func(request, call_next)
+  File "C:\Users\TU\Desktop\new project\N1V1\api\middleware.py", line 23, in dispatch
+    response = await call_next(request)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 84, in call_next
+    raise app_exc
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 70, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 108, in __call__
+    response = await self.dispatch_func(request, call_next)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\slowapi\middleware.py", line 136, in dispatch
+    response = await call_next(request)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 84, in call_next
+    raise app_exc
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 70, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\cors.py", line 83, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\exceptions.py", line 79, in __call__
+    raise exc
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\exceptions.py", line 68, in __call__
+    await self.app(scope, receive, sender)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 20, in __call__
+    raise e
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 17, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\routing.py", line 718, in __call__
+    await route.handle(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\routing.py", line 66, in app
+    response = await func(request)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\fastapi\routing.py", line 274, in app
+    raw_response = await run_endpoint_function(
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\fastapi\routing.py", line 191, in run_endpoint_function
+    return await dependant.call(**values)
+  File "C:\Users\TU\Desktop\new project\N1V1\api\app.py", line 283, in get_status
+    "running": bot_engine.state.running,
+  File "C:\Users\TU\Desktop\new project\N1V1\tests\api\test_endpoints.py", line 871, in __getattr__
+    raise ValueError("Test exception")
+ValueError: Test exception
+WARNING  slowapi:extension.py:510 ratelimit 60 per 1 minute (testclient) exceeded at endpoint: /api/v1/health
+WARNING  slowapi:extension.py:510 ratelimit 60 per 1 minute (testclient) exceeded at endpoint: /api/v1/health
+WARNING  slowapi:extension.py:510 ratelimit 60 per 1 minute (testclient) exceeded at endpoint: /api/v1/health
+WARNING  slowapi:extension.py:510 ratelimit 60 per 1 minute (testclient) exceeded at endpoint: /api/v1/health
+WARNING  slowapi:extension.py:510 ratelimit 60 per 1 minute (testclient) exceeded at endpoint: /api/v1/health
+ERROR    slowapi:extension.py:520 Skipping limit: 60 per 1 minute. Empty value found in parameters.
+ERROR    api.app:app.py:231 Unhandled exception in GET /api/v1/status
+Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\anyio\streams\memory.py", line 98, in receive
+    return self.receive_nowait()
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\anyio\streams\memory.py", line 93, in receive_nowait
+    raise WouldBlock
+anyio.WouldBlock
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 78, in call_next
+    message = await recv_stream.receive()
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\anyio\streams\memory.py", line 118, in receive
+    raise EndOfStream
+anyio.EndOfStream
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\api\middleware.py", line 57, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 108, in __call__
+    response = await self.dispatch_func(request, call_next)
+  File "C:\Users\TU\Desktop\new project\N1V1\api\middleware.py", line 23, in dispatch
+    response = await call_next(request)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 84, in call_next
+    raise app_exc
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 70, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 108, in __call__
+    response = await self.dispatch_func(request, call_next)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\slowapi\middleware.py", line 136, in dispatch
+    response = await call_next(request)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 84, in call_next
+    raise app_exc
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\base.py", line 70, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\cors.py", line 83, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\exceptions.py", line 79, in __call__
+    raise exc
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\middleware\exceptions.py", line 68, in __call__
+    await self.app(scope, receive, sender)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 20, in __call__
+    raise e
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\fastapi\middleware\asyncexitstack.py", line 17, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\routing.py", line 718, in __call__
+    await route.handle(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\starlette\routing.py", line 66, in app
+    response = await func(request)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\fastapi\routing.py", line 274, in app
+    raw_response = await run_endpoint_function(
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\fastapi\routing.py", line 191, in run_endpoint_function
+    return await dependant.call(**values)
+  File "C:\Users\TU\Desktop\new project\N1V1\api\app.py", line 283, in get_status
+    "running": bot_engine.state.running,
+  File "C:\Users\TU\Desktop\new project\N1V1\tests\api\test_endpoints.py", line 1106, in __getattr__
+    raise TestException("Custom test exception")
+test_endpoints.TestGlobalExceptionHandlerEdgeCases.test_global_exception_handler_with_different_exceptions.<locals>.TestException: Custom test exception
+WARNING  backtest.backtester:backtester.py:377 Found 2 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:377 Found 3 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:344 Insufficient data points for return calculation (need at least 2)
+WARNING  backtest.backtester:backtester.py:377 Found 1 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:377 Found 2 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:377 Found 1 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:886 Regime data length mismatch: equity_progression has 2 records, regime_data has 1 records (50.0% difference). Truncating to shorter length (1) for analysis.
+WARNING  backtest.backtester:backtester.py:344 Insufficient data points for return calculation (need at least 2)
+WARNING  backtest.backtester:backtester.py:344 Insufficient data points for return calculation (need at least 2)
+WARNING  backtest.backtester:backtester.py:377 Found 1 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:377 Found 2 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:377 Found 1 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:377 Found 1 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:377 Found 1 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:377 Found 1 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:344 Insufficient data points for return calculation (need at least 2)
+WARNING  backtest.backtester:backtester.py:886 Regime data length mismatch: equity_progression has 2 records, regime_data has 1 records (50.0% difference). Truncating to shorter length (1) for analysis.
+WARNING  backtest.backtester:backtester.py:377 Found 1 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:377 Found 1 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:1338 No equity progression data found in bot engine
+WARNING  backtest.backtester:backtester.py:344 Insufficient data points for return calculation (need at least 2)
+WARNING  backtest.backtester:backtester.py:1162 Failed to compute per-regime metrics: Grouper for 'regime_name' not 1-dimensional
+ERROR    backtest.backtester:backtester.py:742 Failed to export equity progression: Disk full
+WARNING  backtest.backtester:backtester.py:636 Invalid equity value: invalid, skipping record
+WARNING  backtest.backtester:backtester.py:344 Insufficient data points for return calculation (need at least 2)
+WARNING  backtest.backtester:backtester.py:344 Insufficient data points for return calculation (need at least 2)
+ERROR    backtest.backtester:backtester.py:742 Failed to export equity progression: Permission denied
+WARNING  backtest.backtester:backtester.py:377 Found 1 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:377 Found 1 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:377 Found 1 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:377 Found 1 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:377 Found 1 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:377 Found 1 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:896 Regime data length mismatch: equity_progression has 3 records, regime_data has 1 records (66.7% difference). Padding shorter array with unknown regimes.
+WARNING  backtest.backtester:backtester.py:377 Found 1 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:377 Found 1 zero or invalid equity values that may affect return calculations
+WARNING  backtest.backtester:backtester.py:1391 No equity progression data found in bot engine
+WARNING  backtest.backtester:backtester.py:896 Regime data length mismatch: equity_progression has 1 records, regime_data has 2 records (50.0% difference). Padding shorter array with unknown regimes.
+WARNING  backtest.backtester:backtester.py:1148 Failed to compute overall metrics: Record 1: trade_id string must be numeric
+WARNING  backtest.backtester:backtester.py:344 Insufficient data points for return calculation (need at least 2)
+WARNING  backtest.backtester:backtester.py:344 Insufficient data points for return calculation (need at least 2)
+ERROR    cache:logging_utils.py:207 ERROR -  | {"message": "Failed to connect to Redis: Connection failed"}
+ERROR    cache:logging_utils.py:207 ERROR -  | {"message": "Batch OHLCV cache set failed: Pipeline failed"}
+ERROR    cache:logging_utils.py:207 ERROR -  | {"message": "Failed to clear cache: Flush failed"}
+WARNING  cache:logging_utils.py:199 WARNING -  | {"message": "Cache already initialized, skipping re-initialization"}
+ERROR    cache:logging_utils.py:207 ERROR -  | {"message": "Cache invalidation failed for symbol BTC/USDT: Redis error"}
+ERROR    cache:logging_utils.py:207 ERROR -  | {"message": "Failed to connect to Redis: Error 22 connecting to localhost:6379. 22."}
+WARNING  cache:logging_utils.py:199 WARNING -  | {"message": ".2f"}
+WARNING  cache:logging_utils.py:199 WARNING -  | {"message": ".2f"}
+ERROR    cache:logging_utils.py:207 ERROR -  | {"message": ".2f"}
+ERROR    cache:logging_utils.py:207 ERROR -  | {"message": "Failed to evict expired entries: Redis connection error"}
+WARNING  cache:logging_utils.py:199 WARNING -  | {"message": ".2f"}
+CRITICAL risk.adaptive_policy:adaptive_policy.py:1686 Emergency override applied: Market crash detected
+WARNING  risk.adaptive_policy:adaptive_policy.py:1640 Rolled back transition: Test failure
+WARNING  metrics_endpoint:logging_utils.py:199 WARNING -  | {"message": "Authentication enabled but no auth_token provided - metrics endpoint will reject all requests"}
+WARNING  metrics_endpoint:logging_utils.py:199 WARNING -  | {"message": "Authentication enabled but no auth_token provided - metrics endpoint will reject all requests"}
+WARNING  metrics_endpoint:logging_utils.py:199 WARNING -  | {"message": "Authentication enabled but no auth_token provided - metrics endpoint will reject all requests"}
+WARNING  metrics_endpoint:logging_utils.py:199 WARNING -  | {"message": "Authentication enabled but no auth_token provided - metrics endpoint will reject all requests"}
+ERROR    metrics_endpoint:logging_utils.py:223 ERROR -  | {"message": "Request error: Not Found"}
+Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\core\metrics_endpoint.py", line 305, in _request_middleware
+    response = await handler(request)
+  File "C:\Users\TU\Desktop\new project\N1V1\core\metrics_endpoint.py", line 337, in _auth_middleware
+    return await handler(request)
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\aiohttp\web_urldispatcher.py", line 933, in _handle
+    raise self._http_exception
+aiohttp.web_exceptions.HTTPNotFound: Not Found
+WARNING  notifier.discord_bot:discord_bot.py:521 Discord server error 500. Retrying after 0.82s (attempt 1/5) - body: Discord API Error
+WARNING  notifier.discord_bot:discord_bot.py:521 Discord server error 500. Retrying after 1.01s (attempt 2/5) - body: Discord API Error
+WARNING  notifier.discord_bot:discord_bot.py:521 Discord server error 500. Retrying after 2.14s (attempt 3/5) - body: Discord API Error
+WARNING  notifier.discord_bot:discord_bot.py:521 Discord server error 500. Retrying after 4.11s (attempt 4/5) - body: Discord API Error
+WARNING  notifier.discord_bot:discord_bot.py:521 Discord server error 500. Retrying after 8.37s (attempt 5/5) - body: Discord API Error
+ERROR    notifier.discord_bot:discord_bot.py:548 Discord notification failed after maximum retries
+WARNING  notifier.discord_bot:discord_bot.py:507 Discord rate limited (429). Sleeping for 1.00s (attempt 1/5)
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10800' coro=<SignalRouter._cleanup_idempotency_records() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1296>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10801' coro=<SignalRouter._queue_worker() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1318>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10810' coro=<SignalRouter._cleanup_idempotency_records() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1296>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10811' coro=<SignalRouter._queue_worker() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1318>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10812' coro=<SignalRouter._cleanup_idempotency_records() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1296>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10813' coro=<SignalRouter._queue_worker() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1318>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10814' coro=<SignalRouter._cleanup_idempotency_records() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1296>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10815' coro=<SignalRouter._queue_worker() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1318>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10816' coro=<SignalRouter._cleanup_idempotency_records() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1296>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10817' coro=<SignalRouter._queue_worker() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1318>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10818' coro=<SignalRouter._cleanup_idempotency_records() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1296>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10819' coro=<SignalRouter._queue_worker() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1318>>
+ERROR    data.data_fetcher:data_fetcher.py:676 Failed to fetch data for BTC/USDT: __name__
+ERROR    data.data_fetcher:data_fetcher.py:676 Failed to fetch data for BTC/USDT: __name__
+WARNING  data.data_fetcher:data_fetcher.py:655 No data returned for BTC/USDT
+WARNING  data.data_fetcher:data_fetcher.py:554 Malformed OHLCV data for BTC/USDT; returning empty DataFrame
+WARNING  data.data_fetcher:data_fetcher.py:655 No data returned for BTC/USDT
+ERROR    data.data_fetcher:data_fetcher.py:676 Failed to fetch data for BTC/USDT: __name__
+ERROR    data.data_fetcher:data_fetcher.py:676 Failed to fetch data for BTC/USDT: Exchange error
+ERROR    data.data_fetcher:data_fetcher.py:676 Failed to fetch data for BTC/USDT: Network error
+ERROR    data.data_fetcher:data_fetcher.py:718 Error fetching realtime data: Ticker error
+WARNING  data.data_fetcher:data_fetcher.py:801 Invalid rate_limit in config (invalid); defaulting to 10 req/s
+WARNING  data.data_fetcher:data_fetcher.py:807 Configured rate_limit <= 0; falling back to 1 req/s to avoid division by zero
+ERROR    data.data_fetcher:data_fetcher.py:676 Failed to fetch data for ETH/USDT: 
+WARNING  data.data_fetcher:data_fetcher.py:1134 No data returned for ETH/USDT
+ERROR    data.data_fetcher:data_fetcher.py:676 Failed to fetch data for BTC/USDT: Unexpected error
+ERROR    data.data_fetcher:data_fetcher.py:718 Error fetching realtime data: Ticker failed
+ERROR    data.data_fetcher:data_fetcher.py:924 Path traversal detected in cache directory: /invalid/path
+ERROR    data.data_fetcher:data_fetcher.py:676 Failed to fetch data for BTC/USDT: __name__
+ERROR    data.data_fetcher:data_fetcher.py:676 Failed to fetch data for BTC/USDT: __name__
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: data\versions\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: data\versions\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: data\versions\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: data\versions\version_metadata.json. Initializing with default metadata.
+WARNING  data.historical_loader:historical_loader.py:1009 Found 1 missing values in open for BTC/USDT
+ERROR    data.historical_loader:historical_loader.py:1015 Reject strategy: Found 1 missing values in BTC/USDT data. Data contains gaps.
+WARNING  data.historical_loader:historical_loader.py:850 Unknown gap handling strategy 'unknown_strategy' for BTC/USDT, defaulting to forward_fill
+WARNING  data.historical_loader:historical_loader.py:408 Detected potential infinite loop for BTC/USDT: current_start unchanged for 4 iterations. Breaking loop.
+WARNING  data.data_fetcher:data_fetcher.py:437 Malformed OHLCV data returned for BTC/USDT; returning empty DataFrame
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: data\versions\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:448 No backup metadata file found: data\versions\version_metadata.bak
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: data\versions\version_metadata.json. Initializing with default metadata.
+ERROR    data.dataset_versioning:dataset_versioning.py:425 Corrupted metadata file detected: data\versions\version_metadata.json. Error: Expecting property name enclosed in double quotes: line 1 column 3 (char 2)
+WARNING  data.dataset_versioning:dataset_versioning.py:448 No backup metadata file found: data\versions\version_metadata.bak
+ERROR    data.dataset_versioning:dataset_versioning.py:431 Metadata corruption unrecoverable: data\versions\version_metadata.json. Error: Expecting property name enclosed in double quotes: line 1 column 3 (char 2)
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: data\versions\version_metadata.json. Initializing with default metadata.
+ERROR    data.dataset_versioning:dataset_versioning.py:425 Corrupted metadata file detected: data\versions\version_metadata.json. Error: Expecting property name enclosed in double quotes: line 1 column 3 (char 2)
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: data\versions\version_metadata.json. Initializing with default metadata.
+ERROR    data.dataset_versioning:dataset_versioning.py:425 Corrupted metadata file detected: data\versions\version_metadata.json. Error: Expecting property name enclosed in double quotes: line 1 column 3 (char 2)
+ERROR    data.dataset_versioning:dataset_versioning.py:459 Failed to recover from backup data\versions\version_metadata.bak: Expecting property name enclosed in double quotes: line 1 column 3 (char 2)
+ERROR    data.dataset_versioning:dataset_versioning.py:431 Metadata corruption unrecoverable: data\versions\version_metadata.json. Error: Expecting property name enclosed in double quotes: line 1 column 3 (char 2)
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: data\versions\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: data\versions\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: data\versions\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: data\versions\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: data\versions\version_metadata.json. Initializing with default metadata.
+ERROR    data.historical_loader:historical_loader.py:531 Invalid symbol: 
+ERROR    data.historical_loader:historical_loader.py:544 Invalid timeframe: invalid. Supported: ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w']
+ERROR    data.historical_loader:historical_loader.py:554 Start date must be before end date: 2023-01-02 >= 2023-01-01
+WARNING  data.historical_loader:historical_loader.py:661 No data retrieved for BTC/USDT
+WARNING  data.historical_loader:historical_loader.py:408 Detected potential infinite loop for BTC/USDT: current_start unchanged for 4 iterations. Breaking loop.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: test_versions\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: test_versions\version_metadata.json. Initializing with default metadata.
+ERROR    data.dataset_versioning:dataset_versioning.py:498 Path traversal detected in version name: ../../../invalid_version
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: test_versions\version_metadata.json. Initializing with default metadata.
+ERROR    data.data_fetcher:data_fetcher.py:924 Path traversal detected in cache directory: ../../../etc/passwd
+ERROR    data.historical_loader:historical_loader.py:102 Path separators not allowed in data_dir: invalid/directory
+ERROR    data.historical_loader:historical_loader.py:96 Path traversal detected in data_dir: ../../../etc
+ERROR    data.data_fetcher:data_fetcher.py:924 Path traversal detected in cache directory: ../../../etc/passwd
+ERROR    data.data_fetcher:data_fetcher.py:924 Path traversal detected in cache directory: /etc/passwd
+ERROR    data.data_fetcher:data_fetcher.py:924 Path traversal detected in cache directory: ..\..\etc\passwd
+ERROR    data.data_fetcher:data_fetcher.py:924 Path traversal detected in cache directory: cache/../../../etc/passwd
+ERROR    data.dataset_versioning:dataset_versioning.py:281 DataFrame validation failed: DataFrame is None or empty
+ERROR    data.dataset_versioning:dataset_versioning.py:281 DataFrame validation failed: DataFrame is None or empty
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmpwv2nsst5\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmpqhxz2dax\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmp98jgnmjw\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmpru0pwzv3\version_metadata.json. Initializing with default metadata.
+ERROR    data.dataset_versioning:dataset_versioning.py:982 Legacy dataset migration failed: DataFrame must have a 'timestamp' column or DatetimeIndex, duration=0.00s
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmpeq0mwk5f\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmp98ppy6td\version_metadata.json. Initializing with default metadata.
+ERROR    data.dataset_versioning:dataset_versioning.py:498 Path traversal detected in version name: ../../etc/passwd
+ERROR    data.dataset_versioning:dataset_versioning.py:498 Path traversal detected in version name: ../../../hack
+ERROR    data.dataset_versioning:dataset_versioning.py:498 Path traversal detected in version name: version/../escape
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmp4ui5vj26\version_metadata.json. Initializing with default metadata.
+ERROR    data.dataset_versioning:dataset_versioning.py:502 Path separators not allowed in version name: version/hack
+ERROR    data.dataset_versioning:dataset_versioning.py:502 Path separators not allowed in version name: version\hack
+ERROR    data.dataset_versioning:dataset_versioning.py:502 Path separators not allowed in version name: path/to/file
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmpvzg0rult\version_metadata.json. Initializing with default metadata.
+ERROR    data.dataset_versioning:dataset_versioning.py:493 Absolute path detected in version name: /etc/passwd
+ERROR    data.dataset_versioning:dataset_versioning.py:493 Absolute path detected in version name: \Windows\System32
+ERROR    data.dataset_versioning:dataset_versioning.py:493 Absolute path detected in version name: C:\Windows\System32
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmp66iyxct7\version_metadata.json. Initializing with default metadata.
+ERROR    data.dataset_versioning:dataset_versioning.py:509 Invalid characters in version name: version@hack
+ERROR    data.dataset_versioning:dataset_versioning.py:509 Invalid characters in version name: version hack
+ERROR    data.dataset_versioning:dataset_versioning.py:509 Invalid characters in version name: version.hack
+ERROR    data.dataset_versioning:dataset_versioning.py:509 Invalid characters in version name: version:hack
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmpic0cqita\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmplt46m_vd\version_metadata.json. Initializing with default metadata.
+ERROR    data.dataset_versioning:dataset_versioning.py:514 Version name too long: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmp_kdc0liy\version_metadata.json. Initializing with default metadata.
+ERROR    data.dataset_versioning:dataset_versioning.py:498 Path traversal detected in version name: ../../etc/passwd
+ERROR    data.dataset_versioning:dataset_versioning.py:498 Path traversal detected in version name: ../../../hack
+ERROR    data.dataset_versioning:dataset_versioning.py:498 Path traversal detected in version name: version/../escape
+ERROR    data.dataset_versioning:dataset_versioning.py:493 Absolute path detected in version name: /absolute/path
+ERROR    data.dataset_versioning:dataset_versioning.py:493 Absolute path detected in version name: C:\Windows\System32
+ERROR    data.dataset_versioning:dataset_versioning.py:509 Invalid characters in version name: version@hack
+ERROR    data.dataset_versioning:dataset_versioning.py:509 Invalid characters in version name: version hack
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmpdiee3ocf\version_metadata.json. Initializing with default metadata.
+ERROR    data.historical_loader:historical_loader.py:96 Path traversal detected in data_dir: ../../etc/passwd
+ERROR    data.historical_loader:historical_loader.py:96 Path traversal detected in data_dir: ../../../hack
+ERROR    data.historical_loader:historical_loader.py:96 Path traversal detected in data_dir: data/../escape
+ERROR    data.historical_loader:historical_loader.py:102 Path separators not allowed in data_dir: data/hack
+ERROR    data.historical_loader:historical_loader.py:102 Path separators not allowed in data_dir: data\hack
+ERROR    data.historical_loader:historical_loader.py:102 Path separators not allowed in data_dir: path/to/file
+ERROR    data.historical_loader:historical_loader.py:90 Absolute path detected: /etc/passwd
+ERROR    data.historical_loader:historical_loader.py:90 Absolute path detected: \Windows\System32
+ERROR    data.historical_loader:historical_loader.py:90 Absolute path detected: C:\Windows\System32
+ERROR    data.historical_loader:historical_loader.py:109 Invalid characters in data_dir: data@hack
+ERROR    data.historical_loader:historical_loader.py:109 Invalid characters in data_dir: data hack
+ERROR    data.historical_loader:historical_loader.py:109 Invalid characters in data_dir: data.hack
+ERROR    data.historical_loader:historical_loader.py:109 Invalid characters in data_dir: data:hack
+ERROR    data.historical_loader:historical_loader.py:114 data_dir too long: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ERROR    data.historical_loader:historical_loader.py:96 Path traversal detected in data_dir: ../../etc/passwd
+ERROR    data.historical_loader:historical_loader.py:146 Data directory setup failed: Path traversal detected in data_dir: ../../etc/passwd
+ERROR    data.historical_loader:historical_loader.py:96 Path traversal detected in data_dir: ../../../hack
+ERROR    data.historical_loader:historical_loader.py:146 Data directory setup failed: Path traversal detected in data_dir: ../../../hack
+ERROR    data.historical_loader:historical_loader.py:96 Path traversal detected in data_dir: data/../escape
+ERROR    data.historical_loader:historical_loader.py:146 Data directory setup failed: Path traversal detected in data_dir: data/../escape
+ERROR    data.historical_loader:historical_loader.py:109 Invalid characters in data_dir: data@hack
+ERROR    data.historical_loader:historical_loader.py:146 Data directory setup failed: Invalid characters in data_dir
+ERROR    data.historical_loader:historical_loader.py:109 Invalid characters in data_dir: data hack
+ERROR    data.historical_loader:historical_loader.py:146 Data directory setup failed: Invalid characters in data_dir
+ERROR    data.historical_loader:historical_loader.py:146 Data directory setup failed: data_dir must be a non-empty string
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmp986fppqw\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmpbjuwjgai\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmpvi4zam6w\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmputqz8a3i\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmpumquvbne\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmpyzbf60rc\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmpo9ai6jnk\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmpy9sjhdu3\version_metadata.json. Initializing with default metadata.
+WARNING  data.dataset_versioning:dataset_versioning.py:407 Metadata file not found: C:\Users\TU\AppData\Local\Temp\tmplqwcrvnc\version_metadata.json. Initializing with default metadata.
+WARNING  data.historical_loader:historical_loader.py:504 Reached maximum iteration limit (1000) for BTC/USDT historical data fetching
+WARNING  data.historical_loader:historical_loader.py:250 Failed to cache data for BTC/USDT: Cannot save file into a non-existent directory: 'C:\Users\TU\AppData\Local\Temp\tmphay2p0d1'
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10823' coro=<SignalRouter._cleanup_idempotency_records() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1296>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10824' coro=<SignalRouter._queue_worker() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1318>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10825' coro=<SignalRouter._cleanup_idempotency_records() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1296>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10826' coro=<SignalRouter._queue_worker() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1318>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10827' coro=<SignalRouter._cleanup_idempotency_records() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1296>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10828' coro=<SignalRouter._queue_worker() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1318>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10829' coro=<SignalRouter._cleanup_idempotency_records() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1296>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10830' coro=<SignalRouter._queue_worker() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1318>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10836' coro=<SignalRouter._cleanup_idempotency_records() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1296>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10837' coro=<SignalRouter._queue_worker() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1318>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10838' coro=<SignalRouter._cleanup_idempotency_records() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1296>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10839' coro=<SignalRouter._queue_worker() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1318>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10842' coro=<SignalRouter._cleanup_idempotency_records() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1296>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10843' coro=<SignalRouter._queue_worker() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1318>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10844' coro=<SignalRouter._queue_worker() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1318>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10840' coro=<SignalRouter._cleanup_idempotency_records() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1296>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10841' coro=<SignalRouter._queue_worker() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1318>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10957' coro=<SignalRouter._cleanup_idempotency_records() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1296>>
+ERROR    asyncio:base_events.py:1758 Task was destroyed but it is pending!
+task: <Task pending name='Task-10958' coro=<SignalRouter._queue_worker() running at C:\Users\TU\Desktop\new project\N1V1\core\signal_router\router.py:1318>>
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1131 Skipping corrupted chunk at index 100
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1149 Memory threshold exceeded, triggering cleanup
+WARNING  data.historical_loader:historical_loader.py:1379 Failed to cache chunked data for BTC/USDT: Cannot save file into a non-existent directory: 'C:\Users\TU\AppData\Local\Temp\tmpckw4ksov'
+WARNING  ml.indicators:indicators.py:58 Insufficient data for RSI calculation: 4 < 14
+WARNING  ml.indicators:indicators.py:92 Insufficient data for EMA calculation: 4 < 20
+WARNING  ml.indicators:indicators.py:123 Insufficient data for MACD calculation: 4 < 26
+WARNING  ml.indicators:indicators.py:157 Insufficient data for Bollinger Bands calculation: 4 < 20
+WARNING  ml.indicators:indicators.py:188 Insufficient data for ATR calculation: 4 < 14
+WARNING  ml.indicators:indicators.py:218 Insufficient data for ADX calculation: 4 < 28
+WARNING  ml.features:features.py:338 DataFrame became empty after dropna, filling with zeros
+ERROR    data.data_fetcher:data_fetcher.py:676 Failed to fetch data for BTC/USDT: API Unavailable
+ERROR    data.data_fetcher:data_fetcher.py:718 Error fetching realtime data: Circuit is open for AsyncMock, aborting retry
+ERROR    data.data_fetcher:data_fetcher.py:672 Permanent error fetching data for INVALID/USDT: Invalid symbol
+ERROR    ml.serving:serving.py:89 Failed to load model nonexistent_model: Model file not found: models\nonexistent_model.pkl
+ERROR    ml.serving:serving.py:138 Prediction failed for nonexistent_model, correlation_id: 9c725745-784f-47ba-b7e8-bd7ace935277: 
+ERROR    ml.serving:serving.py:89 Failed to load model failing_model: Model loading failed
+ERROR    ml.serving:serving.py:138 Prediction failed for failing_model, correlation_id: a693dea1-cba7-4b81-9fb2-e08ebf5512e1: 
+ERROR    root:schema.py:442 Validation failed for entry '': Entry ID cannot be empty; Confidence score 1.5 must be between 0 and 1; Sample size 0 must be at least 1
+WARNING  knowledge_base.storage:storage.py:492 Knowledge base file does not exist: C:\Users\TU\AppData\Local\Temp\tmpkkp6xadt\knowledge.json
+WARNING  knowledge_base.storage:storage.py:535 Knowledge base file does not exist: C:\Users\TU\AppData\Local\Temp\tmpj1bjddz9\knowledge.json
+ERROR    knowledge_base.adaptive:adaptive.py:927 Invalid data or missing key when updating knowledge from trade for strategy TestStrategy: Storage error
+WARNING  ml.indicators:indicators.py:58 Insufficient data for RSI calculation: 3 < 14
+WARNING  ml.indicators:indicators.py:92 Insufficient data for EMA calculation: 3 < 10
+WARNING  ml.indicators:indicators.py:123 Insufficient data for MACD calculation: 3 < 26
+WARNING  ml.indicators:indicators.py:157 Insufficient data for Bollinger Bands calculation: 3 < 20
+WARNING  ml.indicators:indicators.py:218 Insufficient data for ADX calculation: 3 < 28
+WARNING  ml.indicators:indicators.py:58 Insufficient data for RSI calculation: 2 < 14
+WARNING  ml.indicators:indicators.py:92 Insufficient data for EMA calculation: 2 < 20
+WARNING  ml.indicators:indicators.py:123 Insufficient data for MACD calculation: 2 < 26
+WARNING  ml.indicators:indicators.py:157 Insufficient data for Bollinger Bands calculation: 2 < 20
+WARNING  ml.indicators:indicators.py:188 Insufficient data for ATR calculation: 2 < 14
+WARNING  ml.indicators:indicators.py:218 Insufficient data for ADX calculation: 2 < 28
+ERROR    ml.train:train.py:463 Failed to load historical data: Unsupported file format: test.invalid
+WARNING  ml.features:features.py:174 Insufficient data rows: 4 < 50
+WARNING  ml.indicators:indicators.py:58 Insufficient data for RSI calculation: 5 < 14
+WARNING  ml.features:features.py:338 DataFrame became empty after dropna, filling with zeros
+ERROR    ml.features:features.py:410 Error scaling features: Found array with 0 sample(s) (shape=(0, 63)) while a minimum of 1 is required by StandardScaler.
+WARNING  ml.features:features.py:165 Input data is empty, returning empty feature DataFrame
+WARNING  ml.features:features.py:174 Insufficient data rows: 10 < 50
+WARNING  ml.features:features.py:338 DataFrame became empty after dropna, filling with zeros
+ERROR    ml.features:features.py:410 Error scaling features: Found array with 0 sample(s) (shape=(0, 63)) while a minimum of 1 is required by StandardScaler.
+WARNING  ml.features:features.py:338 DataFrame became empty after dropna, filling with zeros
+ERROR    ml.features:features.py:410 Error scaling features: Found array with 0 sample(s) (shape=(0, 63)) while a minimum of 1 is required by StandardScaler.
+ERROR    ml.model_loader:model_loader.py:47 Failed to load model from /path/to/model.pkl: Joblib error
+ERROR    ml.model_loader:model_loader.py:76 Failed to load model card at C:\path\to\model.model_card.json
+Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\ml\model_loader.py", line 73, in load_model_with_card
+    model_card = json.load(fh)
+  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\json\__init__.py", line 293, in load
+    return loads(fp.read(),
+  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\json\__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\json\decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+  File "C:\Users\TU\AppData\Local\Programs\Python\Python310\lib\json\decoder.py", line 355, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+ERROR    ml.model_loader:model_loader.py:229 model.predict failed: Model prediction failed
+WARNING  ml.model_monitor:model_monitor.py:676 ALERT: TEST_ALERT - Test alert message
+WARNING  ml.model_monitor:model_monitor.py:676 ALERT: PERFORMANCE_DEGRADED - Model performance score: 0.500
+WARNING  ml.model_monitor:model_monitor.py:676 ALERT: RETRAINING_REQUIRED - Model requires recalibration based on health assessment
+WARNING  ml.model_monitor:model_monitor.py:167 Model file not found: /path/to/model.pkl
+WARNING  predictive_models.price_predictor:price_predictor.py:258 Model files not found: models/price_lightgbm.pkl
+WARNING  predictive_models.volatility_predictor:volatility_predictor.py:317 Model file not found: models/volatility_garch.pkl
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+ERROR    ml.serving:serving.py:138 Prediction failed for test_model, correlation_id: test-123: Model not found
+ERROR    ml.serving:serving.py:89 Failed to load model invalid_model: Load failed
+ERROR    ml.serving:serving.py:138 Prediction failed for test_model, correlation_id: test-123: Model error
+ERROR    ml.serving:serving.py:138 Prediction failed for test_model, correlation_id: test-123: Prediction timeout
+ERROR    ml.train:train.py:463 Failed to load historical data: Missing required columns: ['close']
+ERROR    ml.train:train.py:463 Failed to load historical data: Unsupported file format: test.txt
+ERROR    ml.train:train.py:463 Failed to load historical data: 
+WARNING  ml.train:train.py:505 Column 'open' had 1 invalid values coerced to NaN (original dtype: float64)
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+WARNING  ml.train:train.py:1244 Failed to log to MLflow: local variable 'final_metrics' referenced before assignment
+ERROR    ml.train:train.py:1301 Training failed: [WinError 123] The filename, directory name, or volume label syntax is incorrect: "experiments\\train_<MagicMock name='parse_args().symbol' id='1383062409600'>_20251009_170632"
+WARNING  ml.train:train.py:127 TensorFlow not available: Traceback (most recent call last):
+  File "C:\Users\TU\Desktop\new project\N1V1\venv\lib\site-packages\tensorflow\python\pywrap_tensorflow.py", line 73, in <module>
+    from tensorflow.python._pywrap_tensorflow_internal import *
+ImportError: DLL load failed while importing _pywrap_tensorflow_internal: A dynamic link library (DLL) initialization routine failed.
+
+
+Failed to load the native TensorFlow runtime.
+See https://www.tensorflow.org/install/errors for some common causes and solutions.
+If you need help, create an issue at https://github.com/tensorflow/tensorflow/issues and include the entire stack trace above this error message.
+WARNING  ml.model_loader:model_loader.py:327 Failed to load model test_model from MLflow registry: 'NoneType' object has no attribute 'sklearn'
+WARNING  ml.model_loader:model_loader.py:327 Failed to load model test_model from MLflow registry: 'NoneType' object has no attribute 'sklearn'
+ERROR    ml.trainer:trainer.py:302 File access error loading data from non_existent_file.csv: [Errno 2] No such file or directory: 'non_existent_file.csv'
+ERROR    ml.trainer:trainer.py:311 Unexpected error loading data from test.csv: Read error
