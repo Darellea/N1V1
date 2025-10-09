@@ -5,29 +5,29 @@ Handles loading and preprocessing of historical market data for backtesting.
 Includes data validation, cleaning, resampling, and technical indicator support.
 """
 
-import os
-import logging
+import asyncio
 import hashlib
+import logging
+import os
 import re
 import time
-from typing import Dict, List, Optional, Tuple
-import asyncio
 from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 
-from data.interfaces import IDataFetcher
 from data.constants import (
     CACHE_TTL,
-    MAX_RETRIES,
-    RETRY_DELAY,
-    MAX_PAGINATION_ITERATIONS,
-    MEMORY_EFFICIENT_THRESHOLD,
     DEFAULT_GAP_HANDLING_STRATEGY,
     HISTORICAL_DATA_BASE_DIR,
+    MAX_PAGINATION_ITERATIONS,
+    MAX_RETRIES,
+    MEMORY_EFFICIENT_THRESHOLD,
+    RETRY_DELAY,
 )
+from data.interfaces import IDataFetcher
 from utils.config_loader import ConfigLoader
 
 logger = logging.getLogger(__name__)
@@ -1100,6 +1100,7 @@ class HistoricalDataLoader:
         if memory_manager is None:
             try:
                 from core.memory_manager import get_memory_manager
+
                 memory_manager = get_memory_manager()
             except ImportError:
                 memory_manager = None
@@ -1107,21 +1108,23 @@ class HistoricalDataLoader:
         # Calculate chunk size based on memory limits
         if max_memory_mb is not None:
             estimated_chunk_memory = self._estimate_dataframe_memory(data.head(100))
-            dynamic_chunk_size = max(1, int(max_memory_mb / estimated_chunk_memory * 100))
+            dynamic_chunk_size = max(
+                1, int(max_memory_mb / estimated_chunk_memory * 100)
+            )
             chunk_size = min(chunk_size, dynamic_chunk_size)
 
         # Handle resume
         start_index = 0
         processed_chunks = 0
         if resume_from:
-            start_index = resume_from.get('last_index', 0)
-            processed_chunks = resume_from.get('processed_chunks', 0)
+            start_index = resume_from.get("last_index", 0)
+            processed_chunks = resume_from.get("processed_chunks", 0)
 
         total_chunks = (len(data) - start_index + chunk_size - 1) // chunk_size
         total_processed = processed_chunks
 
         for i in range(start_index, len(data), chunk_size):
-            chunk = data.iloc[i:i + chunk_size].copy()
+            chunk = data.iloc[i : i + chunk_size].copy()
 
             # Handle corrupted chunks
             if handle_corruption and self._is_chunk_corrupted(chunk):
@@ -1131,21 +1134,27 @@ class HistoricalDataLoader:
             # Memory monitoring
             if memory_monitor:
                 memory_info = memory_monitor()
-                if memory_info and memory_info.get('memory_mb', 0) > self.config.get('max_memory_mb', 500):
+                if memory_info and memory_info.get("memory_mb", 0) > self.config.get(
+                    "max_memory_mb", 500
+                ):
                     logger.warning("Memory threshold exceeded, triggering cleanup")
                     if memory_manager:
                         memory_manager.trigger_cleanup()
             elif memory_manager:
                 # Use memory manager for monitoring if no custom monitor provided
                 memory_stats = memory_manager.get_memory_stats()
-                if memory_stats.get('current_memory_mb', 0) > self.config.get('max_memory_mb', 500):
+                if memory_stats.get("current_memory_mb", 0) > self.config.get(
+                    "max_memory_mb", 500
+                ):
                     logger.warning("Memory threshold exceeded, triggering cleanup")
                     memory_manager.trigger_cleanup()
 
             # Progress tracking
             total_processed += 1
             if progress_callback:
-                progress = int((total_processed / (total_chunks + processed_chunks)) * 100)
+                progress = int(
+                    (total_processed / (total_chunks + processed_chunks)) * 100
+                )
                 progress_callback(progress)
 
             yield chunk
@@ -1184,6 +1193,7 @@ class HistoricalDataLoader:
         if memory_manager is None:
             try:
                 from core.memory_manager import get_memory_manager
+
                 memory_manager = get_memory_manager()
             except ImportError:
                 memory_manager = None
@@ -1191,21 +1201,23 @@ class HistoricalDataLoader:
         # Calculate chunk size based on memory limits
         if max_memory_mb is not None:
             estimated_chunk_memory = self._estimate_dataframe_memory(data.head(100))
-            dynamic_chunk_size = max(1, int(max_memory_mb / estimated_chunk_memory * 100))
+            dynamic_chunk_size = max(
+                1, int(max_memory_mb / estimated_chunk_memory * 100)
+            )
             chunk_size = min(chunk_size, dynamic_chunk_size)
 
         # Handle resume
         start_index = 0
         processed_chunks = 0
         if resume_from:
-            start_index = resume_from.get('last_index', 0)
-            processed_chunks = resume_from.get('processed_chunks', 0)
+            start_index = resume_from.get("last_index", 0)
+            processed_chunks = resume_from.get("processed_chunks", 0)
 
         total_chunks = (len(data) - start_index + chunk_size - 1) // chunk_size
         total_processed = processed_chunks
 
         for i in range(start_index, len(data), chunk_size):
-            chunk = data.iloc[i:i + chunk_size].copy()
+            chunk = data.iloc[i : i + chunk_size].copy()
 
             # Handle corrupted chunks
             if handle_corruption and self._is_chunk_corrupted(chunk):
@@ -1215,7 +1227,9 @@ class HistoricalDataLoader:
             # Memory monitoring
             if memory_monitor:
                 memory_info = await memory_monitor()
-                if memory_info and memory_info.get('memory_mb', 0) > self.config.get('max_memory_mb', 500):
+                if memory_info and memory_info.get("memory_mb", 0) > self.config.get(
+                    "max_memory_mb", 500
+                ):
                     logger.warning("Memory threshold exceeded, triggering cleanup")
                     if memory_manager:
                         memory_manager.trigger_cleanup()
@@ -1223,7 +1237,9 @@ class HistoricalDataLoader:
             # Progress tracking
             total_processed += 1
             if progress_callback:
-                progress = int((total_processed / (total_chunks + processed_chunks)) * 100)
+                progress = int(
+                    (total_processed / (total_chunks + processed_chunks)) * 100
+                )
                 progress_callback(progress)
 
             yield chunk
@@ -1339,7 +1355,9 @@ class HistoricalDataLoader:
                             combined = pd.concat(all_chunks, copy=False)
                             combined.sort_index(inplace=True)
                             if self.deduplicate:
-                                combined = combined[~combined.index.duplicated(keep="first")]
+                                combined = combined[
+                                    ~combined.index.duplicated(keep="first")
+                                ]
                             all_chunks = [combined]
 
             # Final combination
@@ -1358,7 +1376,9 @@ class HistoricalDataLoader:
                     final_df.to_parquet(cache_path)
                     logger.debug(f"Saved chunked historical data for {symbol} to cache")
                 except Exception as e:
-                    logger.warning(f"Failed to cache chunked data for {symbol}: {str(e)}")
+                    logger.warning(
+                        f"Failed to cache chunked data for {symbol}: {str(e)}"
+                    )
 
                 logger.info(f"Processed {chunks_processed} chunks for {symbol}")
                 return final_df
@@ -1397,9 +1417,7 @@ class HistoricalDataLoader:
 
         accumulated_data = []
 
-        while (
-            current_start <= end and iteration_count < max_iterations
-        ):
+        while current_start <= end and iteration_count < max_iterations:
             try:
                 # Fetch a batch of data
                 df = await self.data_fetcher.get_historical_data(
@@ -1430,7 +1448,9 @@ class HistoricalDataLoader:
                                 # Split the chunk
                                 split_chunk = current_chunk.iloc[:remaining_needed]
                                 chunk_data.append(split_chunk)
-                                accumulated_data[0] = current_chunk.iloc[remaining_needed:]
+                                accumulated_data[0] = current_chunk.iloc[
+                                    remaining_needed:
+                                ]
                                 remaining_needed = 0
 
                         if chunk_data:
@@ -1458,7 +1478,7 @@ class HistoricalDataLoader:
 
             # Yield remaining data in chunks
             for i in range(0, len(remaining), chunk_size):
-                chunk = remaining.iloc[i:i + chunk_size]
+                chunk = remaining.iloc[i : i + chunk_size]
                 if not chunk.empty:
                     yield chunk
 
@@ -1506,7 +1526,9 @@ class HistoricalDataLoader:
                         if not resampled_chunk.empty:
                             resampled_chunks.append(resampled_chunk)
                     except Exception as e:
-                        logger.warning(f"Failed to resample chunk for {symbol}: {str(e)}")
+                        logger.warning(
+                            f"Failed to resample chunk for {symbol}: {str(e)}"
+                        )
 
                 if resampled_chunks:
                     # Combine resampled chunks
@@ -1514,10 +1536,14 @@ class HistoricalDataLoader:
                     final_resampled.sort_index(inplace=True)
 
                     # Remove duplicates that may occur at chunk boundaries
-                    final_resampled = final_resampled[~final_resampled.index.duplicated(keep="last")]
+                    final_resampled = final_resampled[
+                        ~final_resampled.index.duplicated(keep="last")
+                    ]
 
                     resampled[symbol] = final_resampled
-                    logger.info(f"Successfully resampled {symbol} with {len(resampled_chunks)} chunks")
+                    logger.info(
+                        f"Successfully resampled {symbol} with {len(resampled_chunks)} chunks"
+                    )
 
             except Exception as e:
                 logger.error(f"Failed to resample {symbol}: {str(e)}")

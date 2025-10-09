@@ -14,6 +14,9 @@ try:
 except ImportError:
     aiohttp = None
 
+from api.models import validate_market_data, validate_ticker_data
+
+from .exceptions import SchemaValidationError
 from .interfaces import DataManagerInterface
 from .logging_utils import LogSensitivity, get_structured_logger
 from .utils.error_utils import (
@@ -23,8 +26,6 @@ from .utils.error_utils import (
     ErrorHandler,
     ErrorSeverity,
 )
-from .exceptions import SchemaValidationError
-from api.models import validate_ticker_data, validate_market_data
 
 logger = get_structured_logger("core.data_manager", LogSensitivity.SECURE)
 error_handler = ErrorHandler("data_manager")

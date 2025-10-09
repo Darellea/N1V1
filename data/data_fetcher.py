@@ -6,37 +6,41 @@ error handling, and caching. Supports both real-time and historical data.
 """
 
 import asyncio
-import inspect
-import logging
-from typing import Dict, List, Optional, Union
-import time
-import random
-from datetime import datetime, timedelta
 import hashlib
-import os
+import inspect
 import json
+import logging
+import os
+import random
 import re
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Dict, List, Optional, Union
 
+import aiofiles
 import ccxt.async_support as ccxt
-import pandas as pd
 import numpy as np
+import pandas as pd
 from aiohttp import ClientSession
 from aiohttp.client_exceptions import ClientError
-import aiofiles
 
-from utils.logger import setup_logging
-from utils.config_loader import ConfigLoader
-from data.interfaces import IDataFetcher
+from core.api_protection import (
+    APICircuitBreaker,
+    CircuitBreakerConfig,
+    get_default_circuit_breaker,
+)
+from core.retry import RetryConfig, retry_call, update_global_retry_config
 from data.constants import (
+    CACHE_BASE_DIR,
     CACHE_TTL,
+    DEFAULT_RATE_LIMIT,
     MAX_RETRIES,
     RETRY_DELAY,
-    DEFAULT_RATE_LIMIT,
-    CACHE_BASE_DIR,
 )
-from core.retry import retry_call, RetryConfig, update_global_retry_config
-from core.api_protection import APICircuitBreaker, CircuitBreakerConfig, get_default_circuit_breaker
+from data.interfaces import IDataFetcher
+from utils.config_loader import ConfigLoader
+from utils.logger import setup_logging
 
 
 class PathTraversalError(Exception):
@@ -468,11 +472,11 @@ class DataFetcher(IDataFetcher):
         try:
             df = pd.DataFrame(
                 valid_candles,
-                columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
+                columns=["timestamp", "open", "high", "low", "close", "volume"],
             )
 
             # Convert timestamp from milliseconds to datetime
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
             return df
 
@@ -547,16 +551,18 @@ class DataFetcher(IDataFetcher):
 
         # Check if all rows have exactly 6 elements
         if not all(len(row) == 6 for row in ohlcv_data):
-            logger.warning(f"Malformed OHLCV data for {symbol}; returning empty DataFrame")
+            logger.warning(
+                f"Malformed OHLCV data for {symbol}; returning empty DataFrame"
+            )
             return pd.DataFrame()
 
         try:
             df = pd.DataFrame(
                 ohlcv_data,
-                columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
+                columns=["timestamp", "open", "high", "low", "close", "volume"],
             )
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            df.set_index('timestamp', inplace=True)
+            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+            df.set_index("timestamp", inplace=True)
             return df
         except Exception as e:
             logger.error(f"Failed to create DataFrame for {symbol}: {e}")
@@ -591,10 +597,12 @@ class DataFetcher(IDataFetcher):
             getattr(self.exchange, method_name),
             *args,
             circuit_breaker=self.circuit_breaker,
-            max_attempts=endpoint_config.get("max_attempts", self.retry_config.max_attempts),
+            max_attempts=endpoint_config.get(
+                "max_attempts", self.retry_config.max_attempts
+            ),
             base_delay=endpoint_config.get("base_delay", self.retry_config.base_delay),
             jitter=endpoint_config.get("jitter", self.retry_config.jitter),
-            **kwargs
+            **kwargs,
         )
 
     async def _throttle(self):
@@ -633,8 +641,12 @@ class DataFetcher(IDataFetcher):
                 since=since,
                 limit=limit,
                 circuit_breaker=self.circuit_breaker,
-                max_attempts=endpoint_config.get("max_attempts", self.retry_config.max_attempts),
-                base_delay=endpoint_config.get("base_delay", self.retry_config.base_delay),
+                max_attempts=endpoint_config.get(
+                    "max_attempts", self.retry_config.max_attempts
+                ),
+                base_delay=endpoint_config.get(
+                    "base_delay", self.retry_config.base_delay
+                ),
                 jitter=endpoint_config.get("jitter", self.retry_config.jitter),
             )
 
@@ -651,6 +663,7 @@ class DataFetcher(IDataFetcher):
         except Exception as e:
             # Check if this is a circuit breaker open error - should be re-raised
             from core.api_protection import CircuitOpenError
+
             if isinstance(e, CircuitOpenError):
                 raise
 
@@ -746,11 +759,15 @@ class DataFetcher(IDataFetcher):
     async def _fetch_orderbook(self, symbol: str, depth: int = 5) -> Dict:
         """Fetch order book data for a single symbol."""
         try:
-            orderbook = await self._fetch_with_retry("fetch_order_book", symbol, limit=depth)
+            orderbook = await self._fetch_with_retry(
+                "fetch_order_book", symbol, limit=depth
+            )
         except TypeError as e:
             if "'coroutine' object is not an iterator" in str(e):
                 await asyncio.sleep(2)
-                orderbook = await self._fetch_with_retry("fetch_order_book", symbol, limit=depth)
+                orderbook = await self._fetch_with_retry(
+                    "fetch_order_book", symbol, limit=depth
+                )
             else:
                 raise
         return {
@@ -850,7 +867,8 @@ class DataFetcher(IDataFetcher):
         """
         # Import here to avoid circular imports
         try:
-            from ccxt import BadRequest, AuthenticationError, PermissionDenied
+            from ccxt import AuthenticationError, BadRequest, PermissionDenied
+
             if isinstance(error, (BadRequest, AuthenticationError, PermissionDenied)):
                 return True
         except ImportError:
@@ -859,8 +877,13 @@ class DataFetcher(IDataFetcher):
         # Check for common permanent error patterns
         error_msg = str(error).lower()
         permanent_indicators = [
-            "invalid", "unauthorized", "forbidden", "not found", "bad request",
-            "authentication failed", "permission denied"
+            "invalid",
+            "unauthorized",
+            "forbidden",
+            "not found",
+            "bad request",
+            "authentication failed",
+            "permission denied",
         ]
 
         return any(indicator in error_msg for indicator in permanent_indicators)
@@ -872,7 +895,7 @@ class DataFetcher(IDataFetcher):
         Returns:
             Empty DataFrame with correct column structure
         """
-        return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
 
     def _sanitize_cache_path(self, cache_dir: str) -> str:
         """

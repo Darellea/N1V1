@@ -7,8 +7,9 @@ Verifies that CPU-bound operations are offloaded and timeouts work.
 
 import asyncio
 import time
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from core.execution.live_executor import LiveOrderExecutor
 
@@ -264,7 +265,7 @@ class TestAsyncLiveExecutor:
     @pytest.mark.asyncio
     async def test_exchange_errors_properly_propagated(self, executor):
         """Test that exchange errors are properly propagated."""
-        from ccxt.base.errors import ExchangeError, NetworkError
+        from ccxt.base.errors import ExchangeError
 
         # Mock exchange that raises ExchangeError
         mock_exchange = AsyncMock()

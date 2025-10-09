@@ -7,13 +7,13 @@ and failure scenario handling with timeout safety measures.
 
 import asyncio
 import time
-import pytest
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
-from typing import Any, Dict, List, Optional
+from unittest.mock import AsyncMock, Mock
 
-from core.recovery_manager import RecoveryManager, RecoveryState, RecoveryMode
+import pytest
+
+from core.exceptions import StateCorruptionError
+from core.recovery_manager import RecoveryManager, RecoveryMode, RecoveryState
 from core.state_manager import StateManager
-from core.exceptions import RecoveryError, StateCorruptionError
 
 
 class TestRecoveryManager:
@@ -66,10 +66,14 @@ class TestRecoveryManager:
         mock_state_manager.get_state.assert_called_once()
 
     @pytest.mark.timeout(30)
-    def test_state_restoration_corruption_handling(self, recovery_manager, mock_state_manager):
+    def test_state_restoration_corruption_handling(
+        self, recovery_manager, mock_state_manager
+    ):
         """Test handling of corrupted state during restoration."""
         # Setup corrupted state
-        mock_state_manager.get_state.side_effect = StateCorruptionError("Corrupted state")
+        mock_state_manager.get_state.side_effect = StateCorruptionError(
+            "Corrupted state"
+        )
 
         # Execute recovery - should handle gracefully
         result = recovery_manager.restore_state(mock_state_manager)
@@ -107,7 +111,7 @@ class TestRecoveryManager:
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(
                 recovery_manager.execute_recovery_procedure(hanging_recovery),
-                timeout=5.0
+                timeout=5.0,
             )
 
         # Recovery manager should remain in IDLE state since timeout is handled externally
@@ -124,7 +128,9 @@ class TestRecoveryManager:
         failed_component.recover = AsyncMock(return_value=True)
 
         # Execute recovery
-        success = await recovery_manager.recover_component(failed_component, "test_failure")
+        success = await recovery_manager.recover_component(
+            failed_component, "test_failure"
+        )
 
         assert success is True
         assert recovery_manager.recovery_mode == RecoveryMode.AUTOMATIC
@@ -140,7 +146,9 @@ class TestRecoveryManager:
         failed_component.recover = AsyncMock(return_value=True)
 
         # Execute recovery - should not auto-recover in manual mode
-        success = await recovery_manager.recover_component(failed_component, "test_failure")
+        success = await recovery_manager.recover_component(
+            failed_component, "test_failure"
+        )
 
         # In manual mode, recovery should be deferred
         assert success is False  # Manual mode doesn't auto-recover
@@ -156,14 +164,16 @@ class TestRecoveryManager:
         # Mock components with mixed recovery success
         components = [
             Mock(recover=AsyncMock(return_value=True)),  # Success
-            Mock(recover=AsyncMock(return_value=False)), # Failure
+            Mock(recover=AsyncMock(return_value=False)),  # Failure
             Mock(recover=AsyncMock(return_value=True)),  # Success
         ]
 
         # Execute partial recovery
         success_count = 0
         for component in components:
-            if await recovery_manager.recover_component(component, f"comp_{components.index(component)}"):
+            if await recovery_manager.recover_component(
+                component, f"comp_{components.index(component)}"
+            ):
                 success_count += 1
 
         # Should have partial success
@@ -219,7 +229,7 @@ class TestRecoveryManager:
             "database_corruption",
             "memory_exhaustion",
             "component_crash",
-            "state_corruption"
+            "state_corruption",
         ]
 
         for scenario in failure_scenarios:
@@ -236,18 +246,22 @@ class TestRecoveryManager:
 
     @pytest.mark.timeout(30)
     @pytest.mark.asyncio
-    async def test_data_consistency_during_recovery(self, recovery_manager, mock_state_manager):
+    async def test_data_consistency_during_recovery(
+        self, recovery_manager, mock_state_manager
+    ):
         """Test data consistency maintenance during recovery."""
         # Setup initial consistent state
         initial_state = {
             "balance": 1000.0,
             "positions": [{"symbol": "BTC", "amount": 1.0}],
-            "orders": [{"id": "123", "status": "open"}]
+            "orders": [{"id": "123", "status": "open"}],
         }
         mock_state_manager.get_state.return_value = initial_state
 
         # Simulate recovery with state preservation
-        success = await recovery_manager.recover_with_state_preservation(mock_state_manager)
+        success = await recovery_manager.recover_with_state_preservation(
+            mock_state_manager
+        )
 
         assert success is True
 
@@ -315,6 +329,7 @@ class TestRecoveryManager:
     @pytest.mark.asyncio
     async def test_max_recovery_attempts_enforcement(self, recovery_manager):
         """Test enforcement of maximum recovery attempts."""
+
         # Mock failing recovery
         async def failing_recovery():
             return False
@@ -326,7 +341,10 @@ class TestRecoveryManager:
             await recovery_manager.attempt_recovery("failing_component")
 
         # Should not exceed max attempts
-        assert len(recovery_manager.recovery_attempts.get("failing_component", [])) <= recovery_manager.config.max_recovery_attempts
+        assert (
+            len(recovery_manager.recovery_attempts.get("failing_component", []))
+            <= recovery_manager.config.max_recovery_attempts
+        )
 
     @pytest.mark.timeout(30)
     @pytest.mark.asyncio
@@ -341,9 +359,11 @@ class TestRecoveryManager:
 
         # Launch multiple concurrent recoveries
         for i in range(5):
-            task = asyncio.create_task(recovery_manager.execute_recovery_procedure(
-                lambda: mock_recovery_task(i)
-            ))
+            task = asyncio.create_task(
+                recovery_manager.execute_recovery_procedure(
+                    lambda: mock_recovery_task(i)
+                )
+            )
             recovery_tasks.append(task)
 
         # Wait for all recoveries to complete
@@ -404,4 +424,6 @@ class TestRecoveryManager:
         success = await recovery_manager.execute_emergency_procedures()
 
         assert success is True
-        assert recovery_manager.emergency_mode is False  # Should deactivate after success
+        assert (
+            recovery_manager.emergency_mode is False
+        )  # Should deactivate after success

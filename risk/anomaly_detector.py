@@ -937,8 +937,13 @@ class PriceGapDetector(BaseAnomalyDetector):
 class KalmanFilter:
     """Simple Kalman filter implementation for state estimation."""
 
-    def __init__(self, process_noise: float = 0.01, measurement_noise: float = 0.1,
-                 initial_state: float = 0.0, initial_covariance: float = 1.0):
+    def __init__(
+        self,
+        process_noise: float = 0.01,
+        measurement_noise: float = 0.1,
+        initial_state: float = 0.0,
+        initial_covariance: float = 1.0,
+    ):
         """
         Initialize Kalman filter.
 
@@ -988,8 +993,12 @@ class KalmanFilter:
 class RegimeDetector:
     """Adaptive regime detection for market condition classification."""
 
-    def __init__(self, volatility_threshold: float = 0.02, trend_threshold: float = 0.01,
-                 memory: int = 20):
+    def __init__(
+        self,
+        volatility_threshold: float = 0.02,
+        trend_threshold: float = 0.01,
+        memory: int = 20,
+    ):
         """
         Initialize regime detector.
 
@@ -1051,9 +1060,9 @@ class RegimeDetector:
 
         # Keep only recent history
         if len(self.volatility_history) > self.memory:
-            self.volatility_history = self.volatility_history[-self.memory:]
-            self.trend_history = self.trend_history[-self.memory:]
-            self.regime_history = self.regime_history[-self.memory:]
+            self.volatility_history = self.volatility_history[-self.memory :]
+            self.trend_history = self.trend_history[-self.memory :]
+            self.regime_history = self.regime_history[-self.memory :]
 
         # Calculate regime stability (percentage of time in current regime)
         current_regime_count = self.regime_history.count(regime)
@@ -1072,8 +1081,13 @@ class RegimeDetector:
 class AdaptiveThreshold:
     """Adaptive threshold adjustment based on market regime."""
 
-    def __init__(self, regime_window: int = 50, volatility_multiplier: float = 2.0,
-                 min_threshold: float = 0.5, max_threshold: float = 5.0):
+    def __init__(
+        self,
+        regime_window: int = 50,
+        volatility_multiplier: float = 2.0,
+        min_threshold: float = 0.5,
+        max_threshold: float = 5.0,
+    ):
         """
         Initialize adaptive threshold.
 
@@ -1092,8 +1106,12 @@ class AdaptiveThreshold:
         self.residual_history = []
         self.regime_history = []
 
-    def calculate_threshold(self, base_threshold: float, regime_info: Dict[str, Any],
-                          recent_residuals: List[float]) -> float:
+    def calculate_threshold(
+        self,
+        base_threshold: float,
+        regime_info: Dict[str, Any],
+        recent_residuals: List[float],
+    ) -> float:
         """
         Calculate adaptive threshold based on regime and recent residuals.
 
@@ -1108,7 +1126,7 @@ class AdaptiveThreshold:
         # Update history
         self.regime_history.append(regime_info)
         if len(self.regime_history) > self.regime_window:
-            self.regime_history = self.regime_history[-self.regime_window:]
+            self.regime_history = self.regime_history[-self.regime_window :]
 
         # Calculate regime-based adjustment
         regime_multiplier = 1.0
@@ -1117,7 +1135,9 @@ class AdaptiveThreshold:
 
         # Calculate residual-based adjustment
         if recent_residuals:
-            recent_std = np.std(recent_residuals[-20:]) if len(recent_residuals) >= 5 else 0.1
+            recent_std = (
+                np.std(recent_residuals[-20:]) if len(recent_residuals) >= 5 else 0.1
+            )
             if recent_std > 0:
                 residual_multiplier = min(recent_std * 10, 3.0)  # Cap at 3x
                 regime_multiplier *= residual_multiplier
@@ -1126,7 +1146,9 @@ class AdaptiveThreshold:
         adaptive_threshold = base_threshold * regime_multiplier
 
         # Clamp to bounds
-        adaptive_threshold = max(self.min_threshold, min(self.max_threshold, adaptive_threshold))
+        adaptive_threshold = max(
+            self.min_threshold, min(self.max_threshold, adaptive_threshold)
+        )
 
         return adaptive_threshold
 
@@ -1214,7 +1236,9 @@ class KalmanAnomalyDetector(BaseAnomalyDetector):
             prices = data["close"].values
 
             if returns is None or len(prices) < 10:
-                return self._create_conservative_result("insufficient data for Kalman filtering")
+                return self._create_conservative_result(
+                    "insufficient data for Kalman filtering"
+                )
 
             # Detect current regime
             regime_info = self.regime_detector.detect_regime(returns, pd.Series(prices))
@@ -1229,7 +1253,7 @@ class KalmanAnomalyDetector(BaseAnomalyDetector):
             adaptive_threshold = self.adaptive_threshold.calculate_threshold(
                 base_threshold=3.0,  # Base z-score threshold
                 regime_info=regime_info,
-                recent_residuals=self.residual_history[-20:]
+                recent_residuals=self.residual_history[-20:],
             )
 
             # Calculate anomaly score
@@ -1336,7 +1360,9 @@ class KalmanAnomalyDetector(BaseAnomalyDetector):
                 # Track residual history
                 self.residual_history.append(residual)
                 if len(self.residual_history) > self.max_residual_history:
-                    self.residual_history = self.residual_history[-self.max_residual_history:]
+                    self.residual_history = self.residual_history[
+                        -self.max_residual_history :
+                    ]
 
             # Return results for the most recent point
             return {
@@ -1350,9 +1376,13 @@ class KalmanAnomalyDetector(BaseAnomalyDetector):
             logger.warning(f"Kalman filter error: {e}")
             return None
 
-    def _calculate_confidence_score(self, kalman_result: Dict[str, Any],
-                                  regime_info: Dict[str, Any], anomaly_score: float,
-                                  is_anomaly: bool) -> float:
+    def _calculate_confidence_score(
+        self,
+        kalman_result: Dict[str, Any],
+        regime_info: Dict[str, Any],
+        anomaly_score: float,
+        is_anomaly: bool,
+    ) -> float:
         """Calculate confidence score based on multiple factors."""
         if not is_anomaly:
             return 0.0
@@ -1369,9 +1399,9 @@ class KalmanAnomalyDetector(BaseAnomalyDetector):
 
         # Weighted combination
         confidence = (
-            self.residual_weight * residual_confidence +
-            self.regime_weight * regime_confidence +
-            self.feature_weight * feature_consistency
+            self.residual_weight * residual_confidence
+            + self.regime_weight * regime_confidence
+            + self.feature_weight * feature_consistency
         )
 
         return min(confidence, 1.0)
@@ -1387,8 +1417,9 @@ class KalmanAnomalyDetector(BaseAnomalyDetector):
         else:
             return AnomalySeverity.LOW
 
-    def _calculate_feature_importance(self, kalman_result: Dict[str, Any],
-                                    regime_info: Dict[str, Any]) -> Dict[str, float]:
+    def _calculate_feature_importance(
+        self, kalman_result: Dict[str, Any], regime_info: Dict[str, Any]
+    ) -> Dict[str, float]:
         """Calculate feature importance for the anomaly detection."""
         residual_importance = abs(kalman_result["residual"]) / 5.0  # Normalize
         volatility_importance = regime_info.get("volatility", 0.01) / 0.05  # Normalize
@@ -1407,17 +1438,24 @@ class KalmanAnomalyDetector(BaseAnomalyDetector):
             "trend": trend_importance,
         }
 
-    def _check_manual_overrides(self, data: pd.DataFrame, symbol: str) -> Optional[AnomalyResult]:
+    def _check_manual_overrides(
+        self, data: pd.DataFrame, symbol: str
+    ) -> Optional[AnomalyResult]:
         """Check if any manual overrides apply to current data."""
         if not self.manual_overrides:
             return None
 
-        current_time = data.index[-1] if hasattr(data.index, '__getitem__') else datetime.now()
+        current_time = (
+            data.index[-1] if hasattr(data.index, "__getitem__") else datetime.now()
+        )
 
         for override in self.manual_overrides:
             if override.get("symbol") == symbol:
                 override_time = override.get("timestamp")
-                if override_time and abs((current_time - override_time).total_seconds()) < 300:  # 5 minutes
+                if (
+                    override_time
+                    and abs((current_time - override_time).total_seconds()) < 300
+                ):  # 5 minutes
                     return AnomalyResult(
                         is_anomaly=False,
                         anomaly_type=AnomalyType.NONE,

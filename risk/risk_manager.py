@@ -17,12 +17,7 @@ import pandas as pd
 from core.contracts import TradingSignal
 from risk.adaptive_policy import get_risk_multiplier
 from risk.anomaly_detector import AnomalyResponse, get_anomaly_detector
-from risk.utils import (
-    get_atr,
-    get_config_value,
-    safe_divide,
-    validate_market_data,
-)
+from risk.utils import get_atr, get_config_value, safe_divide, validate_market_data
 from strategies.regime.market_regime import MarketRegime, get_market_regime_detector
 from utils.adapter import signal_to_dict
 from utils.logger import get_trade_logger
@@ -703,10 +698,7 @@ class RiskManager:
         return _safe_quantize(base_slippage)
 
     def calculate_slippage_linear(
-        self,
-        order_size: Decimal,
-        base_slippage: Decimal,
-        order_size_factor: Decimal
+        self, order_size: Decimal, base_slippage: Decimal, order_size_factor: Decimal
     ) -> Decimal:
         """
         Calculate linear slippage model based on order size.
@@ -730,7 +722,7 @@ class RiskManager:
         order_size: Decimal,
         base_slippage: Decimal,
         volatility_factor: Decimal,
-        market_data: Optional[Dict[str, Any]] = None
+        market_data: Optional[Dict[str, Any]] = None,
     ) -> Decimal:
         """
         Calculate square root slippage model based on order size and market volatility.
@@ -761,7 +753,12 @@ class RiskManager:
             market_volatility = self._calculate_market_volatility(market_data)
 
             # Calculate additional slippage with very small multipliers
-            additional_slippage = sqrt_component * volatility_factor * market_volatility * Decimal("0.0001")
+            additional_slippage = (
+                sqrt_component
+                * volatility_factor
+                * market_volatility
+                * Decimal("0.0001")
+            )
 
             # Calculate total slippage
             slippage = base_slippage + additional_slippage
@@ -775,7 +772,7 @@ class RiskManager:
         self,
         order_size: Decimal,
         market_data: Optional[Dict[str, Any]] = None,
-        symbol: str = "DEFAULT"
+        symbol: str = "DEFAULT",
     ) -> Decimal:
         """
         Calculate dynamic slippage based on market conditions and symbol-specific curves.
@@ -812,23 +809,45 @@ class RiskManager:
 
             # Calculate slippage based on model type
             if model_type == "constant":
-                return self.calculate_slippage_constant(order_size, adjusted_base_slippage)
+                return self.calculate_slippage_constant(
+                    order_size, adjusted_base_slippage
+                )
             elif model_type == "linear":
-                order_size_factor = Decimal(str(slippage_config.get("linear", {}).get("order_size_factor", 0.0001)))
-                return self.calculate_slippage_linear(order_size, adjusted_base_slippage, order_size_factor)
+                order_size_factor = Decimal(
+                    str(
+                        slippage_config.get("linear", {}).get(
+                            "order_size_factor", 0.0001
+                        )
+                    )
+                )
+                return self.calculate_slippage_linear(
+                    order_size, adjusted_base_slippage, order_size_factor
+                )
             elif model_type == "square_root":
-                volatility_factor = Decimal(str(slippage_config.get("square_root", {}).get("volatility_factor", 0.5)))
-                return self.calculate_slippage_square_root(order_size, adjusted_base_slippage, volatility_factor, market_data)
+                volatility_factor = Decimal(
+                    str(
+                        slippage_config.get("square_root", {}).get(
+                            "volatility_factor", 0.5
+                        )
+                    )
+                )
+                return self.calculate_slippage_square_root(
+                    order_size, adjusted_base_slippage, volatility_factor, market_data
+                )
             else:
                 # Fallback to constant
-                return self.calculate_slippage_constant(order_size, adjusted_base_slippage)
+                return self.calculate_slippage_constant(
+                    order_size, adjusted_base_slippage
+                )
 
         except Exception as e:
             logger.warning(f"Error calculating dynamic slippage: {e}")
             # Conservative fallback
             return _safe_quantize(Decimal("0.005"))  # 0.5% fallback
 
-    def assess_market_liquidity(self, market_data: Optional[Dict[str, Any]] = None) -> str:
+    def assess_market_liquidity(
+        self, market_data: Optional[Dict[str, Any]] = None
+    ) -> str:
         """
         Assess market liquidity based on volume and spread data.
 
@@ -844,7 +863,7 @@ class RiskManager:
                 return "medium_liquidity"  # Default assumption
 
             # Handle DataFrame case - check if empty
-            if hasattr(market_data, 'empty'):
+            if hasattr(market_data, "empty"):
                 if market_data.empty:
                     return "medium_liquidity"
             # Handle dict case - check if empty
@@ -852,22 +871,38 @@ class RiskManager:
                 return "medium_liquidity"
 
             # Get liquidity thresholds from config
-            thresholds = self.config.get("liquidity_thresholds", {
-                "high_liquidity": {"volume_threshold": 5000000, "spread_threshold": 0.0006},
-                "medium_liquidity": {"volume_threshold": 500000, "spread_threshold": 0.002},
-                "low_liquidity": {"volume_threshold": 10000, "spread_threshold": 0.01},
-            })
+            thresholds = self.config.get(
+                "liquidity_thresholds",
+                {
+                    "high_liquidity": {
+                        "volume_threshold": 5000000,
+                        "spread_threshold": 0.0006,
+                    },
+                    "medium_liquidity": {
+                        "volume_threshold": 500000,
+                        "spread_threshold": 0.002,
+                    },
+                    "low_liquidity": {
+                        "volume_threshold": 10000,
+                        "spread_threshold": 0.01,
+                    },
+                },
+            )
 
             # Extract volume and spread from market data
             avg_volume = self._calculate_average_volume(market_data)
             avg_spread = self._calculate_average_spread(market_data)
 
             # Assess liquidity level
-            if (avg_volume >= thresholds["high_liquidity"]["volume_threshold"] and
-                avg_spread <= thresholds["high_liquidity"]["spread_threshold"]):
+            if (
+                avg_volume >= thresholds["high_liquidity"]["volume_threshold"]
+                and avg_spread <= thresholds["high_liquidity"]["spread_threshold"]
+            ):
                 return "high_liquidity"
-            elif (avg_volume >= thresholds["medium_liquidity"]["volume_threshold"] and
-                  avg_spread <= thresholds["medium_liquidity"]["spread_threshold"]):
+            elif (
+                avg_volume >= thresholds["medium_liquidity"]["volume_threshold"]
+                and avg_spread <= thresholds["medium_liquidity"]["spread_threshold"]
+            ):
                 return "medium_liquidity"
             else:
                 return "low_liquidity"
@@ -880,7 +915,7 @@ class RiskManager:
         self,
         order_size: Decimal,
         market_data: Optional[Dict[str, Any]] = None,
-        symbol: str = "DEFAULT"
+        symbol: str = "DEFAULT",
     ) -> Dict[str, Any]:
         """
         Analyze the impact of slippage on large orders.
@@ -921,7 +956,9 @@ class RiskManager:
                 "estimated_slippage": 0.005,  # 0.5% fallback
                 "slippage_amount": float(order_size * Decimal("0.005")),
                 "liquidity_level": "unknown",
-                "recommended_max_order": float(order_size * Decimal("0.5")),  # Conservative
+                "recommended_max_order": float(
+                    order_size * Decimal("0.5")
+                ),  # Conservative
                 "slippage_percentage": 0.5,
                 "order_size": float(order_size),
             }
@@ -1018,7 +1055,9 @@ class RiskManager:
 
     # ===== SLIPPAGE HELPER METHODS =====
 
-    def _calculate_market_volatility(self, market_data: Optional[Dict[str, Any]] = None) -> Decimal:
+    def _calculate_market_volatility(
+        self, market_data: Optional[Dict[str, Any]] = None
+    ) -> Decimal:
         """Calculate market volatility for slippage models."""
         try:
             if not market_data or "close" not in market_data:
@@ -1041,7 +1080,9 @@ class RiskManager:
             volatility = returns.std() * np.sqrt(252)  # Annualized
 
             # Normalize to a reasonable range (0.5 to 2.0)
-            normalized_volatility = max(Decimal("0.5"), min(Decimal("2.0"), Decimal(str(volatility))))
+            normalized_volatility = max(
+                Decimal("0.5"), min(Decimal("2.0"), Decimal(str(volatility)))
+            )
 
             return normalized_volatility
 
@@ -1051,13 +1092,17 @@ class RiskManager:
     def _get_liquidity_multiplier(self, liquidity_level: str) -> Decimal:
         """Get slippage multiplier based on liquidity level."""
         multipliers = {
-            "high_liquidity": Decimal("0.5"),    # Reduce slippage
+            "high_liquidity": Decimal("0.5"),  # Reduce slippage
             "medium_liquidity": Decimal("1.0"),  # Normal slippage
-            "low_liquidity": Decimal("20.0"),    # Significantly increase slippage for illiquid markets
+            "low_liquidity": Decimal(
+                "20.0"
+            ),  # Significantly increase slippage for illiquid markets
         }
         return multipliers.get(liquidity_level, Decimal("1.0"))
 
-    def _calculate_average_volume(self, market_data: Optional[Dict[str, Any]] = None) -> float:
+    def _calculate_average_volume(
+        self, market_data: Optional[Dict[str, Any]] = None
+    ) -> float:
         """Calculate average volume from market data."""
         try:
             # Check if market_data is None or empty
@@ -1065,25 +1110,31 @@ class RiskManager:
                 return 100000.0  # Default medium volume
 
             # Handle DataFrame case
-            if hasattr(market_data, 'empty') and market_data.empty:
+            if hasattr(market_data, "empty") and market_data.empty:
                 return 100000.0
 
             # Check if volume column exists
-            if "volume" not in market_data.columns if hasattr(market_data, 'columns') else "volume" not in market_data:
+            if (
+                "volume" not in market_data.columns
+                if hasattr(market_data, "columns")
+                else "volume" not in market_data
+            ):
                 return 100000.0  # Default medium volume
 
             volumes = market_data["volume"]
 
             if isinstance(volumes, (list, np.ndarray)):
                 return float(np.mean(volumes))
-            elif hasattr(volumes, 'mean'):  # pandas Series/DataFrame
+            elif hasattr(volumes, "mean"):  # pandas Series/DataFrame
                 return float(volumes.mean())
             else:
                 return float(volumes)
         except Exception:
             return 100000.0
 
-    def _calculate_average_spread(self, market_data: Optional[Dict[str, Any]] = None) -> float:
+    def _calculate_average_spread(
+        self, market_data: Optional[Dict[str, Any]] = None
+    ) -> float:
         """Calculate average spread from market data."""
         try:
             # Check if market_data is None or empty
@@ -1091,24 +1142,30 @@ class RiskManager:
                 return 0.005  # Default 0.5% spread
 
             # Handle DataFrame case
-            if hasattr(market_data, 'empty') and market_data.empty:
+            if hasattr(market_data, "empty") and market_data.empty:
                 return 0.005
 
             # Check if spread column exists
-            if "spread" not in market_data.columns if hasattr(market_data, 'columns') else "spread" not in market_data:
+            if (
+                "spread" not in market_data.columns
+                if hasattr(market_data, "columns")
+                else "spread" not in market_data
+            ):
                 return 0.005  # Default 0.5% spread
 
             spreads = market_data["spread"]
             if isinstance(spreads, (list, np.ndarray)):
                 return float(np.mean(spreads))
-            elif hasattr(spreads, 'mean'):  # pandas Series/DataFrame
+            elif hasattr(spreads, "mean"):  # pandas Series/DataFrame
                 return float(spreads.mean())
             else:
                 return float(spreads)
         except Exception:
             return 0.005
 
-    def _calculate_recommended_max_order(self, market_data: Optional[Dict[str, Any]] = None, symbol: str = "DEFAULT") -> Decimal:
+    def _calculate_recommended_max_order(
+        self, market_data: Optional[Dict[str, Any]] = None, symbol: str = "DEFAULT"
+    ) -> Decimal:
         """Calculate recommended maximum order size based on liquidity."""
         try:
             liquidity_level = self.assess_market_liquidity(market_data)
@@ -1131,7 +1188,9 @@ class RiskManager:
         except Exception:
             return Decimal("5000")  # Safe default
 
-    def _calculate_mean_slippage(self, market_data: Optional[Dict[str, Any]] = None, symbol: str = "DEFAULT") -> Decimal:
+    def _calculate_mean_slippage(
+        self, market_data: Optional[Dict[str, Any]] = None, symbol: str = "DEFAULT"
+    ) -> Decimal:
         """Calculate mean slippage for accuracy metrics."""
         try:
             # Test slippage at different order sizes
@@ -1147,7 +1206,9 @@ class RiskManager:
         except Exception:
             return Decimal("0.001")
 
-    def _calculate_max_slippage(self, market_data: Optional[Dict[str, Any]] = None, symbol: str = "DEFAULT") -> Decimal:
+    def _calculate_max_slippage(
+        self, market_data: Optional[Dict[str, Any]] = None, symbol: str = "DEFAULT"
+    ) -> Decimal:
         """Calculate maximum slippage for accuracy metrics."""
         try:
             # Test slippage at large order size
@@ -1157,13 +1218,17 @@ class RiskManager:
         except Exception:
             return Decimal("0.01")
 
-    def _calculate_volatility_adjustment(self, market_data: Optional[Dict[str, Any]] = None) -> Decimal:
+    def _calculate_volatility_adjustment(
+        self, market_data: Optional[Dict[str, Any]] = None
+    ) -> Decimal:
         """Calculate volatility adjustment factor."""
         volatility = self._calculate_market_volatility(market_data)
         # Return adjustment factor (higher volatility = higher adjustment)
         return _safe_quantize(volatility)
 
-    def _calculate_liquidity_score(self, market_data: Optional[Dict[str, Any]] = None) -> Decimal:
+    def _calculate_liquidity_score(
+        self, market_data: Optional[Dict[str, Any]] = None
+    ) -> Decimal:
         """Calculate liquidity score (0-1, higher is better liquidity)."""
         try:
             liquidity_level = self.assess_market_liquidity(market_data)

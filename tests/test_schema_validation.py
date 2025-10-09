@@ -7,19 +7,19 @@ Tests for strict schema validation of inbound market and API data.
 import pytest
 from pydantic import ValidationError
 
-from core.exceptions import SchemaValidationError
 from api.models import (
-    TickerPayload,
-    OrderBookPayload,
-    TradePayload,
     MarketDataPayload,
+    OrderBookPayload,
+    TickerPayload,
+    TradePayload,
     WebSocketMessagePayload,
-    validate_ticker_data,
-    validate_order_book_data,
-    validate_trade_data,
     validate_market_data,
+    validate_order_book_data,
+    validate_ticker_data,
+    validate_trade_data,
     validate_websocket_message,
 )
+from core.exceptions import SchemaValidationError
 
 
 class TestTickerPayloadValidation:

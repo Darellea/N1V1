@@ -8,8 +8,7 @@ Provides unified retry behavior across all N1V1 modules.
 import asyncio
 import logging
 import random
-import time
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Callable, Optional
 
 from core.api_protection import APICircuitBreaker, CircuitOpenError
 from core.idempotency import RetryNotAllowedError
@@ -135,9 +134,7 @@ async def retry_call(
 
             # Check if this is a permanent error that should not be retried
             if _is_permanent_error(e):
-                logger.error(
-                    f"Permanent error for {fn.__name__}: {e}. Not retrying."
-                )
+                logger.error(f"Permanent error for {fn.__name__}: {e}. Not retrying.")
                 raise
 
             if is_last_attempt:
@@ -203,9 +200,7 @@ async def retry_call_sync(
 
             # Check if this is a permanent error that should not be retried
             if _is_permanent_error(e):
-                logger.error(
-                    f"Permanent error for {fn.__name__}: {e}. Not retrying."
-                )
+                logger.error(f"Permanent error for {fn.__name__}: {e}. Not retrying.")
                 raise
 
             if is_last_attempt:
@@ -256,7 +251,8 @@ def _is_permanent_error(e: Exception) -> bool:
     """
     # Import here to avoid circular imports
     try:
-        from ccxt import BadRequest, AuthenticationError, PermissionDenied
+        from ccxt import AuthenticationError, BadRequest, PermissionDenied
+
         if isinstance(e, (BadRequest, AuthenticationError, PermissionDenied)):
             return True
     except ImportError:
@@ -265,8 +261,13 @@ def _is_permanent_error(e: Exception) -> bool:
     # Check for common permanent error patterns
     error_msg = str(e).lower()
     permanent_indicators = [
-        "invalid", "unauthorized", "forbidden", "not found", "bad request",
-        "authentication failed", "permission denied"
+        "invalid",
+        "unauthorized",
+        "forbidden",
+        "not found",
+        "bad request",
+        "authentication failed",
+        "permission denied",
     ]
 
     return any(indicator in error_msg for indicator in permanent_indicators)

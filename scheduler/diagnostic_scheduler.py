@@ -13,10 +13,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from core.diagnostics import (
-    DiagnosticsManager,
-    get_diagnostics_manager,
-)
+from core.diagnostics import DiagnosticsManager, get_diagnostics_manager
 from utils.logger import get_trade_logger
 
 logger = logging.getLogger(__name__)

@@ -23,9 +23,7 @@ import pandas as pd
 
 from core.contracts import SignalStrength, SignalType, TradingSignal
 from strategies.base_strategy import BaseStrategy, SignalGenerationMixin, StrategyConfig
-from strategies.indicators_cache import (
-    calculate_indicators_for_multi_symbol,
-)
+from strategies.indicators_cache import calculate_indicators_for_multi_symbol
 
 
 class RSIStrategy(BaseStrategy, SignalGenerationMixin):

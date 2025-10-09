@@ -7,6 +7,7 @@ and decoupling of components in the data module.
 
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
+
 import pandas as pd
 
 

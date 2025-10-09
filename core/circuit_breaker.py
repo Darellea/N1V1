@@ -33,7 +33,6 @@ Trigger Conditions:
 import asyncio
 import logging
 import threading
-import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -784,7 +783,7 @@ class CircuitBreaker:
                             {"account": "main"},
                         )
                     )
-                except Exception as e:
+                except Exception:
                     # Silent failure during breaker engagement to minimize overhead
                     pass
 
@@ -1060,13 +1059,17 @@ class ThreadSafeCircuitBreaker(CircuitBreaker):
     def __init__(self, config: ThreadSafeCircuitBreakerConfig):
         # Validate config type
         if not isinstance(config, ThreadSafeCircuitBreakerConfig):
-            raise TypeError("ThreadSafeCircuitBreaker requires ThreadSafeCircuitBreakerConfig")
+            raise TypeError(
+                "ThreadSafeCircuitBreaker requires ThreadSafeCircuitBreakerConfig"
+            )
 
         # Initialize parent class
         super().__init__(config)
 
         # Override concurrency protection with thread-safe mechanisms
-        self._lock = threading.RLock() if config.enable_reentrant_locking else threading.Lock()
+        self._lock = (
+            threading.RLock() if config.enable_reentrant_locking else threading.Lock()
+        )
         self._lock_timeout = config.lock_timeout
 
         # Thread-local storage for isolation if enabled
@@ -1094,7 +1097,9 @@ class ThreadSafeCircuitBreaker(CircuitBreaker):
     def _with_lock(self, func: Callable, *args, **kwargs):
         """Execute function with lock protection."""
         if not self._acquire_lock():
-            raise TimeoutError(f"Failed to acquire lock within {self._lock_timeout}s timeout")
+            raise TimeoutError(
+                f"Failed to acquire lock within {self._lock_timeout}s timeout"
+            )
 
         try:
             return func(*args, **kwargs)
@@ -1110,6 +1115,7 @@ class ThreadSafeCircuitBreaker(CircuitBreaker):
         **kwargs,
     ) -> None:
         """Thread-safe event logging."""
+
         def _log():
             event = {
                 "timestamp": datetime.now(),
@@ -1133,6 +1139,7 @@ class ThreadSafeCircuitBreaker(CircuitBreaker):
 
     def _record_trade_result(self, pnl: float, is_win: bool) -> None:
         """Thread-safe trade result recording."""
+
         def _record():
             self.trade_results.append(is_win)
 
@@ -1140,17 +1147,21 @@ class ThreadSafeCircuitBreaker(CircuitBreaker):
 
     def _check_consecutive_losses(self) -> bool:
         """Thread-safe consecutive losses check."""
+
         def _check():
             if len(self.trade_results) < self.config.consecutive_losses_threshold:
                 return False
             # Check the last N trades
-            recent_trades = self.trade_results[-self.config.consecutive_losses_threshold :]
+            recent_trades = self.trade_results[
+                -self.config.consecutive_losses_threshold :
+            ]
             return all(not win for win in recent_trades)
 
         return self._with_lock(_check)
 
     async def _trigger_circuit_breaker(self, reason: str) -> None:
         """Thread-safe circuit breaker triggering."""
+
         def _trigger():
             previous_state = self.state
             self.state = CircuitBreakerState.TRIGGERED
@@ -1191,7 +1202,7 @@ class ThreadSafeCircuitBreaker(CircuitBreaker):
                             {"account": "main"},
                         )
                     )
-                except Exception as e:
+                except Exception:
                     # Silent failure during breaker engagement to minimize overhead
                     pass
 
@@ -1199,6 +1210,7 @@ class ThreadSafeCircuitBreaker(CircuitBreaker):
 
     async def _enter_cooling_period(self) -> None:
         """Thread-safe cooling period entry."""
+
         def _enter_cooling():
             previous_state = self.state
             self.state = CircuitBreakerState.COOLING
@@ -1257,6 +1269,7 @@ class ThreadSafeCircuitBreaker(CircuitBreaker):
 
     async def _return_to_normal(self) -> None:
         """Thread-safe return to normal state."""
+
         def _return_normal():
             previous_state = self.state
             self.state = CircuitBreakerState.NORMAL
@@ -1303,6 +1316,7 @@ class ThreadSafeCircuitBreaker(CircuitBreaker):
 
     async def set_state(self, state: CircuitBreakerState, reason: str) -> None:
         """Thread-safe manual state setting."""
+
         def _set_state():
             previous_state = self.state
             self.state = state
@@ -1312,6 +1326,7 @@ class ThreadSafeCircuitBreaker(CircuitBreaker):
 
     async def reset_to_normal(self, reason: str) -> bool:
         """Thread-safe reset to normal state."""
+
         def _reset():
             if self.state == CircuitBreakerState.NORMAL:
                 return False
@@ -1324,6 +1339,7 @@ class ThreadSafeCircuitBreaker(CircuitBreaker):
 
     def get_state_snapshot(self) -> Dict[str, Any]:
         """Thread-safe state snapshot retrieval."""
+
         def _get_snapshot():
             return {
                 "state": self.state.value,
@@ -1340,6 +1356,7 @@ class ThreadSafeCircuitBreaker(CircuitBreaker):
 
     def restore_state_snapshot(self, snapshot: Dict[str, Any]) -> None:
         """Thread-safe state snapshot restoration."""
+
         def _restore_snapshot():
             self.state = CircuitBreakerState(snapshot["state"])
             self.trigger_history = snapshot["trigger_history"]
@@ -1356,6 +1373,7 @@ class ThreadSafeCircuitBreaker(CircuitBreaker):
 
     async def update_equity(self, equity: float) -> None:
         """Thread-safe equity update."""
+
         def _update_equity():
             self.current_equity = equity
             self.logger.info(f"Equity updated: {equity}")
@@ -1382,21 +1400,29 @@ class ThreadSafeCircuitBreaker(CircuitBreaker):
     def update_config(self, new_config: ThreadSafeCircuitBreakerConfig) -> None:
         """Thread-safe configuration update."""
         if not isinstance(new_config, ThreadSafeCircuitBreakerConfig):
-            raise TypeError("ThreadSafeCircuitBreaker requires ThreadSafeCircuitBreakerConfig")
+            raise TypeError(
+                "ThreadSafeCircuitBreaker requires ThreadSafeCircuitBreakerConfig"
+            )
 
         def _update_config():
             self.config = new_config
             self._lock_timeout = new_config.lock_timeout
 
             # Update lock type if reentrant setting changed
-            if new_config.enable_reentrant_locking and type(self._lock).__name__ != 'RLock':
+            if (
+                new_config.enable_reentrant_locking
+                and type(self._lock).__name__ != "RLock"
+            ):
                 self._lock = threading.RLock()
-            elif not new_config.enable_reentrant_locking and type(self._lock).__name__ == 'RLock':
+            elif (
+                not new_config.enable_reentrant_locking
+                and type(self._lock).__name__ == "RLock"
+            ):
                 self._lock = threading.Lock()
 
             # Update thread-local setting
             if new_config.thread_local:
-                if not hasattr(self, '_thread_local') or self._thread_local is None:
+                if not hasattr(self, "_thread_local") or self._thread_local is None:
                     self._thread_local = threading.local()
             else:
                 self._thread_local = None
@@ -1405,6 +1431,7 @@ class ThreadSafeCircuitBreaker(CircuitBreaker):
 
     def get_circuit_state_metrics(self) -> Dict[str, Any]:
         """Thread-safe circuit state metrics retrieval."""
+
         def _get_metrics():
             return {
                 "state": self.state.value,
@@ -1439,7 +1466,9 @@ def get_thread_safe_circuit_breaker() -> ThreadSafeCircuitBreaker:
     """Get the global thread-safe circuit breaker instance."""
     global _thread_safe_circuit_breaker
     if _thread_safe_circuit_breaker is None:
-        _thread_safe_circuit_breaker = ThreadSafeCircuitBreaker(ThreadSafeCircuitBreakerConfig())
+        _thread_safe_circuit_breaker = ThreadSafeCircuitBreaker(
+            ThreadSafeCircuitBreakerConfig()
+        )
     return _thread_safe_circuit_breaker
 
 

@@ -5,23 +5,20 @@ Tests path traversal prevention in data_fetcher.py and DataFrame validation
 in dataset_versioning.py.
 """
 
-import pytest
-import pandas as pd
-import numpy as np
 import os
 import tempfile
 from datetime import datetime, timedelta
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import numpy as np
+import pandas as pd
+import pytest
 
 from data.data_fetcher import DataFetcher, PathTraversalError
-from data.dataset_versioning import (
-    DatasetVersionManager,
-    validate_dataframe,
-    DataValidationError,
-    migrate_legacy_dataset,
-    PathTraversalError as VersionPathTraversalError,
-)
-from data.historical_loader import HistoricalDataLoader, ConfigurationError
+from data.dataset_versioning import DatasetVersionManager, DataValidationError
+from data.dataset_versioning import PathTraversalError as VersionPathTraversalError
+from data.dataset_versioning import migrate_legacy_dataset, validate_dataframe
+from data.historical_loader import ConfigurationError, HistoricalDataLoader
 
 
 class TestPathTraversalPrevention:

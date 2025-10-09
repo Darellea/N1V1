@@ -9,39 +9,34 @@ Tests for the multi-stage validation pipeline including:
 """
 
 import asyncio
-import pytest
+from datetime import datetime
 from decimal import Decimal
-from unittest.mock import Mock, AsyncMock, patch
-from datetime import datetime, time
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
 
 from core.order_validation import (
+    AmountValidator,
+    BasicFieldValidator,
+    MarketHoursValidator,
+    MaximumOrderSizeValidator,
+    MinimumOrderSizeValidator,
+    OrderTypeValidator,
     OrderValidationPipeline,
+    PositionSizeValidator,
+    PricePrecisionValidator,
+    RiskManagerValidator,
+    SignalTypeValidator,
+    StopLossValidator,
+    SymbolValidator,
+    TimestampValidator,
+    TradingPairValidator,
     ValidationReport,
     ValidationResult,
-    ValidationStage,
-    ValidationSeverity,
     ValidationRule,
-    PreTradeValidator,
-    RiskValidator,
-    ExchangeCompatibilityValidator,
-    BasicFieldValidator,
-    AmountValidator,
-    SymbolValidator,
-    OrderTypeValidator,
-    SignalTypeValidator,
-    MarketHoursValidator,
-    TimestampValidator,
-    RiskManagerValidator,
-    PositionSizeValidator,
-    PortfolioRiskValidator,
-    StopLossValidator,
-    TakeProfitValidator,
-    MinimumOrderSizeValidator,
-    MaximumOrderSizeValidator,
-    PricePrecisionValidator,
-    AmountPrecisionValidator,
-    TradingPairValidator,
     ValidationRuleManager,
+    ValidationSeverity,
+    ValidationStage,
 )
 from risk.risk_manager import RiskManager
 
@@ -58,7 +53,7 @@ class TestValidationResult:
             severity=ValidationSeverity.ERROR,
             message="Test message",
             details={"key": "value"},
-            suggested_fix="Fix it"
+            suggested_fix="Fix it",
         )
 
         assert result.stage == ValidationStage.PRE_TRADE
@@ -96,7 +91,7 @@ class TestValidationReport:
             check_name="error_check",
             passed=False,
             severity=ValidationSeverity.ERROR,
-            message="Error occurred"
+            message="Error occurred",
         )
         report.add_result(error_result)
 
@@ -106,7 +101,7 @@ class TestValidationReport:
             check_name="warning_check",
             passed=False,
             severity=ValidationSeverity.WARNING,
-            message="Warning occurred"
+            message="Warning occurred",
         )
         report.add_result(warning_result)
 
@@ -116,7 +111,7 @@ class TestValidationReport:
             check_name="pass_check",
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Passed"
+            message="Passed",
         )
         report.add_result(pass_result)
 
@@ -135,21 +130,21 @@ class TestValidationReport:
             check_name="error_check",
             passed=False,
             severity=ValidationSeverity.ERROR,
-            message="Error"
+            message="Error",
         )
         warning_result = ValidationResult(
             stage=ValidationStage.RISK,
             check_name="warning_check",
             passed=False,
             severity=ValidationSeverity.WARNING,
-            message="Warning"
+            message="Warning",
         )
         pass_result = ValidationResult(
             stage=ValidationStage.EXCHANGE_COMPATIBILITY,
             check_name="pass_check",
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Passed"
+            message="Passed",
         )
 
         report.add_result(error_result)
@@ -170,21 +165,21 @@ class TestValidationReport:
             check_name="error_check",
             passed=False,
             severity=ValidationSeverity.ERROR,
-            message="Error"
+            message="Error",
         )
         warning_result = ValidationResult(
             stage=ValidationStage.RISK,
             check_name="warning_check",
             passed=False,
             severity=ValidationSeverity.WARNING,
-            message="Warning"
+            message="Warning",
         )
         pass_result = ValidationResult(
             stage=ValidationStage.EXCHANGE_COMPATIBILITY,
             check_name="pass_check",
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Passed"
+            message="Passed",
         )
 
         report.add_result(error_result)
@@ -210,7 +205,7 @@ class TestBasicFieldValidator:
             "symbol": "BTC/USDT",
             "signal_type": "ENTRY_LONG",
             "order_type": "MARKET",
-            "amount": "0.001"
+            "amount": "0.001",
         }
 
         result = asyncio.run(validator.validate(signal, {}))
@@ -225,7 +220,7 @@ class TestBasicFieldValidator:
             "symbol": "BTC/USDT",
             "signal_type": "ENTRY_LONG",
             # Missing order_type
-            "amount": "0.001"
+            "amount": "0.001",
         }
 
         result = asyncio.run(validator.validate(signal, {}))
@@ -241,7 +236,7 @@ class TestBasicFieldValidator:
             "symbol": "BTC/USDT",
             "signal_type": "ENTRY_LONG",
             "order_type": None,  # None value
-            "amount": "0.001"
+            "amount": "0.001",
         }
 
         result = asyncio.run(validator.validate(signal, {}))
@@ -435,14 +430,14 @@ class TestMarketHoursValidator:
             "enabled": True,
             "open": "09:00",
             "close": "17:00",
-            "timezone": "UTC"
+            "timezone": "UTC",
         }
         return MarketHoursValidator(market_hours_config)
 
     def test_within_market_hours_passes(self, validator):
         """Test that signal within market hours passes validation."""
         # Mock current time to be within market hours
-        with patch('core.order_validation.datetime') as mock_datetime:
+        with patch("core.order_validation.datetime") as mock_datetime:
             mock_datetime.now.return_value = datetime(2023, 1, 1, 12, 0, 0)  # Noon
 
             signal = {"symbol": "BTC/USDT"}
@@ -454,7 +449,7 @@ class TestMarketHoursValidator:
     def test_outside_market_hours_fails(self, validator):
         """Test that signal outside market hours fails validation."""
         # Mock current time to be outside market hours
-        with patch('core.order_validation.datetime') as mock_datetime:
+        with patch("core.order_validation.datetime") as mock_datetime:
             mock_datetime.now.return_value = datetime(2023, 1, 1, 20, 0, 0)  # 8 PM
 
             signal = {"symbol": "BTC/USDT"}
@@ -495,7 +490,7 @@ class TestTimestampValidator:
     def test_future_timestamp_warns(self, validator):
         """Test that future timestamp generates warning."""
         # Mock current time
-        with patch('time.time') as mock_time:
+        with patch("time.time") as mock_time:
             mock_time.return_value = 1000.0  # Current time in seconds
 
             # Timestamp far in the future (more than 5 minutes)
@@ -511,7 +506,7 @@ class TestTimestampValidator:
     def test_old_timestamp_warns(self, validator):
         """Test that very old timestamp generates warning."""
         # Mock current time
-        with patch('time.time') as mock_time:
+        with patch("time.time") as mock_time:
             mock_time.return_value = 1000.0  # Current time in seconds
 
             # Timestamp from over 24 hours ago (very old)
@@ -527,11 +522,13 @@ class TestTimestampValidator:
     def test_valid_timestamp_passes(self, validator):
         """Test that valid recent timestamp passes validation."""
         # Mock current time
-        with patch('time.time') as mock_time:
+        with patch("time.time") as mock_time:
             mock_time.return_value = 1000.0  # Current time in seconds
 
             # Valid timestamp (close to current time) - should be in milliseconds
-            valid_timestamp = 1000000  # 1000 seconds in milliseconds (same as mock time)
+            valid_timestamp = (
+                1000000  # 1000 seconds in milliseconds (same as mock time)
+            )
             signal = {"timestamp": str(valid_timestamp)}
 
             result = asyncio.run(validator.validate(signal, {}))
@@ -826,14 +823,14 @@ class TestOrderValidationPipeline:
             "fail_fast": False,
             "validation_timeout": 5.0,
             "enable_circuit_breaker": False,
-            "market_hours": {"enabled": False}
+            "market_hours": {"enabled": False},
         }
         return OrderValidationPipeline(config, mock_risk_manager)
 
     def test_valid_signal_passes_all_stages(self, pipeline):
         """Test that a valid signal passes all validation stages."""
         # Mock current time for timestamp validation
-        with patch('asyncio.AbstractEventLoop.time') as mock_time:
+        with patch("asyncio.AbstractEventLoop.time") as mock_time:
             mock_time.return_value = 1000.0  # Current time in seconds
 
             signal = {
@@ -842,7 +839,7 @@ class TestOrderValidationPipeline:
                 "signal_type": "ENTRY_LONG",
                 "order_type": "MARKET",
                 "amount": "0.001",
-                "timestamp": "999000"  # Valid timestamp
+                "timestamp": "999000",  # Valid timestamp
             }
 
             report = asyncio.run(pipeline.validate_order(signal))
@@ -858,7 +855,7 @@ class TestOrderValidationPipeline:
             "symbol": "BTC/USDT",
             "signal_type": "INVALID_TYPE",  # Invalid signal type
             "order_type": "MARKET",
-            "amount": "0.001"
+            "amount": "0.001",
         }
 
         report = asyncio.run(pipeline.validate_order(signal))
@@ -876,7 +873,7 @@ class TestOrderValidationPipeline:
             "symbol": "BTC/USDT",
             "signal_type": "ENTRY_LONG",
             "order_type": "MARKET",
-            "amount": "0.001"
+            "amount": "0.001",
         }
 
         report = asyncio.run(pipeline.validate_order(signal))
@@ -891,7 +888,7 @@ class TestOrderValidationPipeline:
             "symbol": "BTC/USDT",
             "signal_type": "ENTRY_LONG",
             "order_type": "MARKET",
-            "amount": "0.001"
+            "amount": "0.001",
         }
 
         # Run validation multiple times
@@ -911,7 +908,7 @@ class TestOrderValidationPipeline:
             "validation_timeout": 5.0,
             "enable_circuit_breaker": True,
             "max_validation_failures": 2,
-            "market_hours": {"enabled": False}
+            "market_hours": {"enabled": False},
         }
         pipeline = OrderValidationPipeline(config)
 
@@ -923,7 +920,7 @@ class TestOrderValidationPipeline:
             "symbol": "BTC/USDT",
             "signal_type": "ENTRY_LONG",
             "order_type": "MARKET",
-            "amount": "0.001"
+            "amount": "0.001",
         }
 
         report = asyncio.run(pipeline.validate_order(signal))
@@ -1011,7 +1008,7 @@ class TestComprehensiveValidationIntegration:
             "fail_fast": False,
             "validation_timeout": 10.0,
             "enable_circuit_breaker": False,
-            "market_hours": {"enabled": False}
+            "market_hours": {"enabled": False},
         }
 
         # Mock risk manager
@@ -1027,7 +1024,7 @@ class TestComprehensiveValidationIntegration:
     def test_complete_valid_order_validation(self, full_pipeline):
         """Test complete validation of a valid order."""
         # Mock current time for timestamp validation
-        with patch('asyncio.AbstractEventLoop.time') as mock_time:
+        with patch("asyncio.AbstractEventLoop.time") as mock_time:
             mock_time.return_value = 1000.0  # Current time in seconds
 
             signal = {
@@ -1040,13 +1037,13 @@ class TestComprehensiveValidationIntegration:
                 "price": "50000.00",
                 "stop_loss": "49000.00",
                 "take_profit": "52000.00",
-                "timestamp": "999000"  # Valid timestamp
+                "timestamp": "999000",  # Valid timestamp
             }
 
             context = {
                 "exchange": "binance",
                 "market_data": None,
-                "max_concurrent_positions": 5
+                "max_concurrent_positions": 5,
             }
 
             report = asyncio.run(full_pipeline.validate_order(signal, context))
@@ -1094,7 +1091,7 @@ class TestComprehensiveValidationIntegration:
     def test_exchange_specific_validation(self, full_pipeline):
         """Test exchange-specific validation rules."""
         # Mock current time for timestamp validation
-        with patch('asyncio.AbstractEventLoop.time') as mock_time:
+        with patch("asyncio.AbstractEventLoop.time") as mock_time:
             mock_time.return_value = 1000.0  # Current time in seconds
 
             signal = {
@@ -1103,7 +1100,7 @@ class TestComprehensiveValidationIntegration:
                 "signal_type": "ENTRY_LONG",
                 "order_type": "MARKET",
                 "amount": "0.001",
-                "timestamp": "999000"  # Valid timestamp
+                "timestamp": "999000",  # Valid timestamp
             }
 
             # Test with Binance exchange
@@ -1124,7 +1121,7 @@ class TestComprehensiveValidationIntegration:
         assert full_pipeline._validation_failures == 0
 
         # Mock current time for timestamp validation
-        with patch('asyncio.AbstractEventLoop.time') as mock_time:
+        with patch("asyncio.AbstractEventLoop.time") as mock_time:
             mock_time.return_value = 1000.0  # Current time in seconds
 
             # Run a successful validation
@@ -1134,7 +1131,7 @@ class TestComprehensiveValidationIntegration:
                 "signal_type": "ENTRY_LONG",
                 "order_type": "MARKET",
                 "amount": "0.001",
-                "timestamp": "999000"  # Valid timestamp
+                "timestamp": "999000",  # Valid timestamp
             }
 
             report = asyncio.run(full_pipeline.validate_order(signal))
@@ -1149,7 +1146,7 @@ class TestComprehensiveValidationIntegration:
             "fail_fast": False,
             "validation_timeout": 0.001,  # Very short timeout
             "enable_circuit_breaker": False,
-            "market_hours": {"enabled": False}
+            "market_hours": {"enabled": False},
         }
 
         # Create a slow validator for testing
@@ -1164,7 +1161,7 @@ class TestComprehensiveValidationIntegration:
                     check_name=self.name,
                     passed=True,
                     severity=ValidationSeverity.ERROR,
-                    message="Should not reach here"
+                    message="Should not reach here",
                 )
 
         # Create pipeline with slow validator
@@ -1176,7 +1173,7 @@ class TestComprehensiveValidationIntegration:
             "symbol": "BTC/USDT",
             "signal_type": "ENTRY_LONG",
             "order_type": "MARKET",
-            "amount": "0.001"
+            "amount": "0.001",
         }
 
         report = asyncio.run(pipeline.validate_order(signal))

@@ -30,8 +30,8 @@ class TestPartialFillReconciliation:
                 "max_fill_retries": 2,
                 "fill_retry_delay": 0.1,  # Fast retry for tests
                 "reconciliation_interval": 1.0,  # Fast reconciliation
-                "enable_fill_audit": True
-            }
+                "enable_fill_audit": True,
+            },
         }
 
     @pytest.fixture
@@ -127,7 +127,7 @@ class TestPartialFillReconciliation:
             timestamp=1234567890.0,
             fill_type="partial",
             exchange_order_id="exch_123",
-            fees={"trading": Decimal("0.001")}
+            fees={"trading": Decimal("0.001")},
         )
 
         assert fill.order_id == "test_order_123"
@@ -143,7 +143,7 @@ class TestPartialFillReconciliation:
         record = PartialFillRecord(
             original_order_id="order_123",
             symbol="BTC/USDT",
-            original_amount=Decimal("1.0")
+            original_amount=Decimal("1.0"),
         )
 
         assert record.original_order_id == "order_123"
@@ -161,7 +161,7 @@ class TestPartialFillReconciliation:
         record = PartialFillRecord(
             original_order_id="order_123",
             symbol="BTC/USDT",
-            original_amount=Decimal("1.0")
+            original_amount=Decimal("1.0"),
         )
 
         # Add first partial fill
@@ -171,7 +171,7 @@ class TestPartialFillReconciliation:
             amount=Decimal("0.3"),
             price=Decimal("50000"),
             timestamp=time.time(),
-            fill_type="partial"
+            fill_type="partial",
         )
         record.add_fill(fill1)
 
@@ -188,7 +188,7 @@ class TestPartialFillReconciliation:
             amount=Decimal("0.7"),
             price=Decimal("50100"),
             timestamp=time.time(),
-            fill_type="final"
+            fill_type="final",
         )
         record.add_fill(fill2)
 
@@ -204,7 +204,7 @@ class TestPartialFillReconciliation:
             original_order_id="order_123",
             symbol="BTC/USDT",
             original_amount=Decimal("1.0"),
-            max_retries=2
+            max_retries=2,
         )
 
         # Initially should retry
@@ -236,7 +236,7 @@ class TestPartialFillReconciliation:
             original_order_id="order_123",
             symbol="BTC/USDT",
             original_amount=Decimal("1.0"),
-            timeout_seconds=1.0
+            timeout_seconds=1.0,
         )
 
         # Initially not expired
@@ -251,7 +251,7 @@ class TestPartialFillReconciliation:
         record = PartialFillRecord(
             original_order_id="order_123",
             symbol="BTC/USDT",
-            original_amount=Decimal("1.0")
+            original_amount=Decimal("1.0"),
         )
 
         record.mark_for_manual_intervention("Test reason")
@@ -300,7 +300,7 @@ class TestPartialFillReconciliation:
             amount=Decimal("0.5"),
             price=Decimal("50000"),
             timestamp=time.time(),
-            fill_type="partial"
+            fill_type="partial",
         )
 
         result = manager.add_fill_to_record("order_123", fill)
@@ -321,7 +321,7 @@ class TestPartialFillReconciliation:
             amount=Decimal("0.5"),
             price=Decimal("50000"),
             timestamp=time.time(),
-            fill_type="partial"
+            fill_type="partial",
         )
 
         result = manager.add_fill_to_record("order_123", fill)
@@ -412,7 +412,9 @@ class TestPartialFillReconciliation:
         assert manager.metrics["timed_out_fills"] == 1
 
     @pytest.mark.asyncio
-    async def test_order_manager_process_fill_report_full_fill(self, config, mock_executors, mock_managers):
+    async def test_order_manager_process_fill_report_full_fill(
+        self, config, mock_executors, mock_managers
+    ):
         """Test processing a full fill report."""
         om = OrderManager(config, TradingMode.PAPER)
 
@@ -421,7 +423,7 @@ class TestPartialFillReconciliation:
             "symbol": "BTC/USDT",
             "amount": "1.0",
             "price": "50000",
-            "fill_type": "full"
+            "fill_type": "full",
         }
 
         await om.process_fill_report(fill_data)
@@ -433,7 +435,9 @@ class TestPartialFillReconciliation:
         assert position["entry_price"] == 50000.0
 
     @pytest.mark.asyncio
-    async def test_order_manager_process_fill_report_partial_fill(self, config, mock_executors, mock_managers):
+    async def test_order_manager_process_fill_report_partial_fill(
+        self, config, mock_executors, mock_managers
+    ):
         """Test processing a partial fill report."""
         om = OrderManager(config, TradingMode.PAPER)
 
@@ -444,7 +448,7 @@ class TestPartialFillReconciliation:
             "amount": "0.5",
             "price": "50000",
             "fill_type": "partial",
-            "original_amount": "1.0"
+            "original_amount": "1.0",
         }
 
         await om.process_fill_report(fill_data1)
@@ -462,7 +466,7 @@ class TestPartialFillReconciliation:
             "symbol": "BTC/USDT",
             "amount": "0.5",
             "price": "50100",
-            "fill_type": "final"
+            "fill_type": "final",
         }
 
         await om.process_fill_report(fill_data2)
@@ -480,15 +484,13 @@ class TestPartialFillReconciliation:
         assert position["entry_price"] == 50050.0
 
     @pytest.mark.asyncio
-    async def test_order_manager_process_fill_report_missing_order_id(self, config, mock_executors, mock_managers):
+    async def test_order_manager_process_fill_report_missing_order_id(
+        self, config, mock_executors, mock_managers
+    ):
         """Test processing fill report with missing order_id."""
         om = OrderManager(config, TradingMode.PAPER)
 
-        fill_data = {
-            "symbol": "BTC/USDT",
-            "amount": "1.0",
-            "price": "50000"
-        }
+        fill_data = {"symbol": "BTC/USDT", "amount": "1.0", "price": "50000"}
 
         # Should not raise exception, just log warning
         await om.process_fill_report(fill_data)
@@ -497,7 +499,9 @@ class TestPartialFillReconciliation:
         assert len(om.fill_reconciler.partial_fills) == 0
 
     @pytest.mark.asyncio
-    async def test_order_manager_process_fill_report_invalid_data(self, config, mock_executors, mock_managers):
+    async def test_order_manager_process_fill_report_invalid_data(
+        self, config, mock_executors, mock_managers
+    ):
         """Test processing fill report with invalid data."""
         om = OrderManager(config, TradingMode.PAPER)
 
@@ -505,7 +509,7 @@ class TestPartialFillReconciliation:
             "order_id": "order_123",
             "symbol": "BTC/USDT",
             "amount": "invalid_amount",
-            "price": "50000"
+            "price": "50000",
         }
 
         await om.process_fill_report(fill_data)
@@ -514,24 +518,30 @@ class TestPartialFillReconciliation:
         assert om.fill_reconciler.metrics["exchange_discrepancies"] == 1
 
     @pytest.mark.asyncio
-    async def test_order_manager_partial_fill_retry(self, config, mock_executors, mock_managers):
+    async def test_order_manager_partial_fill_retry(
+        self, config, mock_executors, mock_managers
+    ):
         """Test partial fill retry mechanism."""
         om = OrderManager(config, TradingMode.PAPER)
 
         # Mock execute_order to return a successful result
         original_execute = om.execute_order
+
         async def mock_execute_order(signal, **kwargs):
             return {
                 "id": f"retry_{signal.get('idempotency_key', 'unknown')}",
                 "status": "filled",
                 "amount": signal.get("amount", 0),
-                "price": 50000.0
+                "price": 50000.0,
             }
+
         om.execute_order = mock_execute_order
 
         try:
             # Create partial fill record
-            record = om.fill_reconciler.register_partial_fill("order_123", "BTC/USDT", Decimal("1.0"))
+            record = om.fill_reconciler.register_partial_fill(
+                "order_123", "BTC/USDT", Decimal("1.0")
+            )
 
             # Add partial fill
             fill = Fill(
@@ -540,7 +550,7 @@ class TestPartialFillReconciliation:
                 amount=Decimal("0.5"),
                 price=Decimal("50000"),
                 timestamp=time.time(),
-                fill_type="partial"
+                fill_type="partial",
             )
             om.fill_reconciler.add_fill_to_record("order_123", fill)
 
@@ -555,12 +565,16 @@ class TestPartialFillReconciliation:
             om.execute_order = original_execute
 
     @pytest.mark.asyncio
-    async def test_order_manager_get_fill_reconciliation_metrics(self, config, mock_executors, mock_managers):
+    async def test_order_manager_get_fill_reconciliation_metrics(
+        self, config, mock_executors, mock_managers
+    ):
         """Test getting fill reconciliation metrics from OrderManager."""
         om = OrderManager(config, TradingMode.PAPER)
 
         # Add some test data
-        om.fill_reconciler.register_partial_fill("order_123", "BTC/USDT", Decimal("1.0"))
+        om.fill_reconciler.register_partial_fill(
+            "order_123", "BTC/USDT", Decimal("1.0")
+        )
         om.fill_reconciler.metrics["successful_reconciliations"] = 5
 
         metrics = om.get_fill_reconciliation_metrics()
@@ -569,13 +583,19 @@ class TestPartialFillReconciliation:
         assert metrics["successful_reconciliations"] == 5
 
     @pytest.mark.asyncio
-    async def test_order_manager_get_pending_partial_fills(self, config, mock_executors, mock_managers):
+    async def test_order_manager_get_pending_partial_fills(
+        self, config, mock_executors, mock_managers
+    ):
         """Test getting pending partial fills from OrderManager."""
         om = OrderManager(config, TradingMode.PAPER)
 
         # Create some test records
-        record1 = om.fill_reconciler.register_partial_fill("order_123", "BTC/USDT", Decimal("1.0"))
-        record2 = om.fill_reconciler.register_partial_fill("order_456", "ETH/USDT", Decimal("2.0"))
+        record1 = om.fill_reconciler.register_partial_fill(
+            "order_123", "BTC/USDT", Decimal("1.0")
+        )
+        record2 = om.fill_reconciler.register_partial_fill(
+            "order_456", "ETH/USDT", Decimal("2.0")
+        )
         record2.status = "fully_filled"  # Not pending
 
         pending = om.get_pending_partial_fills()
@@ -584,13 +604,19 @@ class TestPartialFillReconciliation:
         assert pending[0].original_order_id == "order_123"
 
     @pytest.mark.asyncio
-    async def test_order_manager_get_stuck_partial_fills(self, config, mock_executors, mock_managers):
+    async def test_order_manager_get_stuck_partial_fills(
+        self, config, mock_executors, mock_managers
+    ):
         """Test getting stuck partial fills from OrderManager."""
         om = OrderManager(config, TradingMode.PAPER)
 
         # Create test records
-        record1 = om.fill_reconciler.register_partial_fill("order_123", "BTC/USDT", Decimal("1.0"))
-        record2 = om.fill_reconciler.register_partial_fill("order_456", "ETH/USDT", Decimal("2.0"))
+        record1 = om.fill_reconciler.register_partial_fill(
+            "order_123", "BTC/USDT", Decimal("1.0")
+        )
+        record2 = om.fill_reconciler.register_partial_fill(
+            "order_456", "ETH/USDT", Decimal("2.0")
+        )
 
         # Make them stuck
         record1.mark_for_manual_intervention("Test")
@@ -601,7 +627,9 @@ class TestPartialFillReconciliation:
         assert len(stuck) == 2
 
     @pytest.mark.asyncio
-    async def test_order_manager_start_fill_reconciliation(self, config, mock_executors, mock_managers):
+    async def test_order_manager_start_fill_reconciliation(
+        self, config, mock_executors, mock_managers
+    ):
         """Test starting fill reconciliation from OrderManager."""
         om = OrderManager(config, TradingMode.PAPER)
 
@@ -613,7 +641,9 @@ class TestPartialFillReconciliation:
         await om.fill_reconciler.stop_reconciliation_loop()
 
     @pytest.mark.asyncio
-    async def test_order_manager_shutdown_stops_reconciliation(self, config, mock_executors, mock_managers):
+    async def test_order_manager_shutdown_stops_reconciliation(
+        self, config, mock_executors, mock_managers
+    ):
         """Test that shutdown stops fill reconciliation."""
         om = OrderManager(config, TradingMode.PAPER)
 
@@ -639,21 +669,25 @@ class TestPartialFillReconciliation:
                 "max_fill_retries": 1,
                 "fill_retry_delay": 0.1,
                 "reconciliation_interval": 0.5,
-                "enable_fill_audit": True
-            }
+                "enable_fill_audit": True,
+            },
         }
 
-        with patch("core.order_manager.LiveOrderExecutor"), \
-             patch("core.order_manager.PaperOrderExecutor"), \
-             patch("core.order_manager.BacktestOrderExecutor"), \
-             patch("core.order_manager.ReliabilityManager"), \
-             patch("core.order_manager.PortfolioManager"), \
-             patch("core.order_manager.OrderProcessor"):
-
+        with patch("core.order_manager.LiveOrderExecutor"), patch(
+            "core.order_manager.PaperOrderExecutor"
+        ), patch("core.order_manager.BacktestOrderExecutor"), patch(
+            "core.order_manager.ReliabilityManager"
+        ), patch(
+            "core.order_manager.PortfolioManager"
+        ), patch(
+            "core.order_manager.OrderProcessor"
+        ):
             om = OrderManager(config, TradingMode.PAPER)
 
             # Register a partial fill
-            record = om.fill_reconciler.register_partial_fill("order_123", "BTC/USDT", Decimal("1.0"))
+            record = om.fill_reconciler.register_partial_fill(
+                "order_123", "BTC/USDT", Decimal("1.0")
+            )
 
             # Start reconciliation
             await om.start_fill_reconciliation()
@@ -682,17 +716,19 @@ class TestPartialFillReconciliation:
                 "max_fill_retries": 1,
                 "fill_retry_delay": 0.1,
                 "reconciliation_interval": 1.0,
-                "enable_fill_audit": True
-            }
+                "enable_fill_audit": True,
+            },
         }
 
-        with patch("core.order_manager.LiveOrderExecutor"), \
-             patch("core.order_manager.PaperOrderExecutor"), \
-             patch("core.order_manager.BacktestOrderExecutor"), \
-             patch("core.order_manager.ReliabilityManager"), \
-             patch("core.order_manager.PortfolioManager"), \
-             patch("core.order_manager.OrderProcessor"):
-
+        with patch("core.order_manager.LiveOrderExecutor"), patch(
+            "core.order_manager.PaperOrderExecutor"
+        ), patch("core.order_manager.BacktestOrderExecutor"), patch(
+            "core.order_manager.ReliabilityManager"
+        ), patch(
+            "core.order_manager.PortfolioManager"
+        ), patch(
+            "core.order_manager.OrderProcessor"
+        ):
             om = OrderManager(config, TradingMode.PAPER)
 
             # Mock reconciliation to hang
@@ -705,7 +741,9 @@ class TestPartialFillReconciliation:
 
             try:
                 # Register a partial fill
-                record = om.fill_reconciler.register_partial_fill("order_123", "BTC/USDT", Decimal("1.0"))
+                record = om.fill_reconciler.register_partial_fill(
+                    "order_123", "BTC/USDT", Decimal("1.0")
+                )
 
                 # Start reconciliation with timeout protection
                 await om.start_fill_reconciliation()
@@ -721,7 +759,9 @@ class TestPartialFillReconciliation:
                 om.fill_reconciler._attempt_reconciliation = original_attempt
 
     @pytest.mark.asyncio
-    async def test_exchange_compatibility_different_fill_formats(self, config, mock_executors, mock_managers):
+    async def test_exchange_compatibility_different_fill_formats(
+        self, config, mock_executors, mock_managers
+    ):
         """Test handling different exchange fill report formats."""
         om = OrderManager(config, TradingMode.PAPER)
 
@@ -733,7 +773,7 @@ class TestPartialFillReconciliation:
                 "symbol": "BTC/USDT",
                 "amount": "1.0",
                 "price": "50000",
-                "fill_type": "full"
+                "fill_type": "full",
             },
             # Format with fees - partial fill (creates record but doesn't update position yet)
             {
@@ -743,7 +783,7 @@ class TestPartialFillReconciliation:
                 "price": "3000",
                 "fill_type": "partial",
                 "original_amount": "2.0",  # Same as amount = full fill
-                "fees": {"trading": "0.001"}
+                "fees": {"trading": "0.001"},
             },
             # Format with exchange order ID - final fill for a previous partial
             {
@@ -753,8 +793,8 @@ class TestPartialFillReconciliation:
                 "price": "1.50",
                 "fill_type": "final",
                 "original_amount": "1000",  # Same as amount = full fill
-                "exchange_order_id": "exch_12345"
-            }
+                "exchange_order_id": "exch_12345",
+            },
         ]
 
         for fill_data in test_cases:
@@ -770,12 +810,16 @@ class TestPartialFillReconciliation:
         assert "ADA/USDT" in om.order_processor.positions
 
     @pytest.mark.asyncio
-    async def test_manual_intervention_workflow(self, config, mock_executors, mock_managers):
+    async def test_manual_intervention_workflow(
+        self, config, mock_executors, mock_managers
+    ):
         """Test manual intervention workflow for stuck orders."""
         om = OrderManager(config, TradingMode.PAPER)
 
         # Create a stuck partial fill
-        record = om.fill_reconciler.register_partial_fill("stuck_order", "BTC/USDT", Decimal("1.0"))
+        record = om.fill_reconciler.register_partial_fill(
+            "stuck_order", "BTC/USDT", Decimal("1.0")
+        )
 
         # Simulate multiple failed reconciliation attempts
         for i in range(6):  # More than max attempts
@@ -793,7 +837,9 @@ class TestPartialFillReconciliation:
         assert stuck_fills[0].original_order_id == "stuck_order"
 
     @pytest.mark.asyncio
-    async def test_position_management_integration(self, config, mock_executors, mock_managers):
+    async def test_position_management_integration(
+        self, config, mock_executors, mock_managers
+    ):
         """Test integration with position management."""
         om = OrderManager(config, TradingMode.PAPER)
 
@@ -805,14 +851,14 @@ class TestPartialFillReconciliation:
                 "amount": "0.5",
                 "price": "50000",
                 "fill_type": "partial",
-                "original_amount": "1.0"
+                "original_amount": "1.0",
             },
             {
                 "order_id": "order_1",
                 "symbol": "BTC/USDT",
                 "amount": "0.5",
                 "price": "50100",
-                "fill_type": "final"
+                "fill_type": "final",
             },
             # Different order for same symbol
             {
@@ -820,8 +866,8 @@ class TestPartialFillReconciliation:
                 "symbol": "BTC/USDT",
                 "amount": "0.3",
                 "price": "50200",
-                "fill_type": "full"
-            }
+                "fill_type": "full",
+            },
         ]
 
         for fill_data in fills_data:
@@ -835,7 +881,9 @@ class TestPartialFillReconciliation:
         # Volume-weighted average price:
         # (0.5 * 50000 + 0.5 * 50100 + 0.3 * 50200) / 1.3
         expected_avg = (0.5 * 50000 + 0.5 * 50100 + 0.3 * 50200) / 1.3
-        assert abs(position["entry_price"] - expected_avg) < 0.01  # Small tolerance for float comparison
+        assert (
+            abs(position["entry_price"] - expected_avg) < 0.01
+        )  # Small tolerance for float comparison
 
         # Should have both order IDs in position
         assert "order_1" in position["orders"]

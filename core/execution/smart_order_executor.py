@@ -10,9 +10,9 @@ from decimal import Decimal
 from typing import Any, Dict, List
 
 from core.api_protection import (
-    guarded_call,
     get_default_circuit_breaker,
     get_default_rate_limiter,
+    guarded_call,
 )
 from core.contracts import SignalType, TradingSignal
 from core.types.order_types import Order, OrderStatus, OrderType

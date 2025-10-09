@@ -71,12 +71,12 @@ class ReliabilityManager:
         # Safety check for side-effecting operations
         if is_side_effect and not allow_side_effect_retry:
             raise RetryNotAllowedError(
-                f"Retry disabled for side-effect operation without explicit allow_side_effect_retry=True"
+                "Retry disabled for side-effect operation without explicit allow_side_effect_retry=True"
             )
 
         if is_side_effect and allow_side_effect_retry and idempotency_key is None:
             raise RetryNotAllowedError(
-                f"Retry not allowed for side-effect operation without idempotency_key"
+                "Retry not allowed for side-effect operation without idempotency_key"
             )
 
         retries = (

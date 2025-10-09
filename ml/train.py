@@ -120,6 +120,7 @@ def set_deterministic_seeds(seed: int = 42) -> None:
     # TensorFlow
     try:
         import tensorflow as tf
+
         tf.random.set_seed(seed)
         logger.info(f"TensorFlow seed set to {seed}")
     except Exception as e:
@@ -128,6 +129,7 @@ def set_deterministic_seeds(seed: int = 42) -> None:
     # PyTorch
     try:
         import torch
+
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed(seed)
@@ -139,8 +141,9 @@ def set_deterministic_seeds(seed: int = 42) -> None:
     # CatBoost - handle different API versions safely
     try:
         import catboost as cb
+
         # Different CatBoost versions have different APIs
-        if hasattr(cb, 'set_random_seed'):
+        if hasattr(cb, "set_random_seed"):
             cb.set_random_seed(seed)
             logger.info(f"CatBoost seed set to {seed}")
         else:
@@ -152,6 +155,7 @@ def set_deterministic_seeds(seed: int = 42) -> None:
     # LightGBM
     try:
         import lightgbm as lgb
+
         # LightGBM uses numpy internally
         logger.debug("LightGBM uses seeded NumPy random state")
     except ImportError:
@@ -160,6 +164,7 @@ def set_deterministic_seeds(seed: int = 42) -> None:
     # XGBoost
     try:
         import xgboost as xgb
+
         # XGBoost uses numpy internally
         logger.debug("XGBoost uses seeded NumPy random state")
     except ImportError:
@@ -168,6 +173,7 @@ def set_deterministic_seeds(seed: int = 42) -> None:
     # pandas - set random state explicitly
     try:
         import pandas as pd
+
         # pandas uses numpy internally, but we can set it explicitly for consistency
         pd.core.common.random_state(seed)
         logger.debug(f"pandas random state set to {seed}")

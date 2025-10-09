@@ -4,8 +4,9 @@ Unit tests for order idempotency functionality.
 Tests idempotency key requirements and duplicate order handling.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from core.exceptions import MissingIdempotencyError
 from core.order_manager import OrderManager

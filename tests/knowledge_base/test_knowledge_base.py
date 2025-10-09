@@ -40,11 +40,7 @@ from knowledge_base.schema import (
     StrategyMetadata,
     validate_knowledge_entry,
 )
-from knowledge_base.storage import (
-    CSVStorage,
-    JSONStorage,
-    SQLiteStorage,
-)
+from knowledge_base.storage import CSVStorage, JSONStorage, SQLiteStorage
 
 
 class TestKnowledgeSchema:

@@ -15,9 +15,7 @@ from typing import Any, Dict, List, Optional
 
 from core.contracts import TradingSignal
 from core.signal_router.event_bus import get_default_enhanced_event_bus
-from core.signal_router.events import (
-    create_strategy_switch_event,
-)
+from core.signal_router.events import create_strategy_switch_event
 from utils.logger import get_trade_logger
 
 # Import metrics functions or implement locally

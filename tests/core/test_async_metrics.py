@@ -8,25 +8,19 @@ Tests async metric collection, concurrency, performance benchmarks, and edge cas
 
 import asyncio
 import json
-import pytest
 import statistics
 import time
 from pathlib import Path
-from typing import Dict, Any, List, Callable
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any, Callable, Dict, List
 
-import numpy as np
 import aiofiles
+import numpy as np
+import pytest
 
 from core.performance_monitor import (
     RealTimePerformanceMonitor,
-    PerformanceAlert,
-    PerformanceBaseline,
-    AnomalyDetectionResult,
     get_performance_monitor,
-    create_performance_monitor,
 )
-from core.metrics_collector import get_metrics_collector
 
 
 class AsyncPerformanceMonitor:
@@ -276,7 +270,9 @@ class TestConcurrentMetricsUpdates:
         # Add historical data directly to baseline_history (what _update_baselines reads)
         # Ensure data is within the baseline window (10 seconds)
         for i in range(50):
-            timestamp = current_time - (10 - i * 0.2)  # 0.2 second intervals within 10s window
+            timestamp = current_time - (
+                10 - i * 0.2
+            )  # 0.2 second intervals within 10s window
             value = 100.0 + np.random.normal(0, 5)  # Base value with noise
             real_monitor.baseline_history[metric_name].append((timestamp, value))
 
@@ -419,8 +415,9 @@ class TestPerformanceBenchmarks:
     @pytest.mark.timeout(30)
     async def test_memory_efficiency_under_load(self, async_monitor):
         """Test memory efficiency during high-frequency async operations."""
-        import psutil
         import os
+
+        import psutil
 
         process = psutil.Process(os.getpid())
         initial_memory = process.memory_info().rss

@@ -5,15 +5,16 @@ Unit tests for data fetching and historical data management.
 Tests exchange connectivity, data validation, caching, and error handling.
 """
 
+import os
+from datetime import datetime, timedelta
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
+import aiohttp
+import numpy as np
+import pandas as pd
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock, patch, MagicMock, Mock
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
-import aiohttp
-import os
-from pathlib import Path
 
 from data.data_fetcher import DataFetcher
 from data.historical_loader import HistoricalDataLoader
@@ -125,7 +126,9 @@ async def test_rate_limiting(data_fetcher):
 async def test_data_validation(data_fetcher, mock_ohlcv_data):
     """Test OHLCV data validation checks."""
     # Test valid data
-    data_fetcher.exchange._exchange.fetch_ohlcv = AsyncMock(return_value=mock_ohlcv_data)
+    data_fetcher.exchange._exchange.fetch_ohlcv = AsyncMock(
+        return_value=mock_ohlcv_data
+    )
     df = await data_fetcher.get_historical_data("BTC/USDT", "1h")
     assert not df.empty
 
@@ -257,7 +260,9 @@ async def test_cache_operations(data_fetcher, mock_ohlcv_data):
 @pytest.mark.asyncio
 async def test_multiple_symbol_fetching(data_fetcher, mock_ohlcv_data):
     """Test concurrent fetching of multiple symbols."""
-    data_fetcher.exchange._exchange.fetch_ohlcv = AsyncMock(return_value=mock_ohlcv_data)
+    data_fetcher.exchange._exchange.fetch_ohlcv = AsyncMock(
+        return_value=mock_ohlcv_data
+    )
 
     # Test fetching multiple symbols
     data = await data_fetcher.get_multiple_historical_data(

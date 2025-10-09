@@ -132,7 +132,9 @@ class GeneticOptimizer(BaseOptimizer):
         # Performance optimizations (must be set early for test mode logic)
         self.enable_fitness_caching = config.get("enable_fitness_caching", True)
         self.enable_early_termination = config.get("enable_early_termination", True)
-        self.early_termination_threshold = config.get("early_termination_threshold", 0.001)
+        self.early_termination_threshold = config.get(
+            "early_termination_threshold", 0.001
+        )
         self.early_termination_window = config.get("early_termination_window", 5)
         self.test_mode = config.get("test_mode", False)  # Reduce population for tests
 
@@ -179,7 +181,9 @@ class GeneticOptimizer(BaseOptimizer):
             # Reduce population size for tests to improve performance
             self.population_size = min(self.population_size, 20)
             self.max_population_size = min(self.max_population_size, 20)
-            self.logger.info(f"Test mode enabled: reduced population size to {self.population_size}")
+            self.logger.info(
+                f"Test mode enabled: reduced population size to {self.population_size}"
+            )
 
         # GA specific configuration
         self.generations = config.get("generations", 10)
@@ -226,10 +230,16 @@ class GeneticOptimizer(BaseOptimizer):
         # ============================================================================
 
         # Seed management configuration
-        self.random_mode = config.get("random_mode", "reproducible")  # "reproducible" or "exploratory"
+        self.random_mode = config.get(
+            "random_mode", "reproducible"
+        )  # "reproducible" or "exploratory"
         self.base_seed = config.get("base_seed", 42)  # Base seed for reproducible mode
-        self.worker_id = config.get("worker_id", 0)  # For parallel execution seed isolation
-        self.num_workers = config.get("num_workers", 1)  # Total number of parallel workers
+        self.worker_id = config.get(
+            "worker_id", 0
+        )  # For parallel execution seed isolation
+        self.num_workers = config.get(
+            "num_workers", 1
+        )  # Total number of parallel workers
 
         # Random state management
         self.random_state: Optional[np.random.RandomState] = None
@@ -473,7 +483,9 @@ class GeneticOptimizer(BaseOptimizer):
 
             # Check for early termination
             if self.enable_early_termination and self._should_terminate_early():
-                self.logger.info(f"Early termination at generation {generation + 1} due to convergence")
+                self.logger.info(
+                    f"Early termination at generation {generation + 1} due to convergence"
+                )
                 break
 
         # Finalize optimization
@@ -788,14 +800,18 @@ class GeneticOptimizer(BaseOptimizer):
             worker_seed = self.base_seed + self.worker_id
             self.random_state = np.random.RandomState(worker_seed)
             random.seed(worker_seed)
-            self.logger.info(f"Initialized reproducible random state with seed: {worker_seed}")
+            self.logger.info(
+                f"Initialized reproducible random state with seed: {worker_seed}"
+            )
         elif self.random_mode == "exploratory":
             # Use random seed for exploration
             self.random_state = np.random.RandomState()
             # Don't set python random seed to maintain some randomness
             self.logger.info("Initialized exploratory random state")
         else:
-            raise ValueError(f"Invalid random_mode: {self.random_mode}. Must be 'reproducible' or 'exploratory'")
+            raise ValueError(
+                f"Invalid random_mode: {self.random_mode}. Must be 'reproducible' or 'exploratory'"
+            )
 
         # Store initial state for checkpointing
         self._save_random_state()
@@ -866,15 +882,15 @@ class GeneticOptimizer(BaseOptimizer):
             "worker_id": self.worker_id,
             "num_workers": self.num_workers,
             "population_size": self.population_size,
-            "current_generation": getattr(self, 'current_iteration', 0),
+            "current_generation": getattr(self, "current_iteration", 0),
             "best_params": self.best_params,
             "best_fitness": self.best_fitness,
             "population": [
-                {
-                    "genes": chrom.genes,
-                    "fitness": chrom.fitness
-                } for chrom in self.population
-            ] if self.population else [],
+                {"genes": chrom.genes, "fitness": chrom.fitness}
+                for chrom in self.population
+            ]
+            if self.population
+            else [],
             "fitness_history": self.fitness_history.copy(),
             "diversity_history": self.diversity_history.copy(),
             "population_size_history": self.population_size_history.copy(),
@@ -902,7 +918,9 @@ class GeneticOptimizer(BaseOptimizer):
         self._initialize_random_state()
 
         # Restore optimization state
-        self.population_size = checkpoint.get("population_size", self.initial_population_size)
+        self.population_size = checkpoint.get(
+            "population_size", self.initial_population_size
+        )
         self.current_iteration = checkpoint.get("current_generation", 0)
         self.best_params = checkpoint.get("best_params")
         self.best_fitness = checkpoint.get("best_fitness", float("-inf"))
@@ -912,8 +930,7 @@ class GeneticOptimizer(BaseOptimizer):
         self.population = []
         for chrom_data in population_data:
             chromosome = Chromosome(
-                genes=chrom_data["genes"],
-                fitness=chrom_data["fitness"]
+                genes=chrom_data["genes"], fitness=chrom_data["fitness"]
             )
             self.population.append(chromosome)
 
@@ -927,13 +944,19 @@ class GeneticOptimizer(BaseOptimizer):
         if self.population:
             self.best_chromosome = max(
                 self.population,
-                key=lambda x: x.fitness if x.fitness != float("-inf") else float("-inf"),
+                key=lambda x: x.fitness
+                if x.fitness != float("-inf")
+                else float("-inf"),
             )
 
         self.checkpoint_data = checkpoint
-        self.logger.info(f"Restored optimization state from checkpoint (generation {self.current_iteration})")
+        self.logger.info(
+            f"Restored optimization state from checkpoint (generation {self.current_iteration})"
+        )
 
-    def validate_reproducibility(self, strategy_class, data: pd.DataFrame, num_runs: int = 3) -> Dict[str, Any]:
+    def validate_reproducibility(
+        self, strategy_class, data: pd.DataFrame, num_runs: int = 3
+    ) -> Dict[str, Any]:
         """
         Validate that optimization produces reproducible results.
 
@@ -946,7 +969,9 @@ class GeneticOptimizer(BaseOptimizer):
             Validation results dictionary
         """
         if self.random_mode != "reproducible":
-            raise ValueError("Reproducibility validation requires reproducible random mode")
+            raise ValueError(
+                "Reproducibility validation requires reproducible random mode"
+            )
 
         results = []
         original_seed = self.base_seed
@@ -960,10 +985,7 @@ class GeneticOptimizer(BaseOptimizer):
             results.append(result)
 
         # Check reproducibility
-        all_same = all(
-            self._params_equal(results[0], result)
-            for result in results[1:]
-        )
+        all_same = all(self._params_equal(results[0], result) for result in results[1:])
 
         return {
             "is_reproducible": all_same,
@@ -972,7 +994,9 @@ class GeneticOptimizer(BaseOptimizer):
             "validation_passed": all_same,
         }
 
-    def _params_equal(self, params1: Dict[str, Any], params2: Dict[str, Any], tolerance: float = 1e-10) -> bool:
+    def _params_equal(
+        self, params1: Dict[str, Any], params2: Dict[str, Any], tolerance: float = 1e-10
+    ) -> bool:
         """
         Check if two parameter dictionaries are equal within tolerance.
 
@@ -1023,7 +1047,9 @@ class GeneticOptimizer(BaseOptimizer):
         self.worker_id = worker_id
         self.num_workers = num_workers
         self._initialize_random_state()
-        self.logger.info(f"Configured for parallel execution: worker {worker_id}/{num_workers}")
+        self.logger.info(
+            f"Configured for parallel execution: worker {worker_id}/{num_workers}"
+        )
 
     def _get_cache_key(self, params: Dict[str, Any]) -> str:
         """
@@ -1050,7 +1076,7 @@ class GeneticOptimizer(BaseOptimizer):
             return False
 
         # Check if fitness improvement has been minimal over the last few generations
-        recent_fitness = self.fitness_history[-self.early_termination_window:]
+        recent_fitness = self.fitness_history[-self.early_termination_window :]
 
         # Calculate improvement over the window
         max_improvement = max(recent_fitness) - min(recent_fitness)

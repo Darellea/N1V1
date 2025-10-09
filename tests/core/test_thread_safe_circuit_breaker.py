@@ -10,17 +10,14 @@ concurrent access patterns, and deadlock prevention.
 import asyncio
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from unittest.mock import MagicMock
 
 import pytest
 
 from core.circuit_breaker import (
-    CircuitBreaker,
-    CircuitBreakerConfig,
     CircuitBreakerState,
-    CooldownStrategy,
     ThreadSafeCircuitBreaker,
     ThreadSafeCircuitBreakerConfig,
 )
@@ -44,8 +41,8 @@ class TestThreadSafeCircuitBreakerCore:
         """Test thread-safe circuit breaker initialization."""
         assert self.cb.state == CircuitBreakerState.NORMAL
         assert self.cb.config == self.config
-        assert hasattr(self.cb, '_lock')
-        assert hasattr(self.cb, '_lock_timeout')
+        assert hasattr(self.cb, "_lock")
+        assert hasattr(self.cb, "_lock_timeout")
         assert self.cb._lock_timeout == 5.0
 
     def test_thread_local_vs_shared(self):
@@ -107,7 +104,9 @@ class TestThreadSafeStateManagement:
                 for i in range(50):
                     # Random state transitions
                     if self.cb.state == CircuitBreakerState.NORMAL:
-                        self.cb._trigger_circuit_breaker(f"Thread {thread_id} trigger {i}")
+                        self.cb._trigger_circuit_breaker(
+                            f"Thread {thread_id} trigger {i}"
+                        )
                     elif self.cb.state == CircuitBreakerState.TRIGGERED:
                         self.cb._enter_cooling_period()
                     elif self.cb.state == CircuitBreakerState.COOLING:
@@ -192,7 +191,7 @@ class TestThreadSafeStateManagement:
         for t in threads:
             t.join(timeout=10.0)
             if t.is_alive():
-                pytest.fail(f"Thread did not complete within timeout")
+                pytest.fail("Thread did not complete within timeout")
 
     @pytest.mark.timeout(15)
     def test_race_condition_prevention(self):
@@ -206,7 +205,9 @@ class TestThreadSafeStateManagement:
                 try:
                     # Simulate concurrent trigger checks with different conditions
                     conditions = {
-                        "equity": 8500 if i < 25 else 9500,  # Alternate between trigger and no-trigger
+                        "equity": 8500
+                        if i < 25
+                        else 9500,  # Alternate between trigger and no-trigger
                         "consecutive_losses": 6 if i < 25 else 2,
                         "volatility": 0.08 if i < 25 else 0.02,
                     }
@@ -221,7 +222,7 @@ class TestThreadSafeStateManagement:
                     # Small delay to allow other threads to run
                     time.sleep(0.001)
 
-                except Exception as e:
+                except Exception:
                     # Log but don't fail - some race conditions are expected in high concurrency
                     pass
 
@@ -243,7 +244,9 @@ class TestThreadSafeStateManagement:
         # Once triggered, state should remain consistent
         if state_changes:
             # All state changes should be to TRIGGERED
-            assert all(state == "triggered" for state in state_changes), f"Inconsistent states: {state_changes}"
+            assert all(
+                state == "triggered" for state in state_changes
+            ), f"Inconsistent states: {state_changes}"
 
 
 class TestThreadSafeIntegration:
@@ -303,9 +306,14 @@ class TestThreadSafeIntegration:
                 pytest.fail("Integration worker thread did not complete")
 
         # Integration methods should be called exactly once total
-        total_calls = (call_counts["cancel_orders"] + call_counts["block_signals"] +
-                      call_counts["freeze_portfolio"])
-        assert total_calls <= 3, f"Too many integration calls: {call_counts}"  # One per type max
+        total_calls = (
+            call_counts["cancel_orders"]
+            + call_counts["block_signals"]
+            + call_counts["freeze_portfolio"]
+        )
+        assert (
+            total_calls <= 3
+        ), f"Too many integration calls: {call_counts}"  # One per type max
 
 
 class TestThreadSafePerformance:
@@ -365,9 +373,15 @@ class TestThreadSafePerformance:
             p95_time = sorted(operation_times)[int(len(operation_times) * 0.95)]
 
             # Performance requirements for thread-safe operations (relaxed for realistic expectations)
-            assert avg_time < 0.05, f"Average operation time {avg_time:.4f}s exceeds 50ms limit"
-            assert max_time < 0.5, f"Max operation time {max_time:.4f}s exceeds 500ms limit"
-            assert p95_time < 0.2, f"P95 operation time {p95_time:.4f}s exceeds 200ms limit"
+            assert (
+                avg_time < 0.05
+            ), f"Average operation time {avg_time:.4f}s exceeds 50ms limit"
+            assert (
+                max_time < 0.5
+            ), f"Max operation time {max_time:.4f}s exceeds 500ms limit"
+            assert (
+                p95_time < 0.2
+            ), f"P95 operation time {p95_time:.4f}s exceeds 200ms limit"
 
     @pytest.mark.timeout(30)
     def test_lock_contention_monitoring(self):
@@ -407,9 +421,13 @@ class TestThreadSafePerformance:
 
         # Should have some contention but not excessive (lock is working correctly)
         # With 10 threads each doing 50 operations, some contention is expected
-        assert contention_count < 500, f"Excessive lock contention: {contention_count} events"
+        assert (
+            contention_count < 500
+        ), f"Excessive lock contention: {contention_count} events"
         # But we should have at least some contention to show the test is working
-        assert contention_count > 0, f"No lock contention detected: {contention_count} events"
+        assert (
+            contention_count > 0
+        ), f"No lock contention detected: {contention_count} events"
 
 
 class TestThreadSafeEdgeCases:
@@ -652,7 +670,7 @@ class TestGlobalThreadSafeCircuitBreaker:
             try:
                 cb = get_thread_safe_circuit_breaker()
                 assert cb is not None
-                assert hasattr(cb, '_lock')
+                assert hasattr(cb, "_lock")
 
                 # Perform operations
                 result = asyncio.run(cb.check_and_trigger({"equity": 10000}))
@@ -678,7 +696,10 @@ class TestGlobalThreadSafeCircuitBreaker:
 @pytest.mark.timeout(10)
 def test_lock_timeout_prevention():
     """Test circuit breaker lock timeout prevention."""
-    from core.circuit_breaker import ThreadSafeCircuitBreaker, ThreadSafeCircuitBreakerConfig
+    from core.circuit_breaker import (
+        ThreadSafeCircuitBreaker,
+        ThreadSafeCircuitBreakerConfig,
+    )
 
     cb = ThreadSafeCircuitBreaker(ThreadSafeCircuitBreakerConfig(lock_timeout=1.0))
 

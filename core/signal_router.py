@@ -8,7 +8,7 @@ modular components in the signal_router/ package.
 """
 
 # Import main classes from the package
-from .signal_router.router import SignalRouter, JournalWriter
+from .signal_router.router import JournalWriter, SignalRouter
 
 # Re-export for backward compatibility
 __all__ = ["SignalRouter", "JournalWriter"]

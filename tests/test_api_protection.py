@@ -4,9 +4,7 @@ tests/test_api_protection.py
 Tests for centralized circuit-breaker and rate-limit middleware.
 """
 
-import asyncio
 import time
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -15,8 +13,8 @@ from core.api_protection import (
     CircuitBreakerConfig,
     CircuitBreakerState,
     CircuitOpenError,
-    RateLimitExceededError,
     RateLimiterConfig,
+    RateLimitExceededError,
     TokenBucketRateLimiter,
     get_default_circuit_breaker,
     get_default_rate_limiter,

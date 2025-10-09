@@ -24,11 +24,7 @@ import random
 from pathlib import Path
 
 # Import N1V1 components
-from core.self_healing_engine import (
-    ComponentStatus,
-    ComponentType,
-    SelfHealingEngine,
-)
+from core.self_healing_engine import ComponentStatus, ComponentType, SelfHealingEngine
 from utils.logger import get_logger
 
 # Setup logging

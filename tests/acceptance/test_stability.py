@@ -17,11 +17,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from core.order_manager import MockLiveExecutor, OrderManager
-from core.watchdog import (
-    ComponentStatus,
-    HeartbeatMessage,
-    WatchdogService,
-)
+from core.watchdog import ComponentStatus, HeartbeatMessage, WatchdogService
 from utils.logger import get_logger
 
 logger = get_logger(__name__)

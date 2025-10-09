@@ -5,19 +5,20 @@ Comprehensive unit tests for refactored data module functionality.
 Tests data validation, caching, pagination, and versioning logic.
 """
 
-import pytest
 import asyncio
-import pandas as pd
-import numpy as np
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from datetime import datetime, timedelta
-import tempfile
-import os
 import json
+import os
+import tempfile
+from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
-from data.data_fetcher import DataFetcher, PathTraversalError, CacheLoadError
-from data.historical_loader import HistoricalDataLoader, ConfigurationError
+import numpy as np
+import pandas as pd
+import pytest
+
+from data.data_fetcher import CacheLoadError, DataFetcher, PathTraversalError
 from data.dataset_versioning import DatasetVersionManager
+from data.historical_loader import ConfigurationError, HistoricalDataLoader
 
 
 class TestDataValidation:

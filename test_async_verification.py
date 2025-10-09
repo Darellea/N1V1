@@ -5,9 +5,11 @@ Simple verification script for async-first behavior.
 
 import asyncio
 import time
+
 import pandas as pd
-from data.data_fetcher import DataFetcher
+
 from core.execution.live_executor import LiveOrderExecutor
+from data.data_fetcher import DataFetcher
 
 
 async def test_data_fetcher_async():

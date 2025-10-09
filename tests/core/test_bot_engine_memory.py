@@ -6,10 +6,9 @@ This module provides comprehensive testing for the BotEngine's LRU cache impleme
 memory monitoring, and cache performance under various scenarios.
 """
 
-import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd

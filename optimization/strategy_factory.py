@@ -16,10 +16,7 @@ Key Features:
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from .config import (
-    get_indicator_params,
-    get_signal_logic_params,
-)
+from .config import get_indicator_params, get_signal_logic_params
 
 
 class StrategyGenerationError(Exception):

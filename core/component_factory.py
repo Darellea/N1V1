@@ -203,8 +203,8 @@ class ComponentFactory:
 
         try:
             # Import configuration from centralized system
-            from .config_manager import get_config_manager
             from .cache import RedisCache
+            from .config_manager import get_config_manager
 
             config_manager = get_config_manager()
             cache_config = config_manager.get_cache_config()

@@ -4,18 +4,19 @@ tests/test_memory_cache.py
 Tests for LRU cache with TTL support and memory caps.
 """
 
-import time
 import threading
+import time
+
 import pytest
 
 from core.memory_cache import (
-    LRUCacheWithTTL,
     CacheEntry,
     CacheMetrics,
+    LRUCacheWithTTL,
+    create_cache,
     get_default_cache,
     get_large_cache,
     get_no_ttl_cache,
-    create_cache,
 )
 
 

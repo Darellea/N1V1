@@ -8,17 +8,18 @@ Tests specific lines: 68, 82-83, 87-97, 104, 130-143, 153-155, 205-208,
 516-517, 551-552, 562-564, 571-572.
 """
 
-import pytest
 import asyncio
-import pandas as pd
-import numpy as np
 import json
-import tempfile
 import os
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, Mock
-from datetime import datetime, timedelta
+import tempfile
 import time
+from datetime import datetime, timedelta
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
+import numpy as np
+import pandas as pd
+import pytest
 
 from data.data_fetcher import DataFetcher, PathTraversalError
 
@@ -104,8 +105,10 @@ class TestDataFetcherAsyncMethods:
         }
         self.fetcher = DataFetcher(self.config)
         # Reset circuit breaker state to avoid interference from other tests
-        if hasattr(self.fetcher, 'circuit_breaker') and self.fetcher.circuit_breaker:
-            self.fetcher.circuit_breaker.state = self.fetcher.circuit_breaker.state.__class__.CLOSED
+        if hasattr(self.fetcher, "circuit_breaker") and self.fetcher.circuit_breaker:
+            self.fetcher.circuit_breaker.state = (
+                self.fetcher.circuit_breaker.state.__class__.CLOSED
+            )
             self.fetcher.circuit_breaker.failure_count = 0
             self.fetcher.circuit_breaker.success_count = 0
             self.fetcher.circuit_breaker.last_failure_time = None
@@ -212,8 +215,10 @@ class TestDataFetcherAsyncMethods:
             self.config["cache_dir"] = temp_dir
             fetcher = DataFetcher(self.config)
             # Reset circuit breaker state
-            if hasattr(fetcher, 'circuit_breaker') and fetcher.circuit_breaker:
-                fetcher.circuit_breaker.state = fetcher.circuit_breaker.state.__class__.CLOSED
+            if hasattr(fetcher, "circuit_breaker") and fetcher.circuit_breaker:
+                fetcher.circuit_breaker.state = (
+                    fetcher.circuit_breaker.state.__class__.CLOSED
+                )
                 fetcher.circuit_breaker.failure_count = 0
                 fetcher.circuit_breaker.success_count = 0
                 fetcher.circuit_breaker.last_failure_time = None
@@ -638,8 +643,10 @@ class TestDataFetcherErrorScenarios:
         self.config = {"name": "binance", "rate_limit": 10}
         self.fetcher = DataFetcher(self.config)
         # Reset circuit breaker state to avoid interference from other tests
-        if hasattr(self.fetcher, 'circuit_breaker') and self.fetcher.circuit_breaker:
-            self.fetcher.circuit_breaker.state = self.fetcher.circuit_breaker.state.__class__.CLOSED
+        if hasattr(self.fetcher, "circuit_breaker") and self.fetcher.circuit_breaker:
+            self.fetcher.circuit_breaker.state = (
+                self.fetcher.circuit_breaker.state.__class__.CLOSED
+            )
             self.fetcher.circuit_breaker.failure_count = 0
             self.fetcher.circuit_breaker.success_count = 0
             self.fetcher.circuit_breaker.last_failure_time = None
@@ -813,8 +820,13 @@ class TestDataFetcherIntegration:
             }
             self.fetcher = DataFetcher(self.config)
             # Reset circuit breaker state to avoid interference from other tests
-            if hasattr(self.fetcher, 'circuit_breaker') and self.fetcher.circuit_breaker:
-                self.fetcher.circuit_breaker.state = self.fetcher.circuit_breaker.state.__class__.CLOSED
+            if (
+                hasattr(self.fetcher, "circuit_breaker")
+                and self.fetcher.circuit_breaker
+            ):
+                self.fetcher.circuit_breaker.state = (
+                    self.fetcher.circuit_breaker.state.__class__.CLOSED
+                )
                 self.fetcher.circuit_breaker.failure_count = 0
                 self.fetcher.circuit_breaker.success_count = 0
                 self.fetcher.circuit_breaker.last_failure_time = None

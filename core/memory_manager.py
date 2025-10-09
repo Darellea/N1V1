@@ -86,7 +86,9 @@ class MemoryManager(MemoryManagerInterface):
         self._degradation_steps = memory_config.degradation_steps.copy()
         self._current_degradation_level = 0
         self._memory_forecasts: List[Dict[str, Any]] = []
-        self._forecasting_window = memory_config.forecasting_window_minutes * 60  # Convert to seconds
+        self._forecasting_window = (
+            memory_config.forecasting_window_minutes * 60
+        )  # Convert to seconds
 
         # Graceful degradation state
         self._degradation_active = False
@@ -170,18 +172,24 @@ class MemoryManager(MemoryManagerInterface):
             with self._metrics_lock:
                 # Check thresholds in order of severity (highest to lowest)
                 if memory_mb >= self._memory_thresholds["hard_limit_mb"]:
-                    logger.critical(f"Hard memory limit exceeded: {memory_mb:.2f}MB >= {self._memory_thresholds['hard_limit_mb']:.2f}MB")
+                    logger.critical(
+                        f"Hard memory limit exceeded: {memory_mb:.2f}MB >= {self._memory_thresholds['hard_limit_mb']:.2f}MB"
+                    )
                     # Hard limit reached - deny new allocations and trigger cleanup
                     self._emergency_mode = True
                     self.trigger_emergency_cleanup()
                 elif memory_mb >= self._memory_thresholds["emergency_cleanup_mb"]:
                     self._emergency_mode = True
-                    logger.critical(f"Emergency cleanup threshold exceeded: {memory_mb:.2f}MB >= {self._memory_thresholds['emergency_cleanup_mb']:.2f}MB")
+                    logger.critical(
+                        f"Emergency cleanup threshold exceeded: {memory_mb:.2f}MB >= {self._memory_thresholds['emergency_cleanup_mb']:.2f}MB"
+                    )
                     self.trigger_emergency_cleanup()
                 elif memory_mb >= self._memory_thresholds["critical_mb"]:
                     self._memory_criticals += 1
                     self._emergency_mode = True
-                    logger.critical(f"Critical memory threshold exceeded: {memory_mb:.2f}MB >= {self._memory_thresholds['critical_mb']:.2f}MB")
+                    logger.critical(
+                        f"Critical memory threshold exceeded: {memory_mb:.2f}MB >= {self._memory_thresholds['critical_mb']:.2f}MB"
+                    )
                     self.trigger_emergency_cleanup()
                 elif memory_mb >= self._memory_thresholds["graceful_degradation_mb"]:
                     if not self._degradation_active:
@@ -189,7 +197,9 @@ class MemoryManager(MemoryManagerInterface):
                         self.start_graceful_degradation()
                 elif memory_mb >= self._memory_thresholds["warning_mb"]:
                     self._memory_warnings += 1
-                    logger.warning(f"Memory warning threshold exceeded: {memory_mb:.2f}MB >= {self._memory_thresholds['warning_mb']:.2f}MB")
+                    logger.warning(
+                        f"Memory warning threshold exceeded: {memory_mb:.2f}MB >= {self._memory_thresholds['warning_mb']:.2f}MB"
+                    )
                     if memory_mb >= self._memory_thresholds["cleanup_mb"]:
                         self.trigger_cleanup()
 
@@ -539,7 +549,9 @@ class MemoryManager(MemoryManagerInterface):
             return True
 
         current_usage = self._component_memory_usage.get(component_name, 0.0)
-        component_limit = self._component_limits.get(component_name, self._component_limits["default"])
+        component_limit = self._component_limits.get(
+            component_name, self._component_limits["default"]
+        )
         total_current = sum(self._component_memory_usage.values())
 
         # Check component-specific limit
@@ -613,7 +625,10 @@ class MemoryManager(MemoryManagerInterface):
             time_mean = sum(times) / n
             memory_mean = sum(memory_values) / n
 
-            numerator = sum((t - time_mean) * (m - memory_mean) for t, m in zip(times, memory_values))
+            numerator = sum(
+                (t - time_mean) * (m - memory_mean)
+                for t, m in zip(times, memory_values)
+            )
             denominator = sum((t - time_mean) ** 2 for t in times)
 
             if denominator == 0:
@@ -632,13 +647,16 @@ class MemoryManager(MemoryManagerInterface):
                 "forecast_memory_mb": max(0, forecast_memory),
                 "forecast_time": forecast_time,
                 "trend_mb_per_second": slope,
-                "will_exceed_limits": forecast_memory > self._memory_thresholds["hard_limit_mb"],
+                "will_exceed_limits": forecast_memory
+                > self._memory_thresholds["hard_limit_mb"],
                 "time_to_limit_seconds": None,
             }
 
             # Calculate time to reach hard limit
             if slope > 0:
-                time_to_limit = (self._memory_thresholds["hard_limit_mb"] - memory_values[-1]) / slope
+                time_to_limit = (
+                    self._memory_thresholds["hard_limit_mb"] - memory_values[-1]
+                ) / slope
                 forecast["time_to_limit_seconds"] = max(0, time_to_limit)
 
             return forecast
@@ -670,11 +688,15 @@ class MemoryManager(MemoryManagerInterface):
 
     def _execute_degradation_step(self):
         """Execute the next degradation step."""
-        if not self._degradation_active or self._current_degradation_level >= len(self._degradation_steps):
+        if not self._degradation_active or self._current_degradation_level >= len(
+            self._degradation_steps
+        ):
             return
 
         step = self._degradation_steps[self._current_degradation_level]
-        logger.info(f"Executing degradation step {self._current_degradation_level}: {step}")
+        logger.info(
+            f"Executing degradation step {self._current_degradation_level}: {step}"
+        )
 
         try:
             if step == "reduce_cache_size":

@@ -14,10 +14,7 @@ from utils.logger import (
 )
 
 from .logging_utils import LogSensitivity, get_structured_logger
-from .utils.error_utils import (
-    CircuitBreaker,
-    ErrorHandler,
-)
+from .utils.error_utils import CircuitBreaker, ErrorHandler
 
 logger = get_structured_logger("core.signal_processor", LogSensitivity.SECURE)
 error_handler = ErrorHandler("signal_processor")

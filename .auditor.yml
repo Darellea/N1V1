@@ -1,0 +1,23 @@
+target: ./
+exclude: [tests/*, demo/*]
+linters:
+  black: {enabled: true, mode: check}
+  ruff: {enabled: true}
+static:
+  radon: {cc_threshold: 10}
+severity:
+  weights:
+    security: 0.3
+    lint: 0.2
+    complexity: 0.15
+    dead_code: 0.1
+    duplication: 0.1
+    coverage: 0.15
+policies:
+  critical_threshold: 90
+  high_threshold: 75
+ai_autofix:
+  enabled: false
+  mode: dry_run
+  llm: "local"
+  max_changes_per_run: 10

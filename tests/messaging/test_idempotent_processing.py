@@ -10,7 +10,6 @@ import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -21,6 +20,7 @@ from core.idempotency import OrderExecutionRegistry
 @dataclass
 class ProcessingResult:
     """Result of message processing."""
+
     executed: bool
     message_id: str
     idempotency_key: str
@@ -37,7 +37,11 @@ class IdempotentMessageProcessor:
     deduplication windows for trading signals and orders.
     """
 
-    def __init__(self, deduplication_window_seconds: int = 300, replay_protection_window_seconds: int = 3600):
+    def __init__(
+        self,
+        deduplication_window_seconds: int = 300,
+        replay_protection_window_seconds: int = 3600,
+    ):
         """
         Initialize the processor.
 
@@ -84,21 +88,21 @@ class IdempotentMessageProcessor:
                 self.metrics["duplicates_detected"] += 1
                 return ProcessingResult(
                     executed=False,
-                    message_id=getattr(message, 'id', str(id(message))),
+                    message_id=getattr(message, "id", str(id(message))),
                     idempotency_key=idempotency_key,
                     timestamp=time.time(),
-                    duplicate_detected=True
+                    duplicate_detected=True,
                 )
             elif time_diff < self.replay_protection_window:
                 # Within replay protection window - block as potential replay attack
                 self.metrics["replay_attempts_blocked"] += 1
                 return ProcessingResult(
                     executed=False,
-                    message_id=getattr(message, 'id', str(id(message))),
+                    message_id=getattr(message, "id", str(id(message))),
                     idempotency_key=idempotency_key,
                     timestamp=time.time(),
                     duplicate_detected=False,
-                    replay_attempted=True
+                    replay_attempted=True,
                 )
             else:
                 # Outside both windows - allow reprocessing for legitimate business retries
@@ -107,13 +111,16 @@ class IdempotentMessageProcessor:
         # Check registry for concurrent processing
         registry_state = self.registry.begin_execution(idempotency_key)
         if registry_state:
-            if isinstance(registry_state, dict) and registry_state.get("status") == "pending":
+            if (
+                isinstance(registry_state, dict)
+                and registry_state.get("status") == "pending"
+            ):
                 return ProcessingResult(
                     executed=False,
-                    message_id=getattr(message, 'id', str(id(message))),
+                    message_id=getattr(message, "id", str(id(message))),
                     idempotency_key=idempotency_key,
                     timestamp=time.time(),
-                    duplicate_detected=True
+                    duplicate_detected=True,
                 )
 
         try:
@@ -122,9 +129,9 @@ class IdempotentMessageProcessor:
 
             result = ProcessingResult(
                 executed=True,
-                message_id=getattr(message, 'id', str(id(message))),
+                message_id=getattr(message, "id", str(id(message))),
                 idempotency_key=idempotency_key,
-                timestamp=time.time()
+                timestamp=time.time(),
             )
 
             # Mark as successful
@@ -135,8 +142,11 @@ class IdempotentMessageProcessor:
             # Update average processing time
             processing_time = time.time() - start_time
             self.metrics["processing_time_avg"] = (
-                (self.metrics["processing_time_avg"] * (self.metrics["total_processed"] - 1)) +
-                processing_time
+                (
+                    self.metrics["processing_time_avg"]
+                    * (self.metrics["total_processed"] - 1)
+                )
+                + processing_time
             ) / self.metrics["total_processed"]
 
             return result
@@ -162,7 +172,7 @@ class IdempotentMessageProcessor:
         elif isinstance(message, dict):
             message["idempotency_key"] = key
         elif hasattr(message, "idempotency_key"):
-            setattr(message, "idempotency_key", key)
+            message.idempotency_key = key
 
     def get_metrics(self) -> Dict[str, Any]:
         """Get processing metrics."""
@@ -200,7 +210,7 @@ class TestIdempotentMessageProcessing:
             amount=0.001,
             current_price=50000.0,
             timestamp=int(time.time() * 1000),
-            idempotency_key="test_key_123"
+            idempotency_key="test_key_123",
         )
 
     @pytest.mark.timeout(15)
@@ -218,7 +228,7 @@ class TestIdempotentMessageProcessing:
                 amount=0.001,
                 current_price=50000.0,
                 timestamp=int(time.time() * 1000),
-                idempotency_key=f"msg_{i % 100}"  # Create duplicates every 100 messages
+                idempotency_key=f"msg_{i % 100}",  # Create duplicates every 100 messages
             )
             messages.append(msg)
 
@@ -318,7 +328,7 @@ class TestIdempotentMessageProcessing:
             amount=0.001,
             current_price=50000.0,
             timestamp=int(time.time() * 1000),
-            idempotency_key="key_1"
+            idempotency_key="key_1",
         )
 
         signal2 = TradingSignal(
@@ -330,7 +340,7 @@ class TestIdempotentMessageProcessing:
             amount=0.01,
             current_price=3000.0,
             timestamp=int(time.time() * 1000),
-            idempotency_key="key_2"
+            idempotency_key="key_2",
         )
 
         result1 = await processor.process(signal1)
@@ -431,7 +441,7 @@ class TestIdempotentMessageProcessing:
             amount=0.001,
             current_price=50000.0,
             timestamp=int(time.time() * 1000),
-            idempotency_key="error_test_key"
+            idempotency_key="error_test_key",
         )
 
         # Process normally first

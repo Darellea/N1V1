@@ -8,11 +8,11 @@ and memory usage forecasting functionality.
 import gc
 import os
 import time
-import pytest
-import psutil
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from core.memory_manager import MemoryManager, get_memory_manager
+import pytest
+
+from core.memory_manager import MemoryManager
 
 
 class TestMemoryLimits:
@@ -25,7 +25,7 @@ class TestMemoryLimits:
 
     def teardown_method(self):
         """Clean up test environment."""
-        if hasattr(self, 'memory_manager'):
+        if hasattr(self, "memory_manager"):
             self.memory_manager.shutdown()
         if "TESTING" in os.environ:
             del os.environ["TESTING"]
@@ -84,7 +84,7 @@ class TestMemoryLimits:
         self.memory_manager.set_memory_thresholds(graceful_degradation_mb=100.0)
 
         # Mock memory usage to trigger degradation
-        with patch.object(self.memory_manager, 'get_memory_usage', return_value=120.0):
+        with patch.object(self.memory_manager, "get_memory_usage", return_value=120.0):
             self.memory_manager._check_memory_usage()
 
             # Should have started degradation
@@ -109,7 +109,7 @@ class TestMemoryLimits:
         # Set emergency threshold low and trigger
         self.memory_manager.set_memory_thresholds(emergency_cleanup_mb=50.0)
 
-        with patch.object(self.memory_manager, 'get_memory_usage', return_value=60.0):
+        with patch.object(self.memory_manager, "get_memory_usage", return_value=60.0):
             self.memory_manager._check_memory_usage()
 
             assert self.memory_manager.is_in_emergency_mode()
@@ -158,14 +158,16 @@ class TestMemoryLimits:
         self.memory_manager._object_pools["test_pool"] = [
             MagicMock(_in_use=False),
             MagicMock(_in_use=True),
-            MagicMock(_in_use=False)
+            MagicMock(_in_use=False),
         ]
 
         # Trigger emergency cleanup
         self.memory_manager.trigger_emergency_cleanup()
 
         # Should have cleaned up unused objects
-        assert len(self.memory_manager._object_pools["test_pool"]) <= 1  # Only in-use object remains
+        assert (
+            len(self.memory_manager._object_pools["test_pool"]) <= 1
+        )  # Only in-use object remains
 
     @pytest.mark.timeout(15)
     def test_hard_limits_disabled(self):
@@ -192,7 +194,7 @@ class TestMemoryLimits:
             critical_mb=200.0,
             hard_limit_mb=300.0,
             graceful_degradation_mb=150.0,
-            emergency_cleanup_mb=250.0
+            emergency_cleanup_mb=250.0,
         )
 
         thresholds = self.memory_manager._memory_thresholds
@@ -237,8 +239,8 @@ class TestMemoryLimits:
     @pytest.mark.timeout(15)
     def test_concurrent_memory_operations(self):
         """Test memory operations under concurrent access."""
-        import threading
         import queue
+        import threading
 
         results = queue.Queue()
 
@@ -252,10 +254,7 @@ class TestMemoryLimits:
         # Start multiple allocation threads
         threads = []
         for i in range(5):
-            t = threading.Thread(
-                target=allocate_worker,
-                args=(f"component_{i}", 5.0)
-            )
+            t = threading.Thread(target=allocate_worker, args=(f"component_{i}", 5.0))
             threads.append(t)
             t.start()
 
@@ -277,9 +276,7 @@ class TestMemoryLimits:
         """Test detection of memory pressure conditions."""
         # Set thresholds
         self.memory_manager.set_memory_thresholds(
-            warning_mb=100.0,
-            graceful_degradation_mb=150.0,
-            critical_mb=200.0
+            warning_mb=100.0, graceful_degradation_mb=150.0, critical_mb=200.0
         )
 
         # Test different pressure levels
@@ -287,11 +284,13 @@ class TestMemoryLimits:
             (80.0, "normal"),
             (120.0, "warning"),
             (160.0, "graceful_degradation"),
-            (220.0, "critical")
+            (220.0, "critical"),
         ]
 
         for memory_mb, expected_level in test_cases:
-            with patch.object(self.memory_manager, 'get_memory_usage', return_value=memory_mb):
+            with patch.object(
+                self.memory_manager, "get_memory_usage", return_value=memory_mb
+            ):
                 # Reset state
                 self.memory_manager._degradation_active = False
                 self.memory_manager._emergency_mode = False

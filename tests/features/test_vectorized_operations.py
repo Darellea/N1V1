@@ -6,13 +6,13 @@ including performance benchmarks, numerical accuracy tests, and edge case handli
 """
 
 import time
-import pytest
+
 import numpy as np
 import pandas as pd
-from unittest.mock import patch
+import pytest
 
 from ml.features import FeatureExtractor
-from ml.indicators import calculate_obv, calculate_all_indicators
+from ml.indicators import calculate_all_indicators, calculate_obv
 
 
 class VectorizedFeatureCalculator:
@@ -38,13 +38,15 @@ class VectorizedFeatureCalculator:
             Array of calculated features
         """
         # Create OHLCV DataFrame from prices (assuming close prices)
-        df = pd.DataFrame({
-            'open': prices,
-            'high': prices * 1.01,  # Simulate high
-            'low': prices * 0.99,   # Simulate low
-            'close': prices,
-            'volume': np.random.randint(1000, 10000, len(prices))
-        })
+        df = pd.DataFrame(
+            {
+                "open": prices,
+                "high": prices * 1.01,  # Simulate high
+                "low": prices * 0.99,  # Simulate low
+                "close": prices,
+                "volume": np.random.randint(1000, 10000, len(prices)),
+            }
+        )
 
         # For performance testing with large datasets, use optimized config
         if len(prices) > 100000:  # 100K+ rows
@@ -53,19 +55,31 @@ class VectorizedFeatureCalculator:
                 "indicator_params": {},  # No indicators for performance test
                 "scaling": {"method": "none"},  # Skip scaling for performance
                 "lagged_features": {"enabled": False},  # Skip expensive lags
-                "price_features": {"returns": False, "log_returns": False},  # Skip price features
-                "volume_features": {"volume_sma": False, "volume_ratio": False},  # Skip volume features
+                "price_features": {
+                    "returns": False,
+                    "log_returns": False,
+                },  # Skip price features
+                "volume_features": {
+                    "volume_sma": False,
+                    "volume_ratio": False,
+                },  # Skip volume features
                 "validation": {
                     "require_min_rows": 1,  # Minimal threshold for perf test
-                    "handle_missing": "drop"
+                    "handle_missing": "drop",
                 },
             }
             perf_extractor = FeatureExtractor(perf_config)
             # Skip indicator calculation entirely for performance test
             df_with_indicators = df.copy()  # Just use raw OHLCV data
-            df_with_price_features = perf_extractor._add_price_features(df_with_indicators)
-            df_with_volume_features = perf_extractor._add_volume_features(df_with_price_features)
-            df_with_lagged = perf_extractor._add_lagged_features(df_with_volume_features)
+            df_with_price_features = perf_extractor._add_price_features(
+                df_with_indicators
+            )
+            df_with_volume_features = perf_extractor._add_volume_features(
+                df_with_price_features
+            )
+            df_with_lagged = perf_extractor._add_lagged_features(
+                df_with_volume_features
+            )
             df_clean = perf_extractor._clean_features(df_with_lagged)
             features_df = perf_extractor._scale_features(df_clean, fit_scaler=False)
         else:
@@ -122,10 +136,12 @@ class TestVectorizedOperations:
     def test_obv_numerical_accuracy(self):
         """Test OBV calculation numerical accuracy."""
         # Test data
-        data = pd.DataFrame({
-            'close': [10, 11, 12, 11, 10, 11, 11, 12],
-            'volume': [100, 200, 300, 150, 250, 180, 120, 220]
-        })
+        data = pd.DataFrame(
+            {
+                "close": [10, 11, 12, 11, 10, 11, 11, 12],
+                "volume": [100, 200, 300, 150, 250, 180, 120, 220],
+            }
+        )
 
         obv_result = calculate_obv(data)
 
@@ -145,31 +161,29 @@ class TestVectorizedOperations:
     def test_obv_edge_cases(self):
         """Test OBV with edge cases."""
         # Empty data
-        empty_data = pd.DataFrame(columns=['close', 'volume'])
+        empty_data = pd.DataFrame(columns=["close", "volume"])
         result = calculate_obv(empty_data)
         assert len(result) == 0
 
         # Single row
-        single_data = pd.DataFrame({'close': [10], 'volume': [100]})
+        single_data = pd.DataFrame({"close": [10], "volume": [100]})
         result = calculate_obv(single_data)
         assert result.iloc[0] == 100
 
         # All equal closes
-        equal_data = pd.DataFrame({
-            'close': [10, 10, 10, 10],
-            'volume': [100, 200, 300, 400]
-        })
+        equal_data = pd.DataFrame(
+            {"close": [10, 10, 10, 10], "volume": [100, 200, 300, 400]}
+        )
         result = calculate_obv(equal_data)
         expected = [100, 100, 100, 100]  # Should stay at initial volume
         np.testing.assert_array_equal(result.values, expected)
 
         # Decreasing closes
-        dec_data = pd.DataFrame({
-            'close': [10, 9, 8, 7],
-            'volume': [100, 200, 300, 400]
-        })
+        dec_data = pd.DataFrame(
+            {"close": [10, 9, 8, 7], "volume": [100, 200, 300, 400]}
+        )
         result = calculate_obv(dec_data)
-        expected = [100, 100-200, 100-200-300, 100-200-300-400]
+        expected = [100, 100 - 200, 100 - 200 - 300, 100 - 200 - 300 - 400]
         np.testing.assert_array_equal(result.values, expected)
 
     def test_feature_extraction_numerical_stability(self):
@@ -178,13 +192,15 @@ class TestVectorizedOperations:
         prices = np.array([1.0, 1.0000000001, 1.0000000002, 1.0])
         volumes = np.array([1000, 1001, 999, 1000])
 
-        data = pd.DataFrame({
-            'open': prices,
-            'high': prices * 1.001,
-            'low': prices * 0.999,
-            'close': prices,
-            'volume': volumes
-        })
+        data = pd.DataFrame(
+            {
+                "open": prices,
+                "high": prices * 1.001,
+                "low": prices * 0.999,
+                "close": prices,
+                "volume": volumes,
+            }
+        )
 
         # Use config with lower min_rows and fill missing for this test
         test_config = self.config.copy()
@@ -202,16 +218,17 @@ class TestVectorizedOperations:
         assert features.shape[1] > 0  # Has some features
 
         # Check that original OHLCV columns are preserved
-        assert 'open' in features.columns
-        assert 'high' in features.columns
-        assert 'low' in features.columns
-        assert 'close' in features.columns
-        assert 'volume' in features.columns
+        assert "open" in features.columns
+        assert "high" in features.columns
+        assert "low" in features.columns
+        assert "close" in features.columns
+        assert "volume" in features.columns
 
     def test_memory_efficiency(self):
         """Test memory efficiency of vectorized operations."""
-        import psutil
         import os
+
+        import psutil
 
         process = psutil.Process(os.getpid())
         initial_memory = process.memory_info().rss / 1024 / 1024  # MB
@@ -236,13 +253,15 @@ class TestVectorizedOperations:
         datasets = []
         for i in range(10):
             prices = np.random.random(10000) * 100
-            data = pd.DataFrame({
-                'open': prices,
-                'high': prices * 1.01,
-                'low': prices * 0.99,
-                'close': prices,
-                'volume': np.random.randint(1000, 10000, len(prices))
-            })
+            data = pd.DataFrame(
+                {
+                    "open": prices,
+                    "high": prices * 1.01,
+                    "low": prices * 0.99,
+                    "close": prices,
+                    "volume": np.random.randint(1000, 10000, len(prices)),
+                }
+            )
             datasets.append(data)
 
         start_time = time.time()
@@ -265,26 +284,30 @@ class TestVectorizedOperations:
         """Test real-time processing mode."""
         # Simulate streaming data
         initial_prices = np.random.random(100) * 100
-        data = pd.DataFrame({
-            'open': initial_prices,
-            'high': initial_prices * 1.01,
-            'low': initial_prices * 0.99,
-            'close': initial_prices,
-            'volume': np.random.randint(1000, 10000, 100)
-        })
+        data = pd.DataFrame(
+            {
+                "open": initial_prices,
+                "high": initial_prices * 1.01,
+                "low": initial_prices * 0.99,
+                "close": initial_prices,
+                "volume": np.random.randint(1000, 10000, 100),
+            }
+        )
 
         extractor = FeatureExtractor(self.config)
         initial_features = extractor.extract_features(data)
 
         # Add new data point
         new_price = np.random.random() * 100
-        new_data = pd.DataFrame({
-            'open': [new_price],
-            'high': [new_price * 1.01],
-            'low': [new_price * 0.99],
-            'close': [new_price],
-            'volume': [np.random.randint(1000, 10000)]
-        })
+        new_data = pd.DataFrame(
+            {
+                "open": [new_price],
+                "high": [new_price * 1.01],
+                "low": [new_price * 0.99],
+                "close": [new_price],
+                "volume": [np.random.randint(1000, 10000)],
+            }
+        )
 
         # Incremental update (simulate real-time)
         combined_data = pd.concat([data, new_data], ignore_index=True)
@@ -292,23 +315,29 @@ class TestVectorizedOperations:
 
         # Check that we can handle incremental updates
         assert len(updated_features) <= len(combined_data)  # May drop rows
-        assert len(updated_features) >= len(initial_features)  # Should have at least as many as initial
+        assert len(updated_features) >= len(
+            initial_features
+        )  # Should have at least as many as initial
 
     def test_nan_handling(self):
         """Test NaN value handling in vectorized operations."""
         # Create data with NaN values
         prices = np.random.random(100) * 100
         prices[10:15] = np.nan  # Introduce NaN values
-        volumes = np.random.randint(1000, 10000, 100).astype(float)  # Use float to allow NaN
+        volumes = np.random.randint(1000, 10000, 100).astype(
+            float
+        )  # Use float to allow NaN
         volumes[20:25] = np.nan
 
-        data = pd.DataFrame({
-            'open': prices,
-            'high': prices * 1.01,
-            'low': prices * 0.99,
-            'close': prices,
-            'volume': volumes
-        })
+        data = pd.DataFrame(
+            {
+                "open": prices,
+                "high": prices * 1.01,
+                "low": prices * 0.99,
+                "close": prices,
+                "volume": volumes,
+            }
+        )
 
         extractor = FeatureExtractor(self.config)
         features = extractor.extract_features(data)
@@ -322,25 +351,36 @@ class TestVectorizedOperations:
         """Test that indicators produce same results as vectorized versions."""
         np.random.seed(42)
         prices = np.random.random(100) * 100 + 50
-        data = pd.DataFrame({
-            'open': prices,
-            'high': prices * 1.02,
-            'low': prices * 0.98,
-            'close': prices,
-            'volume': np.random.randint(1000, 10000, 100)
-        })
+        data = pd.DataFrame(
+            {
+                "open": prices,
+                "high": prices * 1.02,
+                "low": prices * 0.98,
+                "close": prices,
+                "volume": np.random.randint(1000, 10000, 100),
+            }
+        )
 
         # Calculate indicators
         indicators_df = calculate_all_indicators(data)
 
         # Check that OBV is calculated (vectorized)
-        assert 'obv' in indicators_df.columns
-        assert not indicators_df['obv'].isnull().all()
+        assert "obv" in indicators_df.columns
+        assert not indicators_df["obv"].isnull().all()
 
         # Check other indicators
         expected_indicators = [
-            'rsi', 'ema', 'macd', 'macd_signal', 'macd_histogram',
-            'bb_upper', 'bb_middle', 'bb_lower', 'atr', 'adx', 'obv'
+            "rsi",
+            "ema",
+            "macd",
+            "macd_signal",
+            "macd_histogram",
+            "bb_upper",
+            "bb_middle",
+            "bb_lower",
+            "atr",
+            "adx",
+            "obv",
         ]
 
         for indicator in expected_indicators:
@@ -355,20 +395,22 @@ class TestVectorizedOperations:
         assets_data = {}
         for i in range(5):
             prices = np.random.random(10000) * 100
-            data = pd.DataFrame({
-                'open': prices,
-                'high': prices * 1.01,
-                'low': prices * 0.99,
-                'close': prices,
-                'volume': np.random.randint(1000, 10000, len(prices))
-            })
-            assets_data[f'ASSET_{i}'] = data
+            data = pd.DataFrame(
+                {
+                    "open": prices,
+                    "high": prices * 1.01,
+                    "low": prices * 0.99,
+                    "close": prices,
+                    "volume": np.random.randint(1000, 10000, len(prices)),
+                }
+            )
+            assets_data[f"ASSET_{i}"] = data
 
         extractor = FeatureExtractor(self.config)
 
         start_time = time.time()
         # Add cross-asset features
-        primary_data = assets_data['ASSET_0']
+        primary_data = assets_data["ASSET_0"]
         features_df = extractor.extract_features(primary_data)
         features_df = extractor.add_cross_asset_features(features_df, assets_data)
         processing_time = time.time() - start_time
@@ -381,16 +423,19 @@ class TestVectorizedOperations:
     def test_time_anchored_features_performance(self):
         """Test time-anchored features performance."""
         # Create data with datetime index
-        dates = pd.date_range('2020-01-01', periods=1000, freq='1H')  # Smaller dataset
+        dates = pd.date_range("2020-01-01", periods=1000, freq="1H")  # Smaller dataset
         prices = np.random.random(1000) * 100
 
-        data = pd.DataFrame({
-            'open': prices,
-            'high': prices * 1.01,
-            'low': prices * 0.99,
-            'close': prices,
-            'volume': np.random.randint(1000, 10000, 1000)
-        }, index=dates)
+        data = pd.DataFrame(
+            {
+                "open": prices,
+                "high": prices * 1.01,
+                "low": prices * 0.99,
+                "close": prices,
+                "volume": np.random.randint(1000, 10000, 1000),
+            },
+            index=dates,
+        )
 
         # Use fill config to avoid dropping all rows
         test_config = self.config.copy()
@@ -409,7 +454,7 @@ class TestVectorizedOperations:
         assert len(features_df) > 0
 
         # Check time features are added
-        time_features = ['hour_of_day', 'day_of_week', 'month_of_year', 'is_weekend']
+        time_features = ["hour_of_day", "day_of_week", "month_of_year", "is_weekend"]
         for feature in time_features:
             assert feature in features_df.columns
 

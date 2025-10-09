@@ -91,3 +91,5 @@ secrets.json
 *.gz
 ENSEMBLE_README.md
 listerror.txt
+.audit_cache/*
+reports/

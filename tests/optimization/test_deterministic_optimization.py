@@ -3,7 +3,6 @@ Deterministic optimization tests for GeneticOptimizer.
 Tests reproducibility, seed isolation, and deterministic execution.
 """
 
-import json
 import time
 from unittest.mock import Mock, patch
 
@@ -89,7 +88,9 @@ class TestDeterministicOptimization:
 
             # Results should be different (with high probability)
             # Note: In rare cases they might be the same, but that's extremely unlikely
-            assert result1 != result2 or optimizer1.best_params != optimizer2.best_params
+            assert (
+                result1 != result2 or optimizer1.best_params != optimizer2.best_params
+            )
 
     @pytest.mark.timeout(60)
     def test_exploratory_mode_produces_varied_results(self):
@@ -152,9 +153,12 @@ class TestDeterministicOptimization:
                 results.append(result)
 
             # Check that worker seeds are different
-            seeds = [opt.get_worker_seed() for opt in [
-                GeneticOptimizer({**base_config, "worker_id": i}) for i in range(4)
-            ]]
+            seeds = [
+                opt.get_worker_seed()
+                for opt in [
+                    GeneticOptimizer({**base_config, "worker_id": i}) for i in range(4)
+                ]
+            ]
             assert len(set(seeds)) == 4  # All seeds should be unique
 
     @pytest.mark.timeout(60)
@@ -219,7 +223,9 @@ class TestDeterministicOptimization:
             mock_eval.return_value = 0.5
 
             # Run reproducibility validation
-            validation_result = optimizer.validate_reproducibility(mock_strategy, data, num_runs=3)
+            validation_result = optimizer.validate_reproducibility(
+                mock_strategy, data, num_runs=3
+            )
 
             # Should pass validation
             assert validation_result["is_reproducible"] is True
@@ -364,7 +370,9 @@ class TestDeterministicOptimization:
             time.sleep(0.005)  # Small delay per evaluation
             return 0.5
 
-        with patch.object(GeneticOptimizer, "evaluate_fitness", side_effect=delayed_fitness):
+        with patch.object(
+            GeneticOptimizer, "evaluate_fitness", side_effect=delayed_fitness
+        ):
             start_time = time.time()
             result = optimizer.optimize(mock_strategy, data)
             elapsed = time.time() - start_time
@@ -396,11 +404,14 @@ class TestDeterministicOptimization:
 
         # Mock fitness evaluation
         fitness_calls = []
+
         def track_fitness(*args, **kwargs):
             fitness_calls.append(time.time())
             return np.random.random()  # Random fitness for benchmarking
 
-        with patch.object(GeneticOptimizer, "evaluate_fitness", side_effect=track_fitness):
+        with patch.object(
+            GeneticOptimizer, "evaluate_fitness", side_effect=track_fitness
+        ):
             start_time = time.time()
             result = optimizer.optimize(mock_strategy, data)
             end_time = time.time()
@@ -520,10 +531,19 @@ class TestDeterministicOptimization:
 
         # Add multiple parameter bounds
         bounds = [
-            ParameterBounds(name="float_param", min_value=0.0, max_value=1.0, param_type="float"),
-            ParameterBounds(name="int_param", min_value=1, max_value=100, param_type="int"),
-            ParameterBounds(name="cat_param", min_value=0, max_value=2, param_type="categorical",
-                          categories=["option_a", "option_b", "option_c"]),
+            ParameterBounds(
+                name="float_param", min_value=0.0, max_value=1.0, param_type="float"
+            ),
+            ParameterBounds(
+                name="int_param", min_value=1, max_value=100, param_type="int"
+            ),
+            ParameterBounds(
+                name="cat_param",
+                min_value=0,
+                max_value=2,
+                param_type="categorical",
+                categories=["option_a", "option_b", "option_c"],
+            ),
         ]
 
         for bound in bounds:

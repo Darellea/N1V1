@@ -5,21 +5,22 @@ Tests streaming data processing, chunked loading, memory monitoring,
 and large dataset handling with timeout protection.
 """
 
-import pytest
 import asyncio
-import pandas as pd
-import numpy as np
-import tempfile
 import os
+import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timedelta
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
-from data.historical_loader import HistoricalDataLoader
-from data.data_fetcher import DataFetcher
+import numpy as np
+import pandas as pd
+import pytest
+
 from core.memory_manager import get_memory_manager
+from data.data_fetcher import DataFetcher
+from data.historical_loader import HistoricalDataLoader
 
 
 class TestMemoryEfficientLoading:
@@ -32,7 +33,7 @@ class TestMemoryEfficientLoading:
                 "data_dir": "test_historical_data",
                 "deduplicate": True,
                 "chunk_size_mb": 50,
-                "max_memory_mb": 200
+                "max_memory_mb": 200,
             }
         }
         self.mock_data_fetcher = MagicMock(spec=DataFetcher)
@@ -42,7 +43,9 @@ class TestMemoryEfficientLoading:
     def test_large_dataset_loading_with_timeout(self):
         """Test loading large dataset with timeout protection."""
         # Generate large dataset that would normally cause memory issues
-        large_dataset = self._generate_large_dataset(size_gb=0.1)  # Further reduced for testing
+        large_dataset = self._generate_large_dataset(
+            size_gb=0.1
+        )  # Further reduced for testing
 
         # Process with timeout protection
         with ThreadPoolExecutor(max_workers=2) as executor:
@@ -98,11 +101,15 @@ class TestMemoryEfficientLoading:
         def monitor_memory():
             memory_manager = get_memory_manager()
             stats = memory_manager.get_memory_stats()
-            memory_stats.append(stats['current_memory_mb'])
+            memory_stats.append(stats["current_memory_mb"])
             return stats
 
         # Load with monitoring
-        chunks = list(self.loader.load_chunked(data, chunk_size=100, memory_monitor=monitor_memory))
+        chunks = list(
+            self.loader.load_chunked(
+                data, chunk_size=100, memory_monitor=monitor_memory
+            )
+        )
 
         assert len(chunks) > 0
         assert len(memory_stats) > 0
@@ -120,7 +127,9 @@ class TestMemoryEfficientLoading:
         # Introduce corruption in the middle
         data.iloc[100:150] = np.nan
 
-        chunks = list(self.loader.load_chunked(data, chunk_size=50, handle_corruption=True))
+        chunks = list(
+            self.loader.load_chunked(data, chunk_size=50, handle_corruption=True)
+        )
 
         # Should still process chunks, but corrupted ones might be filtered
         assert len(chunks) >= 4  # At least some chunks should be processed
@@ -138,11 +147,9 @@ class TestMemoryEfficientLoading:
         resume_state = {"last_index": 500, "processed_chunks": 5}
 
         # Resume loading from checkpoint
-        remaining_chunks = list(self.loader.load_chunked(
-            data,
-            chunk_size=100,
-            resume_from=resume_state
-        ))
+        remaining_chunks = list(
+            self.loader.load_chunked(data, chunk_size=100, resume_from=resume_state)
+        )
 
         assert len(remaining_chunks) >= 5  # Should load remaining data
 
@@ -163,18 +170,18 @@ class TestMemoryEfficientLoading:
         def progress_callback(progress):
             progress_updates.append(progress)
 
-        chunks = list(self.loader.load_chunked(
-            data,
-            chunk_size=200,
-            progress_callback=progress_callback
-        ))
+        chunks = list(
+            self.loader.load_chunked(
+                data, chunk_size=200, progress_callback=progress_callback
+            )
+        )
 
         assert len(progress_updates) > 0
         assert progress_updates[-1] >= 100  # Should reach 100% completion
 
         # Progress should be monotonically increasing
         for i in range(1, len(progress_updates)):
-            assert progress_updates[i] >= progress_updates[i-1]
+            assert progress_updates[i] >= progress_updates[i - 1]
 
     def test_configurable_chunk_sizes(self):
         """Test configurable chunk sizes based on memory."""
@@ -191,20 +198,22 @@ class TestMemoryEfficientLoading:
         memory_manager = get_memory_manager()
 
         # Mock memory manager methods
-        memory_manager.get_memory_stats = MagicMock(return_value={
-            'current_memory_mb': 100,
-            'warning_mb': 150,
-            'critical_mb': 200
-        })
+        memory_manager.get_memory_stats = MagicMock(
+            return_value={
+                "current_memory_mb": 100,
+                "warning_mb": 150,
+                "critical_mb": 200,
+            }
+        )
 
         data = self._generate_test_data(500)
 
         # Load with memory manager integration
-        chunks = list(self.loader.load_chunked(
-            data,
-            chunk_size=100,
-            memory_manager=memory_manager
-        ))
+        chunks = list(
+            self.loader.load_chunked(
+                data, chunk_size=100, memory_manager=memory_manager
+            )
+        )
 
         assert len(chunks) > 0
         memory_manager.get_memory_stats.assert_called()
@@ -212,10 +221,12 @@ class TestMemoryEfficientLoading:
     def test_data_integrity_preservation(self):
         """Test that data integrity and ordering is preserved."""
         # Create data with specific ordering
-        data = pd.DataFrame({
-            'timestamp': pd.date_range('2023-01-01', periods=1000, freq='1min'),
-            'value': range(1000)
-        }).set_index('timestamp')
+        data = pd.DataFrame(
+            {
+                "timestamp": pd.date_range("2023-01-01", periods=1000, freq="1min"),
+                "value": range(1000),
+            }
+        ).set_index("timestamp")
 
         chunks = list(self.loader.load_chunked(data, chunk_size=100))
 
@@ -230,19 +241,21 @@ class TestMemoryEfficientLoading:
 
         # Verify values are correct
         pd.testing.assert_series_equal(
-            reconstructed['value'].sort_index(),
-            data['value'].sort_index()
+            reconstructed["value"].sort_index(), data["value"].sort_index()
         )
 
     def _generate_test_data(self, size):
         """Generate test data of specified size."""
-        return pd.DataFrame({
-            'open': np.random.uniform(100, 200, size),
-            'high': np.random.uniform(200, 300, size),
-            'low': np.random.uniform(50, 100, size),
-            'close': np.random.uniform(100, 200, size),
-            'volume': np.random.uniform(1000, 10000, size)
-        }, index=pd.date_range('2023-01-01', periods=size, freq='1min'))
+        return pd.DataFrame(
+            {
+                "open": np.random.uniform(100, 200, size),
+                "high": np.random.uniform(200, 300, size),
+                "low": np.random.uniform(50, 100, size),
+                "close": np.random.uniform(100, 200, size),
+                "volume": np.random.uniform(1000, 10000, size),
+            },
+            index=pd.date_range("2023-01-01", periods=size, freq="1min"),
+        )
 
     def _generate_large_dataset(self, size_gb):
         """Generate a large dataset for memory testing."""
@@ -262,7 +275,7 @@ class TestMemoryEfficientAsyncLoading:
             "backtesting": {
                 "data_dir": "test_historical_data",
                 "chunk_size_mb": 50,
-                "max_memory_mb": 200
+                "max_memory_mb": 200,
             }
         }
         self.mock_data_fetcher = MagicMock(spec=DataFetcher)
@@ -299,9 +312,7 @@ class TestMemoryEfficientAsyncLoading:
 
         chunks = []
         async for chunk in self.loader.load_chunked_async(
-            data,
-            chunk_size=50,
-            memory_monitor=memory_monitor
+            data, chunk_size=50, memory_monitor=memory_monitor
         ):
             chunks.append(chunk)
 
@@ -310,13 +321,16 @@ class TestMemoryEfficientAsyncLoading:
 
     def _generate_test_data(self, size):
         """Generate test data."""
-        return pd.DataFrame({
-            'open': np.random.uniform(100, 200, size),
-            'high': np.random.uniform(200, 300, size),
-            'low': np.random.uniform(50, 100, size),
-            'close': np.random.uniform(100, 200, size),
-            'volume': np.random.uniform(1000, 10000, size)
-        }, index=pd.date_range('2023-01-01', periods=size, freq='1min'))
+        return pd.DataFrame(
+            {
+                "open": np.random.uniform(100, 200, size),
+                "high": np.random.uniform(200, 300, size),
+                "low": np.random.uniform(50, 100, size),
+                "close": np.random.uniform(100, 200, size),
+                "volume": np.random.uniform(1000, 10000, size),
+            },
+            index=pd.date_range("2023-01-01", periods=size, freq="1min"),
+        )
 
 
 class TestMemoryEfficientHistoricalLoaderIntegration:
@@ -330,7 +344,7 @@ class TestMemoryEfficientHistoricalLoaderIntegration:
                 "backtesting": {
                     "data_dir": self.temp_dir,
                     "chunk_size_mb": 50,
-                    "max_memory_mb": 200
+                    "max_memory_mb": 200,
                 }
             }
             self.mock_data_fetcher = MagicMock(spec=DataFetcher)
@@ -346,11 +360,7 @@ class TestMemoryEfficientHistoricalLoaderIntegration:
 
         # Load with memory-efficient chunking
         result = await self.loader.load_historical_data_chunked(
-            ["BTC/USDT"],
-            "2023-01-01",
-            "2023-01-10",
-            "1h",
-            chunk_size=500
+            ["BTC/USDT"], "2023-01-01", "2023-01-10", "1h", chunk_size=500
         )
 
         assert "BTC/USDT" in result
@@ -374,10 +384,13 @@ class TestMemoryEfficientHistoricalLoaderIntegration:
 
     def _generate_large_historical_data(self, size):
         """Generate large historical OHLCV data."""
-        return pd.DataFrame({
-            'open': np.random.uniform(40000, 60000, size),
-            'high': np.random.uniform(40000, 65000, size),
-            'low': np.random.uniform(35000, 40000, size),
-            'close': np.random.uniform(40000, 60000, size),
-            'volume': np.random.uniform(100, 1000, size)
-        }, index=pd.date_range('2023-01-01', periods=size, freq='1h'))
+        return pd.DataFrame(
+            {
+                "open": np.random.uniform(40000, 60000, size),
+                "high": np.random.uniform(40000, 65000, size),
+                "low": np.random.uniform(35000, 40000, size),
+                "close": np.random.uniform(40000, 60000, size),
+                "volume": np.random.uniform(100, 1000, size),
+            },
+            index=pd.date_range("2023-01-01", periods=size, freq="1h"),
+        )

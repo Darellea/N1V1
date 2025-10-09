@@ -22,7 +22,6 @@ from utils.logger import get_trade_logger
 from .adaptive_pricer import AdaptivePricer
 from .dca_executor import DCAExecutor
 from .execution_types import ExecutionPolicy, ExecutionStatus
-from .retry_manager import RetryManager
 from .smart_order_executor import SmartOrderExecutor
 from .twap_executor import TWAPExecutor
 from .validator import ExecutionValidator

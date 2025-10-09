@@ -22,18 +22,13 @@ from core.circuit_breaker import (
 )
 from core.metrics_collector import MetricsCollector, get_metrics_collector
 from core.order_manager import OrderManager
-from core.performance_monitor import (
-    PerformanceAlert,
-    RealTimePerformanceMonitor,
-)
+from core.performance_monitor import PerformanceAlert, RealTimePerformanceMonitor
 from core.performance_profiler import (
     PerformanceProfiler,
     get_profiler,
     profile_function,
 )
-from core.performance_reports import (
-    PerformanceReportGenerator,
-)
+from core.performance_reports import PerformanceReportGenerator
 from core.signal_router import SignalRouter
 from risk.risk_manager import RiskManager
 from utils.logger import get_logger

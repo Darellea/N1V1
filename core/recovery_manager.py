@@ -16,12 +16,11 @@ Key Features:
 """
 
 import asyncio
-import time
 import threading
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional
 
 from utils.logger import get_logger
 
@@ -30,6 +29,7 @@ logger = get_logger(__name__)
 
 class RecoveryState(Enum):
     """Recovery manager states."""
+
     IDLE = "idle"
     RECOVERING = "recovering"
     PARTIAL = "partial"
@@ -40,6 +40,7 @@ class RecoveryState(Enum):
 
 class RecoveryMode(Enum):
     """Recovery execution modes."""
+
     AUTOMATIC = "automatic"
     MANUAL = "manual"
 
@@ -47,6 +48,7 @@ class RecoveryMode(Enum):
 @dataclass
 class RecoveryAttempt:
     """Represents a single recovery attempt."""
+
     component_id: str
     failure_type: str
     attempt_number: int
@@ -60,6 +62,7 @@ class RecoveryAttempt:
 @dataclass
 class RTOMetrics:
     """Recovery Time Objective metrics."""
+
     component_id: str
     target_rto_seconds: float
     actual_recovery_time_seconds: Optional[float] = None
@@ -71,6 +74,7 @@ class RTOMetrics:
 @dataclass
 class RecoveryConfig:
     """Configuration for recovery operations."""
+
     max_recovery_attempts: int = 3
     recovery_timeout_seconds: int = 30
     auto_recovery_enabled: bool = True
@@ -137,7 +141,7 @@ class RecoveryManager:
         Returns:
             True if recovery successful, False otherwise
         """
-        component_id = getattr(component, 'component_id', str(id(component)))
+        component_id = getattr(component, "component_id", str(id(component)))
 
         if self.recovery_mode == RecoveryMode.MANUAL:
             with self._lock:
@@ -146,9 +150,13 @@ class RecoveryManager:
             logger.info(f"Component {component_id} queued for manual recovery")
             return False
 
-        return await self._execute_component_recovery(component, component_id, failure_type)
+        return await self._execute_component_recovery(
+            component, component_id, failure_type
+        )
 
-    async def _execute_component_recovery(self, component: Any, component_id: str, failure_type: str) -> bool:
+    async def _execute_component_recovery(
+        self, component: Any, component_id: str, failure_type: str
+    ) -> bool:
         """Execute recovery for a specific component."""
         with self._lock:
             if component_id in self.active_recoveries:
@@ -166,11 +174,15 @@ class RecoveryManager:
 
         try:
             # Create recovery task
-            task = asyncio.create_task(self._perform_recovery(component, component_id, failure_type))
+            task = asyncio.create_task(
+                self._perform_recovery(component, component_id, failure_type)
+            )
             self.active_recoveries[component_id] = task
 
             # Execute with timeout
-            success = await asyncio.wait_for(task, timeout=self.config.recovery_timeout_seconds)
+            success = await asyncio.wait_for(
+                task, timeout=self.config.recovery_timeout_seconds
+            )
 
             # Track completion
             await self.end_recovery_tracking(component_id, success)
@@ -191,9 +203,13 @@ class RecoveryManager:
                 if component_id in self.active_recoveries:
                     del self.active_recoveries[component_id]
 
-    async def _perform_recovery(self, component: Any, component_id: str, failure_type: str) -> bool:
+    async def _perform_recovery(
+        self, component: Any, component_id: str, failure_type: str
+    ) -> bool:
         """Perform the actual recovery operation."""
-        logger.info(f"Starting recovery for component {component_id}, failure: {failure_type}")
+        logger.info(
+            f"Starting recovery for component {component_id}, failure: {failure_type}"
+        )
 
         # Backup current state if enabled
         if self.config.state_backup_enabled:
@@ -238,12 +254,14 @@ class RecoveryManager:
         }
         return strategies.get(failure_type)
 
-    async def _recover_network_failure(self, component: Any, component_id: str, failure_type: str) -> bool:
+    async def _recover_network_failure(
+        self, component: Any, component_id: str, failure_type: str
+    ) -> bool:
         """Recover from network-related failures."""
         try:
-            if hasattr(component, 'reconnect'):
+            if hasattr(component, "reconnect"):
                 return await component.reconnect()
-            elif hasattr(component, 'reset_connection'):
+            elif hasattr(component, "reset_connection"):
                 return await component.reset_connection()
             else:
                 # Generic network recovery
@@ -253,12 +271,14 @@ class RecoveryManager:
             logger.error(f"Network recovery failed for {component_id}: {e}")
             return False
 
-    async def _recover_database_corruption(self, component: Any, component_id: str, failure_type: str) -> bool:
+    async def _recover_database_corruption(
+        self, component: Any, component_id: str, failure_type: str
+    ) -> bool:
         """Recover from database corruption."""
         try:
-            if hasattr(component, 'restore_from_backup'):
+            if hasattr(component, "restore_from_backup"):
                 return await component.restore_from_backup()
-            elif hasattr(component, 'reinitialize'):
+            elif hasattr(component, "reinitialize"):
                 return await component.reinitialize()
             else:
                 return False
@@ -266,16 +286,19 @@ class RecoveryManager:
             logger.error(f"Database recovery failed for {component_id}: {e}")
             return False
 
-    async def _recover_memory_exhaustion(self, component: Any, component_id: str, failure_type: str) -> bool:
+    async def _recover_memory_exhaustion(
+        self, component: Any, component_id: str, failure_type: str
+    ) -> bool:
         """Recover from memory exhaustion."""
         try:
             # Trigger garbage collection and cleanup
             import gc
+
             gc.collect()
 
-            if hasattr(component, 'cleanup_memory'):
+            if hasattr(component, "cleanup_memory"):
                 await component.cleanup_memory()
-            elif hasattr(component, 'reset'):
+            elif hasattr(component, "reset"):
                 await component.reset()
 
             return True
@@ -283,12 +306,14 @@ class RecoveryManager:
             logger.error(f"Memory recovery failed for {component_id}: {e}")
             return False
 
-    async def _recover_component_crash(self, component: Any, component_id: str, failure_type: str) -> bool:
+    async def _recover_component_crash(
+        self, component: Any, component_id: str, failure_type: str
+    ) -> bool:
         """Recover from component crash."""
         try:
-            if hasattr(component, 'restart'):
+            if hasattr(component, "restart"):
                 return await component.restart()
-            elif hasattr(component, 'reinitialize'):
+            elif hasattr(component, "reinitialize"):
                 return await component.reinitialize()
             else:
                 # Attempt recreation
@@ -297,20 +322,22 @@ class RecoveryManager:
             logger.error(f"Component crash recovery failed for {component_id}: {e}")
             return False
 
-    async def _recover_state_corruption(self, component: Any, component_id: str, failure_type: str) -> bool:
+    async def _recover_state_corruption(
+        self, component: Any, component_id: str, failure_type: str
+    ) -> bool:
         """Recover from state corruption."""
         try:
             # Try to restore from backup
             if component_id in self.state_backups:
                 backup_state = self.state_backups[component_id]
-                if hasattr(component, 'restore_state'):
+                if hasattr(component, "restore_state"):
                     return await component.restore_state(backup_state)
-                elif hasattr(component, 'load_state'):
+                elif hasattr(component, "load_state"):
                     component.load_state(backup_state)
                     return True
 
             # Fallback to reset
-            if hasattr(component, 'reset_state'):
+            if hasattr(component, "reset_state"):
                 await component.reset_state()
                 return True
 
@@ -323,12 +350,12 @@ class RecoveryManager:
         """Perform generic recovery operations."""
         try:
             # Try common recovery methods
-            if hasattr(component, 'recover'):
+            if hasattr(component, "recover"):
                 return await component.recover()
-            elif hasattr(component, 'reset'):
+            elif hasattr(component, "reset"):
                 await component.reset()
                 return True
-            elif hasattr(component, 'restart'):
+            elif hasattr(component, "restart"):
                 return await component.restart()
             else:
                 # Minimal recovery - just wait and assume recovery
@@ -347,10 +374,10 @@ class RecoveryManager:
     async def _backup_component_state(self, component: Any, component_id: str) -> None:
         """Backup the current state of a component."""
         try:
-            if hasattr(component, 'get_state'):
+            if hasattr(component, "get_state"):
                 state = await component.get_state()
                 self.state_backups[component_id] = state
-            elif hasattr(component, 'save_state'):
+            elif hasattr(component, "save_state"):
                 state = await component.save_state()
                 self.state_backups[component_id] = state
         except Exception as e:
@@ -367,11 +394,13 @@ class RecoveryManager:
             True if restoration successful, False otherwise
         """
         try:
-            if hasattr(state_manager, 'restore_state') and self.state_backups:
+            if hasattr(state_manager, "restore_state") and self.state_backups:
                 # Restore the most recent backup
-                latest_backup = max(self.state_backups.values(), key=lambda x: x.get('timestamp', 0))
+                latest_backup = max(
+                    self.state_backups.values(), key=lambda x: x.get("timestamp", 0)
+                )
                 return state_manager.restore_state(latest_backup)
-            elif hasattr(state_manager, 'get_state'):
+            elif hasattr(state_manager, "get_state"):
                 # Validate current state exists and is accessible
                 current_state = state_manager.get_state()
                 return current_state is not None
@@ -393,18 +422,18 @@ class RecoveryManager:
         """
         try:
             # Backup current state
-            if hasattr(state_manager, 'get_state'):
+            if hasattr(state_manager, "get_state"):
                 current_state = state_manager.get_state()
-                self.state_backups['recovery_backup'] = current_state
+                self.state_backups["recovery_backup"] = current_state
 
             # Perform recovery operations
             success = await self._perform_state_safe_recovery()
 
             if success:
                 # Restore state if recovery was successful
-                if 'recovery_backup' in self.state_backups:
-                    state_manager.restore_state(self.state_backups['recovery_backup'])
-                    del self.state_backups['recovery_backup']
+                if "recovery_backup" in self.state_backups:
+                    state_manager.restore_state(self.state_backups["recovery_backup"])
+                    del self.state_backups["recovery_backup"]
 
             return success
         except Exception as e:
@@ -462,9 +491,9 @@ class RecoveryManager:
         """
         try:
             success = False
-            if hasattr(operation, 'resume'):
+            if hasattr(operation, "resume"):
                 success = await operation.resume()
-            elif hasattr(operation, 'start'):
+            elif hasattr(operation, "start"):
                 success = await operation.start()
             else:
                 logger.warning("Operation does not support resumption")
@@ -483,7 +512,7 @@ class RecoveryManager:
             if component_id not in self.rto_tracker:
                 self.rto_tracker[component_id] = RTOMetrics(
                     component_id=component_id,
-                    target_rto_seconds=self.config.rto_target_seconds
+                    target_rto_seconds=self.config.rto_target_seconds,
                 )
 
             rto_metrics = self.rto_tracker[component_id]
@@ -495,7 +524,7 @@ class RecoveryManager:
                 component_id=component_id,
                 failure_type="unknown",  # Would be passed in real implementation
                 attempt_number=rto_metrics.recovery_attempts,
-                start_time=datetime.now()
+                start_time=datetime.now(),
             )
 
             if component_id not in self.recovery_attempts:
@@ -527,7 +556,8 @@ class RecoveryManager:
                         datetime.now() - rto_metrics.last_recovery_time
                     ).total_seconds()
                     rto_metrics.within_rto_target = (
-                        rto_metrics.actual_recovery_time_seconds <= rto_metrics.target_rto_seconds
+                        rto_metrics.actual_recovery_time_seconds
+                        <= rto_metrics.target_rto_seconds
                     )
                 else:
                     self.state = RecoveryState.FAILED
@@ -564,7 +594,9 @@ class RecoveryManager:
                     "actual_recovery_time_seconds": rto.actual_recovery_time_seconds,
                     "within_rto_target": rto.within_rto_target,
                     "recovery_attempts": rto.recovery_attempts,
-                    "last_recovery_time": rto.last_recovery_time.isoformat() if rto.last_recovery_time else None,
+                    "last_recovery_time": rto.last_recovery_time.isoformat()
+                    if rto.last_recovery_time
+                    else None,
                 }
         return None
 
@@ -613,6 +645,7 @@ class RecoveryManager:
         """Handle memory exhaustion scenario."""
         await self.start_recovery_tracking("memory_failure_scenario")
         import gc
+
         gc.collect()
         await self.end_recovery_tracking("memory_failure_scenario", True)
         return True
@@ -674,15 +707,14 @@ class RecoveryManager:
         try:
             if asyncio.iscoroutinefunction(procedure):
                 return await asyncio.wait_for(
-                    procedure(),
-                    timeout=self.config.recovery_timeout_seconds
+                    procedure(), timeout=self.config.recovery_timeout_seconds
                 )
             else:
                 # Run sync function in thread pool
                 loop = asyncio.get_event_loop()
                 return await asyncio.wait_for(
                     loop.run_in_executor(None, procedure),
-                    timeout=self.config.recovery_timeout_seconds
+                    timeout=self.config.recovery_timeout_seconds,
                 )
         except asyncio.TimeoutError:
             logger.error("Recovery procedure timed out")
@@ -746,11 +778,13 @@ class RecoveryManager:
                 "max_attempts": self.config.max_recovery_attempts,
                 "timeout_seconds": self.config.recovery_timeout_seconds,
             },
-            "failure_scenarios": list(set(
-                attempt.failure_type
-                for attempts in self.recovery_attempts.values()
-                for attempt in attempts
-            )),
+            "failure_scenarios": list(
+                set(
+                    attempt.failure_type
+                    for attempts in self.recovery_attempts.values()
+                    for attempt in attempts
+                )
+            ),
             "rto_metrics": {
                 component_id: self.get_rto_metrics(component_id)
                 for component_id in self.rto_tracker.keys()
@@ -759,12 +793,14 @@ class RecoveryManager:
             "emergency_mode": {
                 "active": self.emergency_mode,
                 "available": True,
-            }
+            },
         }
 
     def get_recovery_metrics(self) -> Dict[str, Any]:
         """Get comprehensive recovery metrics."""
-        total_attempts = sum(len(attempts) for attempts in self.recovery_attempts.values())
+        total_attempts = sum(
+            len(attempts) for attempts in self.recovery_attempts.values()
+        )
 
         return {
             "total_recoveries": self.total_recoveries,
@@ -772,7 +808,8 @@ class RecoveryManager:
             "failed_recoveries": self.failed_recoveries,
             "emergency_recoveries": self.emergency_recoveries,
             "total_attempts": total_attempts,
-            "success_rate": (self.successful_recoveries / max(1, self.total_recoveries)) * 100,
+            "success_rate": (self.successful_recoveries / max(1, self.total_recoveries))
+            * 100,
             "average_recovery_time": self._calculate_average_recovery_time(),
             "active_recoveries": len(self.active_recoveries),
             "pending_manual_recoveries": len(self.pending_manual_recoveries),

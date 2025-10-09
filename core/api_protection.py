@@ -10,7 +10,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -195,7 +195,7 @@ async def guarded_call(
 
         return result
 
-    except Exception as e:
+    except Exception:
         # Record failure
         if circuit_breaker:
             circuit_breaker.record_failure()

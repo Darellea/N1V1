@@ -4,8 +4,8 @@ tests/test_component_factory.py
 Tests for the Dependency Injection ComponentFactory system.
 """
 
+
 import pytest
-from unittest.mock import MagicMock
 
 from core.component_factory import ComponentFactory
 

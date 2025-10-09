@@ -12,18 +12,19 @@ import os
 import tempfile
 import time
 import unittest
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
 
-from data.historical_loader import HistoricalDataLoader
-from data.data_fetcher import DataFetcher, CacheLoadError
+from data.data_fetcher import CacheLoadError, DataFetcher
 from data.dataset_versioning import (
     DatasetVersionManager,
     MetadataError,
     migrate_legacy_dataset,
 )
+from data.historical_loader import HistoricalDataLoader
 
 
 class TestHistoricalLoaderInfiniteLoopFix(unittest.TestCase):

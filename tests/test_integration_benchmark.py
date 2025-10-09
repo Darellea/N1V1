@@ -5,8 +5,6 @@ Tests for the updated benchmark helper that no longer swallows exceptions.
 """
 
 import asyncio
-import time
-from unittest.mock import AsyncMock
 
 import pytest
 

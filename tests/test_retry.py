@@ -4,20 +4,20 @@ tests/test_retry.py
 Tests for centralized retry logic with idempotency-first design.
 """
 
-import asyncio
 import time
-import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
-from core.retry import (
-    retry_call,
-    retry_call_sync,
-    RetryConfig,
-    get_global_retry_config,
-    update_global_retry_config,
-)
+import pytest
+
 from core.api_protection import APICircuitBreaker, CircuitOpenError
 from core.idempotency import RetryNotAllowedError
+from core.retry import (
+    RetryConfig,
+    get_global_retry_config,
+    retry_call,
+    retry_call_sync,
+    update_global_retry_config,
+)
 
 
 class TestRetryCall:
@@ -293,7 +293,7 @@ class TestBackwardsCompatibility:
     @pytest.mark.asyncio
     async def test_deprecated_functions_still_work(self):
         """Test that deprecated functions still work but log warnings."""
-        from core.retry import retry_with_backoff, exponential_backoff
+        from core.retry import exponential_backoff, retry_with_backoff
 
         async def test_func():
             return "success"

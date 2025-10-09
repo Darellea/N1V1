@@ -5,20 +5,21 @@ Manages versioning of datasets to maintain clean history of changes
 and ensure backward compatibility.
 """
 
-import os
+import hashlib
 import json
 import logging
+import os
 import re
+import threading
 import time
 import uuid
-import threading
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Union
-from contextlib import contextmanager
-import pandas as pd
-import hashlib
+from typing import Any, Dict, List, Optional, Union
+
 import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +40,15 @@ class LockManager:
     """
 
     def __init__(self):
-        self.locks = {}  # dataset -> {"readers": int, "writer": thread_id, "waiting": list}
+        self.locks = (
+            {}
+        )  # dataset -> {"readers": int, "writer": thread_id, "waiting": list}
         self.metrics = {
             "acquisitions": 0,
             "timeouts": 0,
             "deadlocks": 0,
             "avg_acquire_time": 0.0,
-            "total_acquire_time": 0.0
+            "total_acquire_time": 0.0,
         }
         self._lock = threading.Lock()  # Protects the locks dict
         self._lock_graph = {}  # thread_id -> set of held locks for deadlock detection
@@ -101,7 +104,9 @@ class LockManager:
             acquire_time = time.time() - start_time
             self.metrics["acquisitions"] += 1
             self.metrics["total_acquire_time"] += acquire_time
-            self.metrics["avg_acquire_time"] = self.metrics["total_acquire_time"] / self.metrics["acquisitions"]
+            self.metrics["avg_acquire_time"] = (
+                self.metrics["total_acquire_time"] / self.metrics["acquisitions"]
+            )
 
         except:
             with self._lock:
@@ -153,14 +158,18 @@ class LockManager:
                         if thread_id in lock_info["waiting"]:
                             lock_info["waiting"].remove(thread_id)
                     self.metrics["timeouts"] += 1
-                    raise LockTimeoutError(f"Timeout acquiring write lock for {dataset}")
+                    raise LockTimeoutError(
+                        f"Timeout acquiring write lock for {dataset}"
+                    )
 
                 time.sleep(0.01)
 
             acquire_time = time.time() - start_time
             self.metrics["acquisitions"] += 1
             self.metrics["total_acquire_time"] += acquire_time
-            self.metrics["avg_acquire_time"] = self.metrics["total_acquire_time"] / self.metrics["acquisitions"]
+            self.metrics["avg_acquire_time"] = (
+                self.metrics["total_acquire_time"] / self.metrics["acquisitions"]
+            )
 
         except:
             with self._lock:

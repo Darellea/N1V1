@@ -16,13 +16,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from datetime import time as datetime_time
 from decimal import Decimal, InvalidOperation
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
-import jsonschema
-from ccxt.base.errors import ExchangeError
-
-from core.contracts import TradingSignal
 from risk.risk_manager import RiskManager
 from utils.adapter import signal_to_dict
 from utils.logger import get_trade_logger
@@ -33,6 +29,7 @@ trade_logger = get_trade_logger()
 
 class ValidationStage(Enum):
     """Validation pipeline stages."""
+
     PRE_TRADE = "pre_trade"
     RISK = "risk"
     EXCHANGE_COMPATIBILITY = "exchange_compatibility"
@@ -40,6 +37,7 @@ class ValidationStage(Enum):
 
 class ValidationSeverity(Enum):
     """Validation failure severity levels."""
+
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
@@ -48,6 +46,7 @@ class ValidationSeverity(Enum):
 @dataclass
 class ValidationResult:
     """Result of a validation check."""
+
     stage: ValidationStage
     check_name: str
     passed: bool
@@ -60,6 +59,7 @@ class ValidationResult:
 @dataclass
 class ValidationReport:
     """Complete validation report for an order."""
+
     signal: Any
     timestamp: float
     overall_passed: bool = True
@@ -81,25 +81,42 @@ class ValidationReport:
                 self.critical_count += 1
 
         # Update overall status - only pass if no errors or critical failures
-        self.overall_passed = (self.error_count == 0 and self.critical_count == 0)
+        self.overall_passed = self.error_count == 0 and self.critical_count == 0
 
     def get_errors(self) -> List[ValidationResult]:
         """Get all error results."""
-        return [r for r in self.results if not r.passed and r.severity == ValidationSeverity.ERROR]
+        return [
+            r
+            for r in self.results
+            if not r.passed and r.severity == ValidationSeverity.ERROR
+        ]
 
     def get_warnings(self) -> List[ValidationResult]:
         """Get all warning results."""
-        return [r for r in self.results if not r.passed and r.severity == ValidationSeverity.WARNING]
+        return [
+            r
+            for r in self.results
+            if not r.passed and r.severity == ValidationSeverity.WARNING
+        ]
 
     def get_critical_errors(self) -> List[ValidationResult]:
         """Get all critical error results."""
-        return [r for r in self.results if not r.passed and r.severity == ValidationSeverity.CRITICAL]
+        return [
+            r
+            for r in self.results
+            if not r.passed and r.severity == ValidationSeverity.CRITICAL
+        ]
 
 
 class ValidationRule(ABC):
     """Abstract base class for validation rules."""
 
-    def __init__(self, name: str, enabled: bool = True, severity: ValidationSeverity = ValidationSeverity.ERROR):
+    def __init__(
+        self,
+        name: str,
+        enabled: bool = True,
+        severity: ValidationSeverity = ValidationSeverity.ERROR,
+    ):
         self.name = name
         self.enabled = enabled
         self.severity = severity
@@ -124,18 +141,22 @@ class PreTradeValidator:
 
     def _initialize_rules(self) -> None:
         """Initialize pre-trade validation rules."""
-        self.rules.extend([
-            BasicFieldValidator(),
-            AmountValidator(),
-            PriceValidator(),
-            SymbolValidator(),
-            OrderTypeValidator(),
-            SignalTypeValidator(),
-            MarketHoursValidator(self.config.get("market_hours", {})),
-            TimestampValidator(),
-        ])
+        self.rules.extend(
+            [
+                BasicFieldValidator(),
+                AmountValidator(),
+                PriceValidator(),
+                SymbolValidator(),
+                OrderTypeValidator(),
+                SignalTypeValidator(),
+                MarketHoursValidator(self.config.get("market_hours", {})),
+                TimestampValidator(),
+            ]
+        )
 
-    async def validate(self, signal: Any, context: Dict[str, Any]) -> List[ValidationResult]:
+    async def validate(
+        self, signal: Any, context: Dict[str, Any]
+    ) -> List[ValidationResult]:
         """Run all pre-trade validation rules."""
         results = []
         for rule in self.rules:
@@ -145,13 +166,15 @@ class PreTradeValidator:
                     results.append(result)
                 except Exception as e:
                     logger.error(f"Error in pre-trade validation rule {rule.name}: {e}")
-                    results.append(ValidationResult(
-                        stage=ValidationStage.PRE_TRADE,
-                        check_name=rule.name,
-                        passed=False,
-                        severity=ValidationSeverity.ERROR,
-                        message=f"Validation rule failed: {str(e)}"
-                    ))
+                    results.append(
+                        ValidationResult(
+                            stage=ValidationStage.PRE_TRADE,
+                            check_name=rule.name,
+                            passed=False,
+                            severity=ValidationSeverity.ERROR,
+                            message=f"Validation rule failed: {str(e)}",
+                        )
+                    )
         return results
 
 
@@ -166,15 +189,19 @@ class RiskValidator:
 
     def _initialize_rules(self) -> None:
         """Initialize risk validation rules."""
-        self.rules.extend([
-            RiskManagerValidator(self.risk_manager),
-            PositionSizeValidator(self.risk_manager),
-            PortfolioRiskValidator(self.risk_manager),
-            StopLossValidator(),
-            TakeProfitValidator(),
-        ])
+        self.rules.extend(
+            [
+                RiskManagerValidator(self.risk_manager),
+                PositionSizeValidator(self.risk_manager),
+                PortfolioRiskValidator(self.risk_manager),
+                StopLossValidator(),
+                TakeProfitValidator(),
+            ]
+        )
 
-    async def validate(self, signal: Any, context: Dict[str, Any]) -> List[ValidationResult]:
+    async def validate(
+        self, signal: Any, context: Dict[str, Any]
+    ) -> List[ValidationResult]:
         """Run all risk validation rules."""
         results = []
         for rule in self.rules:
@@ -184,13 +211,15 @@ class RiskValidator:
                     results.append(result)
                 except Exception as e:
                     logger.error(f"Error in risk validation rule {rule.name}: {e}")
-                    results.append(ValidationResult(
-                        stage=ValidationStage.RISK,
-                        check_name=rule.name,
-                        passed=False,
-                        severity=ValidationSeverity.ERROR,
-                        message=f"Risk validation rule failed: {str(e)}"
-                    ))
+                    results.append(
+                        ValidationResult(
+                            stage=ValidationStage.RISK,
+                            check_name=rule.name,
+                            passed=False,
+                            severity=ValidationSeverity.ERROR,
+                            message=f"Risk validation rule failed: {str(e)}",
+                        )
+                    )
         return results
 
 
@@ -227,7 +256,9 @@ class ExchangeCompatibilityValidator:
         """Get validation rules for a specific exchange."""
         return self.exchange_rules.get(exchange.lower(), self.exchange_rules["default"])
 
-    async def validate(self, signal: Any, context: Dict[str, Any]) -> List[ValidationResult]:
+    async def validate(
+        self, signal: Any, context: Dict[str, Any]
+    ) -> List[ValidationResult]:
         """Run exchange compatibility validation."""
         results = []
         exchange = context.get("exchange", "default")
@@ -240,26 +271,32 @@ class ExchangeCompatibilityValidator:
                     results.append(result)
                 except Exception as e:
                     logger.error(f"Error in exchange validation rule {rule.name}: {e}")
-                    results.append(ValidationResult(
-                        stage=ValidationStage.EXCHANGE_COMPATIBILITY,
-                        check_name=rule.name,
-                        passed=False,
-                        severity=ValidationSeverity.ERROR,
-                        message=f"Exchange validation rule failed: {str(e)}"
-                    ))
+                    results.append(
+                        ValidationResult(
+                            stage=ValidationStage.EXCHANGE_COMPATIBILITY,
+                            check_name=rule.name,
+                            passed=False,
+                            severity=ValidationSeverity.ERROR,
+                            message=f"Exchange validation rule failed: {str(e)}",
+                        )
+                    )
         return results
 
 
 class OrderValidationPipeline:
     """Main validation pipeline orchestrator."""
 
-    def __init__(self, config: Dict[str, Any], risk_manager: Optional[RiskManager] = None):
+    def __init__(
+        self, config: Dict[str, Any], risk_manager: Optional[RiskManager] = None
+    ):
         self.config = config
         self.risk_manager = risk_manager
 
         # Initialize validators
         self.pre_trade_validator = PreTradeValidator(config)
-        self.risk_validator = RiskValidator(risk_manager, config) if risk_manager else None
+        self.risk_validator = (
+            RiskValidator(risk_manager, config) if risk_manager else None
+        )
         self.exchange_validator = ExchangeCompatibilityValidator(config)
 
         # Pipeline configuration
@@ -275,7 +312,9 @@ class OrderValidationPipeline:
         self._validation_times: List[float] = []
         self._max_timing_history = 100
 
-    async def validate_order(self, signal: Any, context: Optional[Dict[str, Any]] = None) -> ValidationReport:
+    async def validate_order(
+        self, signal: Any, context: Optional[Dict[str, Any]] = None
+    ) -> ValidationReport:
         """
         Run complete validation pipeline for an order.
 
@@ -287,18 +326,25 @@ class OrderValidationPipeline:
             ValidationReport with complete results
         """
         context = context or {}
-        report = ValidationReport(signal=signal, timestamp=asyncio.get_event_loop().time())
+        report = ValidationReport(
+            signal=signal, timestamp=asyncio.get_event_loop().time()
+        )
 
         # Circuit breaker check
-        if self.enable_circuit_breaker and self._validation_failures >= self._max_consecutive_failures:
-            report.add_result(ValidationResult(
-                stage=ValidationStage.PRE_TRADE,
-                check_name="circuit_breaker",
-                passed=False,
-                severity=ValidationSeverity.CRITICAL,
-                message="Validation pipeline circuit breaker triggered",
-                suggested_fix="Check system health and reset validation pipeline"
-            ))
+        if (
+            self.enable_circuit_breaker
+            and self._validation_failures >= self._max_consecutive_failures
+        ):
+            report.add_result(
+                ValidationResult(
+                    stage=ValidationStage.PRE_TRADE,
+                    check_name="circuit_breaker",
+                    passed=False,
+                    severity=ValidationSeverity.CRITICAL,
+                    message="Validation pipeline circuit breaker triggered",
+                    suggested_fix="Check system health and reset validation pipeline",
+                )
+            )
             return report
 
         start_time = asyncio.get_event_loop().time()
@@ -306,55 +352,61 @@ class OrderValidationPipeline:
         try:
             # Stage 1: Pre-trade validation
             pre_trade_results = await self._run_with_timeout(
-                self.pre_trade_validator.validate(signal, context),
-                "pre_trade"
+                self.pre_trade_validator.validate(signal, context), "pre_trade"
             )
             for result in pre_trade_results:
                 report.add_result(result)
 
             # Fail fast if configured and we have errors
             if self.fail_fast and not report.overall_passed:
-                report.execution_time_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+                report.execution_time_ms = (
+                    asyncio.get_event_loop().time() - start_time
+                ) * 1000
                 return report
 
             # Stage 2: Risk validation (if risk manager available)
             if self.risk_validator:
                 risk_results = await self._run_with_timeout(
-                    self.risk_validator.validate(signal, context),
-                    "risk"
+                    self.risk_validator.validate(signal, context), "risk"
                 )
                 for result in risk_results:
                     report.add_result(result)
 
                 if self.fail_fast and not report.overall_passed:
-                    report.execution_time_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+                    report.execution_time_ms = (
+                        asyncio.get_event_loop().time() - start_time
+                    ) * 1000
                     return report
 
             # Stage 3: Exchange compatibility validation
             exchange_results = await self._run_with_timeout(
                 self.exchange_validator.validate(signal, context),
-                "exchange_compatibility"
+                "exchange_compatibility",
             )
             for result in exchange_results:
                 report.add_result(result)
 
         except asyncio.TimeoutError:
-            report.add_result(ValidationResult(
-                stage=ValidationStage.PRE_TRADE,
-                check_name="timeout",
-                passed=False,
-                severity=ValidationSeverity.CRITICAL,
-                message=f"Validation timed out after {self.timeout_seconds}s"
-            ))
+            report.add_result(
+                ValidationResult(
+                    stage=ValidationStage.PRE_TRADE,
+                    check_name="timeout",
+                    passed=False,
+                    severity=ValidationSeverity.CRITICAL,
+                    message=f"Validation timed out after {self.timeout_seconds}s",
+                )
+            )
         except Exception as e:
             logger.error(f"Unexpected error in validation pipeline: {e}")
-            report.add_result(ValidationResult(
-                stage=ValidationStage.PRE_TRADE,
-                check_name="pipeline_error",
-                passed=False,
-                severity=ValidationSeverity.CRITICAL,
-                message=f"Validation pipeline error: {str(e)}"
-            ))
+            report.add_result(
+                ValidationResult(
+                    stage=ValidationStage.PRE_TRADE,
+                    check_name="pipeline_error",
+                    passed=False,
+                    severity=ValidationSeverity.CRITICAL,
+                    message=f"Validation pipeline error: {str(e)}",
+                )
+            )
 
         # Update circuit breaker
         if report.overall_passed:
@@ -385,11 +437,12 @@ class OrderValidationPipeline:
             return {"average_time_ms": 0, "max_time_ms": 0, "min_time_ms": 0}
 
         return {
-            "average_time_ms": sum(self._validation_times) / len(self._validation_times),
+            "average_time_ms": sum(self._validation_times)
+            / len(self._validation_times),
             "max_time_ms": max(self._validation_times),
             "min_time_ms": min(self._validation_times),
             "total_validations": len(self._validation_times),
-            "circuit_breaker_failures": self._validation_failures
+            "circuit_breaker_failures": self._validation_failures,
         }
 
     def reset_circuit_breaker(self) -> None:
@@ -400,6 +453,7 @@ class OrderValidationPipeline:
 
 # ===== VALIDATION RULES IMPLEMENTATIONS =====
 
+
 class BasicFieldValidator(ValidationRule):
     """Validates presence of required basic fields."""
 
@@ -407,7 +461,13 @@ class BasicFieldValidator(ValidationRule):
         super().__init__("basic_fields")
 
     async def validate(self, signal: Any, context: Dict[str, Any]) -> ValidationResult:
-        required_fields = ["strategy_id", "symbol", "signal_type", "order_type", "amount"]
+        required_fields = [
+            "strategy_id",
+            "symbol",
+            "signal_type",
+            "order_type",
+            "amount",
+        ]
         signal_dict = signal_to_dict(signal)
 
         missing_fields = []
@@ -422,7 +482,7 @@ class BasicFieldValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message=f"Missing required fields: {', '.join(missing_fields)}",
-                suggested_fix="Ensure all required fields are provided in the signal"
+                suggested_fix="Ensure all required fields are provided in the signal",
             )
 
         return ValidationResult(
@@ -430,7 +490,7 @@ class BasicFieldValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="All required fields present"
+            message="All required fields present",
         )
 
 
@@ -451,7 +511,7 @@ class AmountValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Order amount is required",
-                suggested_fix="Provide a valid order amount"
+                suggested_fix="Provide a valid order amount",
             )
 
         try:
@@ -463,7 +523,7 @@ class AmountValidator(ValidationRule):
                     passed=False,
                     severity=ValidationSeverity.ERROR,
                     message="Order amount must be positive",
-                    suggested_fix="Use a positive amount value"
+                    suggested_fix="Use a positive amount value",
                 )
         except (InvalidOperation, ValueError, TypeError):
             return ValidationResult(
@@ -472,7 +532,7 @@ class AmountValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Invalid amount format",
-                suggested_fix="Use a valid numeric amount"
+                suggested_fix="Use a valid numeric amount",
             )
 
         return ValidationResult(
@@ -480,7 +540,7 @@ class AmountValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Amount validation passed"
+            message="Amount validation passed",
         )
 
 
@@ -507,7 +567,7 @@ class PriceValidator(ValidationRule):
                         passed=False,
                         severity=ValidationSeverity.ERROR,
                         message="Price must be positive",
-                        suggested_fix="Use a positive price value"
+                        suggested_fix="Use a positive price value",
                     )
             except (InvalidOperation, ValueError, TypeError):
                 return ValidationResult(
@@ -516,7 +576,7 @@ class PriceValidator(ValidationRule):
                     passed=False,
                     severity=ValidationSeverity.ERROR,
                     message="Invalid price format",
-                    suggested_fix="Use a valid numeric price"
+                    suggested_fix="Use a valid numeric price",
                 )
 
         # Validate stop loss if provided
@@ -530,7 +590,7 @@ class PriceValidator(ValidationRule):
                         passed=False,
                         severity=ValidationSeverity.ERROR,
                         message="Stop loss must be positive",
-                        suggested_fix="Use a positive stop loss value"
+                        suggested_fix="Use a positive stop loss value",
                     )
             except (InvalidOperation, ValueError, TypeError):
                 return ValidationResult(
@@ -539,7 +599,7 @@ class PriceValidator(ValidationRule):
                     passed=False,
                     severity=ValidationSeverity.ERROR,
                     message="Invalid stop loss format",
-                    suggested_fix="Use a valid numeric stop loss"
+                    suggested_fix="Use a valid numeric stop loss",
                 )
 
         # Validate take profit if provided
@@ -553,7 +613,7 @@ class PriceValidator(ValidationRule):
                         passed=False,
                         severity=ValidationSeverity.ERROR,
                         message="Take profit must be positive",
-                        suggested_fix="Use a positive take profit value"
+                        suggested_fix="Use a positive take profit value",
                     )
             except (InvalidOperation, ValueError, TypeError):
                 return ValidationResult(
@@ -562,7 +622,7 @@ class PriceValidator(ValidationRule):
                     passed=False,
                     severity=ValidationSeverity.ERROR,
                     message="Invalid take profit format",
-                    suggested_fix="Use a valid numeric take profit"
+                    suggested_fix="Use a valid numeric take profit",
                 )
 
         return ValidationResult(
@@ -570,7 +630,7 @@ class PriceValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Price validation passed"
+            message="Price validation passed",
         )
 
 
@@ -591,7 +651,7 @@ class SymbolValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Symbol is required and must be a string",
-                suggested_fix="Provide a valid trading symbol (e.g., 'BTC/USDT')"
+                suggested_fix="Provide a valid trading symbol (e.g., 'BTC/USDT')",
             )
 
         if "/" not in symbol:
@@ -601,7 +661,7 @@ class SymbolValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Symbol must be in BASE/QUOTE format",
-                suggested_fix="Use format like 'BTC/USDT' or 'ETH/BTC'"
+                suggested_fix="Use format like 'BTC/USDT' or 'ETH/BTC'",
             )
 
         base, quote = symbol.split("/", 1)
@@ -612,7 +672,7 @@ class SymbolValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Symbol must have both base and quote currencies",
-                suggested_fix="Ensure both base and quote are non-empty"
+                suggested_fix="Ensure both base and quote are non-empty",
             )
 
         return ValidationResult(
@@ -620,7 +680,7 @@ class SymbolValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Symbol format is valid"
+            message="Symbol format is valid",
         )
 
 
@@ -642,7 +702,7 @@ class OrderTypeValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Order type is required",
-                suggested_fix="Specify order type: MARKET, LIMIT, STOP, or STOP_LIMIT"
+                suggested_fix="Specify order type: MARKET, LIMIT, STOP, or STOP_LIMIT",
             )
 
         if order_type not in self.valid_order_types:
@@ -652,7 +712,7 @@ class OrderTypeValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message=f"Invalid order type: {order_type}",
-                suggested_fix=f"Use one of: {', '.join(self.valid_order_types)}"
+                suggested_fix=f"Use one of: {', '.join(self.valid_order_types)}",
             )
 
         return ValidationResult(
@@ -660,7 +720,7 @@ class OrderTypeValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Order type is valid"
+            message="Order type is valid",
         )
 
 
@@ -670,7 +730,10 @@ class SignalTypeValidator(ValidationRule):
     def __init__(self):
         super().__init__("signal_type_validation")
         self.valid_signal_types = {
-            "ENTRY_LONG", "ENTRY_SHORT", "EXIT_LONG", "EXIT_SHORT"
+            "ENTRY_LONG",
+            "ENTRY_SHORT",
+            "EXIT_LONG",
+            "EXIT_SHORT",
         }
 
     async def validate(self, signal: Any, context: Dict[str, Any]) -> ValidationResult:
@@ -684,7 +747,7 @@ class SignalTypeValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Signal type is required",
-                suggested_fix="Specify signal type: ENTRY_LONG, ENTRY_SHORT, EXIT_LONG, or EXIT_SHORT"
+                suggested_fix="Specify signal type: ENTRY_LONG, ENTRY_SHORT, EXIT_LONG, or EXIT_SHORT",
             )
 
         if signal_type not in self.valid_signal_types:
@@ -694,7 +757,7 @@ class SignalTypeValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message=f"Invalid signal type: {signal_type}",
-                suggested_fix=f"Use one of: {', '.join(self.valid_signal_types)}"
+                suggested_fix=f"Use one of: {', '.join(self.valid_signal_types)}",
             )
 
         return ValidationResult(
@@ -702,7 +765,7 @@ class SignalTypeValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Signal type is valid"
+            message="Signal type is valid",
         )
 
 
@@ -710,7 +773,9 @@ class MarketHoursValidator(ValidationRule):
     """Validates trading during market hours."""
 
     def __init__(self, market_hours_config: Dict[str, Any]):
-        super().__init__("market_hours", enabled=market_hours_config.get("enabled", False))
+        super().__init__(
+            "market_hours", enabled=market_hours_config.get("enabled", False)
+        )
         self.market_hours = market_hours_config
         self.timezone = market_hours_config.get("timezone", "UTC")
 
@@ -721,15 +786,19 @@ class MarketHoursValidator(ValidationRule):
                 check_name=self.name,
                 passed=True,
                 severity=ValidationSeverity.WARNING,
-                message="Market hours validation disabled"
+                message="Market hours validation disabled",
             )
 
         # Get current time (simplified - in real implementation would handle timezones)
         current_time = datetime.now().time()
 
         # Check if within market hours
-        market_open = datetime_time.fromisoformat(self.market_hours.get("open", "00:00"))
-        market_close = datetime_time.fromisoformat(self.market_hours.get("close", "23:59"))
+        market_open = datetime_time.fromisoformat(
+            self.market_hours.get("open", "00:00")
+        )
+        market_close = datetime_time.fromisoformat(
+            self.market_hours.get("close", "23:59")
+        )
 
         if not (market_open <= current_time <= market_close):
             return ValidationResult(
@@ -738,7 +807,7 @@ class MarketHoursValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.WARNING,
                 message=f"Outside market hours ({market_open} - {market_close})",
-                suggested_fix="Wait for market hours or use market hours override"
+                suggested_fix="Wait for market hours or use market hours override",
             )
 
         return ValidationResult(
@@ -746,7 +815,7 @@ class MarketHoursValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.WARNING,
-            message="Within market hours"
+            message="Within market hours",
         )
 
 
@@ -767,7 +836,7 @@ class TimestampValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.WARNING,
                 message="Timestamp not provided",
-                suggested_fix="Include timestamp in signal"
+                suggested_fix="Include timestamp in signal",
             )
 
         try:
@@ -787,7 +856,7 @@ class TimestampValidator(ValidationRule):
                     passed=False,
                     severity=ValidationSeverity.WARNING,
                     message="Signal timestamp is too old",
-                    suggested_fix="Use current timestamp"
+                    suggested_fix="Use current timestamp",
                 )
 
             # Check if timestamp is not too far in the future (allow 5 minutes grace)
@@ -798,7 +867,7 @@ class TimestampValidator(ValidationRule):
                     passed=False,
                     severity=ValidationSeverity.WARNING,
                     message="Signal timestamp is in the future",
-                    suggested_fix="Use current timestamp"
+                    suggested_fix="Use current timestamp",
                 )
 
         except (ValueError, TypeError, OverflowError):
@@ -808,7 +877,7 @@ class TimestampValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Invalid timestamp format",
-                suggested_fix="Use valid timestamp (milliseconds since epoch)"
+                suggested_fix="Use valid timestamp (milliseconds since epoch)",
             )
 
         return ValidationResult(
@@ -816,11 +885,12 @@ class TimestampValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,  # Change to ERROR for successful validation
-            message="Timestamp validation passed"
+            message="Timestamp validation passed",
         )
 
 
 # ===== RISK VALIDATION RULES =====
+
 
 class RiskManagerValidator(ValidationRule):
     """Integrates with RiskManager for comprehensive risk validation."""
@@ -840,7 +910,7 @@ class RiskManagerValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Signal failed risk management evaluation",
-                suggested_fix="Review risk parameters and adjust signal accordingly"
+                suggested_fix="Review risk parameters and adjust signal accordingly",
             )
 
         return ValidationResult(
@@ -848,7 +918,7 @@ class RiskManagerValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Risk management validation passed"
+            message="Risk management validation passed",
         )
 
 
@@ -870,7 +940,7 @@ class PositionSizeValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Amount required for position size validation",
-                suggested_fix="Provide order amount"
+                suggested_fix="Provide order amount",
             )
 
         # Check against maximum position size
@@ -884,7 +954,7 @@ class PositionSizeValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message=f"Position size {position_pct:.2%} exceeds maximum {self.risk_manager.max_position_size:.2%}",
-                suggested_fix="Reduce order amount or increase max_position_size"
+                suggested_fix="Reduce order amount or increase max_position_size",
             )
 
         return ValidationResult(
@@ -892,7 +962,7 @@ class PositionSizeValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Position size within risk limits"
+            message="Position size within risk limits",
         )
 
 
@@ -906,7 +976,9 @@ class PortfolioRiskValidator(ValidationRule):
     async def validate(self, signal: Any, context: Dict[str, Any]) -> ValidationResult:
         # Check daily loss limit
         if self.risk_manager.today_pnl < 0:
-            loss_pct = abs(self.risk_manager.today_pnl) / self.risk_manager.today_start_balance
+            loss_pct = (
+                abs(self.risk_manager.today_pnl) / self.risk_manager.today_start_balance
+            )
             if loss_pct >= self.risk_manager.max_daily_loss:
                 return ValidationResult(
                     stage=ValidationStage.RISK,
@@ -914,7 +986,7 @@ class PortfolioRiskValidator(ValidationRule):
                     passed=False,
                     severity=ValidationSeverity.CRITICAL,
                     message=f"Daily loss limit exceeded: {loss_pct:.2%} >= {self.risk_manager.max_daily_loss:.2%}",
-                    suggested_fix="Stop trading for the day or reduce position sizes"
+                    suggested_fix="Stop trading for the day or reduce position sizes",
                 )
 
         # Check maximum concurrent positions
@@ -927,7 +999,7 @@ class PortfolioRiskValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message=f"Maximum concurrent positions exceeded: {len(current_positions)} >= {max_positions}",
-                suggested_fix="Close existing positions or increase max_concurrent_positions"
+                suggested_fix="Close existing positions or increase max_concurrent_positions",
             )
 
         return ValidationResult(
@@ -935,7 +1007,7 @@ class PortfolioRiskValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Portfolio risk constraints satisfied"
+            message="Portfolio risk constraints satisfied",
         )
 
 
@@ -959,7 +1031,7 @@ class StopLossValidator(ValidationRule):
                     passed=False,
                     severity=ValidationSeverity.ERROR,
                     message="Stop orders must include stop_loss price",
-                    suggested_fix="Add stop_loss to stop orders"
+                    suggested_fix="Add stop_loss to stop orders",
                 )
 
         return ValidationResult(
@@ -967,7 +1039,7 @@ class StopLossValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Stop loss validation passed"
+            message="Stop loss validation passed",
         )
 
 
@@ -1000,7 +1072,7 @@ class TakeProfitValidator(ValidationRule):
                             passed=False,
                             severity=ValidationSeverity.WARNING,
                             message="Invalid long position levels: TP should be > price > SL",
-                            suggested_fix="Adjust take profit or stop loss levels"
+                            suggested_fix="Adjust take profit or stop loss levels",
                         )
                 elif signal_type.endswith("_SHORT"):
                     # For short positions: SL > price > TP
@@ -1011,7 +1083,7 @@ class TakeProfitValidator(ValidationRule):
                             passed=False,
                             severity=ValidationSeverity.WARNING,
                             message="Invalid short position levels: SL should be > price > TP",
-                            suggested_fix="Adjust take profit or stop loss levels"
+                            suggested_fix="Adjust take profit or stop loss levels",
                         )
             except (InvalidOperation, ValueError, TypeError):
                 return ValidationResult(
@@ -1020,7 +1092,7 @@ class TakeProfitValidator(ValidationRule):
                     passed=False,
                     severity=ValidationSeverity.WARNING,
                     message="Invalid price format for TP/SL validation",
-                    suggested_fix="Use valid numeric prices"
+                    suggested_fix="Use valid numeric prices",
                 )
 
         return ValidationResult(
@@ -1028,11 +1100,12 @@ class TakeProfitValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.WARNING,
-            message="Take profit validation passed"
+            message="Take profit validation passed",
         )
 
 
 # ===== EXCHANGE COMPATIBILITY RULES =====
+
 
 class MinimumOrderSizeValidator(ValidationRule):
     """Validates minimum order size for exchange."""
@@ -1053,13 +1126,16 @@ class MinimumOrderSizeValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Amount required for minimum order size check",
-                suggested_fix="Provide order amount"
+                suggested_fix="Provide order amount",
             )
 
         # Get minimum order size for symbol/exchange (simplified)
         min_sizes = {
             "default": {"BTC/USDT": Decimal("0.0001"), "ETH/USDT": Decimal("0.001")},
-            "binance": {"BTC/USDT": Decimal("0.000001"), "ETH/USDT": Decimal("0.00001")},
+            "binance": {
+                "BTC/USDT": Decimal("0.000001"),
+                "ETH/USDT": Decimal("0.00001"),
+            },
         }
 
         exchange_mins = min_sizes.get(exchange, min_sizes["default"])
@@ -1074,7 +1150,7 @@ class MinimumOrderSizeValidator(ValidationRule):
                     passed=False,
                     severity=ValidationSeverity.ERROR,
                     message=f"Order size {amount} below minimum {min_size} for {symbol} on {exchange}",
-                    suggested_fix=f"Increase order size to at least {min_size}"
+                    suggested_fix=f"Increase order size to at least {min_size}",
                 )
         except (InvalidOperation, ValueError, TypeError):
             return ValidationResult(
@@ -1083,7 +1159,7 @@ class MinimumOrderSizeValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Invalid amount format for minimum size check",
-                suggested_fix="Use valid numeric amount"
+                suggested_fix="Use valid numeric amount",
             )
 
         return ValidationResult(
@@ -1091,7 +1167,7 @@ class MinimumOrderSizeValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Order size meets minimum requirements"
+            message="Order size meets minimum requirements",
         )
 
 
@@ -1114,7 +1190,7 @@ class MaximumOrderSizeValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Amount required for maximum order size check",
-                suggested_fix="Provide order amount"
+                suggested_fix="Provide order amount",
             )
 
         # Get maximum order size for symbol/exchange (simplified)
@@ -1135,7 +1211,7 @@ class MaximumOrderSizeValidator(ValidationRule):
                     passed=False,
                     severity=ValidationSeverity.ERROR,
                     message=f"Order size {amount} exceeds maximum {max_size} for {symbol} on {exchange}",
-                    suggested_fix=f"Reduce order size to at most {max_size}"
+                    suggested_fix=f"Reduce order size to at most {max_size}",
                 )
         except (InvalidOperation, ValueError, TypeError):
             return ValidationResult(
@@ -1144,7 +1220,7 @@ class MaximumOrderSizeValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Invalid amount format for maximum size check",
-                suggested_fix="Use valid numeric amount"
+                suggested_fix="Use valid numeric amount",
             )
 
         return ValidationResult(
@@ -1152,7 +1228,7 @@ class MaximumOrderSizeValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Order size within maximum limits"
+            message="Order size within maximum limits",
         )
 
 
@@ -1174,7 +1250,7 @@ class PricePrecisionValidator(ValidationRule):
                 check_name=self.name,
                 passed=True,
                 severity=ValidationSeverity.ERROR,
-                message="No price to validate precision for"
+                message="No price to validate precision for",
             )
 
         # Get price precision for symbol/exchange (simplified)
@@ -1197,7 +1273,7 @@ class PricePrecisionValidator(ValidationRule):
                         passed=False,
                         severity=ValidationSeverity.ERROR,
                         message=f"Price precision {decimal_places} exceeds maximum {precision} for {symbol} on {exchange}",
-                        suggested_fix=f"Round price to {precision} decimal places"
+                        suggested_fix=f"Round price to {precision} decimal places",
                     )
         except (ValueError, TypeError):
             return ValidationResult(
@@ -1206,16 +1282,16 @@ class PricePrecisionValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Invalid price format for precision check",
-                suggested_fix="Use valid numeric price"
+                suggested_fix="Use valid numeric price",
             )
 
         return ValidationResult(
             stage=ValidationStage.EXCHANGE_COMPATIBILITY,
-                check_name=self.name,
-                passed=True,
-                severity=ValidationSeverity.ERROR,
-                message="Price precision is valid"
-            )
+            check_name=self.name,
+            passed=True,
+            severity=ValidationSeverity.ERROR,
+            message="Price precision is valid",
+        )
 
 
 class AmountPrecisionValidator(ValidationRule):
@@ -1237,7 +1313,7 @@ class AmountPrecisionValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Amount required for precision check",
-                suggested_fix="Provide order amount"
+                suggested_fix="Provide order amount",
             )
 
         # Get amount precision for symbol/exchange (simplified)
@@ -1260,7 +1336,7 @@ class AmountPrecisionValidator(ValidationRule):
                         passed=False,
                         severity=ValidationSeverity.ERROR,
                         message=f"Amount precision {decimal_places} exceeds maximum {precision} for {symbol} on {exchange}",
-                        suggested_fix=f"Round amount to {precision} decimal places"
+                        suggested_fix=f"Round amount to {precision} decimal places",
                     )
         except (ValueError, TypeError):
             return ValidationResult(
@@ -1269,7 +1345,7 @@ class AmountPrecisionValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Invalid amount format for precision check",
-                suggested_fix="Use valid numeric amount"
+                suggested_fix="Use valid numeric amount",
             )
 
         return ValidationResult(
@@ -1277,7 +1353,7 @@ class AmountPrecisionValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Amount precision is valid"
+            message="Amount precision is valid",
         )
 
 
@@ -1299,7 +1375,7 @@ class TradingPairValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message="Symbol required for trading pair validation",
-                suggested_fix="Provide trading symbol"
+                suggested_fix="Provide trading symbol",
             )
 
         # Get supported pairs for exchange (simplified - in real implementation would query exchange)
@@ -1318,7 +1394,7 @@ class TradingPairValidator(ValidationRule):
                 passed=False,
                 severity=ValidationSeverity.ERROR,
                 message=f"Trading pair {symbol} not supported on {exchange}",
-                suggested_fix=f"Use one of supported pairs: {', '.join(exchange_pairs)}"
+                suggested_fix=f"Use one of supported pairs: {', '.join(exchange_pairs)}",
             )
 
         return ValidationResult(
@@ -1326,7 +1402,7 @@ class TradingPairValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Trading pair is supported"
+            message="Trading pair is supported",
         )
 
 
@@ -1347,7 +1423,7 @@ class BinanceLeverageValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Binance leverage validation passed"
+            message="Binance leverage validation passed",
         )
 
 
@@ -1367,7 +1443,7 @@ class BinanceIsolatedMarginValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="Binance isolated margin validation passed"
+            message="Binance isolated margin validation passed",
         )
 
 
@@ -1387,11 +1463,12 @@ class KuCoinMinimumVolumeValidator(ValidationRule):
             check_name=self.name,
             passed=True,
             severity=ValidationSeverity.ERROR,
-            message="KuCoin minimum volume validation passed"
+            message="KuCoin minimum volume validation passed",
         )
 
 
 # ===== VALIDATION RULE MANAGEMENT INTERFACE =====
+
 
 class ValidationRuleManager:
     """Manages validation rules and their configuration."""
@@ -1400,7 +1477,9 @@ class ValidationRuleManager:
         self.rules: Dict[str, ValidationRule] = {}
         self.rule_configs: Dict[str, Dict[str, Any]] = {}
 
-    def register_rule(self, rule: ValidationRule, config: Optional[Dict[str, Any]] = None) -> None:
+    def register_rule(
+        self, rule: ValidationRule, config: Optional[Dict[str, Any]] = None
+    ) -> None:
         """Register a validation rule."""
         self.rules[rule.name] = rule
         self.rule_configs[rule.name] = config or {}

@@ -13,9 +13,9 @@ import ccxt.async_support as ccxt
 from ccxt.base.errors import ExchangeError, NetworkError
 
 from core.api_protection import (
-    guarded_call,
     get_default_circuit_breaker,
     get_default_rate_limiter,
+    guarded_call,
 )
 from utils.logger import get_trade_logger
 

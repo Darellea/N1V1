@@ -4,15 +4,20 @@ Tests for distributed locking mechanism in DatasetVersionManager.
 Tests concurrent operations, lock timeouts, and deadlock detection.
 """
 
-import pytest
+import shutil
+import tempfile
 import threading
 import time
-import pandas as pd
-import tempfile
-import shutil
 from pathlib import Path
 
-from data.dataset_versioning import DatasetVersionManager, LockTimeoutError, DeadlockError
+import pandas as pd
+import pytest
+
+from data.dataset_versioning import (
+    DatasetVersionManager,
+    DeadlockError,
+    LockTimeoutError,
+)
 
 
 @pytest.fixture
@@ -32,16 +37,18 @@ def version_manager(temp_base_path):
 @pytest.fixture
 def sample_dataframe():
     """Create a sample DataFrame for testing."""
-    dates = pd.date_range('2023-01-01', periods=100, freq='H')
-    df = pd.DataFrame({
-        'timestamp': dates,
-        'open': [100 + i * 0.1 for i in range(100)],
-        'high': [101 + i * 0.1 for i in range(100)],
-        'low': [99 + i * 0.1 for i in range(100)],
-        'close': [100.5 + i * 0.1 for i in range(100)],
-        'volume': [1000 + i * 10 for i in range(100)]
-    })
-    df.set_index('timestamp', inplace=True)
+    dates = pd.date_range("2023-01-01", periods=100, freq="H")
+    df = pd.DataFrame(
+        {
+            "timestamp": dates,
+            "open": [100 + i * 0.1 for i in range(100)],
+            "high": [101 + i * 0.1 for i in range(100)],
+            "low": [99 + i * 0.1 for i in range(100)],
+            "close": [100.5 + i * 0.1 for i in range(100)],
+            "volume": [1000 + i * 10 for i in range(100)],
+        }
+    )
+    df.set_index("timestamp", inplace=True)
     return df
 
 
@@ -52,7 +59,7 @@ def test_concurrent_read_operations(version_manager, sample_dataframe):
     version_id = version_manager.create_version(
         df=sample_dataframe,
         version_name="test_dataset",
-        description="Test dataset for concurrent reads"
+        description="Test dataset for concurrent reads",
     )
 
     results = []
@@ -90,7 +97,7 @@ def test_write_blocks_reads(version_manager, sample_dataframe):
     version_id = version_manager.create_version(
         df=sample_dataframe,
         version_name="blocking_test",
-        description="Test dataset for write blocking reads"
+        description="Test dataset for write blocking reads",
     )
 
     write_started = threading.Event()
@@ -103,7 +110,7 @@ def test_write_blocks_reads(version_manager, sample_dataframe):
         version_manager.create_version(
             df=sample_dataframe,
             version_name="blocking_test",
-            description="Second version"
+            description="Second version",
         )
         write_completed.set()
 
@@ -137,7 +144,7 @@ def test_lock_timeout_prevention(version_manager, sample_dataframe):
     version_id = version_manager.create_version(
         df=sample_dataframe,
         version_name="timeout_test",
-        description="Test dataset for timeout"
+        description="Test dataset for timeout",
     )
 
     # Manually acquire a write lock (simulate holding it)
@@ -176,14 +183,10 @@ def test_deadlock_detection_basic(version_manager, sample_dataframe):
     """Test basic deadlock detection."""
     # Create two datasets
     version_manager.create_version(
-        df=sample_dataframe,
-        version_name="dataset_a",
-        description="Dataset A"
+        df=sample_dataframe, version_name="dataset_a", description="Dataset A"
     )
     version_manager.create_version(
-        df=sample_dataframe,
-        version_name="dataset_b",
-        description="Dataset B"
+        df=sample_dataframe, version_name="dataset_b", description="Dataset B"
     )
 
     detected_deadlocks = []
@@ -231,7 +234,9 @@ def test_deadlock_detection_basic(version_manager, sample_dataframe):
     t2.join(timeout=10)
 
     # At least one thread should have detected deadlock or timeout
-    assert len(detected_deadlocks) > 0, f"No deadlocks or timeouts detected: {detected_deadlocks}"
+    assert (
+        len(detected_deadlocks) > 0
+    ), f"No deadlocks or timeouts detected: {detected_deadlocks}"
 
 
 @pytest.mark.timeout(15)
@@ -241,7 +246,7 @@ def test_lock_metrics_tracking(version_manager, sample_dataframe):
     version_id = version_manager.create_version(
         df=sample_dataframe,
         version_name="metrics_test",
-        description="Test dataset for metrics"
+        description="Test dataset for metrics",
     )
 
     # Load the version multiple times
@@ -272,7 +277,7 @@ def test_multiple_concurrent_versions(version_manager, sample_dataframe):
         vid = version_manager.create_version(
             df=sample_dataframe,
             version_name=f"concurrent_test_{i}",
-            description=f"Concurrent test dataset {i}"
+            description=f"Concurrent test dataset {i}",
         )
         version_ids.append(vid)
 
@@ -285,11 +290,11 @@ def test_multiple_concurrent_versions(version_manager, sample_dataframe):
             if thread_id % 2 == 0:
                 # Create new version
                 new_df = sample_dataframe.copy()
-                new_df['volume'] = new_df['volume'] * (thread_id + 1)  # Modify slightly
+                new_df["volume"] = new_df["volume"] * (thread_id + 1)  # Modify slightly
                 vid = version_manager.create_version(
                     df=new_df,
                     version_name=f"concurrent_test_{dataset_idx}",
-                    description=f"Thread {thread_id} version"
+                    description=f"Thread {thread_id} version",
                 )
                 results.append(("create", thread_id, vid is not None))
             else:
@@ -333,7 +338,7 @@ def test_lock_priority_and_fairness(version_manager, sample_dataframe):
     version_id = version_manager.create_version(
         df=sample_dataframe,
         version_name="fairness_test",
-        description="Test dataset for lock fairness"
+        description="Test dataset for lock fairness",
     )
 
     acquisition_order = []
@@ -342,9 +347,13 @@ def test_lock_priority_and_fairness(version_manager, sample_dataframe):
     def acquire_and_record(thread_id, lock_type="read"):
         try:
             if lock_type == "read":
-                version_manager.lock_manager.acquire_read_lock("fairness_test", timeout=30)
+                version_manager.lock_manager.acquire_read_lock(
+                    "fairness_test", timeout=30
+                )
             else:
-                version_manager.lock_manager.acquire_write_lock("fairness_test", timeout=30)
+                version_manager.lock_manager.acquire_write_lock(
+                    "fairness_test", timeout=30
+                )
 
             with lock:
                 acquisition_order.append(f"thread_{thread_id}")
@@ -368,7 +377,9 @@ def test_lock_priority_and_fairness(version_manager, sample_dataframe):
         t.join(timeout=10)
 
     # All threads should have acquired the lock
-    successful_acquisitions = [x for x in acquisition_order if not x.startswith("error")]
+    successful_acquisitions = [
+        x for x in acquisition_order if not x.startswith("error")
+    ]
     assert len(successful_acquisitions) == 5
 
     # Check that no errors occurred
@@ -383,7 +394,7 @@ def test_lock_timeout_does_not_corrupt_state(version_manager, sample_dataframe):
     version_id = version_manager.create_version(
         df=sample_dataframe,
         version_name="consistency_test",
-        description="Test dataset for consistency"
+        description="Test dataset for consistency",
     )
 
     # Verify initial state
@@ -396,10 +407,13 @@ def test_lock_timeout_does_not_corrupt_state(version_manager, sample_dataframe):
         # Try to acquire write lock while holding read lock with short timeout
         # This is tricky to simulate reliably, but let's try
         version_manager.lock_manager.acquire_read_lock("consistency_test", timeout=30)
+
         # In a separate thread, try to get write lock with very short timeout
         def try_write():
             try:
-                version_manager.lock_manager.acquire_write_lock("consistency_test", timeout=0.1)
+                version_manager.lock_manager.acquire_write_lock(
+                    "consistency_test", timeout=0.1
+                )
                 return True
             except LockTimeoutError:
                 return False

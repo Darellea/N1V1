@@ -7,9 +7,10 @@ Verifies that blocking operations are properly offloaded and timeouts work.
 
 import asyncio
 import time
-import pytest
+from unittest.mock import AsyncMock, patch
+
 import pandas as pd
-from unittest.mock import AsyncMock, MagicMock, patch
+import pytest
 
 from data.data_fetcher import DataFetcher
 
@@ -376,7 +377,6 @@ class TestAsyncResourceManagement:
     @pytest.mark.asyncio
     async def test_http_session_cleanup(self, fetcher):
         """Test that HTTP sessions are properly closed."""
-        from aiohttp import ClientSession
 
         mock_session = AsyncMock()
         mock_session.closed = False

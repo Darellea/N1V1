@@ -254,32 +254,32 @@ def calculate_obv(data: pd.DataFrame) -> pd.Series:
         Series with OBV values
     """
     if len(data) == 0:
-        return pd.Series([], dtype=float, name='obv')
+        return pd.Series([], dtype=float, name="obv")
 
-    if 'close' not in data.columns or 'volume' not in data.columns:
+    if "close" not in data.columns or "volume" not in data.columns:
         raise ValueError("Data must contain 'close' and 'volume' columns")
 
     # SINGLE ROW FIX: Return the volume value as first OBV (standard convention)
     if len(data) == 1:
-        return pd.Series([data['volume'].iloc[0]], index=data.index, name='obv')
+        return pd.Series([data["volume"].iloc[0]], index=data.index, name="obv")
 
     # Calculate price changes
-    price_change = data['close'].diff()
+    price_change = data["close"].diff()
 
     # Initialize OBV series
-    obv = pd.Series(0.0, index=data.index, name='obv')
+    obv = pd.Series(0.0, index=data.index, name="obv")
 
     # First OBV value is the first volume
-    obv.iloc[0] = data['volume'].iloc[0]
+    obv.iloc[0] = data["volume"].iloc[0]
 
     # Calculate OBV for subsequent periods
     for i in range(1, len(data)):
         if price_change.iloc[i] > 0:
-            obv.iloc[i] = obv.iloc[i-1] + data['volume'].iloc[i]
+            obv.iloc[i] = obv.iloc[i - 1] + data["volume"].iloc[i]
         elif price_change.iloc[i] < 0:
-            obv.iloc[i] = obv.iloc[i-1] - data['volume'].iloc[i]
+            obv.iloc[i] = obv.iloc[i - 1] - data["volume"].iloc[i]
         else:
-            obv.iloc[i] = obv.iloc[i-1]  # No change
+            obv.iloc[i] = obv.iloc[i - 1]  # No change
 
     return obv
 

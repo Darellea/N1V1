@@ -19,13 +19,13 @@ import json
 import statistics
 import time
 from collections import defaultdict, deque
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
-from contextlib import asynccontextmanager
 
-import numpy as np
 import aiofiles
+import numpy as np
 from scipy import stats
 
 from core.metrics_collector import get_metrics_collector
@@ -426,13 +426,17 @@ class RealTimePerformanceMonitor:
                 ]
 
                 if len(recent_data) < 10:  # Need minimum samples
-                    logger.debug(f"Skipping {metric_name}: only {len(recent_data)} samples (need 10)")
+                    logger.debug(
+                        f"Skipping {metric_name}: only {len(recent_data)} samples (need 10)"
+                    )
                     continue
 
                 try:
                     # Calculate statistics
                     mean_val = statistics.mean(recent_data)
-                    std_val = statistics.stdev(recent_data) if len(recent_data) > 1 else 0
+                    std_val = (
+                        statistics.stdev(recent_data) if len(recent_data) > 1 else 0
+                    )
                     min_val = min(recent_data)
                     max_val = max(recent_data)
 
@@ -473,7 +477,9 @@ class RealTimePerformanceMonitor:
                     )
 
                     self.baselines[metric_name] = baseline
-                    logger.debug(f"Updated baseline for {metric_name}: {len(recent_data)} samples")
+                    logger.debug(
+                        f"Updated baseline for {metric_name}: {len(recent_data)} samples"
+                    )
 
                 except Exception as e:
                     logger.exception(f"Error updating baseline for {metric_name}: {e}")
@@ -663,7 +669,9 @@ class RealTimePerformanceMonitor:
         if execution_times:
             avg_execution_time = statistics.mean(execution_times)
             # More lenient scoring: < 1.0s is acceptable, score decreases for very slow execution
-            time_score = max(0.0, 100.0 - avg_execution_time * 200.0)  # 200 instead of 1000
+            time_score = max(
+                0.0, 100.0 - avg_execution_time * 200.0
+            )  # 200 instead of 1000
             scores.append(time_score)
 
         # Anomaly rate score (fewer anomalies is better)
@@ -737,9 +745,11 @@ class RealTimePerformanceMonitor:
             try:
                 baseline_file = Path("data/performance_baselines.json")
                 if baseline_file.exists():
-                    backup_file = baseline_file.with_suffix('.json.backup')
+                    backup_file = baseline_file.with_suffix(".json.backup")
                     await aiofiles.os.rename(baseline_file, backup_file)
-                    logger.info(f"Created backup of corrupted baseline file: {backup_file}")
+                    logger.info(
+                        f"Created backup of corrupted baseline file: {backup_file}"
+                    )
             except Exception as backup_e:
                 logger.warning(f"Failed to create backup of corrupted file: {backup_e}")
         except Exception as e:
@@ -805,11 +815,15 @@ class RealTimePerformanceMonitor:
 
                 # Create execution time baseline
                 exec_metric_name = f"function_{func_name}_execution_time"
-                await self._create_baseline_from_single_value(exec_metric_name, execution_time)
+                await self._create_baseline_from_single_value(
+                    exec_metric_name, execution_time
+                )
 
                 # Create memory usage baseline
                 mem_metric_name = f"function_{func_name}_memory_usage"
-                await self._create_baseline_from_single_value(mem_metric_name, memory_usage)
+                await self._create_baseline_from_single_value(
+                    mem_metric_name, memory_usage
+                )
 
                 baselines_created += 2
 
@@ -819,7 +833,9 @@ class RealTimePerformanceMonitor:
             logger.warning(f"Failed to create baselines from profiler data: {e}")
             return False
 
-    async def _create_baseline_from_single_value(self, metric_name: str, value: float) -> None:
+    async def _create_baseline_from_single_value(
+        self, metric_name: str, value: float
+    ) -> None:
         """Create a baseline from a single metric value with reasonable defaults."""
         current_time = time.time()
 
@@ -850,14 +866,22 @@ class RealTimePerformanceMonitor:
 
             # Calculate basic statistics
             mean_val = statistics.mean(values)
-            std_val = statistics.stdev(values) if len(values) > 1 else max(mean_val * 0.1, 0.001)
+            std_val = (
+                statistics.stdev(values)
+                if len(values) > 1
+                else max(mean_val * 0.1, 0.001)
+            )
             min_val = min(values)
             max_val = max(values)
 
             # Calculate percentiles
             sorted_values = sorted(values)
-            percentile_95 = np.percentile(sorted_values, 95) if len(sorted_values) >= 4 else max_val
-            percentile_99 = np.percentile(sorted_values, 99) if len(sorted_values) >= 4 else max_val
+            percentile_95 = (
+                np.percentile(sorted_values, 95) if len(sorted_values) >= 4 else max_val
+            )
+            percentile_99 = (
+                np.percentile(sorted_values, 99) if len(sorted_values) >= 4 else max_val
+            )
 
             # Create baseline with conservative defaults
             baseline = PerformanceBaseline(
@@ -871,11 +895,13 @@ class RealTimePerformanceMonitor:
                 sample_count=len(values),
                 last_updated=current_time,
                 trend_slope=0.0,  # No trend with limited data
-                is_stable=True,   # Assume stable with limited data
+                is_stable=True,  # Assume stable with limited data
             )
 
             self.baselines[metric_name] = baseline
-            logger.debug(f"Created baseline for {metric_name} with {len(values)} samples")
+            logger.debug(
+                f"Created baseline for {metric_name} with {len(values)} samples"
+            )
 
         except Exception as e:
             logger.warning(f"Failed to create baseline for {metric_name}: {e}")

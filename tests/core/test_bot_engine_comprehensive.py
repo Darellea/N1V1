@@ -6,7 +6,6 @@ integration with components, error handling, and edge cases.
 """
 
 import asyncio
-import time
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pandas as pd
@@ -476,7 +475,9 @@ class TestBotEngineTradingCycle:
 
         # Use proper cache interface
         mock_engine.market_data_cache = CacheCompatibleDict()
-        mock_engine.market_data_cache.set("market_data:BTC/USDT", {"BTC/USDT": "cached_data"})
+        mock_engine.market_data_cache.set(
+            "market_data:BTC/USDT", {"BTC/USDT": "cached_data"}
+        )
 
         result = await mock_engine._fetch_market_data()
 

@@ -14,10 +14,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 
-from utils.constants import (
-    DEFAULT_RISK_CONFIG,
-    DEFAULT_TRADING_CONFIG,
-)
+from utils.constants import DEFAULT_RISK_CONFIG, DEFAULT_TRADING_CONFIG
 from utils.error_handler import ErrorHandler, TradingError
 
 logger = logging.getLogger(__name__)

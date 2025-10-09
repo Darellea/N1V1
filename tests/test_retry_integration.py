@@ -6,19 +6,18 @@ Integration tests for centralized retry system with circuit breaker and idempote
 
 import asyncio
 import time
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from pytest import MonkeyPatch
 
-from core.retry import retry_call, update_global_retry_config
 from core.api_protection import (
     APICircuitBreaker,
     CircuitBreakerConfig,
-    get_default_circuit_breaker,
 )
-from core.idempotency import RetryNotAllowedError
-from core.execution.retry_manager import RetryManager
 from core.execution.execution_types import ExecutionStatus
+from core.execution.retry_manager import RetryManager
+from core.idempotency import RetryNotAllowedError
+from core.retry import retry_call, update_global_retry_config
 
 
 class TestRetryIntegration:

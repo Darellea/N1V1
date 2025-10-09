@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from core.binary_model_integration import get_binary_integration
-from core.cache import close_cache, get_cache, initialize_cache
+from core.cache import close_cache, initialize_cache
 from core.order_manager import OrderManager
 from core.signal_router import SignalRouter
 from core.task_manager import TaskManager
@@ -96,7 +96,9 @@ class CacheCompatibleDict(dict):
             logger.debug(f"TTL {ttl}s specified but not enforced in dict cache")
             self._ttl_tracker[key] = time.time() + ttl
         if data_type:
-            logger.debug(f"Data type '{data_type}' specified but not used in dict cache")
+            logger.debug(
+                f"Data type '{data_type}' specified but not used in dict cache"
+            )
 
     def get(self, key, default=None):
         """
@@ -143,14 +145,18 @@ class CacheCompatibleDict(dict):
         """Invalidate cache entries on market close."""
         keys_to_remove = []
         for key in self.keys():
-            if any(pattern in key.lower() for pattern in ["realtime", "ticker", "current"]):
+            if any(
+                pattern in key.lower() for pattern in ["realtime", "ticker", "current"]
+            ):
                 keys_to_remove.append(key)
 
         for key in keys_to_remove:
             del self[key]
 
         if keys_to_remove:
-            logger.info(f"Invalidated {len(keys_to_remove)} market-close sensitive cache entries")
+            logger.info(
+                f"Invalidated {len(keys_to_remove)} market-close sensitive cache entries"
+            )
 
     def get_stats(self):
         """
@@ -161,7 +167,7 @@ class CacheCompatibleDict(dict):
         """
         return {
             "size": len(self),
-            "maxsize": float('inf'),  # Dict has no size limit
+            "maxsize": float("inf"),  # Dict has no size limit
             "hit_rate": 0.0,  # Not tracked in dict mode
             "hits": 0,
             "misses": 0,

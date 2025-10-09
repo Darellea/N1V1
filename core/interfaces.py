@@ -54,7 +54,7 @@ class MemoryConfig:
                 "clear_unused_objects",
                 "disable_non_critical_features",
                 "force_garbage_collection",
-                "emergency_cleanup"
+                "emergency_cleanup",
             ]
 
 

@@ -15,12 +15,7 @@ import numpy as np
 # Add the project root to Python path
 sys.path.insert(0, ".")
 
-from reporting import (
-    DashboardSync,
-    MetricsEngine,
-    MetricsResult,
-    MetricsScheduler,
-)
+from reporting import DashboardSync, MetricsEngine, MetricsResult, MetricsScheduler
 
 
 async def demo_metrics_engine():

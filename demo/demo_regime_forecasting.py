@@ -26,13 +26,8 @@ from data.data_fetcher import DataFetcher
 from strategies.regime.market_regime import detect_enhanced_market_regime
 
 # Import N1V1 components
-from strategies.regime.regime_forecaster import (
-    ForecastingResult,
-    RegimeForecaster,
-)
-from strategies.regime.strategy_selector import (
-    get_strategy_selector,
-)
+from strategies.regime.regime_forecaster import ForecastingResult, RegimeForecaster
+from strategies.regime.strategy_selector import get_strategy_selector
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)

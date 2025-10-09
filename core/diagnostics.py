@@ -19,9 +19,7 @@ import aiohttp
 import numpy as np
 
 from core.signal_router.event_bus import get_default_enhanced_event_bus
-from core.signal_router.events import (
-    create_diagnostic_alert_event,
-)
+from core.signal_router.events import create_diagnostic_alert_event
 from utils.logger import get_trade_logger
 
 logger = logging.getLogger(__name__)

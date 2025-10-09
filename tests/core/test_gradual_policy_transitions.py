@@ -5,23 +5,20 @@ This module tests the gradual transition functionality of the AdaptiveRiskPolicy
 including smooth interpolation, progress monitoring, emergency overrides, and rollback.
 """
 
-import pytest
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError, CancelledError
-from datetime import datetime, timedelta
-from unittest.mock import Mock, patch
+from concurrent.futures import CancelledError, ThreadPoolExecutor, TimeoutError
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from risk.adaptive_policy import (
     AdaptiveRiskPolicy,
-    RiskPolicy,
+    EmergencyOverride,
     PolicyTransition,
+    RiskPolicy,
     TransitionMode,
     TransitionState,
-    EmergencyOverride,
 )
 
 
@@ -37,7 +34,7 @@ class TestPolicyTransition:
             from_policy=from_policy,
             to_policy=to_policy,
             duration=60,  # 1 minute
-            mode=TransitionMode.GRADUAL
+            mode=TransitionMode.GRADUAL,
         )
 
         assert transition.from_policy == from_policy
@@ -55,9 +52,7 @@ class TestPolicyTransition:
 
         # Valid transition
         transition = PolicyTransition(
-            from_policy=from_policy,
-            to_policy=to_policy,
-            duration=30
+            from_policy=from_policy, to_policy=to_policy, duration=30
         )
         assert transition.is_valid()
 
@@ -71,8 +66,12 @@ class TestPolicyTransition:
 
     def test_transition_interpolation(self):
         """Test smooth interpolation between policies."""
-        from_policy = RiskPolicy(max_position=1000, max_loss=100, volatility_threshold=0.05)
-        to_policy = RiskPolicy(max_position=2000, max_loss=200, volatility_threshold=0.10)
+        from_policy = RiskPolicy(
+            max_position=1000, max_loss=100, volatility_threshold=0.05
+        )
+        to_policy = RiskPolicy(
+            max_position=2000, max_loss=200, volatility_threshold=0.10
+        )
 
         transition = PolicyTransition(from_policy, to_policy, duration=100)
 
@@ -113,20 +112,22 @@ class TestAdaptivePolicyTransitions:
     @pytest.fixture
     def sample_market_data(self):
         """Create sample market data for testing."""
-        dates = pd.date_range('2023-01-01', periods=100, freq='1min')
+        dates = pd.date_range("2023-01-01", periods=100, freq="1min")
         np.random.seed(42)
         close_prices = 100 + np.cumsum(np.random.randn(100) * 0.5)
         high_prices = close_prices + np.abs(np.random.randn(100) * 0.2)
         low_prices = close_prices - np.abs(np.random.randn(100) * 0.2)
 
-        return pd.DataFrame({
-            'timestamp': dates,
-            'open': close_prices,
-            'high': high_prices,
-            'low': low_prices,
-            'close': close_prices,
-            'volume': np.random.randint(1000, 10000, 100)
-        })
+        return pd.DataFrame(
+            {
+                "timestamp": dates,
+                "open": close_prices,
+                "high": high_prices,
+                "low": low_prices,
+                "close": close_prices,
+                "volume": np.random.randint(1000, 10000, 100),
+            }
+        )
 
     def test_immediate_transition_mode(self, policy_manager, sample_market_data):
         """Test immediate transition mode."""
@@ -137,7 +138,7 @@ class TestAdaptivePolicyTransitions:
             from_policy=from_policy,
             to_policy=to_policy,
             duration=0,  # Immediate
-            mode=TransitionMode.IMMEDIATE
+            mode=TransitionMode.IMMEDIATE,
         )
 
         policy_manager.start_transition(transition)
@@ -158,7 +159,7 @@ class TestAdaptivePolicyTransitions:
             from_policy=from_policy,
             to_policy=to_policy,
             duration=2,  # 2 seconds for testing
-            mode=TransitionMode.GRADUAL
+            mode=TransitionMode.GRADUAL,
         )
 
         policy_manager.start_transition(transition)
@@ -186,7 +187,7 @@ class TestAdaptivePolicyTransitions:
         long_transition = PolicyTransition(
             from_policy=RiskPolicy(max_position=1000),
             to_policy=RiskPolicy(max_position=2000),
-            duration=300  # 5 minutes
+            duration=300,  # 5 minutes
         )
 
         # Should allow interruption and timeout
@@ -214,7 +215,10 @@ class TestAdaptivePolicyTransitions:
             time.sleep(0.1)
 
         # Progress should be monotonically increasing
-        assert all(progress_values[i] <= progress_values[i+1] for i in range(len(progress_values)-1))
+        assert all(
+            progress_values[i] <= progress_values[i + 1]
+            for i in range(len(progress_values) - 1)
+        )
 
         # Should eventually complete
         time.sleep(1)
@@ -227,7 +231,9 @@ class TestAdaptivePolicyTransitions:
         from_policy = RiskPolicy(max_position=1000)
         to_policy = RiskPolicy(max_position=2000)
 
-        transition = PolicyTransition(from_policy, to_policy, duration=30)  # Longer duration
+        transition = PolicyTransition(
+            from_policy, to_policy, duration=30
+        )  # Longer duration
         policy_manager.start_transition(transition)
 
         time.sleep(0.5)  # Let transition start
@@ -238,7 +244,7 @@ class TestAdaptivePolicyTransitions:
         override = EmergencyOverride(
             policy=emergency_policy,
             reason="Market crash detected",
-            timeout=5  # Shorter timeout for testing
+            timeout=5,  # Shorter timeout for testing
         )
 
         policy_manager.apply_emergency_override(override)
@@ -274,17 +280,13 @@ class TestAdaptivePolicyTransitions:
         """Test handling of concurrent transitions."""
         # Start first transition
         transition1 = PolicyTransition(
-            RiskPolicy(max_position=1000),
-            RiskPolicy(max_position=1500),
-            duration=2
+            RiskPolicy(max_position=1000), RiskPolicy(max_position=1500), duration=2
         )
         policy_manager.start_transition(transition1)
 
         # Attempt second transition (should be rejected)
         transition2 = PolicyTransition(
-            RiskPolicy(max_position=1500),
-            RiskPolicy(max_position=2000),
-            duration=2
+            RiskPolicy(max_position=1500), RiskPolicy(max_position=2000), duration=2
         )
 
         with pytest.raises(RuntimeError, match="Transition already in progress"):
@@ -296,13 +298,13 @@ class TestAdaptivePolicyTransitions:
             max_position=1000,
             max_loss=100,
             volatility_threshold=0.05,
-            trend_threshold=0.02
+            trend_threshold=0.02,
         )
         to_policy = RiskPolicy(
             max_position=2000,
             max_loss=200,
             volatility_threshold=0.10,
-            trend_threshold=0.04
+            trend_threshold=0.04,
         )
 
         transition = PolicyTransition(from_policy, to_policy, duration=100)
@@ -331,15 +333,13 @@ class TestAdaptivePolicyTransitions:
             PolicyTransition(
                 RiskPolicy(max_position=1000),
                 RiskPolicy(max_position=2000),
-                duration=-1
+                duration=-1,
             )
 
         # Transition with extreme values
         extreme_policy = RiskPolicy(max_position=1000000)  # Unrealistic
         transition = PolicyTransition(
-            RiskPolicy(max_position=1000),
-            extreme_policy,
-            duration=10
+            RiskPolicy(max_position=1000), extreme_policy, duration=10
         )
 
         # Should validate and potentially reject or warn
@@ -349,7 +349,9 @@ class TestAdaptivePolicyTransitions:
         with pytest.raises(ValueError, match="Policy validation failed"):
             policy_manager.start_transition(transition)
 
-    def test_transition_with_market_data_integration(self, policy_manager, sample_market_data):
+    def test_transition_with_market_data_integration(
+        self, policy_manager, sample_market_data
+    ):
         """Test transition integration with market data."""
         # Start with conservative policy
         conservative_policy = RiskPolicy(max_position=500, volatility_threshold=0.02)
@@ -360,7 +362,7 @@ class TestAdaptivePolicyTransitions:
         transition = PolicyTransition(
             conservative_policy,
             aggressive_policy,
-            duration=5  # Shorter duration for testing
+            duration=5,  # Shorter duration for testing
         )
 
         policy_manager.start_transition(transition)
@@ -380,9 +382,7 @@ class TestAdaptivePolicyTransitions:
     def test_transition_state_consistency(self, policy_manager):
         """Test transition state consistency."""
         transition = PolicyTransition(
-            RiskPolicy(max_position=1000),
-            RiskPolicy(max_position=2000),
-            duration=1
+            RiskPolicy(max_position=1000), RiskPolicy(max_position=2000), duration=1
         )
 
         # Initial state
@@ -398,12 +398,22 @@ class TestAdaptivePolicyTransitions:
 
         # Verify state transitions are valid
         valid_transitions = {
-            TransitionState.PENDING: [TransitionState.IN_PROGRESS, TransitionState.CANCELLED],
-            TransitionState.IN_PROGRESS: [TransitionState.COMPLETED, TransitionState.FAILED, TransitionState.PAUSED],
-            TransitionState.PAUSED: [TransitionState.IN_PROGRESS, TransitionState.CANCELLED],
+            TransitionState.PENDING: [
+                TransitionState.IN_PROGRESS,
+                TransitionState.CANCELLED,
+            ],
+            TransitionState.IN_PROGRESS: [
+                TransitionState.COMPLETED,
+                TransitionState.FAILED,
+                TransitionState.PAUSED,
+            ],
+            TransitionState.PAUSED: [
+                TransitionState.IN_PROGRESS,
+                TransitionState.CANCELLED,
+            ],
             TransitionState.COMPLETED: [],
             TransitionState.FAILED: [TransitionState.PENDING],  # Can retry
-            TransitionState.CANCELLED: []
+            TransitionState.CANCELLED: [],
         }
 
         # This would be tested by attempting invalid state changes

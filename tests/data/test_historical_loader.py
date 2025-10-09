@@ -6,18 +6,19 @@ Tests specific lines: 113-147, 211, 217-224, 227-228, 231, 240-244,
 273-286, 300, 309, 341-342, 429, 443-445, 458, 462-463.
 """
 
-import pytest
 import asyncio
-import pandas as pd
-import numpy as np
-import tempfile
 import os
+import tempfile
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timedelta
 
-from data.historical_loader import HistoricalDataLoader
+import numpy as np
+import pandas as pd
+import pytest
+
 from data.data_fetcher import DataFetcher
+from data.historical_loader import HistoricalDataLoader
 
 
 class TestHistoricalDataLoaderInitialization:

@@ -35,10 +35,7 @@ from strategies.ema_cross_strategy import EMACrossStrategy
 from strategies.keltner_channel_strategy import KeltnerChannelStrategy
 from strategies.macd_strategy import MACDStrategy
 from strategies.obv_strategy import OBVStrategy
-from strategies.regime.market_regime import (
-    MarketRegime,
-    get_recommended_strategies,
-)
+from strategies.regime.market_regime import MarketRegime, get_recommended_strategies
 from strategies.regime.regime_forecaster import ForecastingResult
 from strategies.rsi_strategy import RSIStrategy
 from strategies.stochastic_strategy import StochasticStrategy
@@ -53,9 +50,7 @@ try:
         StrategyMetadata,
         get_knowledge_manager,
     )
-    from knowledge_base import (
-        MarketRegime as KBMarketRegime,
-    )
+    from knowledge_base import MarketRegime as KBMarketRegime
 
     KNOWLEDGE_BASE_AVAILABLE = True
 except ImportError:

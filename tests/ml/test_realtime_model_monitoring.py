@@ -3,14 +3,11 @@ import os
 import random
 import tempfile
 import time
-from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pandas as pd
 import pytest
 
-from core.model_monitor import ModelMonitor, RealTimeModelMonitor
+from core.model_monitor import RealTimeModelMonitor
 
 
 @pytest.fixture
@@ -51,6 +48,7 @@ def sample_config(temp_dir):
 def mock_model():
     """Mock ML model for testing."""
     from sklearn.linear_model import LogisticRegression
+
     # Create a simple model that can be pickled
     model = LogisticRegression(random_state=42)
     # Fit on dummy data
@@ -65,6 +63,7 @@ def monitor(sample_config, mock_model, temp_dir):
     """Create model monitor instance."""
     # Create mock model file
     import joblib
+
     joblib.dump(mock_model, sample_config["model_path"])
 
     # Create mock config file
@@ -116,6 +115,7 @@ class TestRealTimeModelMonitoring:
     def mock_model(self):
         """Mock ML model for testing."""
         from sklearn.linear_model import LogisticRegression
+
         # Create a simple model that can be pickled
         model = LogisticRegression(random_state=42)
         # Fit on dummy data
@@ -129,6 +129,7 @@ class TestRealTimeModelMonitoring:
         """Create model monitor instance."""
         # Create mock model file
         import joblib
+
         joblib.dump(mock_model, sample_config["model_path"])
 
         # Create mock config file
@@ -155,9 +156,7 @@ class TestRealTimeModelMonitoring:
             actual = random.random()
 
             monitor.record_prediction(
-                features=features,
-                prediction=prediction,
-                actual=actual
+                features=features, prediction=prediction, actual=actual
             )
             prediction_count += 1
             if prediction_count > 10000:  # Safety limit
@@ -176,7 +175,7 @@ class TestRealTimeModelMonitoring:
             monitor.record_prediction(
                 features=features,
                 prediction=0.5,  # Consistent prediction
-                actual=0.5  # Consistent actual
+                actual=0.5,  # Consistent actual
             )
 
         # Force update of reference data
@@ -187,9 +186,7 @@ class TestRealTimeModelMonitoring:
             # Introduce significant drift by shifting all features to 2.0
             drifted_features = [2.0, 2.0, 2.0]  # Major shift from 0.5 to 2.0
             monitor.record_prediction(
-                features=drifted_features,
-                prediction=0.8,
-                actual=0.2
+                features=drifted_features, prediction=0.8, actual=0.2
             )
 
         # Check for drift directly
@@ -210,11 +207,7 @@ class TestRealTimeModelMonitoring:
             actual = 1 if pred > 0.5 else 0
             features = [random.random() for _ in range(3)]
 
-            monitor.record_prediction(
-                features=features,
-                prediction=pred,
-                actual=actual
-            )
+            monitor.record_prediction(features=features, prediction=pred, actual=actual)
 
             predictions.append(pred)
             actuals.append(actual)
@@ -230,6 +223,7 @@ class TestRealTimeModelMonitoring:
 
         # Test against manual calculation
         from sklearn.metrics import roc_auc_score
+
         expected_auc = roc_auc_score(actuals, predictions)
         assert abs(metrics["auc"] - expected_auc) < 0.1  # Allow some tolerance
 
@@ -246,9 +240,7 @@ class TestRealTimeModelMonitoring:
         # Initialize baseline
         for _ in range(50):
             monitor.record_prediction(
-                features=[0.5, 0.5, 0.5],
-                prediction=0.5,
-                actual=0.5
+                features=[0.5, 0.5, 0.5], prediction=0.5, actual=0.5
             )
 
         monitor._update_reference_data()
@@ -260,7 +252,7 @@ class TestRealTimeModelMonitoring:
             monitor.record_prediction(
                 features=[2.0, 2.0, 2.0],  # Significant drift
                 prediction=0.8,
-                actual=0.2
+                actual=0.2,
             )
 
             if alerts_received:
@@ -284,7 +276,7 @@ class TestRealTimeModelMonitoring:
             monitor.record_prediction(
                 features=row.tolist(),
                 prediction=random.random(),
-                actual=random.random()
+                actual=random.random(),
             )
 
         monitor._update_reference_data()
@@ -296,7 +288,7 @@ class TestRealTimeModelMonitoring:
             monitor.record_prediction(
                 features=row.tolist(),
                 prediction=random.random(),
-                actual=random.random()
+                actual=random.random(),
             )
 
         # Should detect drift with at least one algorithm
@@ -358,7 +350,7 @@ class TestRealTimeModelMonitoring:
             monitor.record_prediction(
                 features=[random.random() for _ in range(3)],
                 prediction=random.random(),
-                actual=random.random()
+                actual=random.random(),
             )
 
             update_count += 1
@@ -392,7 +384,7 @@ class TestRealTimeModelMonitoring:
             monitor.record_prediction(
                 features=[0.5, 0.5, 0.5],
                 prediction=0.8,  # Good prediction
-                actual=1  # Binary label (good prediction)
+                actual=1,  # Binary label (good prediction)
             )
 
         monitor._update_reference_data()
@@ -404,7 +396,7 @@ class TestRealTimeModelMonitoring:
             monitor.record_prediction(
                 features=[random.random() for _ in range(3)],
                 prediction=0.8,  # High prediction
-                actual=0  # But actual is negative - poor performance
+                actual=0,  # But actual is negative - poor performance
             )
 
             if retraining_triggered:
@@ -418,8 +410,9 @@ class TestRealTimeModelMonitoring:
     @pytest.mark.timeout(5)
     def test_memory_efficiency_streaming(self, monitor):
         """Test memory efficiency with streaming data."""
-        import psutil
         import os
+
+        import psutil
 
         process = psutil.Process(os.getpid())
         initial_memory = process.memory_info().rss / 1024 / 1024  # MB
@@ -429,7 +422,7 @@ class TestRealTimeModelMonitoring:
             monitor.record_prediction(
                 features=[random.random() for _ in range(3)],
                 prediction=random.random(),
-                actual=random.random()
+                actual=random.random(),
             )
 
         final_memory = process.memory_info().rss / 1024 / 1024  # MB
@@ -469,7 +462,7 @@ class TestRealTimeModelMonitorIntegration:
                 monitor.record_prediction(
                     features=[random.random() for _ in range(3)],
                     prediction=random.random(),
-                    actual=random.random()
+                    actual=random.random(),
                 )
                 prediction_count += 1
 
@@ -502,7 +495,7 @@ class TestRealTimeModelMonitorIntegration:
                 monitor.record_prediction(
                     features=[random.random() for _ in range(3)],
                     prediction=random.random(),
-                    actual=random.random()
+                    actual=random.random(),
                 )
                 results["streaming_count"] += 1
                 time.sleep(0.001)
@@ -534,9 +527,7 @@ class TestRealTimeModelMonitorIntegration:
         # Test with invalid data
         try:
             monitor.record_prediction(
-                features=None,  # Invalid
-                prediction="invalid",  # Invalid
-                actual=None
+                features=None, prediction="invalid", actual=None  # Invalid  # Invalid
             )
             # Should not crash
             assert True
@@ -545,11 +536,7 @@ class TestRealTimeModelMonitorIntegration:
             pass
 
         # System should continue to work
-        monitor.record_prediction(
-            features=[0.5, 0.5, 0.5],
-            prediction=0.5,
-            actual=0.5
-        )
+        monitor.record_prediction(features=[0.5, 0.5, 0.5], prediction=0.5, actual=0.5)
 
         metrics = monitor.get_metrics()
         assert metrics is not None
