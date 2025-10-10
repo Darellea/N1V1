@@ -199,7 +199,7 @@ requests==2.31.0
 
             # Verify markdown content
             md_file = md_files[0]
-            content = md_file.read_text()
+            content = md_file.read_text(encoding="utf-8")
             self.assertIn("# Code Quality Audit Report", content)
             self.assertIn("Overall Health Score", content)
 

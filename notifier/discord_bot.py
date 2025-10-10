@@ -253,11 +253,17 @@ class DiscordNotifier:
         """Ensure aiohttp session exists, creating it if necessary."""
         async with self._session_lock:
             if self.session is None or self.session.closed:
+                # Handle closed event loops gracefully
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
                 # Create new session with proper connector configuration
                 connector = aiohttp.TCPConnector(
-                    limit=10, limit_per_host=5, ttl_dns_cache=30
+                    limit=10, limit_per_host=5, ttl_dns_cache=30, loop=loop
                 )
-                self.session = aiohttp.ClientSession(connector=connector)
+                self.session = aiohttp.ClientSession(connector=connector, loop=loop)
                 logger.debug("Created new aiohttp session for Discord notifier")
 
     async def _close_session(self) -> None:

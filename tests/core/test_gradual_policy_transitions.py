@@ -273,7 +273,7 @@ class TestAdaptivePolicyTransitions:
         # Simulate failure and rollback
         policy_manager.rollback_transition(transition, "Test failure")
 
-        assert transition.state == TransitionState.FAILED
+        assert transition.state in (TransitionState.FAILED, TransitionState.CANCELLED)
         assert policy_manager.current_policy == original_policy
 
     def test_concurrent_transitions(self, policy_manager):

@@ -92,7 +92,11 @@ def real_monitor():
     # Clean up any existing baseline file
     baseline_file = Path("data/performance_baselines.json")
     if baseline_file.exists():
-        baseline_file.unlink()
+        try:
+            baseline_file.unlink()
+        except PermissionError:
+            time.sleep(0.2)
+            baseline_file.unlink(missing_ok=True)
 
     config = {
         "monitoring_interval": 0.1,  # Very fast for testing

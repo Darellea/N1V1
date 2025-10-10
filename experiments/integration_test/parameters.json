@@ -29,23 +29,23 @@
     },
     "environment_variables": {
       "PYTHONPATH": "not set",
-      "PATH": "C:\\Users\\TU\\Desktop\\new project\\N1V1\\venv\\Scripts;C:\\Program Files (x86)\\Common Files\\Intel\\Shared Files\\cpp\\bin\\Intel64;C:\\Program Files\\Common Files\\Oracle\\Java\\javapath;C:\\Program Files (x86)\\Common Files\\Oracle\\Java\\javapath;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\Program Files (x86)\\Microsoft SQL Server\\100\\Tools\\Binn\\;C:\\Program Files\\Microsoft SQL Server\\100\\Tools\\Binn\\;C:\\Program Files\\Microsoft SQL Server\\100\\DTS\\Binn\\;C:\\eRaporSMK\\php;C:\\WINDOWS\\System32\\OpenSSH\\;C:\\Program Files (x86)\\cloudflared\\.;H:\\Games\\;C:\\Program Files\\playit_gg\\bin\\;C:\\Program Files\\dotnet\\;C:\\Program Files\\Git\\cmd;C:\\Program Files\\Process Lasso\\;C:\\Program Files\\Cloudflare\\Cloudflare WARP\\;C:\\Users\\TU\\AppData\\Local\\Programs\\Python\\Python310\\Scripts\\;C:\\Users\\TU\\AppData\\Local\\Programs\\Python\\Python310\\;C:\\Users\\TU\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\TU\\AppData\\Roaming\\npm;C:\\Users\\TU\\.dotnet\\tools;C:\\Users\\TU\\AppData\\Local\\Programs\\Microsoft VS Code\\bin",
+      "PATH": "C:\\Users\\TU\\Desktop\\new project\\N1V1\\venv\\Scripts;C:\\Program Files (x86)\\Common Files\\Intel\\Shared Files\\cpp\\bin\\Intel64;C:\\Program Files\\Common Files\\Oracle\\Java\\javapath;C:\\Program Files (x86)\\Common Files\\Oracle\\Java\\javapath;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\;C:\\Program Files (x86)\\Microsoft SQL Server\\100\\Tools\\Binn\\;C:\\Program Files\\Microsoft SQL Server\\100\\Tools\\Binn\\;C:\\Program Files\\Microsoft SQL Server\\100\\DTS\\Binn\\;C:\\eRaporSMK\\php;C:\\WINDOWS\\System32\\OpenSSH\\;C:\\Program Files (x86)\\cloudflared\\.;H:\\Games\\;C:\\Program Files\\playit_gg\\bin\\;C:\\Program Files\\dotnet\\;C:\\Program Files\\Git\\cmd;C:\\Program Files\\Process Lasso\\;C:\\Program Files\\Cloudflare\\Cloudflare WARP\\;C:\\Users\\TU\\AppData\\Local\\Programs\\Python\\Python310\\Scripts\\;C:\\Users\\TU\\AppData\\Local\\Programs\\Python\\Python310\\;C:\\Users\\TU\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\TU\\AppData\\Roaming\\npm;C:\\Users\\TU\\.dotnet\\tools;C:\\Users\\TU\\AppData\\Local\\Programs\\Microsoft VS Code\\bin;c:\\Users\\TU\\.vscode\\extensions\\ms-python.debugpy-2025.14.0-win32-x64\\bundled\\scripts\\noConfigScripts;c:\\Users\\TU\\AppData\\Roaming\\Code\\User\\globalStorage\\github.copilot-chat\\debugCommand",
       "CUDA_VISIBLE_DEVICES": "not set",
       "OMP_NUM_THREADS": "not set",
       "MKL_NUM_THREADS": "not set",
       "NUMEXPR_NUM_THREADS": "not set"
     },
     "git_info": {
-      "commit_hash": "0b24ea4ed8134165f81828fde2016ccae6ee2a0d",
+      "commit_hash": "4fc7be8a702afd31f1cb762e4f978de66fd39e6f",
       "branch": "main",
       "remote_url": "https://github.com/Darellea/N1V1.git",
-      "status": "M anomalies.json\n M data/performance_baselines.json\n M experiments/integration_test/metadata.json\n M experiments/integration_test/parameters.json\n M experiments/integration_test/reproducibility_checklist.json\n M experiments/test_reproducibility/metadata.json\n M experiments/test_reproducibility/reproducibility_checklist.json\n M logs/anomalies/anomalies.json\n M monitoring/alerts.json\n M monitoring/drift_history.json\n M monitoring/performance_history.json\n M requirements.txt\n M results/walk_forward/walk_forward_results.json\n M results/walk_forward/walk_forward_summary.json\n?? experiments/train_all_20251010_081353/"
+      "status": "M data/performance_baselines.json\n M experiments/integration_test/metadata.json\n M experiments/test_reproducibility/metadata.json\n M experiments/test_reproducibility/reproducibility_checklist.json\n M logs/anomalies/anomalies.json\n M monitoring/alerts.json\n M monitoring/drift_history.json\n M monitoring/performance_history.json\n M notifier/discord_bot.py\n M tests/core/test_async_metrics.py\n M tests/core/test_gradual_policy_transitions.py\n M tests/data/test_data_fixes.py\n M tests/test_integration.py"
     },
     "hardware": {
       "cpu_count": 4,
       "cpu_count_logical": 4,
       "memory_total_gb": 15.83,
-      "memory_available_gb": 8.77
+      "memory_available_gb": 3.85
     }
   },
   "model_config": {
