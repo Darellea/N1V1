@@ -147,6 +147,8 @@ test_logs/
 scripts/
 README/
 reports/
+results/
+experiments/
 
 # =============================================
 # Machine Learning Models
@@ -190,3 +192,6 @@ site/
 error.txt
 listerror.txt
 ENSEMBLE_README.md
+anomalies.json
+data/performance_baselines.json
+monitoring/*.json
