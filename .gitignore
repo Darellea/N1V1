@@ -1,5 +1,5 @@
 # =============================================
-# Python Specific
+# PYTHON BUILD / BYTECODE
 # =============================================
 __pycache__/
 *.py[cod]
@@ -8,26 +8,26 @@ __pycache__/
 *$py.class
 *.so
 .Python
+*.egg
+*.egg-info/
+.eggs/
+.installed.cfg
+MANIFEST
 build/
-develop-eggs/
 dist/
+develop-eggs/
 downloads/
 eggs/
-.eggs/
-lib/
-lib64/
-parts/
 sdist/
 var/
 wheels/
 share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+parts/
+lib/
+lib64/
 
 # =============================================
-# Virtual Environments
+# ENVIRONMENTS
 # =============================================
 .env
 .venv
@@ -36,122 +36,74 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-pythonenv*
+pythonenv*/
 
 # =============================================
-# Testing & Coverage
+# TESTING / COVERAGE
 # =============================================
 .pytest_cache/
+.cache/
 .coverage
 .coverage.*
-.cache
 nosetests.xml
 coverage.xml
 *.cover
 *.log, cover
 htmlcov/
+test_logs/
+reports/
+results/
+experiments/
+backtest_results/
+output/
+equity_curves/
+tools/
+scripts/
 
 # =============================================
-# Jupyter & IPython
+# NOTEBOOKS / INTERACTIVE
 # =============================================
-.ipynb_checkpoints
 *.ipynb
-.ipython
+.ipynb_checkpoints/
+.ipython/
 profile_default/
 ipython_config.py
 
 # =============================================
-# Logs & Debug Files
+# LOGS / DEBUG / TEMP
 # =============================================
 *.log
 *.out
 *.err
 logs/
 debug/
-
-# =============================================
-# OS & Editor Files
-# =============================================
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-*.swp
-*.swo
-*~
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# =============================================
-# Git & Version Control
-# =============================================
-*.orig
-*.lock
-.gitignore
-.gitattributes
-
-# =============================================
-# Build & Distribution
-# =============================================
-build/
-dist/
-*.egg-info/
-.eggs/
-*.whl
-*.tar.gz
-
-# =============================================
-# Data Files & Cache
-# =============================================
-cache/
 tmp/
 temp/
 *.tmp
 *.temp
+cache/
 .test_cache/
 .market_cache/
 .audit_cache/
 
-# Data files
+# =============================================
+# DATA FILES
+# =============================================
 *.csv
 *.tsv
 *.jsonl
 *.db
-*.sqlite
-*.sqlite3
+*.sqlite*
 *.png
 *.jpg
 *.jpeg
+*.gif
+*.bmp
+data/performance_baselines.json
+monitoring/*.json
 
 # =============================================
-# Trading Bot Specific
-# =============================================
-output/
-backtest_results/
-equity_curves/
-trades.csv
-equity.csv
-signals.csv
-checkpoints/
-scrips/
-tools/
-test_logs/
-scripts/
-README/
-reports/
-results/
-experiments/
-
-# =============================================
-# Machine Learning Models
+# MACHINE LEARNING ARTIFACTS
 # =============================================
 *.h5
 *.pkl
@@ -163,35 +115,56 @@ models/
 checkpoints/
 
 # =============================================
-# Secrets & Configuration
+# SECRETS / CONFIG / CREDENTIALS
 # =============================================
+.env.local
+.env.*.local
 config.json
 secrets.json
 *.key
 *.pem
 *.crt
 *.cert
-.env.local
-.env.*.local
 
 # =============================================
-# Documentation & Misc
+# OS / IDE FILES
+# =============================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.orig
+*.lock
+
+# =============================================
+# DOCUMENTATION / MISC
 # =============================================
 docs/_build/
 site/
-.ropeproject
+.ropeproject/
+README/
+ENSEMBLE_README.md
 
-# Archive files
+# =============================================
+# ARCHIVES
+# =============================================
 *.zip
 *.rar
 *.tar
 *.gz
 *.7z
 
-# Project specific
+# =============================================
+# PROJECT SPECIFIC
+# =============================================
 error.txt
 listerror.txt
-ENSEMBLE_README.md
 anomalies.json
-data/performance_baselines.json
-monitoring/*.json

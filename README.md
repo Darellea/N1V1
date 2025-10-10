@@ -151,38 +151,27 @@ sequenceDiagram
 ## Repository Structure
 
 ```text
-├── .coverage
-├── .coveragerc
-├── .env
-├── .gitignore
-├── ENHANCED_BINARY_MODEL_README.md
-├── ENSEMBLE_README.md
-├── INFO.txt
-├── README
-│   ├── README_CIRCUIT_BREAKER.md
-│   ├── README_MONITORING_OBSERVABILITY.md
-│   ├── README_REGIME_FORECASTING.md
-│   ├── README_SELF_HEALING_ENGINE.md
-│   ├── README_STRATEGY_GENERATOR.md
-│   └── README_TESTING_FRAMEWORK.md
-├── README.md
-├── TODO.md
-├── acceptance_reports
-│   └── acceptance_summary.json
-├── anomalies.json
 ├── api
 │   ├── __init__.py
 │   ├── app.py
 │   ├── middleware.py
 │   ├── models.py
 │   └── schemas.py
+├── auditor
+│   ├── __init__.py
+│   ├── ai_autofixer.py
+│   ├── audit_manager.py
+│   ├── code_linter.py
+│   ├── code_quality_report.py
+│   ├── configs
+│   │   └── auditor_defaults.yml
+│   ├── dependency_checker.py
+│   ├── severity.py
+│   ├── static_analysis.py
+│   └── utils.py
 ├── backtest
 │   ├── __init__.py
 │   └── backtester.py
-├── benchmark_data_optimizations.py
-├── benchmark_results.json
-├── chaos_reports.json
-├── check_sizes.py
 ├── config.json
 ├── config_binary_integration_example.json
 ├── config_data_expansion.json
@@ -191,6 +180,7 @@ sequenceDiagram
 ├── core
 │   ├── __init__.py
 │   ├── alert_rules_manager.py
+│   ├── api_protection.py
 │   ├── async_optimizer.py
 │   ├── binary_model_integration.py
 │   ├── binary_model_metrics.py
@@ -207,6 +197,7 @@ sequenceDiagram
 │   ├── diagnostics.py
 │   ├── distributed_system.py
 │   ├── ensemble_manager.py
+│   ├── exceptions.py
 │   ├── execution
 │   │   ├── __init__.py
 │   │   ├── adaptive_pricer.py
@@ -224,22 +215,27 @@ sequenceDiagram
 │   │   ├── validator.py
 │   │   └── vwap_executor.py
 │   ├── healthcheck.py
+│   ├── idempotency.py
 │   ├── interfaces.py
 │   ├── logging_utils.py
 │   ├── management
 │   │   ├── __init__.py
 │   │   ├── portfolio_manager.py
 │   │   └── reliability_manager.py
+│   ├── memory_cache.py
 │   ├── memory_manager.py
 │   ├── metrics_collector.py
 │   ├── metrics_endpoint.py
 │   ├── model_monitor.py
 │   ├── order_executor.py
 │   ├── order_manager.py
+│   ├── order_validation.py
 │   ├── performance_monitor.py
 │   ├── performance_profiler.py
 │   ├── performance_reports.py
 │   ├── performance_tracker.py
+│   ├── recovery_manager.py
+│   ├── retry.py
 │   ├── self_healing_engine.py
 │   ├── signal_processor.py
 │   ├── signal_router
@@ -271,8 +267,6 @@ sequenceDiagram
 │   ├── dataset_versioning.py
 │   ├── historical_loader.py
 │   ├── interfaces.py
-│   └── performance_baselines.json
-├── debug_regression.py
 ├── demo
 │   ├── demo_circuit_breaker.py
 │   ├── demo_cross_pair_validation.py
@@ -289,15 +283,14 @@ sequenceDiagram
 ├── demo_calibrated_model_config.json
 ├── demo_docstring_standardization.py
 ├── demo_duplication_elimination.py
-├── demo_training_results.json
 ├── deploy
+│   ├── canary.sh
+│   ├── docker-compose.dev.yml
 │   ├── Dockerfile.api
 │   ├── Dockerfile.core
 │   ├── Dockerfile.ml
 │   ├── Dockerfile.ml-serving
 │   ├── Dockerfile.monitoring
-│   ├── canary.sh
-│   ├── docker-compose.dev.yml
 │   └── k8s
 │       ├── configmap.yaml
 │       ├── deployment-api.yaml
@@ -308,19 +301,23 @@ sequenceDiagram
 │       ├── namespace.yaml
 │       ├── services.yaml
 │       └── statefulset-ml.yaml
-├── error1.txt
-├── etc
-│   └── passwd
-├── feature_importance.png
-├── horizon_threshold_test.txt
+├── ENHANCED_BINARY_MODEL_README.md
+├── ENSEMBLE_README.md
+├── experiments
+│   ├── integration_test
+│   │   ├── metadata.json
+│   │   ├── parameters.json
+│   ├── test_reproducibility
+│   │   ├── metadata.json
+│   │   ├── parameters.json
 ├── knowledge_base
 │   ├── __init__.py
 │   ├── adaptive.py
 │   ├── manager.py
 │   ├── schema.py
 │   └── storage.py
-├── loc_analysis.json
 ├── main.py
+├── Makefile
 ├── ml
 │   ├── __init__.py
 │   ├── features.py
@@ -371,6 +368,14 @@ sequenceDiagram
 │   └── volume_predictor.py
 ├── pyproject.toml
 ├── pytest.ini
+├── README
+│   ├── README_CIRCUIT_BREAKER.md
+│   ├── README_MONITORING_OBSERVABILITY.md
+│   ├── README_REGIME_FORECASTING.md
+│   ├── README_SELF_HEALING_ENGINE.md
+│   ├── README_STRATEGY_GENERATOR.md
+│   └── README_TESTING_FRAMEWORK.md
+├── README.md
 ├── reporting
 │   ├── __init__.py
 │   ├── metrics.py
@@ -404,7 +409,6 @@ sequenceDiagram
 │   ├── run_retraining_scheduler.py
 │   ├── test_binary_labels.py
 │   └── tree.py
-├── shap_feature_importance.txt
 ├── start.bat
 ├── strategies
 │   ├── __init__.py
@@ -427,17 +431,9 @@ sequenceDiagram
 │   ├── rsi_strategy.py
 │   ├── stochastic_strategy.py
 │   └── vwap_pullback_strategy.py
-├── test_benchmark_results.json
-├── test_data.csv
+├── test_async_verification.py
 ├── test_logging_demo.py
-├── test_model.model_card.json
-├── test_model_config.json
-├── test_model_new.model_card.json
-├── test_model_new_config.json
-├── test_output.log.1
-├── test_results.json
 ├── test_system_validation.py
-├── test_validation_data.csv
 ├── tests
 │   ├── acceptance
 │   │   ├── test_docs.py
@@ -457,9 +453,11 @@ sequenceDiagram
 │   │   ├── test_alert_rules_manager.py
 │   │   ├── test_alerting.py
 │   │   ├── test_algorithmic_correctness.py
+│   │   ├── test_async_metrics.py
 │   │   ├── test_binary_integration_enhanced.py
 │   │   ├── test_binary_model_metrics.py
 │   │   ├── test_bot_engine_comprehensive.py
+│   │   ├── test_bot_engine_memory.py
 │   │   ├── test_cache_comprehensive.py
 │   │   ├── test_circuit_breaker.py
 │   │   ├── test_config_manager.py
@@ -469,6 +467,7 @@ sequenceDiagram
 │   │   ├── test_ensemble_manager.py
 │   │   ├── test_event_driven_architecture.py
 │   │   ├── test_execution.py
+│   │   ├── test_gradual_policy_transitions.py
 │   │   ├── test_journal_writer.py
 │   │   ├── test_live_executor.py
 │   │   ├── test_logging_and_resources.py
@@ -477,6 +476,7 @@ sequenceDiagram
 │   │   ├── test_order_manager.py
 │   │   ├── test_order_processor.py
 │   │   ├── test_paper_executor.py
+│   │   ├── test_partial_fill_reconciliation.py
 │   │   ├── test_performance_optimization.py
 │   │   ├── test_regression.py
 │   │   ├── test_reliability_manager.py
@@ -485,21 +485,26 @@ sequenceDiagram
 │   │   ├── test_signal_router.py
 │   │   ├── test_signal_router_facade.py
 │   │   ├── test_task_manager.py
+│   │   ├── test_thread_safe_circuit_breaker.py
 │   │   ├── test_timeframe_manager.py
-│   │   ├── test_trading_signal_amount.py
-│   └── test_types.py
+│   │   └── test_trading_signal_amount.py
 │   ├── data
 │   │   ├── test_data.py
 │   │   ├── test_data_fetcher.py
 │   │   ├── test_data_fixes.py
 │   │   ├── test_data_module_refactoring.py
 │   │   ├── test_data_security.py
-│   │   └── test_historical_loader.py
+│   │   ├── test_dataset_versioning_locks.py
+│   │   ├── test_historical_loader.py
+│   │   └── test_memory_efficient_loading.py
 │   ├── edge_case_testing.py
 │   ├── execution
 │   │   ├── test_smart_layer.py
 │   │   └── test_validator.py
+│   ├── features
+│   │   └── test_vectorized_operations.py
 │   ├── integration
+│   │   ├── test_api_retry_mechanisms.py
 │   │   ├── test_cross_feature_integration.py
 │   │   ├── test_distributed_system.py
 │   │   ├── test_ml_serving_integration.py
@@ -507,16 +512,18 @@ sequenceDiagram
 │   ├── integration_test_framework.py
 │   ├── knowledge_base
 │   │   └── test_knowledge_base.py
+│   ├── messaging
+│   │   └── test_idempotent_processing.py
 │   ├── ml
 │   │   ├── test_features.py
 │   │   ├── test_indicators.py
+│   │   ├── test_kalman_anomaly_detection.py
 │   │   ├── test_ml.py
 │   │   ├── test_ml_artifact_model_card.py
 │   │   ├── test_ml_filter.py
 │   │   ├── test_ml_signal_router.py
-│   │   ├── test_model_loader.py
-│   │   ├── test_model_monitor.py
 │   │   ├── test_predictive_models.py
+│   │   ├── test_realtime_model_monitoring.py
 │   │   ├── test_reproducibility.py
 │   │   ├── test_serving.py
 │   │   ├── test_train.py
@@ -528,12 +535,15 @@ sequenceDiagram
 │   │   ├── test_asset_selector.py
 │   │   ├── test_async_optimizer.py
 │   │   ├── test_cross_asset_validation.py
+│   │   ├── test_deterministic_optimization.py
 │   │   ├── test_optimization.py
 │   │   └── test_walk_forward.py
+│   ├── orders
+│   │   └── test_comprehensive_validation.py
 │   ├── portfolio
 │   │   ├── test_allocation_engine.py
 │   │   ├── test_portfolio.py
-│   │   ├── test_strategy_ensemble.py
+│   │   └── test_strategy_ensemble.py
 │   ├── reporting
 │   ├── risk
 │   │   ├── test_adaptive_policy.py
@@ -541,7 +551,8 @@ sequenceDiagram
 │   │   ├── test_anomaly_detection.py
 │   │   ├── test_anomaly_detector.py
 │   │   ├── test_risk.py
-│   │   └── test_risk_manager_integration.py
+│   │   ├── test_risk_manager_integration.py
+│   │   └── test_slippage_models.py
 │   ├── run_comprehensive_tests.py
 │   ├── run_smoke_tests.py
 │   ├── scheduler
@@ -563,8 +574,24 @@ sequenceDiagram
 │   │   ├── chaos_tests.py
 │   │   ├── test_cluster_scaling.py
 │   │   └── test_load.py
+│   ├── system
+│   │   ├── test_error_recovery.py
+│   │   └── test_memory_limits.py
+│   ├── test_ai_autofixer.py
+│   ├── test_api_protection.py
+│   ├── test_async_data_fetcher.py
+│   ├── test_async_live_executor.py
+│   ├── test_circuit_retry_integration.py
+│   ├── test_code_linter.py
+│   ├── test_component_factory.py
 │   ├── test_integration.py
+│   ├── test_integration_benchmark.py
 │   ├── test_main.py
+│   ├── test_memory_cache.py
+│   ├── test_order_idempotency.py
+│   ├── test_retry.py
+│   ├── test_retry_integration.py
+│   ├── test_schema_validation.py
 │   └── utils
 │       ├── test_adapter.py
 │       ├── test_circular_import_fix.py
@@ -572,19 +599,12 @@ sequenceDiagram
 │       ├── test_demo_time_utils.py
 │       ├── test_docstring_standardization.py
 │       ├── test_logger.py
-│       ├── test_retry.py
 │       ├── test_time.py
-│       └── test_time_utils.py
+│       ├── test_time_utils.py
+│       └── test_utils_retry.py
+├── TODO.md
 ├── tools
 │   └── check_imports.py
-├── training_results.json
-├── training_results_backtest.json
-├── training_results_new.json
-├── training_results_shap12.json
-├── training_results_stress.json
-├── training_results_unbalance.json
-├── training_results_weights.json
-├── tree.txt
 ├── utils
 │   ├── __init__.py
 │   ├── adapter.py
@@ -598,7 +618,6 @@ sequenceDiagram
 │   ├── duplication_analyzer.py
 │   ├── error_handler.py
 │   ├── error_handling_utils.py
-│   ├── final_auditor.py
 │   ├── logger.py
 │   ├── logging_manager.py
 │   ├── logging_utils.py
