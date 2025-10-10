@@ -36,16 +36,16 @@
       "NUMEXPR_NUM_THREADS": "not set"
     },
     "git_info": {
-      "commit_hash": "4fc7be8a702afd31f1cb762e4f978de66fd39e6f",
+      "commit_hash": "793329e9d301def9a0f8cdfa9bcee66a43d77ba9",
       "branch": "main",
       "remote_url": "https://github.com/Darellea/N1V1.git",
-      "status": "M data/performance_baselines.json\n M experiments/integration_test/metadata.json\n M experiments/test_reproducibility/metadata.json\n M experiments/test_reproducibility/reproducibility_checklist.json\n M logs/anomalies/anomalies.json\n M monitoring/alerts.json\n M monitoring/drift_history.json\n M monitoring/performance_history.json\n M notifier/discord_bot.py\n M tests/core/test_async_metrics.py\n M tests/core/test_gradual_policy_transitions.py\n M tests/data/test_data_fixes.py\n M tests/test_integration.py"
+      "status": "M data/performance_baselines.json\n M experiments/integration_test/metadata.json\n M experiments/test_reproducibility/metadata.json\n M experiments/test_reproducibility/reproducibility_checklist.json\n M logs/anomalies/anomalies.json\n M monitoring/alerts.json\n M monitoring/drift_history.json\n M monitoring/performance_history.json\n M tests/api/test_endpoints.py\n M tests/core/test_async_metrics.py"
     },
     "hardware": {
       "cpu_count": 4,
       "cpu_count_logical": 4,
       "memory_total_gb": 15.83,
-      "memory_available_gb": 3.85
+      "memory_available_gb": 4.5
     }
   },
   "model_config": {

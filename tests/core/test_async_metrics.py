@@ -8,6 +8,7 @@ Tests async metric collection, concurrency, performance benchmarks, and edge cas
 
 import asyncio
 import json
+import logging
 import statistics
 import time
 from pathlib import Path
@@ -92,11 +93,14 @@ def real_monitor():
     # Clean up any existing baseline file
     baseline_file = Path("data/performance_baselines.json")
     if baseline_file.exists():
-        try:
-            baseline_file.unlink()
-        except PermissionError:
-            time.sleep(0.2)
-            baseline_file.unlink(missing_ok=True)
+        for _ in range(5):
+            try:
+                baseline_file.unlink()
+                break
+            except PermissionError:
+                time.sleep(0.5)
+        else:
+            logging.warning(f"Could not delete {baseline_file}, continuing test safely.")
 
     config = {
         "monitoring_interval": 0.1,  # Very fast for testing
