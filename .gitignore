@@ -49,6 +49,8 @@ nosetests.xml
 coverage.xml
 *.cover
 *.log, cover
+*_example.json
+*_example.bak
 htmlcov/
 test_logs/
 reports/

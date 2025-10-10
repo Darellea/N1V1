@@ -11,7 +11,9 @@
   "exchange": {
     "name": "binance",
     "base_currency": "USDT",
-    "markets": ["BTC/USDT"],
+    "markets": [
+      "BTC/USDT"
+    ],
     "api_key": "your_api_key",
     "api_secret": "your_api_secret"
   },
@@ -128,7 +130,12 @@
   },
   "multi_timeframe": {
     "enabled": true,
-    "timeframes": ["15m", "1h", "4h", "1d"],
+    "timeframes": [
+      "15m",
+      "1h",
+      "4h",
+      "1d"
+    ],
     "primary_timeframe": "1h"
   },
   "backtesting": {
